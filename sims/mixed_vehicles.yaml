@@ -1,0 +1,7 @@
+# One of each vehicle type plus a ground node.
+version: 1
+units:
+  - {block: copter, name: copter1}
+  - {block: plane,  name: plane1, at: {east_m: 60}}
+  - {block: rover,  name: rover1, at: {east_m: -40}}
+  - {block: comm_only, name: ground1, at: {north_m: -30}}

@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""sim - DroneEngage simulation from reusable blocks.
+
+  ./sim blocks                     list blocks (reusable unit types)
+  ./sim block <name>               show a block resolved through `extends`
+  ./sim show <sim.yaml>            units, modules and ports a sim expands to
+  ./sim up <sim.yaml> [--fresh]    start a sim (stops the previous one)
+  ./sim down                       stop everything `sim up` started
+  ./sim status                     = ./sim ctl status
+  ./sim ctl <cmd> ...              operator console (./sim ctl for help)
+  ./sim run <test.yaml> [--keep]   run a test; --keep skips the teardown
+  ./sim logs <unit|server> [proc]  tail a process log
+
+Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
+(steps + assertions on a sim). See README.md.
+"""
+
+import json
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine"))
+import simlib
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        return 0
+    c, a = argv[0], argv[1:]
+    try:
+        if c == "blocks":
+            for name in simlib.list_blocks():
+                b = simlib.load_block(name)
+                fc = b["fc"]["vehicle"] if b["fc"] else "no fc"
+                parent = f" (extends {b['chain'][-2]})" if len(b["chain"]) > 1 else ""
+                print(f"{name:18s} [{fc}] {' + '.join(b['modules'])}{parent}")
+                if b["description"]:
+                    print(f"{'':18s} {b['description'].splitlines()[0]}")
+        elif c == "block":
+            b = simlib.load_block(a[0])
+            simlib.validate_block(b, simlib.load_catalog())
+            print(json.dumps(b, indent=2))
+        elif c == "show":
+            sim = simlib.load_sim(a[0])
+            srv = sim["server"]
+            print(f"server {srv['type']}{' +auth' if srv['auth'] else ''}: "
+                  f"wss {srv['port']} control {srv['control_port']}"
+                  + (f" auth {srv['auth_port']}" if srv["auth"] else ""))
+            for u in sim["units"]:
+                fc = u["fc"]
+                print(f"  {u['name']:12s} block={u['block']:16s} "
+                      + (f"{fc['vehicle']} sysid={fc['sysid']} pilot={fc['pilot_port']} "
+                         f"fcb={fc['fcb_port']} " if fc else "no-fc ")
+                      + " ".join(f"{m}:{p}" for m, p in u["ports"].items())
+                      + f"  @{u['position']['lat']:.6f},{u['position']['lng']:.6f}")
+        elif c == "up":
+            import launcher
+            files = [x for x in a if not x.startswith("--")]
+            if len(files) != 1:
+                sys.exit("usage: ./sim up <sim.yaml> [--fresh]")
+            launcher.up(files[0], fresh="--fresh" in a)
+        elif c == "down":
+            import launcher
+            launcher.down()
+        elif c == "status":
+            import ctl
+            ctl.main(["status"])
+        elif c == "ctl":
+            import ctl
+            ctl.main(a)
+        elif c == "run":
+            import runner
+            files = [x for x in a if not x.startswith("--")]
+            if len(files) != 1:
+                sys.exit("usage: ./sim run <test.yaml> [--keep]")
+            return runner.run(files[0], keep="--keep" in a)
+        elif c == "logs":
+            owner = a[0]
+            d = os.path.join(simlib.RUN_DIR, owner, "logs")
+            proc = a[1] if len(a) > 1 else None
+            files = [os.path.join(d, f) for f in sorted(os.listdir(d))
+                     if proc is None or f == proc + ".log"]
+            subprocess.call(["tail", "-n", "40"] + files)
+        else:
+            print(__doc__)
+            return 1
+    except simlib.SimError as e:
+        sys.exit(f"error: {e}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

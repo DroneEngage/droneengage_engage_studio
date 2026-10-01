@@ -1,0 +1,7 @@
+description: |
+  Quad copter: ArduCopter SITL + de_comm + de_mavlink. The base block for
+  most fleets; extend it for copter variants.
+modules: [de_comm, de_mavlink]
+fc:
+  vehicle: copter        # copter | plane | rover (engine/simlib.py FC_KINDS)
+  model: quad            # SITL -M

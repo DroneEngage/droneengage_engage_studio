@@ -1,0 +1,12 @@
+# Every vehicle type comes up, arms and is brought down again the way its
+# type allows (copter LAND, rover HOLD + disarm, plane SITL reset).
+version: 1
+sim: ../sims/mixed_vehicles.yaml
+steps:
+  - arm: block:copter
+  - arm: block:rover
+  - arm: block:plane
+  - fc: all
+  - land: all
+  - wait_online: 30      # all 4 units still at the server, ground node included
+teardown: none

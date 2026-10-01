@@ -1,0 +1,26 @@
+# Link faults (fake server): copter2's link gets 40% seeded loss, copter3's
+# is cut for 45 s while all three fly. copter3 must notice the silent cut
+# via its ping watchdog, fire comm_lost once, keep flying and come back
+# only after the cut. (Port of Phase-4A fault_link_loss.yaml.)
+version: 1
+sim: ../sims/copters3_faults.yaml
+operation: ../packages/copter_square.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - start
+  - loss: {unit: copter2, percent: 40}
+  - link_cut: {unit: copter3, seconds: 45}
+  - wait_journal: {unit: copter3, re: "comm line offline", timeout: 30}
+  - wait_journal: {unit: copter3, re: "comm line online", timeout: 90}
+  - link_clear: all
+  - wait_journal: {unit: all, re: "mission main completed", timeout: 300}
+assert:
+  - journal_count: {unit: all, re: "mission main completed", at_least: 1}
+  - journal_order: {unit: copter3, first: "comm line offline", then: "comm line online"}
+  - journal_time_delta: {u1: copter3, re1: "comm line offline", u2: copter3, re2: "comm line online", min_s: 25, max_s: 70}
+  - journal_count: {unit: copter3, re: "handler comm_lost fired", equals: 1}
+  - journal_count: {unit: copter1, re: "comm line offline", equals: 0}

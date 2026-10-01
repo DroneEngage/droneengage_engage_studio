@@ -1,0 +1,5 @@
+__pycache__
+/results
+/run
+# per-machine paths (copy sim.local.env.example)
+/sim.local.env

@@ -1,0 +1,10 @@
+# Camera fleet: a camera copter and a fixed camera post (needs the
+# de_camera binary + a V4L2 device; see blocks/copter_camera).
+version: 1
+units:
+  - {block: copter_camera, name: camcopter}
+  - block: camera_fixed
+    name: tower1
+    at: {north_m: -50, east_m: 30}
+    config:
+      de_camera: {camera: {camera_start_index: 3, camera_end_index: 3}}

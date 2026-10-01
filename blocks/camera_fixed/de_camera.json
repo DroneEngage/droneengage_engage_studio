@@ -1,0 +1,4 @@
+{
+    "module_id": "FixedCam",
+    "camera": { "camera_start_index": 2, "camera_end_index": 3 }
+}

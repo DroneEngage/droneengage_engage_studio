@@ -1,0 +1,5 @@
+# Same fleet through the full login path: droneengage_authenticator (single
+# account) + droneengage_server; every de_comm and the GCS bridge log in.
+version: 1
+extends: copters3.yaml
+server: {type: real, auth: true, account: {user: sim@sim.droneengage.com, code: sim1234}}

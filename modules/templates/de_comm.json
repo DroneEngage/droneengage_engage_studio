@@ -1,0 +1,41 @@
+{
+    /*
+        Base de_comm config for simulated units (from the Phase-2 demo
+        config). Blocks overlay it (blocks/<b>/de_comm.json or block.yaml
+        config.de_comm); the engine then forces the per-unit wiring:
+        ports, unitID, local server, state files and journal dir.
+    */
+    "module_id"                 : "MT_1",
+    "unit_type"                 : "control_unit",
+    "s2s_udp_listening_ip"      : "0.0.0.0",
+    "s2s_udp_listening_port"    : "60000",
+    "s2s_udp_packet_size"       : "8192",
+    "use_unix_socket"           : false,
+
+    "auth_ip"                   : "127.0.0.1",
+    "auth_port"                 : 19408,
+    "auth_verify_ssl"           : false,
+    "use_local_comm_server"     : true,
+    "local_comm_server_ip"      : "127.0.0.1",
+    "local_comm_server_port"    : 62008,
+    "root_certificate_path"     : "./root.crt",
+
+    "userName"                  : "sim@sim.droneengage.com",
+    "accessCode"                : "sim1234",
+    "unitID"                    : "sim_unit",
+    "groupID"                   : "1",
+    "unitDescription"           : "droneengage_simulation_land unit",
+
+    "logger_enabled"            : false,
+    "logger_debug"              : false,
+    "ping_server_rate_in_ms"    : 1500,
+    "max_allowed_ping_delay_in_ms": 5000,
+    "max_offline_count"         : 1000,
+    "led_pins_enabled"          : false,
+    "buzzer_pins_enabled"       : false,
+
+    // ---- mission supervisor ----
+    "sv_force_paged"            : false,
+    "sv_comm_lost_s"            : 10,
+    "sv_battery_low_pct"        : 25
+}

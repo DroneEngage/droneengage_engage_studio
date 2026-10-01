@@ -1,0 +1,5 @@
+# Copter: AUTO_OPTIONS 3 allows arming in AUTO + take off in AUTO without
+# throttle -> the supervisor's "start" (goto seq 1 + AUTO) lifts off by itself.
+# DISARM_DELAY 30 gives the operator time between "arm" and "start".
+AUTO_OPTIONS    3
+DISARM_DELAY    30

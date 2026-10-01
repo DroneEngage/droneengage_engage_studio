@@ -1,0 +1,64 @@
+# Module catalog: how the engine launches and wires each DroneEngage module.
+#
+# Blocks list modules by these names. `de_comm` and `sitl` are built in
+# (engine/simlib.py); every other entry here is a generic module that talks to
+# its unit's de_comm over the s2s UDP bus. To add a module, add an entry -
+# no engine change needed.
+#
+#   repo        folder name under DE_CODE (sim.local.env)
+#   dir_env     sim.local.env key that overrides the repo folder
+#   bin         binary, relative to repo (or absolute)
+#   bin_env     sim.local.env key that overrides `bin` (binaries built elsewhere)
+#   template    base config, relative to repo (or modules/templates/<file>)
+#   port_base   s2s listening port = port_base + 10 * slot
+#   start_delay seconds to wait before exec (let de_comm / SITL come up)
+#   needs_fc    true -> only valid in a block that has an `fc:`
+#   local       per-unit identity file {module_key}: `arg` passes it on the
+#               command line, otherwise it is written as `file` in the
+#               module's working directory (run/<unit>/<module>/)
+#   set         defaults applied before the block overlays (blocks may change them)
+#   wire        applied after the block overlays (blocks cannot break these);
+#               "{fcb_port}" / "{pilot_port}" / "{sysid}" / "{comm_port}" /
+#               "{port}" / "{unit}" are filled per unit
+#   ready_re    journal regex (since boot) that marks the module ready;
+#               `sim up` waits for it
+
+de_mavlink:
+  repo: droneengage_mavlink
+  dir_env: DE_MAVLINK_DIR
+  bin: bin/de_ardupilot
+  template: de_mavlink.config.module.json
+  port_base: 63000
+  start_delay: 5
+  needs_fc: true
+  local: {arg: "-b", file: de_mavlink.local}
+  set:
+    tlog_enabled: false
+    logger_enabled: false
+  wire:
+    fcb_connection_uri: {ip: "127.0.0.1", port: "{fcb_port}", type: tcp}
+  ready_re: "nav adapter hello"
+
+de_camera:
+  repo: droneengage_camera
+  dir_env: DE_CAMERA_DIR
+  # de_camera is built inside the WebRTC tree (out/<target>/de_camera);
+  # copy it to droneengage_camera/bin/ or set DE_CAMERA_BIN in sim.local.env
+  bin: bin/de_camera
+  bin_env: DE_CAMERA_BIN
+  template: de_camera.config.module.json
+  port_base: 64000
+  start_delay: 3
+  local: {file: de_camera.config.local}
+  set:
+    media_folder: "./img"
+
+de_tracker:
+  repo: droneengage_visual_tracker
+  dir_env: DE_TRACKER_DIR
+  bin: bin/de_tracker
+  template: de_tracker.config.module.json
+  port_base: 65000
+  start_delay: 3
+  # its getopt string has no "b:" - the local file is read from the cwd
+  local: {file: de_tracker.config.local}

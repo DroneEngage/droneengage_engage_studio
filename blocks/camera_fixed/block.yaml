@@ -1,0 +1,5 @@
+description: |
+  Fixed camera post (no flight controller): de_comm + de_camera at a fixed
+  position. Place it with the sim's `at: {north_m, east_m}`.
+modules: [de_comm, de_camera]
+fc: null

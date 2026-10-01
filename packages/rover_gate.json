@@ -1,0 +1,36 @@
+{
+  "schema": "de.package/2",
+  "op": "sitl_p206_gate_rover",
+  "role": "solo",
+  "vehicle": { "type": "rover" },
+  "requires": [],
+  "fc_items": [
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.363200,149.166100,0] },
+    { "c": 93, "ft": 2, "mv": [30,0,0,0,0,0,0] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.362200,149.166200,0] },
+    { "c": 93, "ft": 2, "mv": [300,0,0,0,0,0,0] },
+    { "c": 20, "ft": 2, "mv": [0,0,0,0,0,0,0] },
+    { "c": 93, "ft": 2, "mv": [86400,0,0,0,0,0,0] }
+  ],
+  "missions": {
+    "main": {
+      "trigger": { "type": "op.start" },
+      "priority": 0,
+      "segment": { "start": 1, "end": 6 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    }
+  },
+  "manifest": [
+    { "seq": 1, "mission": "main", "step": "w1", "kind": "nav.wp" },
+    { "seq": 2, "mission": "main", "step": "g",  "kind": "gate.hold",
+      "event": "drop.ready", "timeout": 30, "on_timeout": "continue", "release": 3 },
+    { "seq": 3, "mission": "main", "step": "w2", "kind": "nav.wp" },
+    { "seq": 4, "mission": "main", "step": "end", "kind": "end.hold" },
+    { "seq": 5, "mission": "main", "step": "end", "kind": "end.contingency" },
+    { "seq": 6, "mission": "main", "step": "end", "kind": "end.guard" }
+  ],
+  "events": { "drop.ready": {} },
+  "handlers": {},
+  "hash": "sha256:0000"
+}

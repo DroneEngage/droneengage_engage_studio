@@ -1,0 +1,42 @@
+# TASK-P4A-05 scenario 1: 30% seeded loss on every link. The scout emits
+# area.clear once (go.now -> "signal" mission; the go.now trigger itself
+# is re-fired until the scout journals BUS_OUT - the GCS command channel
+# is not under test); acks + retries must get it
+# to BOTH workers, each activating "work" exactly once. Run it 10 times
+# (see RUNBOOK): every run must pass. BUS_RETRY lines are expected.
+version: 1
+sim: ../sims/copters3_faults.yaml
+operation: ../packages/fleet_scout.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy: {package: "../packages/fleet_scout.json", unit: 1}
+  - deploy: {package: "../packages/fleet_worker.json", unit: 2}
+  - deploy: {package: "../packages/fleet_worker.json", unit: 3}
+  - arm: all
+  - start
+  # rosters (sv_roster_hz 0.2 -> one per 5 s) teach the scout its
+  # recipients before the emit
+  - wait: 15
+  - loss: {unit: all, percent: 30}
+  - fire: {event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
+  # 30 % on both hops each way: an attempt + its ack survive ~1 in 4,
+  # and the retry tail is 10 s - allow a long unlucky streak
+  - wait_journal: {unit: 2, re: "activating mission work", timeout: 180}
+  - wait_journal: {unit: 3, re: "activating mission work", timeout: 180}
+  - wait_journal: {unit: 1, re: "DELIVERED.*n=area\\.clear", timeout: 180}
+  - link_clear: {unit: all}
+  - wait: 5
+
+assert:
+  - journal_count: {unit: 1, re: "BUS_OUT.*n=area\\.clear", equals: 1}
+  - journal_count: {unit: 2, re: "BUS_IN.*n=area\\.clear", equals: 1}
+  - journal_count: {unit: 3, re: "BUS_IN.*n=area\\.clear", equals: 1}
+  - journal_count: {unit: 2, re: "activating mission work", equals: 1}
+  - journal_count: {unit: 3, re: "activating mission work", equals: 1}
+  # every event ends with a delivery report; never UNDELIVERED here
+  - journal_count: {unit: 1, re: "^DELIVERED.*n=area\\.clear", at_least: 1}
+  - journal_count: {unit: 1, re: "UNDELIVERED", equals: 0}
+  # informational: retries and the delivery time (in_ms) for the PR
+  - journal_count: {unit: 1, re: "BUS_RETRY.*n=area\\.clear", at_least: 0}

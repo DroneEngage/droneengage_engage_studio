@@ -1,0 +1,40 @@
+{
+  "schema": "de.package/2",
+  "op": "sitl_p206_gate_plane",
+  "role": "solo",
+  "vehicle": { "type": "plane" },
+  "requires": [],
+  "fc_items": [
+    { "c": 22, "ft": 3, "mv": [0,0,0,0,0,0,80] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.362000,149.168000,80] },
+    { "c": 19, "ft": 3, "mv": [30,0,90,0,-35.361500,149.166800,80] },
+    { "c": 20, "ft": 2, "mv": [0,0,0,0,0,0,0] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.361000,149.166500,80] },
+    { "c": 19, "ft": 3, "mv": [300,0,90,0,-35.361000,149.166500,80] },
+    { "c": 20, "ft": 2, "mv": [0,0,0,0,0,0,0] },
+    { "c": 17, "ft": 3, "mv": [0,0,0,0,-35.361000,149.166500,80] }
+  ],
+  "missions": {
+    "main": {
+      "trigger": { "type": "op.start" },
+      "priority": 0,
+      "segment": { "start": 1, "end": 8 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    }
+  },
+  "manifest": [
+    { "seq": 1, "mission": "main", "step": "t",  "kind": "nav.takeoff" },
+    { "seq": 2, "mission": "main", "step": "w1", "kind": "nav.wp" },
+    { "seq": 3, "mission": "main", "step": "g",  "kind": "gate.hold",
+      "event": "drop.ready", "timeout": 30, "on_timeout": "rtl", "release": 5 },
+    { "seq": 4, "mission": "main", "step": "g",  "kind": "gate.contingency" },
+    { "seq": 5, "mission": "main", "step": "w2", "kind": "nav.wp" },
+    { "seq": 6, "mission": "main", "step": "end", "kind": "end.hold" },
+    { "seq": 7, "mission": "main", "step": "end", "kind": "end.contingency" },
+    { "seq": 8, "mission": "main", "step": "end", "kind": "end.guard" }
+  ],
+  "events": { "drop.ready": {} },
+  "handlers": {},
+  "hash": "sha256:0000"
+}

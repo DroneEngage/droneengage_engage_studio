@@ -1,0 +1,21 @@
+# 3 copters on the REAL comm server fly one package each, started together.
+# (Port of Phase-4A smoke_3copters.yaml.)
+version: 1
+sim: ../sims/copters3.yaml
+operation: ../packages/copter_square.json
+steps:
+  - stop                # reset leftover runs when the sim is reused (the
+  - clear               # engine stays RUNNING after "mission ... completed")
+  - mode: {unit: all, mode: GUIDED}   # de_mavlink refuses nav loads in AUTO
+  - deploy
+  - arm: all
+  - start
+  - wait_journal: {unit: 1, re: "mission main completed", timeout: 300}
+  - wait_journal: {unit: 2, re: "mission main completed", timeout: 300}
+  - wait_journal: {unit: 3, re: "mission main completed", timeout: 300}
+assert:
+  - journal_count: {unit: all, re: "RUN run .* started", equals: 1}
+  - journal_count: {unit: all, re: "mission main completed", equals: 1}
+  - journal_count: {unit: all, re: "handler .* fired", equals: 0}
+  - journal_count: {unit: all, re: "comm line offline", equals: 0}
+  - journal_time_delta: {u1: 1, re1: "RUN run .* started", u2: 3, re2: "RUN run .* started", max_s: 15}

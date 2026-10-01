@@ -1,0 +1,6 @@
+description: |
+  Copter with an onboard camera: the copter block + de_camera.
+  Needs the de_camera binary (droneengage_camera/bin/de_camera or DE_CAMERA_BIN)
+  and a V4L2 device (droneengage_camera/scripts/create_virtual_videos.sh).
+extends: copter
+add_modules: [de_camera]

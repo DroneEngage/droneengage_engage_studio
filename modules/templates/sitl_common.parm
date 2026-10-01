@@ -1,0 +1,4 @@
+# Applied to every SITL vehicle after the vehicle's ArduPilot defaults.
+# FS_GCS_ENABLE 1: de_mavlink's GCS heartbeat is the watched one (protects
+# the vehicle during a paged upload hold).
+FS_GCS_ENABLE   1

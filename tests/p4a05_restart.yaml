@@ -1,0 +1,36 @@
+# TASK-P4A-05 scenario 3: the scout's de_comm restarts while area.clear is
+# still pending for copter2 (link cut). After the restart the persisted
+# pending table resumes the retries: copter2 activates once its link is
+# back, and the scout journals DELIVERED.
+version: 1
+sim: ../sims/copters3_faults.yaml
+operation: ../packages/fleet_scout.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy: {package: "../packages/fleet_scout.json", unit: 1}
+  - deploy: {package: "../packages/fleet_worker.json", unit: 2}
+  - deploy: {package: "../packages/fleet_worker.json", unit: 3}
+  - arm: all
+  - start
+  # rosters (sv_roster_hz 0.2 -> one per 5 s) teach the scout its
+  # recipients before the emit
+  - wait: 15
+  - link_cut: {unit: 2, seconds: 45}
+  - wait: 2
+  - fire: {event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
+  - wait_journal: {unit: 3, re: "activating mission work", timeout: 60}
+  - wait: 3
+  - restart: {unit: 1, proc: de_comm}
+  - wait_journal: {unit: 2, re: "activating mission work", timeout: 150}
+  - wait_journal: {unit: 1, re: "DELIVERED.*n=area\\.clear", timeout: 60}
+  - wait: 5
+
+assert:
+  - journal_count: {unit: 2, re: "activating mission work", equals: 1}
+  - journal_count: {unit: 3, re: "activating mission work", equals: 1}
+  - journal_count: {unit: 1, re: "^DELIVERED.*n=area\\.clear", at_least: 1}
+  - journal_count: {unit: 1, re: "UNDELIVERED", equals: 0}
+  # retries ran after the restart too (informational)
+  - journal_count: {unit: 1, re: "BUS_RETRY.*n=area\\.clear", at_least: 1}

@@ -1,0 +1,5 @@
+description: |
+  de_comm only (no flight controller, no modules): a static unit / relay /
+  ground node. Takes part in the fleet bus and the supervisor like any unit.
+modules: [de_comm]
+fc: null

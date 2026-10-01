@@ -1,0 +1,11 @@
+description: |
+  Copter variant for battery tests: small simulated battery and a high
+  supervisor battery_low threshold, so battery handlers fire within minutes.
+extends: copter
+fc:
+  params:
+    SIM_BATT_CAP_AH: 0.5
+    BATT_CAPACITY: 500
+config:
+  de_comm:
+    sv_battery_low_pct: 60

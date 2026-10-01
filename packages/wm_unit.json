@@ -1,0 +1,182 @@
+{
+  "schema": "de.package/2.2",
+  "op": "wm_chain",
+  "op_hash": "sha256:p4a08-wm-chain-test-0000000000000000000000000000000000000000000",
+  "role": "unit",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [],
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.3632,
+        149.1661,
+        30
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        -35.3632,
+        149.1661,
+        30
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.363,
+        149.1665,
+        30
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        -35.363,
+        149.1665,
+        30
+      ]
+    }
+  ],
+  "missions": {
+    "main": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 10,
+      "segment": {
+        "start": 1,
+        "end": 3
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 300,
+        "then": "rtl"
+      }
+    },
+    "engage": {
+      "trigger": {
+        "type": "event",
+        "event": "sys.target_state"
+      },
+      "priority": 20,
+      "segment": {
+        "start": 4,
+        "end": 5
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 300,
+        "then": "rtl"
+      }
+    },
+    "detect": {
+      "trigger": {
+        "type": "event",
+        "event": "det.go"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "steps": [
+        {
+          "id": "e",
+          "k": "emit",
+          "event": "target.fire",
+          "payload_from": "trigger"
+        }
+      ]
+    }
+  },
+  "manifest": [
+    {
+      "seq": 1,
+      "mission": "main",
+      "step": "t",
+      "kind": "nav.takeoff"
+    },
+    {
+      "seq": 2,
+      "mission": "main",
+      "step": "w1",
+      "kind": "nav.wp"
+    },
+    {
+      "seq": 3,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.hold"
+    },
+    {
+      "seq": 4,
+      "mission": "engage",
+      "step": "w",
+      "kind": "nav.wp"
+    },
+    {
+      "seq": 5,
+      "mission": "engage",
+      "step": "end",
+      "kind": "end.hold"
+    }
+  ],
+  "events": {
+    "target.fire": {
+      "target": "fire",
+      "ttl_s": 600
+    },
+    "det.go": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "unit": {
+        "count": 3
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "target.fire": 600,
+      "det.go": 300
+    },
+    "event_targets": {
+      "target.fire": "fire"
+    }
+  }
+}

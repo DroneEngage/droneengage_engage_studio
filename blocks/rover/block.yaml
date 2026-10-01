@@ -1,0 +1,5 @@
+description: |
+  Ground rover: ArduRover SITL + de_comm + de_mavlink. `land` = HOLD + disarm.
+modules: [de_comm, de_mavlink]
+fc:
+  vehicle: rover

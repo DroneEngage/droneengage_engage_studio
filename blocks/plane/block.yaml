@@ -1,0 +1,6 @@
+description: |
+  Fixed-wing: ArduPlane SITL + de_comm + de_mavlink. Arms in MANUAL; `land`
+  resets the SITL (a plane cannot land in place).
+modules: [de_comm, de_mavlink]
+fc:
+  vehicle: plane
