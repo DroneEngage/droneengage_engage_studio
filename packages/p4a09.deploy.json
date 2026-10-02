@@ -1,0 +1,11 @@
+{
+  "op": "p4a09_two_phase",
+  "roles": {
+    "scout":   { "pkg": "p4a09_scout.json",
+                 "units": ["copter1"] },
+    "worker":  { "pkg": "p4a09_worker.json",
+                 "units": ["copter2", "copter3"] },
+    "watcher": { "pkg": "p4a09_watcher.json",
+                 "units": ["static1"] }
+  }
+}

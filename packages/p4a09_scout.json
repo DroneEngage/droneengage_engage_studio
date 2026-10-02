@@ -1,0 +1,42 @@
+{
+  "schema": "de.package/2.2",
+  "op": "p4a09_two_phase",
+  "op_hash": "sha256:2d2fc4c5cf2e7e65e50bc71a2da6f9c50257102cd59144a3e145fe5dda6e5225",
+  "role": "scout",
+  "vehicle": { "type": "copter" },
+  "requires": [],
+  "fc_items": [
+    { "c": 22, "ft": 3, "mv": [0, 0, 0, 0, 0, 0, 30] },
+    { "c": 16, "ft": 3, "mv": [0, 5, 0, 0, -35.3632, 149.1661, 30] },
+    { "c": 16, "ft": 3, "mv": [0, 5, 0, 0, -35.3622, 149.1662, 30] },
+    { "c": 17, "ft": 3, "mv": [0, 0, 0, 0, -35.3622, 149.1662, 30] }
+  ],
+  "missions": {
+    "main": {
+      "trigger": { "type": "op.start" },
+      "priority": 10,
+      "segment": { "start": 1, "end": 4 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    }
+  },
+  "manifest": [
+    { "seq": 1, "mission": "main", "step": "t",  "kind": "nav.takeoff" },
+    { "seq": 2, "mission": "main", "step": "w1", "kind": "nav.wp" },
+    { "at_seq": 2, "on": "reached", "mission": "main", "step": "w1",
+      "kind": "emit", "event": "area.clear" },
+    { "seq": 3, "mission": "main", "step": "w2", "kind": "nav.wp" },
+    { "seq": 4, "mission": "main", "step": "end", "kind": "end.hold" }
+  ],
+  "events": {
+    "area.clear": { "ttl_s": 300 },
+    "watch.seen": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": { "scout": { "count": 1 }, "worker": { "count": 2 },
+               "watcher": { "count": 1 } },
+    "phases": [],
+    "event_ttl": { "area.clear": 300, "watch.seen": 300 }
+  }
+}

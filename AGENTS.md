@@ -26,9 +26,9 @@ Not for: unit tests of one module (use that repo's `test/`), WebClient UI
 work, or hardware/camera-device testing. The camera blocks need a real or
 virtual V4L2 device and the `de_camera` binary.
 
-Phase-4A (`../Tasks/mission_planner/Phase-4A-Tasks/tools/`) is the older
-copter-only, fake-server harness this was generalized from. Both can run at
-once because the port ranges differ (see Ports).
+The older copter-only, fake-server harness this was generalized from
+(`Tasks/mission_planner/Phase-4A-Tasks/tools/`) has been removed — this repo
+is now the only simulation/testing location.
 
 ## Layout
 
@@ -91,8 +91,8 @@ Machine paths come only from `simlib.setting()`: environment variable >
 Slot `k = slot_base (10) + unit index`. SITL `-I k`, sysid `k`, pilot
 `5760+10k`, fcb `7660+10k`. Module s2s ports are `port_base + 10k`
 (de_comm 62000, de_mavlink 63000, de_camera 64000, de_tracker 65000). Server
-wss 62008, control 62009, authenticator +10/+11. Phase-4A uses slots 1..9 and
-60008, so don't lower `slot_base` below 10 if both must coexist.
+wss 62008, control 62009, authenticator +10/+11. Keep `slot_base` >= 10 so
+sim ports never collide with the developer's own servers.
 
 ## Extending
 

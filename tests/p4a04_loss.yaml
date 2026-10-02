@@ -1,0 +1,38 @@
+# TASK-P4A-04 acceptance 2: the static_chain operation under 30%
+# seeded loss on every link. Without acks (P4A-05) the single BUS_IN
+# copy may be lost - the acceptance asks only for the observed loss
+# rate and for "no unit activates work twice". BUS_IN counts are
+# reported by the journal_count prints; the hard asserts are at-most-1
+# activation (dup suppression) and the scout's local BUS_OUT.
+# Ported to the two-phase deploy: a roles spec + opstart (P4A-09).
+version: 1
+sim: ../sims/copters3_faults.yaml
+operation: ../packages/p4a04.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  # the acceptance is event delivery under loss; opstart's 1094
+  # replies must not race a 30%-lossy link
+  - loss: {unit: all, percent: 30}
+  # the scout reaches w1 and emits at ~30 s into the run; 90 s leaves
+  # slack for the lossy links - a missed copy just stays undelivered
+  - wait: 90
+  - link_clear: {unit: all}
+  - opabort
+
+assert:
+  # the emit itself is local-first: the scout journals BUS_OUT even if
+  # the wire copy dies on a lossy link
+  - journal_count: {unit: 1, re: "BUS_OUT.*n=area\\.clear", equals: 1}
+  # at most one activation per worker - surviving copies dedupe to one
+  # latch; a fully-lost emit simply never activates (P4A-05 adds acks)
+  - journal_count: {unit: 2, re: "activating mission work", at_most: 1}
+  - journal_count: {unit: 3, re: "activating mission work", at_most: 1}
+  # informational: the observed delivery rate on the lossy links
+  - journal_count: {unit: 2, re: "BUS_IN.*n=area\\.clear", at_least: 0}
+  - journal_count: {unit: 3, re: "BUS_IN.*n=area\\.clear", at_least: 0}
+  - journal_count: {unit: all, re: "BUS_GAP", at_least: 0}

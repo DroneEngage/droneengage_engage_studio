@@ -1,0 +1,35 @@
+{
+  "schema": "de.package/2.2",
+  "op": "p4a09_two_phase",
+  "op_hash": "sha256:2d2fc4c5cf2e7e65e50bc71a2da6f9c50257102cd59144a3e145fe5dda6e5225",
+  "role": "watcher",
+  "vehicle": { "type": "static" },
+  "requires": [],
+  "fc_items": [],
+  "missions": {
+    "watch": {
+      "trigger": { "type": "op.start" },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [],
+      "steps": [
+        { "id": "seen", "k": "gate", "event": "area.clear",
+          "timeout": 900, "on_timeout": "end" },
+        { "id": "tell", "k": "emit", "event": "watch.seen" }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "area.clear": { "ttl_s": 300 },
+    "watch.seen": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": { "scout": { "count": 1 }, "worker": { "count": 2 },
+               "watcher": { "count": 1 } },
+    "phases": [],
+    "event_ttl": { "area.clear": 300, "watch.seen": 300 }
+  }
+}

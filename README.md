@@ -140,8 +140,8 @@ With a real server, `engine/gcs_bridge.py` holds one GCS session
 | comm server wss / control | 62008 / 62009 (`server.port`) |
 | authenticator https / s2s | port+10 / port+11 |
 
-The default slot base keeps clear of the Phase-4A harness (slots 1..9,
-server 60008), so both can run at the same time.
+The default slot base keeps clear of low-numbered ports so sims never
+collide with a developer's own servers.
 
 ## Tests
 

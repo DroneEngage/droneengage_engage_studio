@@ -14,8 +14,8 @@ This module resolves blocks and sims, allocates ports, generates every
 config + launch script under run/, writes the manifest (run/sim.json) and
 holds the journal / pid helpers used by ctl.py and runner.py.
 
-Port scheme (slot k = slot_base + unit index, default slot_base 10 so a
-Phase-4A fleet on slots 1..9 can run at the same time):
+Port scheme (slot k = slot_base + unit index, default slot_base 10 keeps
+sim ports clear of any developer's own servers):
     SITL -I k:  pilot 5760+10k (serial0)  aux 5762+10k (serial2)
                 fcb   7660+10k (serial1, de_mavlink)   sysid k
     de_comm     62000 + 10k     other modules: catalog port_base + 10k
