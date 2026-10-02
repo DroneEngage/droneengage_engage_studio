@@ -1,0 +1,29 @@
+# TASK-P4F-03 scenario 6 "spoof": a replayed fact must carry rl == the
+# server-stamped sender. A forged 1090 that claims src=copter1 rl=copter2
+# while really coming from an unknown party is dropped at the sender check
+# (BUS_DROP why=sender mismatch) and releases nothing.
+version: 1
+sim: ../sims/copters3_faults.yaml
+operation: ../packages/p4f03.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  - wait: 15
+  - fire: {event: mk.scan, unit: 1, until: "BUS_OUT.*n=scan\\.begin"}
+  - wait_journal: {unit: 2, re: "gate seen waits found\\.it", timeout: 30}
+  # forged relay: the wire sender is rogue1 but rl claims copter2 -
+  # rl != sd -> dropped before it can feed the fact store
+  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"rogue1","ms":{"v":1,"op":"p4f03_fact","oh":"sha256:1497ed795a109d90fc4b4d28d78639fdaa88623e2b2d8e9ad1dde453b9cf1913","run":"{OP_RUN}","id":"forge-rl-0001","src":"copter1","rl":"copter2","seq":77,"t":0,"age":0,"ttl":86400,"st":1,"fq":9,"n":"found.it","p":{"pos":[-35.363,149.166,0],"conf":0.9}}}'
+  - wait: 10
+  - opabort
+
+assert:
+  - journal_count: {unit: 2, re: "BUS_DROP.*sender mismatch", at_least: 1}
+  # the forged fact never landed
+  - journal_count: {unit: 2, re: "BUS_IN.*n=found\\.it", equals: 0}
+  - journal_count: {unit: 2, re: "gate seen released", equals: 0}
+  - journal_count: {unit: 3, re: "gate seen released", equals: 0}

@@ -1,0 +1,44 @@
+# TASK-P4F-03 scenario 2 "late joiner": copter3's link is cut while
+# copter1 emits a ttl-15 signal (ping) and a sticky fact (found.it). The
+# signal's author gives up at the TTL (UNDELIVERED ... why=ttl) and it is
+# never delivered. The fact has no TTL: back online, copter3 sees the
+# peers' coverage digests differ from its own, asks, gets the replay and
+# its waiting gate releases.
+version: 1
+sim: ../sims/copters3_faults.yaml
+operation: ../packages/p4f03.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  - wait: 15
+  # get every unit's gates waiting before the cut
+  - fire: {event: mk.scan, unit: 1, until: "BUS_OUT.*n=scan\\.begin"}
+  - wait_journal: {unit: 3, re: "gate seen waits found\\.it", timeout: 30}
+  - link_cut: {unit: 3, seconds: 70}
+  - wait: 2
+  - fire: {event: mk.sig, unit: 1, until: "BUS_OUT.*n=ping"}
+  - fire: {event: mk.fact, unit: 1,
+           payload: {pos: [-35.363, 149.166, 0], conf: 0.9},
+           until: "BUS_OUT.*n=found\\.it"}
+  # the signal is pending for copter3 until its ttl runs out mid-cut
+  - wait_journal: {unit: 1, re: "UNDELIVERED.*why=ttl", timeout: 60}
+  - wait_journal: {unit: 3, re: "comm line online", timeout: 120}
+  # fact sync: copter3's cover misses copter1:fq1 -> it asks a peer
+  - wait_journal: {unit: 3, re: "gate seen released", timeout: 120}
+  - wait: 10
+  - opabort
+
+assert:
+  # the TTL signal died undelivered ...
+  - journal_count: {unit: 1, re: "UNDELIVERED.*ping.*why=ttl", at_least: 1}
+  # ... and was never delivered to copter3
+  - journal_count: {unit: 3, re: "BUS_IN.*n=ping", equals: 0}
+  - journal_count: {unit: 3, re: "sigwatch gate heard released", equals: 0}
+  # the fact arrived through a peer replay and released the gate
+  - journal_count: {unit: 3, re: "FACT_REQ", at_least: 1}
+  - journal_count: {unit: 3, re: "BUS_RELAY.*n=found\\.it", at_least: 1}
+  - journal_count: {unit: 3, re: "gate seen released", equals: 1}

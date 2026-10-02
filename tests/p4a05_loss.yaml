@@ -6,16 +6,14 @@
 # (see RUNBOOK): every run must pass. BUS_RETRY lines are expected.
 version: 1
 sim: ../sims/copters3_faults.yaml
-operation: ../packages/fleet_scout.json
+operation: ../packages/p4a05.deploy.json
 steps:
   - stop
   - clear
   - mode: {unit: all, mode: GUIDED}
-  - deploy: {package: "../packages/fleet_scout.json", unit: 1}
-  - deploy: {package: "../packages/fleet_worker.json", unit: 2}
-  - deploy: {package: "../packages/fleet_worker.json", unit: 3}
+  - deploy
   - arm: all
-  - start
+  - opstart
   # rosters (sv_roster_hz 0.2 -> one per 5 s) teach the scout its
   # recipients before the emit
   - wait: 15
@@ -28,6 +26,8 @@ steps:
   - wait_journal: {unit: 1, re: "DELIVERED.*n=area\\.clear", timeout: 180}
   - link_clear: {unit: all}
   - wait: 5
+
+  - opabort
 
 assert:
   - journal_count: {unit: 1, re: "BUS_OUT.*n=area\\.clear", equals: 1}

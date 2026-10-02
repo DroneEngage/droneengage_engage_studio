@@ -16,7 +16,24 @@ GCS:
   activate <unit> <mission>         manual mission activation
   fire <event> [json] [unit]        inject an event (1086 a:"fire")
   event <name>                      legacy 1061 (fake server: from OTHER_UNIT_1)
-  send <json>                       raw wire message ({RUN}, {WM_TID:<unit>})
+  send <json>                       raw wire message ({RUN}, {OP_RUN},
+                                    {PKG:<file>}, {HASH:<file>},
+                                    {WM_TID:<unit>})
+
+Fleet ops (P4A-09, DE_OP_CONTROL 1094):
+  deploy <spec.json>                a spec with a top-level "roles" map runs
+                                    the two-phase deploy: one PREPARE per
+                                    bound unit carrying pkg+hash+run+bind;
+                                    a bare package falls back to 1085
+  opdeploy <spec.json> [timeout]    the same, spelled out
+  opstart [json]                    fleet START on the deploy's run:
+                                    {"run","lead_ms","in_ms","t_start",
+                                     "start":{role:mis},"targets":[party]}
+  opabort [run|-] [why]             ABORT every bound unit (idempotent)
+  opstatus [seconds]                poll each bound unit's op status
+  opmsg <tg|all> <ms> [--mt N] [--expect RE] [--secs N]
+                                    one frame as a real GCS; --expect is a
+                                    regex a reply line must match
   journal <unit> [from]             P2-12 download (1088 pages)
   roster <seconds> <min_peers>      listen for 1092 rosters as a GCS
   commline <unit> <s>               in-band cut: 6509 {ws:false, wsd:s}
@@ -32,6 +49,8 @@ Link faults (server type fake only):
 
 Processes:
   kill <unit> <proc> | restart <unit> <proc> | start_proc <unit> <proc>
+  bootid <unit>                     new boot id (DE_BOOT_ID_FILE) - the next
+                                    de_comm start counts as a reboot
       proc = sitl | de_comm | de_mavlink | <module> ; unit "server" with
       proc = de_server | de_auth | gcs_bridge | fake_server | all
   server_up                          relaunch every server process
@@ -41,6 +60,7 @@ Processes:
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -583,9 +603,378 @@ def current_run_id():
     return best[1]
 
 
+# ------------------------------------------------------------- P4A-09
+# DE_OP_CONTROL (1094) - the two-phase fleet deploy over a real GCS
+# session. On the fake server a dedicated ws session carries the frames
+# (sd is stamped by the server; the 9007 push gives the fleet clock for
+# t_start). On the real server the GCS bridge relays a `reqm` batch and a
+# 9005 ping supplies the fleet clock; without either, units fall back to
+# the relative start_in_ms.
+
+OP_STATE_FILE = os.path.join(simlib.RUN_DIR, "op_deploy.json")
+
+
+def _op_state():
+    """The last opdeploy's {run, op, bind:{party:role}} - {} before the
+    first deploy. Lets opstart/opabort/opstatus find the fleet run id."""
+    try:
+        return json.load(open(OP_STATE_FILE))
+    except (OSError, ValueError):
+        return {}
+
+
+def _all_parties():
+    return [u["party_id"] for u in manifest()["units"]]
+
+
+def _op_parties():
+    """The bound parties of the last deploy, else every unit."""
+    return sorted(_op_state().get("bind") or {}) or _all_parties()
+
+
+def _pkg_path(p):
+    """A {PKG:}/{HASH:} token path: as given, relative to the sim root,
+    or bare inside packages/."""
+    for cand in (p, os.path.join(simlib.SIM_ROOT, p),
+                 os.path.join(simlib.SIM_ROOT, "packages", p)):
+        if os.path.isfile(cand):
+            return cand
+    sys.exit(f"no such package file: {p!r}")
+
+
+def _expand_pkg_tokens(text):
+    """"{PKG:<file>}" -> the file's text as a JSON string; "{HASH:<file>}"
+    -> its "sha256:<hex>". Lets a scenario build a real PREPARE without
+    literal package text."""
+    for m in re.finditer(r'"\{PKG:([^}]+)\}"', text):
+        text = text.replace(
+            m.group(0),
+            json.dumps(open(_pkg_path(m.group(1))).read()))
+    for m in re.finditer(r'"\{HASH:([^}]+)\}"', text):
+        h = "sha256:" + hashlib.sha256(
+            open(_pkg_path(m.group(1)), "rb").read()).hexdigest()
+        text = text.replace(m.group(0), json.dumps(h))
+    return text
+
+
+async def _fake_gcs_roundtrip(build, secs):
+    """Fake server: open a GCS ws, send the wire messages
+    build(fleet_ms|None) returns as [(tg, msg)], and collect every
+    non-roster reply for `secs` more seconds. The fake server stamps sd
+    and pushes a 9007 fleet-clock stamp after auth - fleet_ms is that
+    stamp plus elapsed wall time (the same estimate the WebClient makes).
+    Returns {sd_party: [wire_msg, ...]}."""
+    import websockets
+    fleet = [None, 0.0]      # (9007 "ts" stamp, local receipt time)
+    got_ack = False
+    replies = {}
+    async with websockets.connect(f"wss://127.0.0.1:{server()['port']}",
+                                  ssl=_ssl_ctx(), compression=None) as ws:
+        await ws.send(json.dumps({"ty": "s", "mt": "de_auth", "f": "ctl",
+                                  "s": "gcs_sim_ctl", "at": "g"}))
+        t0 = time.time()
+        while time.time() - t0 < 10:
+            # done once the ack is in; the 9007 stamp is only waited on
+            # briefly (the fake server always sends it right after auth)
+            if got_ack and (fleet[0] is not None or time.time() - t0 > 3):
+                break
+            try:
+                msg = json.loads(await asyncio.wait_for(
+                    ws.recv(), 10 - (time.time() - t0)))
+            except asyncio.TimeoutError:
+                break
+            if msg.get("mt") == "de_auth_ack":
+                got_ack = True
+            elif msg.get("mt") == 9007 and isinstance(msg.get("ms"), dict):
+                fleet[0], fleet[1] = msg["ms"].get("ts"), time.time()
+        if not got_ack:
+            sys.exit("GCS session: no de_auth_ack from the server")
+        fleet_now = (fleet[0] + (time.time() - fleet[1]) * 1000.0) \
+            if fleet[0] is not None else None
+        for tg, msg in build(fleet_now):
+            msg["tg"] = tg
+            await ws.send(json.dumps(msg))
+        t0 = time.time()
+        while time.time() - t0 < secs:
+            try:
+                msg = json.loads(await asyncio.wait_for(
+                    ws.recv(), secs - (time.time() - t0)))
+            except asyncio.TimeoutError:
+                break
+            if msg.get("mt") == 1092:
+                continue        # roster churn - not a reply
+            replies.setdefault(msg.get("sd", "?"), []).append(msg)
+    return replies
+
+
+def _bridge_gcs_roundtrip(build, secs):
+    """Real server: the frames go through the GCS bridge's control port
+    as one `reqm` batch (sd = the bridge's GCS party); matching replies
+    stream back. A 9005 ping supplies the fleet clock - with no pong the
+    start falls back to the relative start_in_ms."""
+    fleet_now = None
+    t0 = time.time()
+    for g in ctrl_stream("req 3 9005 " + json.dumps(
+            {"ty": "s", "mt": 9005, "ms": {}}), 3):
+        ts = (g.get("ms") or {}).get("ts")
+        if ts:
+            # the pong's server-side stamp, aged by the reply's delay
+            fleet_now = ts + (time.time() - t0) * 500.0
+    frames = []
+    for tg, msg in build(fleet_now):
+        msg["tg"] = tg
+        frames.append(msg)
+    mts = {f.get("mt") for f in frames} | {1094}
+    replies = {}
+    for m in ctrl_stream("reqm %g %s %s" % (secs, ",".join(map(str, mts)),
+                                          json.dumps(frames)), secs):
+        if m.get("mt") == 1092:
+            continue
+        replies.setdefault(m.get("sd", "?"), []).append(m)
+    return replies
+
+
+def gcs_roundtrip(build, secs):
+    """One request/reply exchange as a GCS on whichever server the sim
+    runs; see _fake_gcs_roundtrip/_bridge_gcs_roundtrip."""
+    if server()["type"] == "fake":
+        return asyncio.run(_fake_gcs_roundtrip(build, secs))
+    return _bridge_gcs_roundtrip(build, secs)
+
+
+def _last_op_reply(frames, run, actions):
+    """The newest 1094 reply for `run` with a in `actions`, else None."""
+    for g in reversed(frames):
+        ms = g.get("ms") or {}
+        if g.get("mt") == 1094 and ms.get("run") == run \
+                and ms.get("a") in actions:
+            return ms
+    return None
+
+
+def _is_deploy_spec(path):
+    """A P4A-09 deploy spec has a top-level "roles" map; a bare package
+    does not - deploy dispatches on this."""
+    try:
+        head = simlib.load_config(path)
+    except Exception:
+        return False
+    return isinstance(head, dict) and isinstance(head.get("roles"), dict)
+
+
+def cmd_opdeploy(spec_path, timeout=60.0):
+    """Two-phase deploy (P4A-09). The spec file holds
+      {"op": name, "run"?: id,
+       "roles": {"<role>": {"pkg": "<file>", "units": ["copter1", ...]}}}
+    - one package per role, one PREPARE per bound unit carrying the full
+    bind map and the shared run id. Every bound unit must answer `ready`
+    or the deploy fails."""
+    spec_path = os.path.abspath(spec_path)
+    spec = simlib.load_config(spec_path)
+    if not isinstance(spec.get("roles"), dict):
+        sys.exit(f"opdeploy: {spec_path} is not a deploy spec "
+                 "(no top-level \"roles\" map)")
+    base = os.path.dirname(spec_path)
+    run = spec.get("run") or str(uuid.uuid4())
+    jobs, ohs, op = [], [], spec.get("op", "")
+    for role, r in spec["roles"].items():
+        text = open(os.path.join(base, r["pkg"])).read()
+        try:
+            pkg = json.loads(simlib.strip_comments(text))
+        except ValueError as e:
+            sys.exit(f"opdeploy: {r['pkg']} is not plain JSON ({e})")
+        h = "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+        ohs.append(pkg.get("op_hash", ""))
+        if not op:
+            op = pkg.get("op", "")
+        for tok in r.get("units", []):
+            jobs.append((resolve(str(tok))[0], role, text, h))
+    if not jobs:
+        sys.exit("opdeploy: the spec binds no units")
+    oh = spec.get("oh") or next((h for h in ohs if h), "")
+    if not oh:
+        sys.exit("opdeploy: no op hash - set 'oh' or use 2.2 packages")
+    if any(h not in ("", oh) for h in ohs):
+        sys.exit("opdeploy: the role packages disagree on op_hash")
+    bind = {u["party_id"]: role for u, role, _, _ in jobs}
+    if len(bind) != len(jobs):
+        sys.exit("opdeploy: a unit is bound twice")
+
+    def build(_fleet_now):
+        return [(u["party_id"],
+                 {"ty": "i", "mt": 1094,
+                  "ms": {"a": "prepare", "op": op, "oh": oh, "run": run,
+                         "bind": bind, "pkg": text, "hash": h}})
+                for u, _role, text, h in jobs]
+
+    print(f"op {op} run {run}: PREPARE -> "
+          + ", ".join(f"{u['name']}={r}" for u, r, _, _ in jobs))
+    replies = gcs_roundtrip(build, timeout)
+    ok = True
+    for u, role, _t, _h in jobs:
+        ans = _last_op_reply(replies.get(u["party_id"], []),
+                             run, ("ready", "fail"))
+        if ans is None:
+            print(f"{u['name']}: no PREPARE reply after {timeout:.0f}s")
+            ok = False
+        elif ans.get("a") == "ready":
+            print(f"{u['name']}: READY as {role}")
+        else:
+            print(f"{u['name']}: FAIL ({ans.get('why', '?')})")
+            ok = False
+    # even a partial deploy leaves state on the units - record it so
+    # opstart/opabort/opstatus can reach it
+    json.dump({"run": run, "op": op, "bind": bind},
+              open(OP_STATE_FILE, "w"), indent=1)
+    if not ok:
+        sys.exit(1)
+    print(f"op run {run}: all {len(jobs)} bound units READY")
+
+
+def cmd_opstart(overrides):
+    """Fleet START: one {a:"start"} per bound unit with the deploy's run
+    id and a t_start lead_ms ahead on the fleet clock (with start_in_ms
+    as the tq=0 fallback). Waits for every unit's `started`/`fail`."""
+    ov = json.loads(overrides) if overrides else {}
+    st = _op_state()
+    run = ov.get("run") or st.get("run")
+    if not run:
+        sys.exit("opstart: no op deploy - run 'deploy <spec.json>' first")
+    parties = ov.get("targets") or sorted(st.get("bind") or _all_parties())
+    lead = int(ov.get("lead_ms", 5000))
+    in_ms = int(ov.get("in_ms", lead))
+
+    def build(fleet_now):
+        ms = {"a": "start", "run": run, "start_in_ms": in_ms}
+        if isinstance(ov.get("t_start"), (int, float)):
+            ms["t_start"] = int(ov["t_start"])
+        elif fleet_now is not None:
+            ms["t_start"] = int(fleet_now + lead)
+        if isinstance(ov.get("start"), dict):
+            ms["start"] = ov["start"]
+        return [(p, {"ty": "i", "mt": 1094, "ms": dict(ms)})
+                for p in parties]
+
+    # replies arrive when the schedule fires (lead ahead), possibly plus
+    # the pre-start FC check on FC roles
+    secs = max(15.0, (lead + in_ms) / 1000.0 + 30.0)
+    replies = gcs_roundtrip(build, secs)
+    ok = True
+    for p in parties:
+        ans = _last_op_reply(replies.get(p, []), run, ("started", "fail"))
+        if ans is None:
+            print(f"{p}: no START reply")
+            ok = False
+        elif ans.get("a") == "started":
+            print(f"{p}: STARTED")
+        else:
+            print(f"{p}: FAIL ({ans.get('why', '?')})")
+            ok = False
+    sys.exit(0 if ok else 1)
+
+
+def cmd_opabort(run_arg, why):
+    """Fleet ABORT: {a:"abort", run, why} to every bound unit; each
+    answers {a:"aborted"} (idempotent - a unit with no run still does)."""
+    st = _op_state()
+    run = st.get("run", "") if run_arg in (None, "-") else run_arg
+    parties = sorted(st.get("bind") or _all_parties())
+
+    def build(_):
+        ms = {"a": "abort", "run": run, "why": why}
+        return [(p, {"ty": "i", "mt": 1094, "ms": dict(ms)})
+                for p in parties]
+
+    replies = gcs_roundtrip(build, 8)
+    ok = True
+    for p in parties:
+        got = any(g.get("mt") == 1094 and g.get("ms", {}).get("a") == "aborted"
+                  for g in replies.get(p, []))
+        print(f"{p}: {'ABORTED' if got else 'no reply'}")
+        ok &= got
+    sys.exit(0 if ok else 1)
+
+
+def cmd_opstatus(secs):
+    """1094 {a:"status"} to every bound unit; prints each unit's
+    {a:"status"} reply (st/role/run/armed/hash)."""
+    st = _op_state()
+    run = st.get("run", "")
+    parties = sorted(st.get("bind") or _all_parties())
+
+    def build(_):
+        ms = {"a": "status", "run": run}
+        return [(p, {"ty": "i", "mt": 1094, "ms": dict(ms)})
+                for p in parties]
+
+    replies = gcs_roundtrip(build, secs)
+    ok = True
+    for p in parties:
+        ans = _last_op_reply(replies.get(p, []), run, ("status",)) or \
+            next((g.get("ms") for g in reversed(replies.get(p, []))
+                  if g.get("mt") == 1094 and g["ms"].get("a") == "status"),
+                 None)
+        if ans is None:
+            print(f"{p}: no status reply")
+            ok = False
+        else:
+            print(f"{p}: st={ans.get('st')} run={ans.get('run') or '-'} "
+                  f"role={ans.get('role') or '-'} armed={ans.get('armed')} "
+                  f"hash={(ans.get('hash') or '-')[:16]}")
+    sys.exit(0 if ok else 1)
+
+
+def cmd_opmsg(args):
+    """opmsg <tg|all> <ms-json> [--mt N] [--expect RE] [--secs N] -
+    inject one frame as a real GCS and print the replies. mt defaults to
+    1094; --expect makes a silent/mismatching reply a failure."""
+    tg, body = args[0], args[1]
+    mt, expect, secs = 1094, None, 5.0
+    i = 2
+    while i < len(args):
+        if args[i] == "--mt":
+            mt = int(args[i + 1]); i += 2
+        elif args[i] == "--expect":
+            expect = args[i + 1]; i += 2
+        elif args[i] == "--secs":
+            secs = float(args[i + 1]); i += 2
+        else:
+            sys.exit(f"opmsg: unknown flag {args[i]!r}")
+    if "{OP_RUN}" in body:
+        body = body.replace("{OP_RUN}", _op_run())
+    body = _expand_pkg_tokens(body)
+    ms = json.loads(body)
+    if tg == "all":
+        tg = "_AGN_"
+    elif not tg.startswith("_"):
+        tg = resolve(tg)[0]["party_id"]
+
+    def build(_):
+        return [(tg, {"ty": "i", "mt": mt, "ms": ms})]
+
+    replies = gcs_roundtrip(build, secs)
+    rx = re.compile(expect) if expect else None
+    hit = False
+    for sd, frames in sorted(replies.items()):
+        for g in frames:
+            line = f"{sd}: mt={g.get('mt')} {json.dumps(g.get('ms'))}"
+            print("  " + line)
+            if rx and rx.search(line):
+                hit = True
+    if not replies:
+        print("  (no replies)")
+    if expect and not hit:
+        sys.exit(f"opmsg: no reply matched {expect!r}")
+
+
+def _op_run():
+    run = _op_state().get("run", "")
+    if not run:
+        sys.exit("no op deploy yet - {OP_RUN} has no value")
+    return run
+
+
 def deployed_units():
-    """Units that got a package (the last deploy), else every unit that
-    runs a nav adapter."""
     try:
         names = set(json.load(open(DEPLOYED)))
         us = [u for u in manifest()["units"] if u["name"] in names]
@@ -631,6 +1020,12 @@ def main(argv):
         cmd_status()
     elif c == "deploy":
         f = os.path.abspath(a[0])
+        if _is_deploy_spec(f):
+            # P4A-09: a spec with a "roles" map runs the two-phase
+            # 1094 deploy instead of the flat 1085 upload
+            cmd_opdeploy(f, float(a[1]) if len(a) > 1 and
+                         re.fullmatch(r"[\d.]+", a[1] or "") else 60.0)
+            return
         targets = [u for u in manifest()["units"] if "de_mavlink" in u["modules"]]
         if len(a) > 1:
             binding = json.load(open(a[1]))
@@ -718,6 +1113,9 @@ def main(argv):
             if not run:
                 sys.exit("send: no 'run <id> started' journaled yet")
             text = text.replace("{RUN}", run)
+        if "{OP_RUN}" in text:
+            text = text.replace("{OP_RUN}", _op_run())
+        text = _expand_pkg_tokens(text)
         for m in re.finditer(r"\{WM_TID:([^}]+)\}", text):
             u = resolve(m.group(1))[0]
             hits = simlib.journal_match(u, r"WM_NEW (\S+)")
@@ -819,6 +1217,29 @@ def main(argv):
         for owner, p in owners:
             if c in ("restart", "start_proc"):
                 start_proc(owner, p)
+    elif c == "bootid":
+        # P4F-03: rewrite the unit's boot-id file so its next de_comm
+        # start counts as a reboot (DE_BOOT_ID_FILE hook)
+        for u in resolve(a[0]):
+            p = os.path.join(simlib.unit_dir(u), "boot_id")
+            simlib.write_text(p, f"boot-{uuid.uuid4()}\n")
+            # a launch script generated before the hook existed needs
+            # the export patched in so a reused sim still honors it
+            sh = os.path.join(simlib.unit_dir(u), "launch.de_comm.sh")
+            txt = open(sh).read()
+            if "DE_BOOT_ID_FILE" not in txt:
+                open(sh, "w").write(txt.replace(
+                    "\nexec ", f"\nexport DE_BOOT_ID_FILE='{p}'\nexec ", 1))
+    elif c in ("opdeploy",):
+        cmd_opdeploy(a[0], float(a[1]) if len(a) > 1 else 60.0)
+    elif c == "opstart":
+        cmd_opstart(a[0] if a else "")
+    elif c == "opabort":
+        cmd_opabort(a[0] if a else None, a[1] if len(a) > 1 else "")
+    elif c == "opstatus":
+        cmd_opstatus(float(a[0]) if a else 6)
+    elif c == "opmsg":
+        cmd_opmsg(a)
     elif c == "wait_online":
         want = {u["party_id"] for u in manifest()["units"]}
         timeout = float(a[0]) if a else 90

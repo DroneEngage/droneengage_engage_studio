@@ -19,6 +19,14 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - fire: {event: area.clear, payload: {x: 1}, unit: all}
       - fire: {event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
                                          # re-fire until the unit journals it
+      - opstart                          # P4A-09 fleet START (1094); the
+                                         # operation must be a roles spec
+      - opabort                          # P4A-09 fleet ABORT
+      - opstatus: {seconds: 8}           # P4A-09 status poll
+      - opmsg: {tg: copter1, ms: {...}, expect: "re"}   # 1094 probe
+      - reboot: {unit: 1}                # de_comm restart under a fresh
+                                         # boot id (pending TTL signals
+                                         # drop, sticky facts survive)
       - loss: {unit: all, percent: 30}   # link faults: server type fake only
       - link_cut: {unit: 1, seconds: 20}
       - kill: {unit: 1, proc: de_comm}   # unit: server, proc: de_server
@@ -117,6 +125,41 @@ def run_step(step, t, marks):
             json.dump(binding, open(b, "w"))
             return run_ctl("deploy", pkg, b)
         return run_ctl("deploy", pkg)
+    if name == "opstart":
+        # P4A-09 fleet START (1094) on the deployed run; optional
+        # {"run","lead_ms","in_ms","t_start","start":{role:mis},"targets":[]}
+        extra = [json.dumps(arg)] if isinstance(arg, dict) and arg else []
+        return run_ctl("opstart", *extra)
+    if name == "opabort":
+        parts = []
+        if isinstance(arg, dict):
+            if arg.get("run"):
+                parts.append(str(arg["run"]))
+            if arg.get("why"):
+                if not parts:
+                    parts = ["-"]
+                parts.append(str(arg["why"]))
+        return run_ctl("opabort", *parts)
+    if name == "opstatus":
+        secs = arg.get("seconds", 8) if isinstance(arg, dict) else (arg or 8)
+        return run_ctl("opstatus", str(secs))
+    if name == "opmsg":
+        # inject one 1094 frame (ms dict) at tg as a real GCS and check
+        # the replies - "expect" is a regex a reply line must match
+        tg = arg.get("tg", arg.get("to", "all"))
+        extra = []
+        if arg.get("mt"):
+            extra += ["--mt", str(arg["mt"])]
+        if arg.get("expect"):
+            extra += ["--expect", str(arg["expect"])]
+        extra += ["--secs", str(arg.get("secs", arg.get("seconds", 5)))]
+        return run_ctl("opmsg", str(tg), json.dumps(arg.get("ms", {})),
+                       *extra)
+    if name == "reboot":
+        # P4F-03: a de_comm restart under a fresh boot id - pending TTL
+        # signals drop, sticky pending + stored facts must survive
+        return run_ctl("bootid", unit) and \
+            run_ctl("restart", unit, "de_comm")
     if name in ("start", "stop", "resume", "pause", "clear"):
         extra = [arg["mission"]] if isinstance(arg, dict) and arg.get("mission") else []
         return run_ctl(name, *extra)

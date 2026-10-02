@@ -5,14 +5,14 @@
 # Timings at sv_roster_hz 0.2: stale 15 s, lost 30 s.
 version: 1
 sim: ../sims/copters3_faults.yaml
-operation: ../packages/wm_unit.json
+operation: ../packages/p4a08.deploy.json
 steps:
   - stop
   - clear
   - mode: {unit: all, mode: GUIDED}
   - deploy
   - arm: all
-  - start
+  - opstart
   - wait: 15
   - link_cut: {unit: 3, seconds: 40}
   - wait: 2
@@ -26,6 +26,8 @@ steps:
   - wait_journal: {unit: 3, re: "comm line online", timeout: 120}
   - wait_journal: {unit: 1, re: "WM_DIVERGE copter3 cleared", timeout: 90}
   - wait: 10
+
+  - opabort
 
 assert:
   - journal_count: {unit: 1, re: "WM_DIVERGE copter3$", at_least: 1}

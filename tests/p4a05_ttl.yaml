@@ -3,16 +3,14 @@
 # TTL, and copter2 must NOT activate late when its link returns.
 version: 1
 sim: ../sims/copters3_faults.yaml
-operation: ../packages/fleet_scout_ttl30.json
+operation: ../packages/p4a05_ttl.deploy.json
 steps:
   - stop
   - clear
   - mode: {unit: all, mode: GUIDED}
-  - deploy: {package: "../packages/fleet_scout_ttl30.json", unit: 1}
-  - deploy: {package: "../packages/fleet_worker.json", unit: 2}
-  - deploy: {package: "../packages/fleet_worker.json", unit: 3}
+  - deploy
   - arm: all
-  - start
+  - opstart
   # rosters (sv_roster_hz 0.2 -> one per 5 s) teach the scout its
   # recipients before the emit
   - wait: 15
@@ -24,6 +22,8 @@ steps:
   - wait_journal: {unit: 2, re: "comm line online", timeout: 120}
   # give a (wrong) late delivery every chance to happen
   - wait: 30
+
+  - opabort
 
 assert:
   - journal_count: {unit: 1, re: "UNDELIVERED.*copter2.*why=ttl", at_least: 1}

@@ -545,13 +545,14 @@ def _fill(v, ctx):
     return v
 
 
-def _launch_script(u, proc, cwd, cmd, delay=0):
+def _launch_script(u, proc, cwd, cmd, delay=0, env=()):
     """Launch script that records its own pid then execs the binary."""
     path = os.path.join(unit_dir(u), f"launch.{proc}.sh")
     write_text(path,
-               "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%sexec %s\n"
+               "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%s%sexec %s\n"
                % (cwd, pid_path(u["name"], proc),
-                  f"sleep {delay}\n" if delay else "", cmd), 0o755)
+                  f"sleep {delay}\n" if delay else "",
+                  "".join(f"export {k}='{v}'\n" for k, v in env), cmd), 0o755)
     return path
 
 
@@ -604,8 +605,15 @@ def gen_unit(u, sim, catalog):
         "auth_ip": cfg.get("auth_ip", "127.0.0.1"),
         "auth_port": cfg.get("auth_port", 19408),
     }, indent=1)
+    # P4F-03: a per-unit boot id file stands in for the kernel boot id -
+    # `ctl bootid` rewrites it so a de_comm restart reads as a reboot
+    # (pending TTL signals drop, sticky pending + stored facts survive)
+    boot_id = os.path.join(udir, "boot_id")
+    if not os.path.isfile(boot_id):
+        write_text(boot_id, "boot-1\n")
     _launch_script(u, "de_comm", cdir,
-                   f"'{DE_COMM_BIN}' -c '{comm_cfg}' -b '{comm_local}'")
+                   f"'{DE_COMM_BIN}' -c '{comm_cfg}' -b '{comm_local}'",
+                   env=(("DE_BOOT_ID_FILE", boot_id),))
 
     # ---- generic s2s modules ----
     ctx = {"unit": u["name"], "comm_port": u["ports"]["de_comm"]}

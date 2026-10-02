@@ -1,0 +1,9 @@
+{
+ "op": "static_chain",
+ "roles": {
+  "scout":  { "pkg": "fleet_scout.json",
+              "units": ["copter1"] },
+  "worker": { "pkg": "fleet_worker.json",
+              "units": ["copter2", "copter3"] }
+ }
+}

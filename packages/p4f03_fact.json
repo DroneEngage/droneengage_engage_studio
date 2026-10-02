@@ -1,0 +1,279 @@
+{
+ "schema": "de.package/2.2",
+ "op": "p4f03_fact",
+ "op_hash": "sha256:1497ed795a109d90fc4b4d28d78639fdaa88623e2b2d8e9ad1dde453b9cf1913",
+ "role": "unit",
+ "vehicle": {
+  "type": "copter"
+ },
+ "requires": [],
+ "fc_items": [
+  {
+   "c": 22,
+   "ft": 3,
+   "mv": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    30
+   ]
+  },
+  {
+   "c": 16,
+   "ft": 3,
+   "mv": [
+    0,
+    5,
+    0,
+    0,
+    -35.3632,
+    149.1661,
+    30
+   ]
+  },
+  {
+   "c": 16,
+   "ft": 3,
+   "mv": [
+    0,
+    5,
+    0,
+    0,
+    -35.3622,
+    149.1662,
+    30
+   ]
+  },
+  {
+   "c": 17,
+   "ft": 3,
+   "mv": [
+    0,
+    0,
+    0,
+    0,
+    -35.3622,
+    149.1662,
+    30
+   ]
+  }
+ ],
+ "missions": {
+  "main": {
+   "trigger": {
+    "type": "op.start"
+   },
+   "priority": 10,
+   "segment": {
+    "start": 1,
+    "end": 4
+   },
+   "end_state": "hold",
+   "end_backstop": {
+    "timeout": 300,
+    "then": "rtl"
+   }
+  },
+  "watch": {
+   "trigger": {
+    "type": "event",
+    "event": "scan.begin"
+   },
+   "priority": 0,
+   "sensor": true,
+   "end_state": "hold",
+   "claims": [],
+   "steps": [
+    {
+     "id": "seen",
+     "k": "gate",
+     "event": "found.it",
+     "timeout": 900,
+     "on_timeout": "end"
+    },
+    {
+     "id": "tell",
+     "k": "emit",
+     "event": "ack.found",
+     "payload_from": "seen"
+    }
+   ]
+  },
+  "sigwatch": {
+   "trigger": {
+    "type": "event",
+    "event": "scan.begin"
+   },
+   "priority": 0,
+   "sensor": true,
+   "end_state": "hold",
+   "claims": [],
+   "steps": [
+    {
+     "id": "heard",
+     "k": "gate",
+     "event": "ping",
+     "timeout": 900,
+     "on_timeout": "end"
+    },
+    {
+     "id": "pong",
+     "k": "emit",
+     "event": "ack.ping",
+     "payload_from": "heard"
+    }
+   ]
+  },
+  "mkscan": {
+   "trigger": {
+    "type": "event",
+    "event": "mk.scan"
+   },
+   "priority": 0,
+   "sensor": true,
+   "end_state": "hold",
+   "steps": [
+    {
+     "id": "e",
+     "k": "emit",
+     "event": "scan.begin"
+    }
+   ]
+  },
+  "mkfact": {
+   "trigger": {
+    "type": "event",
+    "event": "mk.fact"
+   },
+   "priority": 0,
+   "sensor": true,
+   "end_state": "hold",
+   "steps": [
+    {
+     "id": "e",
+     "k": "emit",
+     "event": "found.it",
+     "payload_from": "trigger"
+    }
+   ]
+  },
+  "mksig": {
+   "trigger": {
+    "type": "event",
+    "event": "mk.sig"
+   },
+   "priority": 0,
+   "sensor": true,
+   "end_state": "hold",
+   "steps": [
+    {
+     "id": "e",
+     "k": "emit",
+     "event": "ping",
+     "payload_from": "trigger"
+    }
+   ]
+  },
+  "mkdet": {
+   "trigger": {
+    "type": "event",
+    "event": "mk.det"
+   },
+   "priority": 0,
+   "sensor": true,
+   "end_state": "hold",
+   "steps": [
+    {
+     "id": "e",
+     "k": "emit",
+     "event": "target.fire",
+     "payload_from": "trigger"
+    }
+   ]
+  }
+ },
+ "manifest": [
+  {
+   "seq": 1,
+   "mission": "main",
+   "step": "t",
+   "kind": "nav.takeoff"
+  },
+  {
+   "seq": 2,
+   "mission": "main",
+   "step": "w1",
+   "kind": "nav.wp"
+  },
+  {
+   "seq": 3,
+   "mission": "main",
+   "step": "w2",
+   "kind": "nav.wp"
+  },
+  {
+   "seq": 4,
+   "mission": "main",
+   "step": "end",
+   "kind": "end.hold"
+  }
+ ],
+ "events": {
+  "found.it": {
+   "persist": "run",
+   "payload": {
+    "pos": "geo",
+    "conf": "number"
+   }
+  },
+  "ping": {
+   "ttl_s": 15
+  },
+  "ack.found": {},
+  "ack.ping": {},
+  "scan.begin": {
+   "ttl_s": 300
+  },
+  "mk.scan": {},
+  "target.fire": {
+   "target": "fire",
+   "payload": {
+    "pos": "geo",
+    "unc_m": "number",
+    "conf": "number"
+   }
+  },
+  "mk.fact": {},
+  "mk.sig": {},
+  "mk.det": {}
+ },
+ "handlers": {},
+ "fleet": {
+  "roles": {
+   "unit": {
+    "count": 3
+   }
+  },
+  "phases": [],
+  "event_ttl": {
+   "ping": 15,
+   "ack.found": 300,
+   "ack.ping": 300,
+   "scan.begin": 300,
+   "mk.scan": 300,
+   "mk.fact": 300,
+   "mk.sig": 300,
+   "mk.det": 300
+  },
+  "event_targets": {
+   "target.fire": "fire"
+  },
+  "event_sticky": [
+   "found.it",
+   "target.fire"
+  ]
+ }
+}

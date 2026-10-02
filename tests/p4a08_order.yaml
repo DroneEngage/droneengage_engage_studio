@@ -4,14 +4,14 @@
 # every vehicle, and no WM_DIVERGE left standing after the loss stops.
 version: 1
 sim: ../sims/copters3_faults.yaml
-operation: ../packages/wm_unit.json
+operation: ../packages/p4a08.deploy.json
 steps:
   - stop
   - clear
   - mode: {unit: all, mode: GUIDED}
   - deploy
   - arm: all
-  - start
+  - opstart
   - wait: 15
   - loss: {unit: all, percent: 30}
   - fire: {event: det.go, unit: 3,
@@ -31,6 +31,8 @@ steps:
   - link_clear: {unit: all}
   # retries finish + two roster periods for the digests to settle
   - wait: 30
+
+  - opabort
 
 assert:
   - journal_count: {unit: all, re: "WM_NEW", at_least: 2}

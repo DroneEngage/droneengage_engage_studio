@@ -1,0 +1,7 @@
+{
+ "op": "p4f03_fact",
+ "roles": {
+  "unit": { "pkg": "p4f03_fact.json",
+            "units": ["copter1", "copter2", "copter3"] }
+ }
+}

@@ -1,0 +1,7 @@
+{
+ "op": "wm_chain",
+ "roles": {
+  "unit": { "pkg": "wm_unit.json",
+            "units": ["copter1", "copter2", "copter3"] }
+ }
+}

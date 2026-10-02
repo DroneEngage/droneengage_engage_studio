@@ -11,14 +11,14 @@
 # target.fire (a real 1090: acks, retries, catch-up all apply).
 version: 1
 sim: ../sims/copters3.yaml
-operation: ../packages/wm_unit.json
+operation: ../packages/p4a08.deploy.json
 steps:
   - stop
   - clear
   - mode: {unit: all, mode: GUIDED}
   - deploy
   - arm: all
-  - start
+  - opstart
   - wait: 15
   - fire: {event: det.go, unit: 1,
            until: {re: "BUS_OUT.*n=target\\.fire", count: 1},
@@ -40,6 +40,8 @@ steps:
   - wait_journal: {unit: 2, re: "activating mission engage", timeout: 60}
   - wait_journal: {unit: 3, re: "activating mission engage", timeout: 60}
   - wait: 15
+
+  - opabort
 
 assert:
   # both detections were published as fleet events

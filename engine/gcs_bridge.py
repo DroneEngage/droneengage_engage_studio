@@ -141,14 +141,17 @@ async def control(reader, writer):
     def say(text):
         writer.write((text + "\n").encode())
 
-    async def stream(mts, secs, first=None):
+    async def stream(mts, secs, first=None, stop_on_last=None):
+        if stop_on_last is None:
+            stop_on_last = first is not None and not isinstance(first, list)
         q = asyncio.Queue()
         ent = (mts, q)
         listeners.append(ent)
         try:
             if first is not None:
-                first.setdefault("sd", simlib.GCS_PARTY)
-                await send(first)
+                for one in (first if isinstance(first, list) else [first]):
+                    one.setdefault("sd", simlib.GCS_PARTY)
+                    await send(one)
             end = time.time() + secs
             while time.time() < end:
                 try:
@@ -157,7 +160,7 @@ async def control(reader, writer):
                     break
                 say(json.dumps(m))
                 await writer.drain()
-                if first is not None and not (m.get("ms") or {}).get("more"):
+                if stop_on_last and not (m.get("ms") or {}).get("more"):
                     break
         finally:
             listeners.remove(ent)
@@ -186,6 +189,14 @@ async def control(reader, writer):
                 elif line.startswith("req "):
                     _, secs, mt, body = line.split(None, 3)
                     await stream({int(mt)}, float(secs), json.loads(body))
+                elif line.startswith("reqm "):
+                    # reqm <secs> <mt[,mt]> <[msg,...]> - send a batch of
+                    # frames as the GCS, then stream every matching reply
+                    # (P4A-09 op control round-trips: N sends, N replies)
+                    _, secs, mts, body = line.split(None, 3)
+                    await stream({int(x) for x in mts.split(",")},
+                                 float(secs), json.loads(body),
+                                 stop_on_last=False)
                 elif line.split()[0] in ("link", "kick", "clock", "stats"):
                     say("ERR link faults need the fake server "
                         "(sim server: {type: fake})")

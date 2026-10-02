@@ -150,8 +150,16 @@ short:
 
 - **steps:** `deploy`, `arm`, `start`, `stop`, `clear`, `fire`, `mode`,
   `land`, `reset`, `wait`, `wait_journal`, `wait_online`, `wait_ready`,
-  `kill` / `restart` (also `unit: server`), `server_up`, `loss` / `delay` /
-  `link_cut` / `link_clear` (fake server only), `commline`, `send`;
+  `kill` / `restart` (also `unit: server`), `reboot` (de_comm under a new
+  boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
+  (fake server only), `commline`, `send`;
+- **fleet ops (P4A-09):** when `operation:` names a deploy spec (a top-level
+  `roles` map - see `packages/p4a05.deploy.json`), `deploy` runs the
+  two-phase DE_OP_CONTROL (1094) PREPARE per role, and the run goes up
+  with `opstart` / down with `opabort` (`opstatus`, `opmsg` for probes).
+  A fleet package refuses the legacy `start`;
+- **step tokens** (`send`/`opmsg`): `{RUN}`, `{OP_RUN}`, `{PKG:<file>}`,
+  `{HASH:<file>}` (paths resolve under `packages/` too), `{WM_TID:<unit>}`;
 - **assertions:** `journal_count`, `journal_order`, `journal_time_delta`,
   `mission_current`, `clock_spread`;
 - **teardown:** `land` (default) | `reset` | `none`.
