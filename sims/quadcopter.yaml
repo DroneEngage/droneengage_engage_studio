@@ -19,7 +19,15 @@ server:
   auth_port: 19408
   ip: 127.0.0.1               # your comm server (auth: false = direct)
   port: 9966
-  # account: {user: ..., code: ...}   # else sim.local.env SIM_AUTH_USER /
-                                    # SIM_AUTH_CODE (keeps secrets out of git)
+  # account:      {user: ..., code: ...}   # GCS bridge login (GCS bit) -
+  # unit_account: {user: ..., code: ...}   # default unit login (unit bit;
+  #                                        # cannot login as GCS)
+  # else SIM_AUTH_* / SIM_UNIT_AUTH_* from sim.local.env (out of git)
 units:
   - {block: copter, name: quad1}
+  - {block: copter, name: quad2}
+  - {block: copter, name: quad3}
+    # account: {user: quad1, code: ...}
+    #   # this unit's own login; must exist on your authenticator in the
+    #   # same team as the GCS account or the GCS won't see the unit.
+    #   # `{name}` in user expands to the unit name (for count: fleets)

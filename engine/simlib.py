@@ -357,7 +357,8 @@ def load_sim(path_or_spec, base_dir=None):
     for entry in spec["units"]:
         if isinstance(entry, str):
             entry = {"block": entry}
-        bad = set(entry) - {"block", "name", "count", "at", "config", "fc"}
+        bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
+                            "account"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -427,11 +428,18 @@ def load_server(srv, slot_base=None):
       ip:port (the server's local_server_enabled mode). control_port is
       this sim's local ctl port (default 62009 + slot_base); gcs_party
       defaults to GCS_<sim name> so parallel sims on one server don't
-      share a GCS party. The account falls back to sim.local.env
-      SIM_AUTH_USER / SIM_AUTH_CODE so credentials stay out of git."""
-    bad = set(srv) - {"type", "ip", "port", "auth", "account", "seed",
-                      "clock_offset_ms", "noclock", "auth_ip", "auth_port",
-                      "auth_verify_ssl", "control_port", "gcs_party"}
+      share a GCS party. `account` is the GCS login (needs the GCS
+      permission bit); `unit_account` is the default login for units
+      (unit bit only is enough - a unit account cannot login as GCS).
+      A unit may carry its own `account: {user, code}` (`{name}` in user
+      expands to the unit name). Fallbacks: sim.local.env
+      SIM_AUTH_USER / SIM_AUTH_CODE for the GCS, SIM_UNIT_AUTH_USER /
+      SIM_UNIT_AUTH_CODE for units, then `account` for units too - so
+      credentials stay out of git and single-account sims keep working."""
+    bad = set(srv) - {"type", "ip", "port", "auth", "account",
+                      "unit_account", "seed", "clock_offset_ms", "noclock",
+                      "auth_ip", "auth_port", "auth_verify_ssl",
+                      "control_port", "gcs_party"}
     if bad:
         raise SimError(f"sim server: unknown keys {sorted(bad)}")
     t = srv.get("type", "real")
@@ -442,14 +450,21 @@ def load_server(srv, slot_base=None):
     acc = srv.get("account") or {}
     user = acc.get("user") or setting("SIM_AUTH_USER", "sim@sim.droneengage.com")
     code = str(acc.get("code") or setting("SIM_AUTH_CODE", "sim1234"))
-    # droneengage_authenticator rule (hlp_strings.fn_isValidAccountName /
-    # fn_isAlphanumeric): a bad one is refused as "API endpoint not found"
-    if not (re.fullmatch(r"[A-Za-z0-9]+", user)
-            or re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", user)):
-        raise SimError(f"server.account.user {user!r}: alphanumeric or an "
-                       "e-mail with a TLD (the authenticator refuses others)")
-    if not re.fullmatch(r"[A-Za-z0-9]+", code):
-        raise SimError("server.account.code must be alphanumeric")
+    check_account(user, code, "server.account")
+    # the units' own login - on an external server it is usually a
+    # different, unit-only account (a unit account cannot login as GCS).
+    # unit_account -> SIM_UNIT_AUTH_* -> account (single-account sims keep
+    # working). Only external servers use it: a spawned authenticator
+    # knows the single `account` only.
+    unit_acc = srv.get("unit_account") or {}
+    unit_user = unit_acc.get("user") or setting("SIM_UNIT_AUTH_USER")
+    unit_code = str(unit_acc.get("code") or
+                    setting("SIM_UNIT_AUTH_CODE", ""))
+    if unit_user:
+        if not unit_code:
+            raise SimError("server.unit_account: user set but no code "
+                           "(unit_account.code or SIM_UNIT_AUTH_CODE)")
+        check_account(unit_user, unit_code, "server.unit_account")
     if t == "external":
         return {
             "type": t,
@@ -462,6 +477,8 @@ def load_server(srv, slot_base=None):
             "auth_port": int(srv.get("auth_port", 19408)),
             "auth_verify_ssl": bool(srv.get("auth_verify_ssl", False)),
             "account": {"user": user, "code": code},
+            "unit_account": ({"user": unit_user, "code": unit_code}
+                             if unit_user else None),
             "gcs_party": srv.get("gcs_party"),
             "seed": 0, "clock_offset_ms": 0, "noclock": [],
         }
@@ -481,6 +498,17 @@ def load_server(srv, slot_base=None):
     }
 
 
+def check_account(user, code, where):
+    """droneengage_authenticator rule (hlp_strings.fn_isValidAccountName /
+    fn_isAlphanumeric): a bad name is refused as "API endpoint not found"."""
+    if not (re.fullmatch(r"[A-Za-z0-9]+", user)
+            or re.fullmatch(r"[^@\s]+@[^@\s]+\.[A-Za-z]{2,}", user)):
+        raise SimError(f"{where}.user {user!r}: alphanumeric or an "
+                       "e-mail with a TLD (the authenticator refuses others)")
+    if not re.fullmatch(r"[A-Za-z0-9]+", code):
+        raise SimError(f"{where}.code must be alphanumeric")
+
+
 def _expand_unit(sim, b, name, entry, at, catalog):
     if not NAME_RX.match(name):
         raise SimError(f"unit name {name!r}: letters, digits, _ only")
@@ -497,6 +525,17 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             raise SimError(f"unit {name}: config for {mod!r} but block "
                            f"{b['name']} does not run it")
         u["config"][mod] = deep_merge(u["config"].get(mod, {}), over)
+    # per-unit account: the drone's own login, like a real vehicle.
+    # `{name}` in user expands to the unit name so `count:` fleets get
+    # quad1@.., quad2@.. - None falls back to server.account
+    acc = entry.get("account")
+    u["account"] = None
+    if acc:
+        user = str(acc.get("user", "")).replace("{name}", name)
+        code = str(acc.get("code") or
+                   setting("SIM_AUTH_CODE", "sim1234"))
+        check_account(user, code, f"unit {name} account")
+        u["account"] = {"user": user, "code": code}
     u["ports"]["de_comm"] = DE_COMM_PORT_BASE + 10 * slot
     for m in u["modules"]:
         if m != "de_comm":
@@ -761,12 +800,15 @@ def gen_unit(u, sim, catalog):
         "de_journal_dir": journal_dir(u) + "/",
     })
     if srv["auth"]:
-        # full login: authenticator -> comm server address + temp key
+        # full login: authenticator -> comm server address + temp key.
+        # The unit's own account, else the sim's unit_account, else the
+        # (GCS) account
+        acc = u.get("account") or srv.get("unit_account") or srv["account"]
         cfg.update({"use_local_comm_server": False,
                     "auth_ip": srv["auth_ip"], "auth_port": srv["auth_port"],
                     "auth_verify_ssl": srv["auth_verify_ssl"],
-                    "userName": srv["account"]["user"],
-                    "accessCode": srv["account"]["code"]})
+                    "userName": acc["user"],
+                    "accessCode": acc["code"]})
     else:
         cfg.update({"use_local_comm_server": True,
                     "local_comm_server_ip": srv["ip"],

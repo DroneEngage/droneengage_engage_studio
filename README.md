@@ -104,7 +104,7 @@ DroneEngage module (sdr, gpio, ...) is a catalog entry, with no engine change.
 ```yaml
 version: 1
 extends: copters3.yaml               # optional: reuse a fleet, change the server
-server: {type: real}                 # real (default) | fake ; auth: true
+server: {type: real}                 # real (default) | fake | external ; auth: true
 units:
   - {block: copter, name: copter, count: 3}       # copter1..copter3
   - {block: plane, name: plane1, at: {east_m: 60}}
@@ -112,7 +112,15 @@ units:
     name: tower1
     at: {north_m: -50, east_m: 30}
     config: {de_camera: {camera: {camera_start_index: 3, camera_end_index: 3}}}
+  - {block: copter, name: quad1,
+     account: {user: "{name}@sim.droneengage.com", code: sim1234}}  # own login
 ```
+
+A unit's `account:` is its own login on the authenticator (defaults to
+`server.account`); `{name}` expands to the unit name so a `count:` fleet
+gets `quad1@..`, `quad2@..` Every account must exist on the
+authenticator in the **same team** as the GCS account - a unit in
+another team is invisible to your WebClient.
 
 Server types:
 
@@ -127,9 +135,13 @@ Server types:
 `servers/sh_start_servers.sh`): no server processes are spawned, every
 unit's de_comm connects to `host:port` - directly when `auth: false`, or
 through your authenticator when `auth: true, auth_host, auth_port` are
-set. The account (`server.account: {user, code}` or `SIM_AUTH_USER` /
-`SIM_AUTH_CODE` in `sim.local.env`) must exist on that authenticator;
-`up` fails early if the server isn't reachable.
+set. Two logins, both on the **same team** or the GCS won't see the
+units: `server.account` (or `SIM_AUTH_USER`/`SIM_AUTH_CODE`) is the GCS
+bridge login and needs the GCS permission bit; `server.unit_account`
+(or `SIM_UNIT_AUTH_USER`/`SIM_UNIT_AUTH_CODE`, defaulting to `account`)
+is the units' login - a unit-only account is right for it (a unit
+account cannot login as GCS). `up` fails early if the server isn't
+reachable.
 
 The real servers run from their repos with a config **generated** under
 `run/<sim>/server/`. Their own `server.config(.local)` files are never

@@ -1,0 +1,34 @@
+# Personal sim: ONE quadcopter box - ArduCopter SITL (raw binary over TCP,
+# like sitl_tcp.sh) + de_comm + de_mavlink - on YOUR OWN server stack.
+#
+# Start your servers first (servers/sh_start_servers.sh): authenticator on
+# 19408, comm server on 9966. Nothing server-side is spawned here; only a
+# per-sim GCS bridge runs so `./sim ctl` keeps working.
+#
+# Runs in parallel with rover.yaml / plane.yaml - each personal sim uses
+# its own slot_base so SITL (pilot/aux/fcb), de_comm and de_mavlink ports
+# never overlap. `./sim up` refuses to start if ports or unit names clash
+# with a live sim anyway.
+version: 1
+slot_base: 50                 # quad: pilot 6260, fcb 8160, de_comm 62500,
+                              # de_mavlink s2s 63500, ctl 62059, sysid 50
+server:
+  type: external
+  auth: true                  # units log in via your authenticator
+  auth_ip: 127.0.0.1
+  auth_port: 19408
+  ip: 127.0.0.1               # your comm server (auth: false = direct)
+  port: 9966
+  # account:      {user: ..., code: ...}   # GCS bridge login (GCS bit) -
+  # unit_account: {user: ..., code: ...}   # default unit login (unit bit;
+  #                                        # cannot login as GCS)
+  # else SIM_AUTH_* / SIM_UNIT_AUTH_* from sim.local.env (out of git)
+units:
+  - {block: copter, name: quad1}
+  - {block: copter, name: quad2}
+  - {block: copter, name: quad3}
+  - {block: copter, name: quad4}
+    # account: {user: quad1, code: ...}
+    #   # this unit's own login; must exist on your authenticator in the
+    #   # same team as the GCS account or the GCS won't see the unit.
+    #   # `{name}` in user expands to the unit name (for count: fleets)

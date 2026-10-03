@@ -58,6 +58,7 @@ def main(argv):
                       + (f"{fc['vehicle']} sysid={fc['sysid']} pilot={fc['pilot_port']} "
                          f"fcb={fc['fcb_port']} " if fc else "no-fc ")
                       + " ".join(f"{m}:{p}" for m, p in u["ports"].items())
+                      + (f" acc={u['account']['user']}" if u.get("account") else "")
                       + f"  @{u['position']['lat']:.6f},{u['position']['lng']:.6f}")
         elif c == "up":
             import launcher

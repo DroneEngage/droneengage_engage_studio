@@ -133,9 +133,15 @@ async def session(srv):
                         if mt in mts:
                             q.put_nowait(msg)
         except Exception as e:
-            print(f"[bridge] session down: {e!r} - retrying in 5 s", flush=True)
+            # 429: the authenticator allows ~10 logins/min per IP - a 5 s
+            # retry keeps the limiter saturated forever, so back off past
+            # its window. Anything else retries fast.
+            delay = 65 if isinstance(e, urllib.error.HTTPError) \
+                and e.code == 429 else 5
+            print(f"[bridge] session down: {e!r} - retrying in {delay} s",
+                  flush=True)
         ws_conn = None
-        await asyncio.sleep(5)
+        await asyncio.sleep(delay)
 
 
 async def control(reader, writer):
