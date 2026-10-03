@@ -4,12 +4,16 @@
   ./sim blocks                     list blocks (reusable unit types)
   ./sim block <name>               show a block resolved through `extends`
   ./sim show <sim.yaml>            units, modules and ports a sim expands to
-  ./sim up <sim.yaml> [--fresh]    start a sim (stops the previous one)
-  ./sim down                       stop everything `sim up` started
+  ./sim up <sim.yaml> [--fresh]    start a sim (restarts the same-named one;
+                                   refuses ports/names of a live sim - sims
+                                   run in parallel)
+  ./sim down [name|--all]          stop one sim, or every sim
+  ./sim sims                       generated sims and live process counts
   ./sim status                     = ./sim ctl status
-  ./sim ctl <cmd> ...              operator console (./sim ctl for help)
-  ./sim run <test.yaml> [--keep]   run a test; --keep skips the teardown
-  ./sim logs <unit|server> [proc]  tail a process log
+  ./sim ctl [-s <sim>] <cmd> ...   operator console (./sim ctl for help)
+  ./sim run <test.yaml> [--keep]   run a test (owns the machine: downs every
+                                   other sim); --keep skips the teardown
+  ./sim logs [-s <sim>] <unit|server> [proc]  tail a process log
 
 Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 (steps + assertions on a sim). See README.md.
@@ -63,7 +67,18 @@ def main(argv):
             launcher.up(files[0], fresh="--fresh" in a)
         elif c == "down":
             import launcher
-            launcher.down()
+            names = [x for x in a if not x.startswith("--")]
+            launcher.down(None if not names or "--all" in a else names[0])
+        elif c == "sims":
+            names = simlib.sim_names()
+            if not names:
+                print("no sim generated - ./sim up <sim.yaml>")
+            for n in names:
+                m = simlib.load_manifest(n)
+                srv = m["server"]
+                print(f"{n:16s} {len(m['units'])} unit(s)  "
+                      f"server {srv['type']}  "
+                      f"{len(simlib.read_pids(n))} proc(s) alive")
         elif c == "status":
             import ctl
             ctl.main(["status"])
@@ -77,8 +92,20 @@ def main(argv):
                 sys.exit("usage: ./sim run <test.yaml> [--keep]")
             return runner.run(files[0], keep="--keep" in a)
         elif c == "logs":
+            sim_name = None
+            if a and a[0] in ("-s", "--sim"):
+                sim_name, a = a[1], a[2:]
             owner = a[0]
-            d = os.path.join(simlib.RUN_DIR, owner, "logs")
+            if owner == "server":
+                d = os.path.join(
+                    simlib.server_dir(sim_name or simlib._single_sim()),
+                    "logs")
+            else:
+                u = simlib.find_unit(owner)
+                if not u:
+                    sys.exit(f"unknown unit {owner!r} (no generated sim "
+                             "has it)")
+                d = os.path.join(simlib.unit_dir(u), "logs")
             proc = a[1] if len(a) > 1 else None
             files = [os.path.join(d, f) for f in sorted(os.listdir(d))
                      if proc is None or f == proc + ".log"]

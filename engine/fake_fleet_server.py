@@ -80,6 +80,13 @@ SEED = 1337
 PORT = fleet_lib.SERVER_PORT
 CLOCK_OFFSET_MS = 0                 # P4A-07: deliberate server-clock skew
 NOCLOCK = set()                     # parties whose frames carry no "ts"
+SIM_NAME = None                     # run/<name>/ this server belongs to
+
+
+def _single():
+    """The only generated sim's name (default --cert/--key location)."""
+    names = fleet_lib.sim_names()
+    return names[0] if names else None
 T0 = time.time()                    # stats uptime
 
 conns = {}          # ws -> Conn
@@ -136,7 +143,8 @@ def fleet_parties():
     connected - so `link all ...` also covers units not connected yet."""
     parties = set(links)
     try:
-        m = fleet_lib.load_manifest(required=False) or {"units": []}
+        m = fleet_lib.load_manifest(SIM_NAME, required=False) \
+            or {"units": []}
         parties |= {u["party_id"] for u in m["units"]}
     except SystemExit:
         pass
@@ -484,11 +492,13 @@ async def serve(port, cert, key):
 
 
 def main():
-    global PRETTY, SEED, PORT, CLOCK_OFFSET_MS, NOCLOCK
+    global PRETTY, SEED, PORT, CLOCK_OFFSET_MS, NOCLOCK, SIM_NAME
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=fleet_lib.SERVER_PORT)
-    ap.add_argument("--cert", default=fleet_lib.CERT)
-    ap.add_argument("--key", default=fleet_lib.KEY)
+    ap.add_argument("--sim", default=None,
+                    help="sim name - its run/<name>/sim.json is the unit list")
+    ap.add_argument("--cert", default=None)
+    ap.add_argument("--key", default=None)
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--clock-offset", type=int, default=0,
                     help="ms added to every stamped server clock (P4A-07)")
@@ -498,9 +508,12 @@ def main():
     ap.add_argument("--pretty", action="store_true")
     args = ap.parse_args()
     PRETTY, SEED, PORT = args.pretty, args.seed, args.port
+    SIM_NAME = args.sim
     CLOCK_OFFSET_MS = args.clock_offset
     NOCLOCK = {p for p in args.noclock.split(",") if p}
-    asyncio.run(serve(args.port, args.cert, args.key))
+    cert = args.cert or fleet_lib.cert_path(args.sim or _single())
+    key = args.key or fleet_lib.key_path(args.sim or _single())
+    asyncio.run(serve(args.port, cert, key))
 
 
 if __name__ == "__main__":

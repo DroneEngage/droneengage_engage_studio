@@ -11,8 +11,11 @@ Three layers, all data:
   tests/<name>.yaml    a scenario: a sim + steps + assertions (runner.py).
 
 This module resolves blocks and sims, allocates ports, generates every
-config + launch script under run/, writes the manifest (run/sim.json) and
-holds the journal / pid helpers used by ctl.py and runner.py.
+config + launch script under run/<sim name>/, writes the manifest
+(run/<name>/sim.json) and holds the journal / pid helpers used by ctl.py
+and runner.py. Several sims can be up at once: each owns its own run dir
+and pid dir, and `sim up` refuses to start a sim whose ports or unit
+names clash with a live one.
 
 Port scheme (slot k = slot_base + unit index, default slot_base 10 keeps
 sim ports clear of any developer's own servers):
@@ -20,6 +23,8 @@ sim ports clear of any developer's own servers):
                 fcb   7660+10k (serial1, de_mavlink)   sysid k
     de_comm     62000 + 10k     other modules: catalog port_base + 10k
     server      wss 62008, control 62009 (sim `server.port`)
+    external    no local server; the sim's GCS bridge listens on
+                control_port (default 62009 + slot_base)
 """
 
 import copy
@@ -71,8 +76,6 @@ BLOCKS_DIR = os.path.join(SIM_ROOT, "blocks")
 MODULES_DIR = os.path.join(SIM_ROOT, "modules")
 TEMPLATES_DIR = os.path.join(MODULES_DIR, "templates")
 RUN_DIR = os.path.abspath(setting("SIM_RUN_DIR", os.path.join(SIM_ROOT, "run")))
-PIDS_DIR = os.path.join(RUN_DIR, "pids")
-MANIFEST = os.path.join(RUN_DIR, "sim.json")
 RESULTS_DIR = os.path.abspath(setting("SIM_RESULTS_DIR", os.path.join(SIM_ROOT, "results")))
 
 # where the code lives on this machine (sim.local.env)
@@ -94,9 +97,6 @@ SERVER_PORT = 62008                 # wss; control port is +1
 SLOT_BASE = int(setting("SIM_SLOT_BASE", 10))
 HOME = (-35.363262, 149.165237, 584.0, 353.0)   # SITL default home
 SPACING_M = 20.0                    # default: units 20 m apart, northward
-
-CERT = os.path.join(RUN_DIR, "server", "server.crt")
-KEY = os.path.join(RUN_DIR, "server", "server.key")
 
 GCS_PARTY = "GCS_FLEET"
 FULL_PERM = 0xFFFFFFFF
@@ -316,29 +316,40 @@ def validate_block(b, catalog):
 
 # ---------------------------------------------------------------- sims
 
-SERVER_TYPES = ("real", "fake")
+SERVER_TYPES = ("real", "fake", "external")
 
 
 def load_sim(path_or_spec, base_dir=None):
     """Load a sim file (or an inline dict) and expand it into concrete units.
-    Returns {server{}, home, slot_base, units[], hash}."""
-    spec = _sim_spec(path_or_spec, base_dir)
-    unknown = set(spec) - {"version", "description", "server", "home",
+    Returns {name, server{}, home, slot_base, units[], hash}. The name -
+    the sim file's stem or an explicit `name:` - owns run/<name>/."""
+    spec, src = _sim_spec(path_or_spec, base_dir)
+    unknown = set(spec) - {"version", "name", "description", "server", "home",
                            "slot_base", "units"}
     if unknown:
         raise SimError(f"sim: unknown keys {sorted(unknown)}")
     if spec.get("version", 1) != 1:
         raise SimError("sim: unsupported version")
+    name = spec.get("name") or \
+        (os.path.splitext(os.path.basename(src))[0] if src else "sim")
+    if not re.fullmatch(r"[A-Za-z0-9][\w-]*", name):
+        raise SimError(f"sim name {name!r}: letters, digits, _ and - only")
     home = tuple(spec.get("home", HOME))
     if len(home) == 3:
         home = home + (HOME[3],)
+    slot_base = int(spec.get("slot_base", SLOT_BASE))
     sim = {
+        "name": name,
         "description": spec.get("description", "").strip(),
-        "server": load_server(spec.get("server") or {}),
+        "server": load_server(spec.get("server") or {}, slot_base),
         "home": list(home),
-        "slot_base": int(spec.get("slot_base", SLOT_BASE)),
+        "slot_base": slot_base,
         "units": [],
     }
+    if not sim["server"]["gcs_party"]:
+        # parallel external sims share one real server: give each its own
+        # GCS party so their bridges don't fight over GCS_FLEET
+        sim["server"]["gcs_party"] = f"GCS_{name.upper()}"
     catalog = load_catalog()
     blocks = {}
     if not spec.get("units"):
@@ -358,11 +369,11 @@ def load_sim(path_or_spec, base_dir=None):
         base = entry.get("name", bname)
         names = [base] if count is None else \
             [f"{base}{i}" for i in range(1, int(count) + 1)]
-        for i, name in enumerate(names):
+        for i, uname in enumerate(names):
             at = dict(entry.get("at") or {})
             if count is not None and "at" in entry:
                 at["north_m"] = at.get("north_m", 0) + SPACING_M * i
-            sim["units"].append(_expand_unit(sim, b, name, entry, at, catalog))
+            sim["units"].append(_expand_unit(sim, b, uname, entry, at, catalog))
     seen = set()
     for u in sim["units"]:
         if u["name"] in seen:
@@ -375,25 +386,29 @@ def load_sim(path_or_spec, base_dir=None):
 
 
 def _sim_spec(path_or_spec, base_dir=None, _chain=()):
-    """Raw sim dict with `extends: <other sim file>` applied: the parent's
-    keys, deep-merged with this file's (a `units` list replaces the
-    parent's, so a child can re-use a fleet and only swap the server)."""
+    """Raw sim dict (with `extends: <other sim file>` applied) plus the
+    path it came from (None for an inline dict). The parent's keys are
+    deep-merged with this file's (a `units` list replaces the parent's,
+    so a child can re-use a fleet and only swap the server)."""
     if isinstance(path_or_spec, dict):
-        spec, here = dict(path_or_spec), base_dir or os.getcwd()
+        spec, here, src = dict(path_or_spec), base_dir or os.getcwd(), None
     else:
-        path = os.path.abspath(path_or_spec)
+        src = path = os.path.abspath(path_or_spec)
         if path in _chain:
             raise SimError(f"sim extends loop at {path}")
         _chain += (path,)
         spec, here = load_yaml(path), os.path.dirname(path)
     parent = spec.pop("extends", None)
     if not parent:
-        return spec
-    return deep_merge(_sim_spec(os.path.join(here, parent), None, _chain), spec)
+        return spec, src
+    merged, _ = _sim_spec(os.path.join(here, parent), None, _chain)
+    return deep_merge(merged, spec), src
 
 
-def load_server(srv):
-    """server: {type: real|fake, port, auth, account{user, code}, seed}.
+def load_server(srv, slot_base=None):
+    """server: {type: real|fake|external, port, auth, account{user, code},
+    seed, control_port, gcs_party}.
+
     real (default): the actual droneengage_server from its repo, on the
       sim's own port with a generated config. auth: false runs it in
       local_server_enabled mode (units connect directly, like
@@ -403,9 +418,20 @@ def load_server(srv):
       loss / delay / cut. Use it for link-fault tests. Extra fake-only
       keys: clock_offset_ms (skew the stamped fleet clock), noclock
       (unit names whose 9007/9005 frames carry no "ts" - they stay
-      tq=0, the P4A-10 closed-environment case)."""
-    bad = set(srv) - {"type", "port", "auth", "account", "seed",
-                      "clock_offset_ms", "noclock"}
+      tq=0, the P4A-10 closed-environment case).
+    external: a server stack the user runs himself (e.g.
+      servers/sh_start_servers.sh). Nothing is spawned except this sim's
+      GCS bridge, which logs in like a GCS client. auth: true (default)
+      logs every unit in through the authenticator at
+      auth_ip:auth_port; auth: false connects de_comm straight to
+      ip:port (the server's local_server_enabled mode). control_port is
+      this sim's local ctl port (default 62009 + slot_base); gcs_party
+      defaults to GCS_<sim name> so parallel sims on one server don't
+      share a GCS party. The account falls back to sim.local.env
+      SIM_AUTH_USER / SIM_AUTH_CODE so credentials stay out of git."""
+    bad = set(srv) - {"type", "ip", "port", "auth", "account", "seed",
+                      "clock_offset_ms", "noclock", "auth_ip", "auth_port",
+                      "auth_verify_ssl", "control_port", "gcs_party"}
     if bad:
         raise SimError(f"sim server: unknown keys {sorted(bad)}")
     t = srv.get("type", "real")
@@ -413,10 +439,9 @@ def load_server(srv):
         raise SimError(f"sim server.type must be one of {SERVER_TYPES}")
     if t == "fake" and srv.get("auth"):
         raise SimError("sim server: auth needs type real")
-    port = int(srv.get("port", SERVER_PORT))
     acc = srv.get("account") or {}
-    user = acc.get("user", "sim@sim.droneengage.com")
-    code = str(acc.get("code", "sim1234"))
+    user = acc.get("user") or setting("SIM_AUTH_USER", "sim@sim.droneengage.com")
+    code = str(acc.get("code") or setting("SIM_AUTH_CODE", "sim1234"))
     # droneengage_authenticator rule (hlp_strings.fn_isValidAccountName /
     # fn_isAlphanumeric): a bad one is refused as "API endpoint not found"
     if not (re.fullmatch(r"[A-Za-z0-9]+", user)
@@ -425,11 +450,31 @@ def load_server(srv):
                        "e-mail with a TLD (the authenticator refuses others)")
     if not re.fullmatch(r"[A-Za-z0-9]+", code):
         raise SimError("server.account.code must be alphanumeric")
+    if t == "external":
+        return {
+            "type": t,
+            "ip": srv.get("ip", "127.0.0.1"),
+            "port": int(srv.get("port", 9966)),
+            "control_port": int(srv.get("control_port") or
+                                62009 + int(slot_base or SLOT_BASE)),
+            "auth": bool(srv.get("auth", True)),
+            "auth_ip": srv.get("auth_ip", "127.0.0.1"),
+            "auth_port": int(srv.get("auth_port", 19408)),
+            "auth_verify_ssl": bool(srv.get("auth_verify_ssl", False)),
+            "account": {"user": user, "code": code},
+            "gcs_party": srv.get("gcs_party"),
+            "seed": 0, "clock_offset_ms": 0, "noclock": [],
+        }
+    port = int(srv.get("port", SERVER_PORT))
     return {
-        "type": t, "port": port, "control_port": port + 1,
+        "type": t, "ip": "127.0.0.1", "port": port,
+        "control_port": int(srv.get("control_port") or port + 1),
         "auth": bool(srv.get("auth", False)),
-        "auth_port": port + 10, "auth_s2s_port": port + 11,
+        "auth_ip": "127.0.0.1", "auth_port": port + 10,
+        "auth_s2s_port": port + 11,
+        "auth_verify_ssl": False,
         "account": {"user": user, "code": code},
+        "gcs_party": srv.get("gcs_party") or GCS_PARTY,
         "seed": int(srv.get("seed", 1337)),
         "clock_offset_ms": int(srv.get("clock_offset_ms", 0)),
         "noclock": list(srv.get("noclock") or []),
@@ -440,7 +485,8 @@ def _expand_unit(sim, b, name, entry, at, catalog):
     if not NAME_RX.match(name):
         raise SimError(f"unit name {name!r}: letters, digits, _ only")
     slot = sim["slot_base"] + len(sim["units"])
-    u = {"name": name, "block": b["name"], "chain": b["chain"], "slot": slot,
+    u = {"name": name, "sim": sim["name"], "block": b["name"],
+         "chain": b["chain"], "slot": slot,
          "party_id": name, "unitID": name,
          "modules": list(b["modules"]), "ports": {}, "fc": None,
          "config": copy.deepcopy(b["config"]),
@@ -500,13 +546,84 @@ def offset_home(home, pos):
 
 
 # ---------------------------------------------------------------- manifest
+# Every sim owns run/<name>/: sim.json, pids/, server/, <unit>/, and the
+# per-sim state files (deployed.json, op_deploy.json). Sims run in
+# parallel: one manifest each, no shared state.
 
-def load_manifest(required=True):
-    if not os.path.isfile(MANIFEST):
+def run_dir(sim):
+    return os.path.join(RUN_DIR, sim)
+
+
+def pids_dir(sim):
+    return os.path.join(run_dir(sim), "pids")
+
+
+def server_dir(sim):
+    return os.path.join(run_dir(sim), "server")
+
+
+def manifest_path(sim):
+    return os.path.join(run_dir(sim), "sim.json")
+
+
+def cert_path(sim):
+    return os.path.join(server_dir(sim), "server.crt")
+
+
+def key_path(sim):
+    return os.path.join(server_dir(sim), "server.key")
+
+
+def deployed_path(sim):
+    return os.path.join(run_dir(sim), "deployed.json")
+
+
+def op_state_path(sim):
+    return os.path.join(run_dir(sim), "op_deploy.json")
+
+
+def sim_names():
+    """Sims with a generated manifest (may or may not be running)."""
+    if not os.path.isdir(RUN_DIR):
+        return []
+    return sorted(d for d in os.listdir(RUN_DIR)
+                  if os.path.isfile(manifest_path(d)))
+
+
+def all_manifests():
+    return {n: load_manifest(n) for n in sim_names()}
+
+
+def load_manifest(name=None, required=True):
+    """One sim's manifest. With no name: the single generated sim, or an
+    error when several exist (callers that can be ambiguous must pass the
+    sim name - ctl exposes it as `-s <name>`)."""
+    if name is None:
+        names = sim_names()
+        if len(names) == 1:
+            name = names[0]
+        elif not names:
+            if required:
+                sys.exit("no sim manifest under run/ - "
+                         "run `./sim up <sim.yaml>` first")
+            return None
+        else:
+            sys.exit("several sims generated (" + ", ".join(names) +
+                     ") - pick one with `-s <name>`")
+    path = manifest_path(name)
+    if not os.path.isfile(path):
         if required:
-            sys.exit(f"no sim manifest at {MANIFEST} - run `./sim up <sim.yaml>` first")
+            sys.exit(f"no sim manifest at {path} - "
+                     "run `./sim up <sim.yaml>` first")
         return None
-    return json.load(open(MANIFEST))
+    m = json.load(open(path))
+    m.setdefault("name", name)
+    return m
+
+
+def live_sim_names():
+    """Sims with at least one process still alive."""
+    return [n for n in sim_names() if read_pids(n)]
 
 
 def units_by_name(manifest=None):
@@ -514,8 +631,71 @@ def units_by_name(manifest=None):
     return {u["name"]: u for u in m["units"]}
 
 
+def find_unit(name):
+    """A unit by name across every generated sim. Live sims first - a
+    dead sim's manifest keeps its units on disk and may reuse the same
+    names, but its launch scripts/configs are stale."""
+    manifests = all_manifests()
+    for n in live_sim_names() + [n for n in sim_names()
+                                 if n not in live_sim_names()]:
+        for u in manifests[n]["units"]:
+            if u["name"] == name:
+                return u
+    return None
+
+
 def unit_dir(u):
-    return os.path.join(RUN_DIR, u["name"])
+    return os.path.join(run_dir(u.get("sim") or _single_sim()), u["name"])
+
+
+def _single_sim():
+    names = sim_names()
+    if len(names) == 1:
+        return names[0]
+    if not names:
+        raise SimError("no generated sim - run `./sim up <sim.yaml>` first")
+    raise SimError("several sims generated (" + ", ".join(names) +
+                   ") - pass the sim name")
+
+
+def used_ports(sim):
+    """Every local port a sim binds: unit s2s + SITL ports, and (for
+    engine-run servers) the server/auth ports. The external server's own
+    port is remote - only its local bridge control_port counts."""
+    ports = set()
+    srv = sim["server"]
+    ports.add(srv["control_port"])
+    if srv["type"] != "external":
+        ports.add(srv["port"])
+        if srv["auth"]:
+            ports.update((srv["auth_port"], srv["auth_s2s_port"]))
+    for u in sim["units"]:
+        ports.update(u["ports"].values())
+        if u["fc"]:
+            ports.update((u["fc"]["pilot_port"], u["fc"]["aux_port"],
+                          u["fc"]["fcb_port"]))
+    return ports
+
+
+def check_conflicts(sim):
+    """Refuse to bring a sim up when its ports or unit names collide with
+    another sim that is actually running (a manifest with live pids).
+    Unit names double as party_id on a shared external server, so they
+    must stay unique across parallel sims."""
+    ports = used_ports(sim)
+    names = {u["name"] for u in sim["units"]}
+    for other in live_sim_names():
+        if other == sim["name"]:
+            continue
+        m = load_manifest(other)
+        clash = sorted(ports & used_ports(m))
+        dup = sorted(names & {u["name"] for u in m["units"]})
+        if clash or dup:
+            raise SimError(
+                f"sim {sim['name']!r} conflicts with running sim {other!r}:"
+                + (f" ports {clash}" if clash else "")
+                + (f" unit names {dup}" if dup else "")
+                + f" - change slot_base/names, or `./sim down {other}` first")
 
 
 def journal_dir(u):
@@ -556,7 +736,7 @@ def _launch_script(u, proc, cwd, cmd, delay=0, env=()):
     path = os.path.join(unit_dir(u), f"launch.{proc}.sh")
     write_text(path,
                "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%s%sexec %s\n"
-               % (cwd, pid_path(u["name"], proc),
+               % (cwd, pid_path(u["sim"], u["name"], proc),
                   f"sleep {delay}\n" if delay else "",
                   "".join(f"export {k}='{v}'\n" for k, v in env), cmd), 0o755)
     return path
@@ -583,13 +763,13 @@ def gen_unit(u, sim, catalog):
     if srv["auth"]:
         # full login: authenticator -> comm server address + temp key
         cfg.update({"use_local_comm_server": False,
-                    "auth_ip": "127.0.0.1", "auth_port": srv["auth_port"],
-                    "auth_verify_ssl": False,
+                    "auth_ip": srv["auth_ip"], "auth_port": srv["auth_port"],
+                    "auth_verify_ssl": srv["auth_verify_ssl"],
                     "userName": srv["account"]["user"],
                     "accessCode": srv["account"]["code"]})
     else:
         cfg.update({"use_local_comm_server": True,
-                    "local_comm_server_ip": "127.0.0.1",
+                    "local_comm_server_ip": srv["ip"],
                     "local_comm_server_port": srv["port"]})
     if not u["fc"]:
         p = u["position"]
@@ -684,31 +864,46 @@ def gen_unit(u, sim, catalog):
                    "child=$!\necho $child > '%s'\nwait $child\n"
                    % (sdir, sitl_bin, fc["model"], fc["instance"], fc["sysid"],
                       p["lat"], p["lng"], p["alt"], p["yaw"], defaults,
-                      fc["fcb_port"], pid_path(u["name"], "sitl")), 0o755)
+                      fc["fcb_port"], pid_path(u["sim"], u["name"], "sitl")), 0o755)
     u.pop("config", None)
     u.pop("parm_files", None)
 
 
-def _node_script(repo, name, cfg):
+def _node_script(sim, repo, name, cfg):
     """Launch script for a node server: run in its repo (node_modules,
     plugins and the --config path are resolved there); the extra
     --sim_run arg is ignored by the server but marks the pid as ours."""
     rel = os.path.relpath(cfg, repo)
-    path = os.path.join(RUN_DIR, "server", f"launch.{name}.sh")
+    path = os.path.join(server_dir(sim["name"]), f"launch.{name}.sh")
     write_text(path,
                "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n"
                "exec '%s' ./src/server.js --config=%s --sim_run=%s\n"
-               % (repo, pid_path("server", name), NODE, rel, RUN_DIR), 0o755)
+               % (repo, pid_path(sim["name"], "server", name), NODE, rel,
+                  run_dir(sim["name"])), 0o755)
     return path
 
 
+def _bridge_script(sim):
+    """gcs_bridge launch script: the bridge gets its sim name on argv and
+    reads the manifest itself (server address, control port, GCS party)."""
+    write_text(os.path.join(server_dir(sim["name"]), "launch.gcs_bridge.sh"),
+               "#!/bin/bash\necho $$ > '%s'\nsleep 2\nexec python3 -u '%s' '%s'\n"
+               % (pid_path(sim["name"], "server", "gcs_bridge"),
+                  os.path.join(ENGINE_DIR, "gcs_bridge.py"), sim["name"]),
+               0o755)
+    return ["gcs_bridge"]
+
+
 def gen_server(sim):
-    """Write the server side: configs + launch scripts in run/server/.
-    Returns the server process names in launch order."""
+    """Write the server side: configs + launch scripts in
+    run/<sim>/server/. Returns the server process names in launch
+    order. An external server spawns nothing but this sim's GCS bridge."""
     srv = sim["server"]
-    sdir = os.path.join(RUN_DIR, "server")
+    sdir = server_dir(sim["name"])
     os.makedirs(sdir, exist_ok=True)
     procs = []
+    if srv["type"] == "external":
+        return _bridge_script(sim)
     if srv["type"] == "fake":
         extra = ""
         if srv["clock_offset_ms"]:
@@ -717,10 +912,11 @@ def gen_server(sim):
             extra += " --noclock " + ",".join(srv["noclock"])
         write_text(os.path.join(sdir, "launch.fake_server.sh"),
                    "#!/bin/bash\necho $$ > '%s'\nexec python3 -u '%s' --port %d "
-                   "--seed %d --cert '%s' --key '%s'%s --pretty\n"
-                   % (pid_path("server", "fake_server"),
+                   "--seed %d --cert '%s' --key '%s' --sim '%s'%s --pretty\n"
+                   % (pid_path(sim["name"], "server", "fake_server"),
                       os.path.join(ENGINE_DIR, "fake_fleet_server.py"),
-                      srv["port"], srv["seed"], CERT, KEY, extra), 0o755)
+                      srv["port"], srv["seed"], cert_path(sim["name"]),
+                      key_path(sim["name"]), sim["name"], extra), 0o755)
         return ["fake_server"]
 
     ssl_dir = os.path.join(SERVER_REPO, "ssl_local")
@@ -743,7 +939,7 @@ def gen_server(sim):
         })
         cfg = os.path.join(sdir, "de_auth.config")
         write_json(cfg, acfg)
-        _node_script(AUTH_REPO, "de_auth", cfg)
+        _node_script(sim, AUTH_REPO, "de_auth", cfg)
         procs.append("de_auth")
 
     scfg = load_config(os.path.join(SERVER_REPO, "server.config"))
@@ -765,16 +961,12 @@ def gen_server(sim):
     })
     cfg = os.path.join(sdir, "de_server.config")
     write_json(cfg, scfg)
-    _node_script(SERVER_REPO, "de_server", cfg)
+    _node_script(sim, SERVER_REPO, "de_server", cfg)
     procs.append("de_server")
 
     # one persistent GCS session on the real server, exposing the same
     # control protocol as the fake server (ctl.py talks to either)
-    write_text(os.path.join(sdir, "launch.gcs_bridge.sh"),
-               "#!/bin/bash\necho $$ > '%s'\nsleep 2\nexec python3 -u '%s'\n"
-               % (pid_path("server", "gcs_bridge"),
-                  os.path.join(ENGINE_DIR, "gcs_bridge.py")), 0o755)
-    procs.append("gcs_bridge")
+    procs += _bridge_script(sim)
     return procs
 
 
@@ -804,18 +996,19 @@ def check_binaries(sim):
 
 
 def generate(sim, sim_file=None):
-    """Write run/<unit>/... for every unit and the manifest."""
+    """Write run/<sim>/<unit>/... for every unit and the sim's manifest."""
     catalog = load_catalog()
     check_binaries(sim)
-    os.makedirs(RUN_DIR, exist_ok=True)
+    os.makedirs(run_dir(sim["name"]), exist_ok=True)
     units = copy.deepcopy(sim["units"])
     for u in units:
         gen_unit(u, sim, catalog)
     server_procs = gen_server(sim)
-    manifest = {"version": 1, "sim_file": sim_file, "sim_hash": sim["hash"],
-                "server": sim["server"], "server_procs": server_procs,
+    manifest = {"version": 1, "name": sim["name"], "sim_file": sim_file,
+                "sim_hash": sim["hash"], "server": sim["server"],
+                "server_procs": server_procs,
                 "home": sim["home"], "units": units}
-    write_json(MANIFEST, manifest, indent=2)
+    write_json(manifest_path(sim["name"]), manifest, indent=2)
     return manifest
 
 
@@ -882,8 +1075,8 @@ def boot_mark(u):
 
 # ---------------------------------------------------------------- pids
 
-def pid_path(name, proc):
-    return os.path.join(PIDS_DIR, f"{name}.{proc}.pid")
+def pid_path(sim, name, proc):
+    return os.path.join(pids_dir(sim), f"{name}.{proc}.pid")
 
 
 def pid_is_ours(pid):
@@ -897,19 +1090,26 @@ def pid_is_ours(pid):
     return RUN_DIR in cmd or ENGINE_DIR in cmd
 
 
-def read_pids():
-    """{pidfile_stem: pid} for entries whose process is alive and ours."""
+def read_pids(sim):
+    """{pidfile_stem: pid} of one sim, for entries whose process is alive
+    and ours."""
     out = {}
-    if not os.path.isdir(PIDS_DIR):
+    d = pids_dir(sim)
+    if not os.path.isdir(d):
         return out
-    for f in os.listdir(PIDS_DIR):
+    for f in os.listdir(d):
         if not f.endswith(".pid"):
             continue
         try:
-            pid = int(open(os.path.join(PIDS_DIR, f)).read().strip())
+            pid = int(open(os.path.join(d, f)).read().strip())
             os.kill(pid, 0)
         except (ValueError, OSError):
             continue
         if pid_is_ours(pid):
             out[f[:-4]] = pid
     return out
+
+
+def read_all_pids():
+    """{sim_name: {pidfile_stem: pid}} over every generated sim."""
+    return {n: read_pids(n) for n in sim_names()}

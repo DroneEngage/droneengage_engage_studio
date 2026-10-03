@@ -121,14 +121,48 @@ Server types:
 | `{type: real}` | `droneengage_server` in `local_server_enabled` mode | default: the real routing |
 | `{type: real, auth: true}` | + `droneengage_authenticator` (single account); every unit and the GCS log in | the login path |
 | `{type: fake}` | `engine/fake_fleet_server.py` | seeded per-link loss / delay / cut |
+| `{type: external, host, port}` | nothing - your own running server stack | personal sims on your real servers |
+
+`external` is for sims that join a server stack you run yourself (e.g.
+`servers/sh_start_servers.sh`): no server processes are spawned, every
+unit's de_comm connects to `host:port` - directly when `auth: false`, or
+through your authenticator when `auth: true, auth_host, auth_port` are
+set. The account (`server.account: {user, code}` or `SIM_AUTH_USER` /
+`SIM_AUTH_CODE` in `sim.local.env`) must exist on that authenticator;
+`up` fails early if the server isn't reachable.
 
 The real servers run from their repos with a config **generated** under
-`run/server/`. Their own `server.config(.local)` files are never read or
-changed.
+`run/<sim>/server/`. Their own `server.config(.local)` files are never
+read or changed.
 
-With a real server, `engine/gcs_bridge.py` holds one GCS session
-(`GCS_FLEET`) and serves the same control protocol as the fake server, so
-`./sim ctl` behaves the same on both. Link faults are refused on a real server.
+With a real or external server, `engine/gcs_bridge.py` holds one GCS
+session (`GCS_FLEET`, or `GCS_<sim>` for external sims) and serves the
+same control protocol as the fake server, so `./sim ctl` behaves the
+same on all of them. Link faults are refused on a real server.
+
+### Running several sims in parallel
+
+`./sim up` is additive: it only restarts the same-named sim and refuses
+to start one whose ports or unit names collide with a live sim (pick a
+different `slot_base`). `run/<sim>/` holds each sim's manifest, configs,
+logs and pids, so sims are fully independent:
+
+```bash
+./sim up sims/quadcopter.yaml
+./sim up sims/rover.yaml          # runs next to quadcopter
+./sim sims                        # every generated sim, live proc count
+./sim ctl -s quadcopter arm all   # -s pins a command to one sim
+./sim down quadcopter             # stop one sim; ./sim down stops all
+```
+
+`ctl` commands that need one sim (server procs, `reset`, deploy) use the
+`-s` sim, else the only live sim; unit lookups (`arm quad1`, `logs`)
+search live sims first. `sim run` stays exclusive - a test owns the
+machine and downs the other sims.
+
+`sims/quadcopter.yaml`, `sims/rover.yaml` and `sims/plane.yaml` are
+ready-made single-box personal sims for an external server, on disjoint
+`slot_base`s (50/60/70).
 
 ### Ports (slot k = slot_base + unit index; slot_base defaults to 10)
 
@@ -141,7 +175,9 @@ With a real server, `engine/gcs_bridge.py` holds one GCS session
 | authenticator https / s2s | port+10 / port+11 |
 
 The default slot base keeps clear of low-numbered ports so sims never
-collide with a developer's own servers.
+collide with a developer's own servers. Sims meant to run **in parallel**
+need disjoint `slot_base`s - `up` verifies there is no overlap with a
+live sim before starting anything.
 
 ## Tests
 
@@ -176,7 +212,8 @@ and the sim manifest.
 
 ## Operator console
 
-`./sim ctl` with no arguments prints the full list. The most used:
+`./sim ctl` with no arguments prints the full list. `./sim ctl -s <sim>`
+pins a command to one sim when several are live. The most used:
 
 ```
 ./sim ctl status | fc all | arm all | mode copter2 RTL | land all | reset plane1

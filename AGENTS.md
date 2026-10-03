@@ -18,6 +18,9 @@ step. It launches binaries and node servers from the sibling repos.
   `droneengage_server` or the authenticator, with several units, through
   the real routing. Examples: mission supervisor / fleet bus / package
   deploy, comm-line loss, server restarts, login path.
+- Personal simulations on a real server stack the user runs themselves
+  (`server: {type: external}`) - e.g. `sims/quadcopter.yaml`,
+  `sims/rover.yaml`, `sims/plane.yaml` run in parallel.
 - Regression tests that must run the same on any developer machine.
 - Reproducing a field problem with a specific fleet mix (copters + plane +
   fixed camera ...).
@@ -32,7 +35,7 @@ is now the only simulation/testing location.
 
 ## Layout
 
-    sim                       single CLI: blocks|block|show|up|down|status|ctl|run|logs
+    sim                       single CLI: blocks|block|sims|show|up|down|status|ctl|run|logs
     sim.local.env.example     per-machine paths -> copy to sim.local.env (gitignored)
     blocks/<name>/            block.yaml + optional <module>.json / sitl.parm overlays
     sims/*.yaml               fleets of blocks (+ server type)
@@ -46,7 +49,8 @@ is now the only simulation/testing location.
     engine/runner.py          test runner (./sim run) - step + assertion reference in its docstring
     engine/gcs_bridge.py      persistent GCS session on the real server, control-port protocol
     engine/fake_fleet_server.py  fault-injection server (copied from Phase-4A, uses simlib)
-    run/                      generated (gitignored): configs, launch scripts, logs, journals, pids
+    run/<sim>/                generated per sim (gitignored): sim.json, configs,
+                              launch scripts, logs, journals, pids
     results/                  per-test captures (gitignored)
 
 ## How to use
@@ -59,6 +63,13 @@ is now the only simulation/testing location.
     ./sim logs copter1 de_comm                # tail a process log
     ./sim down
 
+- `./sim up` is additive: it restarts only the same-named sim and refuses
+  ports/unit names that clash with a live sim. `./sim down <name>` stops
+  one sim, `./sim down` all of them. `./sim run` is exclusive - a test
+  downs every other sim first.
+- `./sim ctl -s <sim>` pins a command to one sim; without it commands
+  that need a single sim use the only live one, and unit lookups search
+  live sims first.
 - `./sim run` reuses the running sim only when its hash matches and every
   process is alive; otherwise `up --fresh`. Run tests on the same sim back to
   back to skip the 1-2 min SITL/EKF warm-up.
@@ -164,6 +175,16 @@ and make `ctl.ctrl` refuse it for that server type.
   10/min per IP and every unit is 127.0.0.1.
 - Link-fault steps (`loss`, `delay`, `link_cut`, `kick`, `clock`) need
   `server: {type: fake}`. `ctl` refuses them on a real server.
+- **A downed sim keeps its manifest.** `run/<sim>/sim.json` stays for
+  post-mortem logs/journals, so a dead sim's units can share names with a
+  live one. `simlib.find_unit` and ctl resolution always prefer *live*
+  sims (`live_sim_names`); never iterate `all_manifests()` when the
+  intent is the running fleet.
+- `server: {type: external}` spawns no server - the sim's units and GCS
+  bridge join a server stack the user runs. Its `account` (or
+  `SIM_AUTH_USER`/`SIM_AUTH_CODE` in `sim.local.env`) must exist on that
+  authenticator; with `account_storage_type: db` create it in the
+  webadmin first.
 - `land`: copter LAND, rover HOLD + disarm, plane → `reset` (it cannot land
   in place). Always tear down: an airborne reused fleet drains its battery
   and the next test trips `battery_low`.

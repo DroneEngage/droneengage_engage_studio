@@ -68,9 +68,15 @@ import launcher
 CTL = os.path.join(simlib.ENGINE_DIR, "ctl.py")
 
 
+SIM_NAME = None           # the test's sim - run() sets it
+
+
 def run_ctl(*args):
     print("$ ctl", *args, flush=True)
-    r = subprocess.run([sys.executable, CTL] + [str(x) for x in args])
+    argv = [sys.executable, CTL]
+    if SIM_NAME:
+        argv += ["-s", SIM_NAME]
+    r = subprocess.run(argv + [str(x) for x in args])
     if r.returncode != 0:
         print(f"  (exit {r.returncode})", flush=True)
     return r.returncode == 0
@@ -121,7 +127,8 @@ def run_step(step, t, marks):
         if target not in (None, "all"):
             binding = {u["name"]: {} for u in ctl.resolve(target)}
         if binding:
-            b = os.path.join(simlib.RUN_DIR, "test_binding.json")
+            b = os.path.join(simlib.run_dir(ctl._ctx_name()),
+                             "test_binding.json")
             json.dump(binding, open(b, "w"))
             return run_ctl("deploy", pkg, b)
         return run_ctl("deploy", pkg)
@@ -309,21 +316,20 @@ def check_assertion(a, m, marks):
 
 # ------------------------------------------------------------------ main
 
-def collect_results(t_file):
+def collect_results(t_file, m):
     ts = time.strftime("%Y%m%d-%H%M%S")
     name = os.path.splitext(os.path.basename(t_file))[0]
     out = os.path.join(simlib.RESULTS_DIR, f"{ts}-{name}")
-    m = simlib.load_manifest()
     for u in m["units"]:
         for sub in ("journal", "logs"):
             d = os.path.join(simlib.unit_dir(u), sub)
             if os.path.isdir(d):
                 shutil.copytree(d, os.path.join(out, u["name"], sub))
-    srv = os.path.join(simlib.RUN_DIR, "server", "logs")
+    srv = os.path.join(simlib.server_dir(m["name"]), "logs")
     if os.path.isdir(srv):
         shutil.copytree(srv, os.path.join(out, "server"))
     shutil.copy(t_file, out)
-    shutil.copy(simlib.MANIFEST, out)
+    shutil.copy(simlib.manifest_path(m["name"]), out)
     return out
 
 
@@ -340,17 +346,19 @@ def load_test(t_file):
 
 
 def run(t_file, keep=False):
+    global SIM_NAME
     t_file = os.path.abspath(t_file)
     t = load_test(t_file)
     m = launcher.ensure(t["__sim"])
+    ctl.CTX = SIM_NAME = m["name"]
     fake = m.get("server", {}).get("type") == "fake"
     # a previous test that died mid-way may have left link faults applied
     if fake:
         run_ctl("link_clear", "all")
     # journal assertions only see lines appended after this point
     marks = {u["name"]: simlib.journal_mark(u) for u in m["units"]}
-    if os.path.isfile(ctl.DEPLOYED):
-        os.unlink(ctl.DEPLOYED)
+    if os.path.isfile(ctl.deployed_file()):
+        os.unlink(ctl.deployed_file())
     ok = True
     for step in t.get("steps", []):
         if not run_step(step, t, marks):
@@ -380,7 +388,7 @@ def run(t_file, keep=False):
         print(f"unknown teardown {td!r} (use land | reset | none)", flush=True)
         ok = False
 
-    out = collect_results(t_file)
+    out = collect_results(t_file, m)
     n_ok = sum(results)
     print(f"\n{n_ok}/{len(results)} assertions passed"
           + ("" if ok else " (a step or the teardown failed)") + f"\nresults: {out}")

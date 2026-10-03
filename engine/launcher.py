@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """launcher.py - bring a sim up / down (used by ./sim up|down).
 
-up: stop what a previous `sim up` started, generate run/, start the server
-side, then every unit's processes (SITL, de_comm, modules), and wait until
-each unit is online at the server and every module reports ready.
-Fully headless: logs in run/<unit>/logs/ and run/server/logs/, pids in
-run/pids/. Only pids whose command line points into this repo are ever
-signalled.
+up: generate run/<name>/, start the server side (real/fake spawn their
+own; external only runs this sim's GCS bridge), then every unit's
+processes (SITL, de_comm, modules), and wait until each unit is online
+at the server and every module reports ready. Sims run in parallel -
+up restarts only the same-named sim and refuses ports/names that clash
+with a live one; `sim run` passes exclusive=True so a test still owns
+the machine. down: stop one sim, or every sim.
+Fully headless: logs in run/<sim>/<unit>/logs/ and run/<sim>/server/logs/,
+pids in run/<sim>/pids/. Only pids whose command line points into this
+repo are ever signalled.
 """
 
 import os
@@ -22,27 +26,43 @@ import simlib
 import ctl
 
 
-def down(quiet=False):
-    if not os.path.isdir(simlib.PIDS_DIR):
+def _pids_dirs(name=None):
+    """Pid dirs to tear down: one sim's, or every sim's plus the legacy
+    flat run/pids/ dir left by the pre-parallel layout."""
+    if name:
+        return [simlib.pids_dir(name)]
+    dirs = [os.path.join(simlib.RUN_DIR, "pids")]
+    if os.path.isdir(simlib.RUN_DIR):
+        dirs += [os.path.join(simlib.RUN_DIR, d, "pids")
+                 for d in sorted(os.listdir(simlib.RUN_DIR))
+                 if os.path.isdir(os.path.join(simlib.RUN_DIR, d, "pids"))]
+    return dirs
+
+
+def down(name=None, quiet=False):
+    dirs = [d for d in _pids_dirs(name) if os.path.isdir(d)]
+    if not dirs:
         if not quiet:
-            print("nothing running")
+            print("nothing running" if name is None
+                  else f"sim {name!r}: nothing running")
         return
     pids = []
-    for f in sorted(os.listdir(simlib.PIDS_DIR)):
-        if not f.endswith(".pid"):
-            continue
-        path = os.path.join(simlib.PIDS_DIR, f)
-        try:
-            pid = int(open(path).read().strip())
-        except ValueError:
-            pid = None
-        os.unlink(path)
-        if pid and os.path.isdir(f"/proc/{pid}"):
-            if simlib.pid_is_ours(pid):
-                os.kill(pid, signal.SIGTERM)
-                pids.append(pid)
-            else:
-                print(f"skip pid {pid} ({f[:-4]}): not a sim process")
+    for d in dirs:
+        for f in sorted(os.listdir(d)):
+            if not f.endswith(".pid"):
+                continue
+            path = os.path.join(d, f)
+            try:
+                pid = int(open(path).read().strip())
+            except ValueError:
+                pid = None
+            os.unlink(path)
+            if pid and os.path.isdir(f"/proc/{pid}"):
+                if simlib.pid_is_ours(pid):
+                    os.kill(pid, signal.SIGTERM)
+                    pids.append(pid)
+                else:
+                    print(f"skip pid {pid} ({f[:-4]}): not a sim process")
     t0 = time.time()
     while time.time() - t0 < 3 and any(os.path.isdir(f"/proc/{p}") for p in pids):
         time.sleep(0.2)
@@ -72,13 +92,14 @@ def port_busy(port):
         return False
 
 
-def make_cert():
-    if os.path.isfile(simlib.CERT) and os.path.isfile(simlib.KEY):
+def make_cert(name):
+    cert, key = simlib.cert_path(name), simlib.key_path(name)
+    if os.path.isfile(cert) and os.path.isfile(key):
         return
-    os.makedirs(os.path.dirname(simlib.CERT), exist_ok=True)
+    os.makedirs(os.path.dirname(cert), exist_ok=True)
     subprocess.check_call(
         ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "365",
-         "-subj", "/CN=127.0.0.1", "-keyout", simlib.KEY, "-out", simlib.CERT],
+         "-subj", "/CN=127.0.0.1", "-keyout", key, "-out", cert],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -86,36 +107,66 @@ def _label(sim_src):
     return os.path.abspath(sim_src) if isinstance(sim_src, str) else "inline"
 
 
-def up(sim_src, fresh=False, timeout=180):
-    """sim_src: a sim file path, or an inline sim dict (from a test)."""
+def up(sim_src, fresh=False, timeout=180, exclusive=False):
+    """sim_src: a sim file path, or an inline sim dict (from a test).
+    Restarts only the same-named sim; `exclusive` (test runs) downs every
+    other sim first."""
     sim = simlib.load_sim(sim_src)
-    simlib.check_binaries(sim)          # before stopping the running sim
-    down(quiet=True)
+    name = sim["name"]
     srv = sim["server"]
-    busy = [p for p in ([srv["port"], srv["control_port"]]
-                        + ([srv["auth_port"], srv["auth_s2s_port"]] if srv["auth"] else []))
-            if port_busy(p)]
-    if busy:
-        sys.exit(f"ports {busy} are in use by something else - set "
-                 "`server: {port: ...}` in the sim")
-    if fresh and os.path.isdir(simlib.RUN_DIR):
-        shutil.rmtree(simlib.RUN_DIR)
-    os.makedirs(simlib.PIDS_DIR, exist_ok=True)
+    simlib.check_binaries(sim)          # before stopping the running sim
+    if exclusive:
+        down(quiet=True)                # tests own the machine
+    else:
+        # additive `sim up`: refuse ports/names of a live sim, restart
+        # only the same-named one
+        simlib.check_conflicts(sim)
+        down(name, quiet=True)
+    if srv["type"] == "external":
+        # nothing local to bind except this sim's control port; but the
+        # user's server must be reachable or no unit ever comes online
+        if port_busy(srv["control_port"]):
+            sys.exit(f"control port {srv['control_port']} is in use - set "
+                     "`server: {control_port: ...}` in the sim")
+        host, port = (srv["auth_ip"], srv["auth_port"]) if srv["auth"] \
+            else (srv["ip"], srv["port"])
+        if not port_busy(port):
+            sys.exit(f"cannot reach the external server at {host}:{port} - "
+                     "start your servers (servers/sh_start_servers.sh) or "
+                     "fix the sim's server: block")
+    else:
+        busy = [p for p in ([srv["port"], srv["control_port"]]
+                            + ([srv["auth_port"], srv["auth_s2s_port"]]
+                               if srv["auth"] else []))
+                if port_busy(p)]
+        if busy:
+            sys.exit(f"ports {busy} are in use by something else - set "
+                     "`server: {port: ...}` in the sim")
+    rdir = simlib.run_dir(name)
+    if fresh and os.path.isdir(rdir):
+        shutil.rmtree(rdir)
+    os.makedirs(simlib.pids_dir(name), exist_ok=True)
     m = simlib.generate(sim, _label(sim_src))
-    print(f"sim {os.path.basename(_label(sim_src))}: {len(m['units'])} unit(s), "
-          f"server {srv['type']}{' +auth' if srv['auth'] else ''} on {srv['port']}")
+    print(f"sim {name}: {len(m['units'])} unit(s), "
+          + (f"external server {srv['ip']}:{srv['port']}"
+             + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
+                if srv["auth"] else "")
+             if srv["type"] == "external" else
+             f"server {srv['type']}{' +auth' if srv['auth'] else ''} "
+             f"on {srv['port']}"))
 
     # ---- server side ----
+    ctl.CTX = name
     if srv["type"] == "fake":
-        make_cert()
+        make_cert(name)
     for p in m["server_procs"]:
         ctl.start_proc("server", p)
         if p == "de_auth" and not wait_port(srv["auth_port"], 30):
-            sys.exit("authenticator did not open its port - see run/server/logs/de_auth.log")
+            sys.exit(f"authenticator did not open its port - see {rdir}/server/logs/de_auth.log")
         if p in ("de_server", "fake_server") and not wait_port(srv["port"], 30):
-            sys.exit(f"{p} did not open {srv['port']} - see run/server/logs/{p}.log")
+            sys.exit(f"{p} did not open {srv['port']} - see {rdir}/server/logs/{p}.log")
     if not wait_port(srv["control_port"], 15):
-        sys.exit("control port did not open - see run/server/logs/")
+        sys.exit(f"control port did not open - see {rdir}/server/logs/")
 
     # ---- units ----
     for u in m["units"]:
@@ -141,15 +192,17 @@ def up(sim_src, fresh=False, timeout=180):
 
 def ensure(sim_src, timeout=180):
     """Reuse the running sim if it is the same sim (hash) and every
-    process is alive; otherwise bring it up fresh."""
+    process is alive; otherwise bring it up fresh. Tests are exclusive:
+    a fresh up downs every other sim."""
     sim = simlib.load_sim(sim_src)
-    m = simlib.load_manifest(required=False)
+    m = simlib.load_manifest(sim["name"], required=False)
     if m and m.get("sim_hash") == sim["hash"]:
-        alive = set(simlib.read_pids())
+        alive = set(simlib.read_pids(sim["name"]))
         need = {f"server.{p}" for p in m["server_procs"]}
         for u in m["units"]:
             need |= {f"{u['name']}.{p}" for p in simlib.procs_of(u)}
         if need <= alive:
+            ctl.CTX = sim["name"]
             return m
         print(f"sim incomplete (down: {sorted(need - alive)}) - restarting")
-    return up(sim_src, fresh=True, timeout=timeout)
+    return up(sim_src, fresh=True, timeout=timeout, exclusive=True)

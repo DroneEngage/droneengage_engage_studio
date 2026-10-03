@@ -9,6 +9,11 @@ the GCS bridge (real droneengage_server) or by the fake server.
 <unit> = a unit name (copter1), its 1-based position in the sim (2),
 block:<block> (every unit of that block), a comma list, or all.
 
+Several sims can be up at once (each owns run/<name>/). Unit names are
+unique across sims, so unit commands just work; sim-scoped commands
+(server procs, GCS traffic with no target unit) use `-s <name>` - with a
+single sim up nothing extra is needed:  ./sim ctl -s quadcopter status
+
 GCS:
   deploy <pkg.json> [binding.json]  1085 upload; blocks until "package READY".
                                     No binding: every unit with de_mavlink.
@@ -75,11 +80,34 @@ import uuid
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import simlib
 
-DEPLOYED = os.path.join(simlib.RUN_DIR, "deployed.json")
+CTX = None            # pinned sim name: `ctl -s <name>` or launcher/runner
 
 
-def manifest():
-    return simlib.load_manifest()
+def _ctx_name():
+    """The sim a server/GCS/proc command applies to: the -s pin, else the
+    only LIVE sim (manifests of downed sims stay on disk - they don't
+    count)."""
+    if CTX:
+        return CTX
+    names = simlib.live_sim_names() or simlib.sim_names()
+    if len(names) == 1:
+        return names[0]
+    if not names:
+        sys.exit("no sim generated - run `./sim up <sim.yaml>` first")
+    sys.exit("several sims live (" + ", ".join(names) +
+             ") - pick one with `./sim ctl -s <name> ...`")
+
+
+def manifest(name=None):
+    return simlib.load_manifest(name or CTX)
+
+
+def manifests():
+    return simlib.all_manifests()
+
+
+def deployed_file():
+    return simlib.deployed_path(_ctx_name())
 
 
 def server():
@@ -87,9 +115,17 @@ def server():
 
 
 def resolve(tok, manifest_=None):
-    """'all' | name | 1-based index | block:<b> | comma list -> [unit]."""
-    m = manifest_ or manifest()
-    units = m["units"]
+    """'all' | name | 1-based index | block:<b> | comma list -> [unit].
+    Units come from the pinned sim, or every LIVE sim merged - dead sims'
+    units are skipped (unit names are unique across live sims anyway -
+    check_conflicts enforces it)."""
+    if manifest_:
+        units = manifest_["units"]
+    elif CTX:
+        units = manifest()["units"]
+    else:
+        units = [u for n in simlib.live_sim_names()
+                 for u in simlib.load_manifest(n)["units"]]
     tok = "all" if tok is None else str(tok)
     if tok == "all":
         return units
@@ -117,14 +153,15 @@ def with_fc(units):
 FAULT_CMDS = ("link", "kick", "clock", "stats")
 
 
-def ctrl(line, read_s=0.4):
+def ctrl(line, read_s=0.4, sim=None):
     """Send one control line; print the reply. Returns the reply text.
     Exits non-zero when the backend reports ERR."""
-    if line.split()[0] in FAULT_CMDS and server()["type"] != "fake":
+    srv = manifest(sim)["server"]
+    if line.split()[0] in FAULT_CMDS and srv["type"] != "fake":
         sys.exit(f"'{line.split()[0]}' is a link fault - it needs "
-                 "`server: {type: fake}` in the sim (this sim runs the real "
-                 "droneengage_server)")
-    port = server()["control_port"]
+                 "`server: {type: fake}` in the sim (this sim runs "
+                 f"{srv['type']} server)")
+    port = srv["control_port"]
     try:
         s = socket.create_connection(("127.0.0.1", port), 3)
     except OSError as e:
@@ -150,9 +187,9 @@ def ctrl(line, read_s=0.4):
     return text
 
 
-def ctrl_stream(line, secs):
+def ctrl_stream(line, secs, sim=None):
     """Control line whose reply is JSON frames (bridge listen/req)."""
-    port = server()["control_port"]
+    port = manifest(sim)["server"]["control_port"]
     s = socket.create_connection(("127.0.0.1", port), 3)
     s.sendall((line + "\n").encode())
     s.settimeout(secs + 5)
@@ -415,13 +452,24 @@ def mission_current(u, timeout=5):
 
 # ------------------------------------------------------------- processes
 
+def owner_sim(owner):
+    """Sim owning a process owner: a unit's own sim, or the context sim
+    for the synthetic 'server' owner."""
+    if owner == "server":
+        return _ctx_name()
+    u = simlib.find_unit(owner)
+    if not u:
+        sys.exit(f"unknown unit {owner!r} (no generated sim has it)")
+    return u["sim"]
+
+
 def owner_dir(owner):
-    return os.path.join(simlib.RUN_DIR, "server") if owner == "server" \
-        else simlib.unit_dir({"name": owner})
+    return simlib.server_dir(owner_sim(owner)) if owner == "server" \
+        else simlib.unit_dir(simlib.find_unit(owner))
 
 
 def kill_proc(owner, proc):
-    pf = simlib.pid_path(owner, proc)
+    pf = simlib.pid_path(owner_sim(owner), owner, proc)
     if not os.path.isfile(pf):
         print(f"{owner}.{proc}: no pidfile")
         return False
@@ -450,7 +498,7 @@ def start_proc(owner, proc):
                      stdout=open(log, "a"), stderr=subprocess.STDOUT,
                      stdin=subprocess.DEVNULL)
     # the launch script writes the real pidfile itself
-    pf = simlib.pid_path(owner, proc)
+    pf = simlib.pid_path(owner_sim(owner), owner, proc)
     t0 = time.time()
     while time.time() - t0 < 3 and not os.path.isfile(pf):
         time.sleep(0.1)
@@ -506,8 +554,9 @@ def wait_ready(units, timeout, marks=None):
     return True
 
 
-def online_parties():
-    port = server()["control_port"]
+def online_parties(sim=None):
+    """Parties recently heard by one sim's GCS backend (its control port)."""
+    port = manifest(sim)["server"]["control_port"]
     try:
         s = socket.create_connection(("127.0.0.1", port), 3)
         s.sendall(b"list\n")
@@ -611,14 +660,15 @@ def current_run_id():
 # 9005 ping supplies the fleet clock; without either, units fall back to
 # the relative start_in_ms.
 
-OP_STATE_FILE = os.path.join(simlib.RUN_DIR, "op_deploy.json")
+def _op_state_file():
+    return simlib.op_state_path(_ctx_name())
 
 
 def _op_state():
     """The last opdeploy's {run, op, bind:{party:role}} - {} before the
     first deploy. Lets opstart/opabort/opstatus find the fleet run id."""
     try:
-        return json.load(open(OP_STATE_FILE))
+        return json.load(open(_op_state_file()))
     except (OSError, ValueError):
         return {}
 
@@ -825,7 +875,7 @@ def cmd_opdeploy(spec_path, timeout=60.0):
     # even a partial deploy leaves state on the units - record it so
     # opstart/opabort/opstatus can reach it
     json.dump({"run": run, "op": op, "bind": bind},
-              open(OP_STATE_FILE, "w"), indent=1)
+              open(_op_state_file(), "w"), indent=1)
     if not ok:
         sys.exit(1)
     print(f"op run {run}: all {len(jobs)} bound units READY")
@@ -976,7 +1026,7 @@ def _op_run():
 
 def deployed_units():
     try:
-        names = set(json.load(open(DEPLOYED)))
+        names = set(json.load(open(deployed_file())))
         us = [u for u in manifest()["units"] if u["name"] in names]
         if us:
             return us
@@ -986,31 +1036,47 @@ def deployed_units():
 
 
 def cmd_status():
-    m = manifest()
-    srv = m["server"]
-    pids = simlib.read_pids()
-    print(f"sim {m.get('sim_file') or '-'} ({m['sim_hash']})")
-    print(f"server {srv['type']}{' +auth' if srv['auth'] else ''}: "
-          f"wss {srv['port']}  control {srv['control_port']}"
-          + (f"  auth {srv['auth_port']}" if srv["auth"] else ""))
-    for p in m["server_procs"]:
-        pid = pids.get(f"server.{p}")
-        print(f"  {'server':10s} {p}={'run' if pid else 'DOWN'}"
-              + (f"({pid})" if pid else ""))
-    for u in m["units"]:
-        bits = []
-        for p in simlib.procs_of(u):
-            pid = pids.get(f"{u['name']}.{p}")
-            bits.append(f"{p}={'run' if pid else 'DOWN'}" + (f"({pid})" if pid else ""))
-        fc = u["fc"]
-        extra = (f" {fc['vehicle']} sysid:{fc['sysid']} pilot:{fc['pilot_port']}"
-                 if fc else " no-fc")
-        print(f"  {u['name']:10s} [{u['block']}]{extra} udp:{u['ports']['de_comm']}  "
-              + " ".join(bits))
-    print("online: " + (", ".join(sorted(online_parties())) or "-"))
+    mans = manifests()
+    if not mans:
+        print("no sim generated - ./sim up <sim.yaml>")
+        return
+    for name, m in mans.items():
+        srv = m["server"]
+        pids = simlib.read_pids(name)
+        print(f"sim {name} ({m.get('sim_file') or '-'}, {m['sim_hash']})")
+        if srv["type"] == "external":
+            print(f"  server external {srv['ip']}:{srv['port']}"
+                  + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
+                     if srv["auth"] else "")
+                  + f"  control {srv['control_port']}")
+        else:
+            print(f"  server {srv['type']}{' +auth' if srv['auth'] else ''}: "
+                  f"wss {srv['port']}  control {srv['control_port']}"
+                  + (f"  auth {srv['auth_port']}" if srv["auth"] else ""))
+        for p in m["server_procs"]:
+            pid = pids.get(f"server.{p}")
+            print(f"  {'server':10s} {p}={'run' if pid else 'DOWN'}"
+                  + (f"({pid})" if pid else ""))
+        for u in m["units"]:
+            bits = []
+            for p in simlib.procs_of(u):
+                pid = pids.get(f"{u['name']}.{p}")
+                bits.append(f"{p}={'run' if pid else 'DOWN'}"
+                            + (f"({pid})" if pid else ""))
+            fc = u["fc"]
+            extra = (f" {fc['vehicle']} sysid:{fc['sysid']} pilot:{fc['pilot_port']}"
+                     if fc else " no-fc")
+            print(f"  {u['name']:10s} [{u['block']}]{extra} "
+                  f"udp:{u['ports']['de_comm']}  " + " ".join(bits))
+        print("  online: "
+              + (", ".join(sorted(online_parties(name))) or "-"))
 
 
 def main(argv):
+    global CTX
+    argv = list(argv)
+    while argv and argv[0] in ("-s", "--sim"):
+        CTX, argv = argv[1], argv[2:]
     if not argv:
         print(__doc__)
         return
@@ -1051,10 +1117,10 @@ def main(argv):
             print(f"{u['name']}: package {'READY' if ok else 'NOT READY (timeout)'}")
             res.append(ok)
         try:
-            prev = set(json.load(open(DEPLOYED)))
+            prev = set(json.load(open(deployed_file())))
         except (OSError, ValueError):
             prev = set()
-        json.dump(sorted(prev | {u["name"] for u in targets}), open(DEPLOYED, "w"))
+        json.dump(sorted(prev | {u["name"] for u in targets}), open(deployed_file(), "w"))
         if not all(res):
             sys.exit(1)
     elif c == "start":
@@ -1082,8 +1148,8 @@ def main(argv):
             sys.exit(f"start not confirmed on {sorted(pending)}")
     elif c == "clear":
         action({"a": "clear"})
-        if os.path.isfile(DEPLOYED):
-            os.unlink(DEPLOYED)
+        if os.path.isfile(deployed_file()):
+            os.unlink(deployed_file())
     elif c in ("stop", "resume"):
         action({"a": c})
     elif c == "status-req":
@@ -1201,7 +1267,8 @@ def main(argv):
         ctrl(f"clock offset {a[1]}")
     elif c == "server_up":
         for p in server_procs("all"):
-            if p not in {k.split(".", 1)[1] for k in simlib.read_pids()
+            if p not in {k.split(".", 1)[1]
+                         for k in simlib.read_pids(_ctx_name())
                          if k.startswith("server.")}:
                 start_proc("server", p)
     elif c in ("kill", "restart", "start_proc"):
@@ -1241,12 +1308,18 @@ def main(argv):
     elif c == "opmsg":
         cmd_opmsg(a)
     elif c == "wait_online":
-        want = {u["party_id"] for u in manifest()["units"]}
+        # the pinned sim's units, or every live sim's merged
+        sims = [CTX] if CTX else simlib.live_sim_names()
+        us = [u for n in sims for u in simlib.load_manifest(n)["units"]]
+        want = {u["party_id"] for u in us}
         timeout = float(a[0]) if a else 90
         t0 = time.time()
         got = set()
         while time.time() - t0 < timeout:
-            got = online_parties() & want
+            seen = set()
+            for n in sims:
+                seen |= online_parties(n)
+            got = seen & want
             if got == want:
                 print(f"all {len(want)} units online ({time.time()-t0:.0f}s)")
                 return

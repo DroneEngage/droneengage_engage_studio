@@ -36,7 +36,8 @@ import simlib
 import fake_fleet_server as ffs        # build_message / pretty_rx only
 
 ffs.PRETTY = True
-SEEN_S = 60                 # a unit counts as online if heard this recently
+PARTY = simlib.GCS_PARTY  # the sim's GCS party (main() sets it from the manifest)
+SEEN_S = 60               # a unit counts as online if heard this recently
 
 ws_conn = None              # current websocket (None while reconnecting)
 seen = {}                   # party -> last rx time
@@ -55,12 +56,12 @@ def login(srv):
     """-> (host, port, key). Auth mode does the web login (/w/wl) like the
     webclient; local mode connects straight to the comm server."""
     if not srv["auth"]:
-        return "127.0.0.1", srv["port"], "gcs_bridge"
+        return srv["ip"], srv["port"], "gcs_bridge"
     body = urllib.parse.urlencode({
         "acc": srv["account"]["user"], "pwd": srv["account"]["code"],
         "gr": "1", "app": "de", "ex": "de", "ver": "sim"}).encode()
     req = urllib.request.Request(
-        f"https://127.0.0.1:{srv['auth_port']}/w/wl", data=body,
+        f"https://{srv['auth_ip']}:{srv['auth_port']}/w/wl", data=body,
         headers={"Content-Type": "application/x-www-form-urlencoded"})
     with urllib.request.urlopen(req, context=_ssl_ctx(), timeout=10) as r:
         rep = json.loads(r.read())
@@ -85,7 +86,7 @@ async def request_ids():
     last_id_req = time.time()
     try:
         await send({"ty": "i", "mt": 1005, "tg": "_AGN_",
-                    "sd": simlib.GCS_PARTY, "ms": {"C": 1004}})
+                    "sd": PARTY, "ms": {"C": 1004}})
     except Exception:
         pass
 
@@ -102,7 +103,7 @@ async def session(srv):
                                           compression=None, max_size=None,
                                           ping_interval=20) as ws:
                 await ws.send(json.dumps({"ty": "s", "mt": "de_auth", "f": key,
-                                          "s": simlib.GCS_PARTY, "at": "g"}))
+                                          "s": PARTY, "at": "g"}))
                 # the real server pushes 9007 (connected + clock) before
                 # the ack - skip frames until de_auth_ack
                 t_end = time.time() + 10
@@ -114,7 +115,7 @@ async def session(srv):
                 if ack.get("r") != "ok":
                     raise RuntimeError(f"de_auth refused: {ack}")
                 ws_conn = ws
-                print(f"[bridge] GCS {simlib.GCS_PARTY} connected to "
+                print(f"[bridge] GCS {PARTY} connected to "
                       f"wss://{host}:{port}", flush=True)
                 await request_ids()
                 async for raw in ws:
@@ -123,7 +124,7 @@ async def session(srv):
                     except ValueError:
                         continue
                     sd = msg.get("sd")
-                    if sd and sd != simlib.GCS_PARTY:
+                    if sd and sd != PARTY:
                         seen[sd] = time.time()
                     mt = msg.get("mt")
                     if mt not in (9005, 9007, 1004):
@@ -150,7 +151,7 @@ async def control(reader, writer):
         try:
             if first is not None:
                 for one in (first if isinstance(first, list) else [first]):
-                    one.setdefault("sd", simlib.GCS_PARTY)
+                    one.setdefault("sd", PARTY)
                     await send(one)
             end = time.time() + secs
             while time.time() < end:
@@ -178,7 +179,7 @@ async def control(reader, writer):
                 if line == "list":
                     await request_ids()
                     if ws_conn is not None:
-                        say(f"g:{simlib.GCS_PARTY}")
+                        say(f"g:{PARTY}")
                     now = time.time()
                     for p, t in sorted(seen.items()):
                         if now - t < SEEN_S:
@@ -205,7 +206,7 @@ async def control(reader, writer):
                     if msg is None:
                         say(f"ERR unknown command {line.split()[0]!r}")
                     else:
-                        msg.setdefault("sd", simlib.GCS_PARTY)
+                        msg.setdefault("sd", PARTY)
                         await send(msg)
                         say("OK")
             except Exception as e:
@@ -218,7 +219,9 @@ async def control(reader, writer):
 
 
 async def main():
-    srv = simlib.load_manifest()["server"]
+    global PARTY
+    srv = simlib.load_manifest(sys.argv[1] if len(sys.argv) > 1 else None)["server"]
+    PARTY = srv.get("gcs_party") or simlib.GCS_PARTY
     ctl = await asyncio.start_server(control, "127.0.0.1", srv["control_port"])
     print(f"[bridge] control on 127.0.0.1:{srv['control_port']} "
           f"(server {srv['port']}, auth={srv['auth']})", flush=True)

@@ -1,0 +1,16 @@
+# Personal sim: ONE rover box - ArduRover SITL + de_comm + de_mavlink - on
+# YOUR OWN server stack (servers/sh_start_servers.sh).
+# See quadcopter.yaml for the external-server fields. Runs in parallel with
+# the other personal sims; slot_base 60 keeps every port/sysid disjoint.
+version: 1
+slot_base: 60                 # rover: pilot 6360, fcb 8260, de_comm 62600,
+                              # de_mavlink s2s 63600, ctl 62069, sysid 60
+server:
+  type: external
+  auth: true
+  auth_ip: 127.0.0.1
+  auth_port: 19408
+  ip: 127.0.0.1
+  port: 9966
+units:
+  - {block: rover, name: rover1}
