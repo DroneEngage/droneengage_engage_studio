@@ -79,6 +79,7 @@ PRETTY = False
 SEED = 1337
 PORT = fleet_lib.SERVER_PORT
 CLOCK_OFFSET_MS = 0                 # P4A-07: deliberate server-clock skew
+NOCLOCK = set()                     # parties whose frames carry no "ts"
 T0 = time.time()                    # stats uptime
 
 conns = {}          # ws -> Conn
@@ -292,11 +293,14 @@ async def handler(ws):
                 await ws.send(json.dumps(
                     {"ty": "s", "mt": "de_auth_ack", "r": "ok"}))
                 # P4A-07 (CLOCK.md T2.1): "ts" is the fleet clock push -
-                # like the real server's "ts": Date.now()
+                # like the real server's "ts": Date.now(). A NOCLOCK
+                # party gets no stamp - it never syncs (tq=0 from boot,
+                # the P4A-10 closed-environment case).
+                c9007 = {"s": f"OK:connected:tcp:127.0.0.1:{PORT}"}
+                if party not in NOCLOCK:
+                    c9007["ts"] = fleet_ms()
                 await ws.send(json.dumps(
-                    {"ty": "s", "mt": 9007,
-                     "ms": {"s": f"OK:connected:tcp:127.0.0.1:{PORT}",
-                            "ts": fleet_ms()}}))
+                    {"ty": "s", "mt": 9007, "ms": c9007}))
                 print(f"[server] {actor}:{party} connected "
                       f"({sum(1 for c in conns.values() if c.actor == 'd')} units)",
                       flush=True)
@@ -312,7 +316,11 @@ async def handler(ws):
                 ms = msg.get("ms")
                 if isinstance(ms, dict):
                     ms["s"] = "OK:pong"
-                    ms["ts"] = fleet_ms()
+                    # no "ts" for NOCLOCK parties: the pong still proves
+                    # liveness (the link stays up) but carries no clock
+                    # sample - the unit stays at tq=0 forever.
+                    if conn.party not in NOCLOCK:
+                        ms["ts"] = fleet_ms()
                     asyncio.ensure_future(deliver(conn, json.dumps(msg)))
                 else:
                     asyncio.ensure_future(deliver(
@@ -476,7 +484,7 @@ async def serve(port, cert, key):
 
 
 def main():
-    global PRETTY, SEED, PORT, CLOCK_OFFSET_MS
+    global PRETTY, SEED, PORT, CLOCK_OFFSET_MS, NOCLOCK
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=fleet_lib.SERVER_PORT)
     ap.add_argument("--cert", default=fleet_lib.CERT)
@@ -484,10 +492,14 @@ def main():
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--clock-offset", type=int, default=0,
                     help="ms added to every stamped server clock (P4A-07)")
+    ap.add_argument("--noclock", default="",
+                    help="csv of party ids that never get a clock stamp "
+                         "(9007 ts / 9005 pong ts) - they stay tq=0")
     ap.add_argument("--pretty", action="store_true")
     args = ap.parse_args()
     PRETTY, SEED, PORT = args.pretty, args.seed, args.port
     CLOCK_OFFSET_MS = args.clock_offset
+    NOCLOCK = {p for p in args.noclock.split(",") if p}
     asyncio.run(serve(args.port, args.cert, args.key))
 
 

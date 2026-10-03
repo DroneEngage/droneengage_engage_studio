@@ -1,0 +1,7 @@
+{
+  "op": "p4a10_arrive_target",
+  "roles": {
+    "a1": { "pkg": "p4a10_a1.json", "units": ["copter1"] },
+    "a2": { "pkg": "p4a10_a2.json", "units": ["copter2"] }
+  }
+}

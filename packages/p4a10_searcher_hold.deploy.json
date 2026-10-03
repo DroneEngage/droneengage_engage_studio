@@ -1,0 +1,7 @@
+{
+  "op": "p4a10_cond_barrier",
+  "roles": {
+    "searcher": { "pkg": "p4a10_searcher_hold.json",
+                  "units": ["copter1", "copter2", "copter3"] }
+  }
+}

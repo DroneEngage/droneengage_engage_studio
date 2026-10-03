@@ -400,8 +400,12 @@ def load_server(srv):
       use_local_comm_server); auth: true also starts droneengage_authenticator
       and every unit logs in with the sim account.
     fake: engine/fake_fleet_server.py - same routing plus seeded per-link
-      loss / delay / cut. Use it for link-fault tests."""
-    bad = set(srv) - {"type", "port", "auth", "account", "seed"}
+      loss / delay / cut. Use it for link-fault tests. Extra fake-only
+      keys: clock_offset_ms (skew the stamped fleet clock), noclock
+      (unit names whose 9007/9005 frames carry no "ts" - they stay
+      tq=0, the P4A-10 closed-environment case)."""
+    bad = set(srv) - {"type", "port", "auth", "account", "seed",
+                      "clock_offset_ms", "noclock"}
     if bad:
         raise SimError(f"sim server: unknown keys {sorted(bad)}")
     t = srv.get("type", "real")
@@ -427,6 +431,8 @@ def load_server(srv):
         "auth_port": port + 10, "auth_s2s_port": port + 11,
         "account": {"user": user, "code": code},
         "seed": int(srv.get("seed", 1337)),
+        "clock_offset_ms": int(srv.get("clock_offset_ms", 0)),
+        "noclock": list(srv.get("noclock") or []),
     }
 
 
@@ -704,12 +710,17 @@ def gen_server(sim):
     os.makedirs(sdir, exist_ok=True)
     procs = []
     if srv["type"] == "fake":
+        extra = ""
+        if srv["clock_offset_ms"]:
+            extra += " --clock-offset %d" % srv["clock_offset_ms"]
+        if srv["noclock"]:
+            extra += " --noclock " + ",".join(srv["noclock"])
         write_text(os.path.join(sdir, "launch.fake_server.sh"),
                    "#!/bin/bash\necho $$ > '%s'\nexec python3 -u '%s' --port %d "
-                   "--seed %d --cert '%s' --key '%s' --pretty\n"
+                   "--seed %d --cert '%s' --key '%s'%s --pretty\n"
                    % (pid_path("server", "fake_server"),
                       os.path.join(ENGINE_DIR, "fake_fleet_server.py"),
-                      srv["port"], srv["seed"], CERT, KEY), 0o755)
+                      srv["port"], srv["seed"], CERT, KEY, extra), 0o755)
         return ["fake_server"]
 
     ssl_dir = os.path.join(SERVER_REPO, "ssl_local")

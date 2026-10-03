@@ -1,0 +1,8 @@
+{
+  "op": "p4a10_closed_env",
+  "roles": {
+    "s1": { "pkg": "p4a10_c1.json", "units": ["copter1"] },
+    "s2": { "pkg": "p4a10_c2.json", "units": ["copter2"] },
+    "w":  { "pkg": "p4a10_c3.json", "units": ["copter3"] }
+  }
+}

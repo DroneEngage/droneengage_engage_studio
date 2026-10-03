@@ -1,0 +1,5 @@
+# Two quad copters on the real droneengage_server (local mode, no
+# authenticator) - for scenarios that only need a pair.
+version: 1
+units:
+  - {block: copter, name: copter, count: 2}     # copter1..copter2, 20 m apart

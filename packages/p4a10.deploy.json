@@ -1,0 +1,8 @@
+{
+  "op": "p4a10_cond_barrier",
+  "roles": {
+    "s1": { "pkg": "p4a10_s1.json", "units": ["copter1"] },
+    "s2": { "pkg": "p4a10_s2.json", "units": ["copter2"] },
+    "s3": { "pkg": "p4a10_s3.json", "units": ["copter3"] }
+  }
+}

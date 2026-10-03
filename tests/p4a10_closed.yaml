@@ -1,0 +1,48 @@
+# TASK-P4A-10 scenario "closed environment" - no GPS on any SITL
+# (SIM_GPSx_ENABLE 0 + AHRS_EKF_TYPE 10 truth AHRS), the fleet server
+# stamps a clock 3 h ahead (clock_offset_ms) and copter3 gets no clock
+# stamps at all (noclock -> tq=0 from boot). What must still hold:
+#  * the s1/s2/w event barrier releases together (event gates need no
+#    fleet clock; the tq=0 unit's t=0 emits still count)
+#  * synced units show fleet_minus_unix_ms ~= +3 h (skew absorbed)
+#  * copter3: after_start_s releases on the mono clock, at_ms stays
+#    unarmed (TIME_GATE_UNARMED) and the FC loiter backstop fires
+version: 1
+sim: ../sims/copters3_closed.yaml
+operation: ../packages/p4a10_closed.deploy.json
+steps:
+  - stop
+  - clear
+  - reset: all
+  - wait: 30
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  - wait_journal: {unit: 3, re: "gate g1 released by time_at", timeout: 150}
+  - wait_journal: {unit: 1, re: "gate g released", timeout: 120}
+  - wait_journal: {unit: 3, re: "gate g2 timed out", timeout: 120}
+assert:
+  # closed environment: GPS time never arrived on any unit
+  - journal_count: {unit: all, re: "gps_ms=", equals: 0}
+  # the 3 h server skew is absorbed into the fleet clock on synced units
+  - journal_count: {unit: 1, re: "fleet_minus_unix_ms=10[78][0-9]{5}", min: 1}
+  - journal_count: {unit: 2, re: "fleet_minus_unix_ms=10[78][0-9]{5}", min: 1}
+  # copter3 never synced; copter1/2 did
+  - journal_count: {unit: 3, re: "CLOCK tq=2", equals: 0}
+  - journal_count: {unit: 1, re: "CLOCK tq=2", min: 1}
+  - journal_count: {unit: 2, re: "CLOCK tq=2", min: 1}
+  # barrier released on both synced units within 1 s of each other
+  - journal_count: {unit: 1, re: "gate g released", equals: 1}
+  - journal_count: {unit: 2, re: "gate g released", equals: 1}
+  - journal_time_delta: {u1: 1, re1: "gate g released",
+                         u2: 2, re2: "gate g released", min_s: 0, max_s: 1}
+  - journal_count: {unit: 1, re: "timed out", equals: 0}
+  - journal_count: {unit: 2, re: "timed out", equals: 0}
+  # copter3: mono time gate works; the absolute fleet gate cannot arm and
+  # the FC backstop (loiter expiry) takes over
+  - journal_count: {unit: 3, re: "gate g1 released by time_at", equals: 1}
+  - journal_count: {unit: 3, re: "TIME_GATE_UNARMED", min: 1}
+  - journal_count: {unit: 3, re: "gate g2 released", equals: 0}
+  - journal_count: {unit: 3, re: "gate g2 timed out", equals: 1}
+teardown: reset
