@@ -91,7 +91,7 @@ SERVER_REPO = repo_dir("DE_SERVER_DIR", "droneengage_server")
 AUTH_REPO = repo_dir("DE_AUTH_DIR", "droneengage_authenticator")
 
 SERVER_PORT = 62008                 # wss; control port is +1
-SLOT_BASE = 10
+SLOT_BASE = int(setting("SIM_SLOT_BASE", 10))
 HOME = (-35.363262, 149.165237, 584.0, 353.0)   # SITL default home
 SPACING_M = 20.0                    # default: units 20 m apart, northward
 

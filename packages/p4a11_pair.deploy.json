@@ -1,0 +1,7 @@
+{
+  "op": "p4a11_peer_pair",
+  "roles": {
+    "pair": { "pkg": "p4a11_pair.json",
+              "units": ["copter1", "copter2"] }
+  }
+}

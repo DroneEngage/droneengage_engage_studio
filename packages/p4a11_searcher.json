@@ -1,0 +1,54 @@
+{
+  "schema": "de.package/2.2",
+  "op": "p4a11_phases_end",
+  "op_hash": "sha256:8981480860de051d11c30fb2e80ef0a73f2b0b5282cb5c6b2c905d388c624fe0",
+  "role": "searcher",
+  "vehicle": { "type": "copter" },
+  "requires": [],
+  "fc_items": [
+    { "c": 22, "ft": 3, "mv": [0, 0, 0, 0, 0, 0, 30] },
+    { "c": 16, "ft": 3, "mv": [0, 5, 0, 0, -35.3619, 149.1652, 30] },
+    { "c": 19, "ft": 3, "mv": [600, 0, 30, 0, -35.3619, 149.1652, 30] },
+    { "c": 20, "ft": 2, "mv": [0, 0, 0, 0, 0, 0, 0] },
+    { "c": 16, "ft": 3, "mv": [0, 5, 0, 0, -35.3599, 149.1652, 30] },
+    { "c": 17, "ft": 3, "mv": [0, 0, 0, 0, -35.3599, 149.1652, 30] }
+  ],
+  "missions": {
+    "main": {
+      "trigger": { "type": "op.start" },
+      "priority": 10,
+      "segment": { "start": 1, "end": 6 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    }
+  },
+  "manifest": [
+    { "seq": 1, "mission": "main", "step": "t",     "kind": "nav.takeoff" },
+    { "seq": 2, "mission": "main", "step": "stage", "kind": "nav.wp" },
+    { "at_seq": 2, "on": "reached", "mission": "main", "step": "stage",
+      "kind": "emit", "event": "phone.signal" },
+    { "seq": 3, "mission": "main", "step": "g",     "kind": "gate.hold",
+      "cond": { "all_of": [
+        { "event": "search.done", "from": "scout", "n": "all" } ] },
+      "timeout": 600, "on_timeout": "rtl", "release": 5 },
+    { "seq": 4, "mission": "main", "step": "g",     "kind": "gate.contingency" },
+    { "seq": 5, "mission": "main", "step": "go",    "kind": "nav.wp" },
+    { "seq": 6, "mission": "main", "step": "end",   "kind": "end.hold" }
+  ],
+  "events": {
+    "phone.signal": { "ttl_s": 300 },
+    "payload.dropped": { "ttl_s": 300 },
+    "search.done": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": { "searcher": { "count": 2 }, "scout": { "count": 1 } },
+    "phases": [
+      { "id": "search" },
+      { "id": "localize", "enter_on": "phone.signal" }
+    ],
+    "end": { "on": ["payload.dropped"],
+             "then": { "searcher": "rtl", "scout": "hold", "*": "hold" } },
+    "event_ttl": { "phone.signal": 300, "payload.dropped": 300 }
+  }
+}

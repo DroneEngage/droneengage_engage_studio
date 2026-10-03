@@ -1,0 +1,9 @@
+{
+  "op": "p4a11_phases_end",
+  "roles": {
+    "searcher": { "pkg": "p4a11_searcher.json",
+                  "units": ["copter1", "copter2"] },
+    "scout":    { "pkg": "p4a11_scout.json",
+                  "units": ["copter3"] }
+  }
+}

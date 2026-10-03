@@ -1,0 +1,43 @@
+{
+  "schema": "de.package/2.2",
+  "op": "p4a11_static_end",
+  "op_hash": "sha256:6e0e7aea2a10d70f342e90ec5cd974a32fe607c227986eeefbee5ef4602cfdd9",
+  "role": "dropper",
+  "vehicle": { "type": "copter" },
+  "requires": [],
+  "fc_items": [
+    { "c": 22, "ft": 3, "mv": [0, 0, 0, 0, 0, 0, 30] },
+    { "c": 16, "ft": 3, "mv": [0, 5, 0, 0, -35.3622, 149.1661, 30] },
+    { "c": 16, "ft": 3, "mv": [0, 5, 0, 0, -35.3605, 149.1652, 30] },
+    { "c": 17, "ft": 3, "mv": [0, 0, 0, 0, -35.3605, 149.1652, 30] }
+  ],
+  "missions": {
+    "main": {
+      "trigger": { "type": "op.start" },
+      "priority": 10,
+      "segment": { "start": 1, "end": 4 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    }
+  },
+  "manifest": [
+    { "seq": 1, "mission": "main", "step": "t",    "kind": "nav.takeoff" },
+    { "seq": 2, "mission": "main", "step": "w1",   "kind": "nav.wp" },
+    { "seq": 3, "mission": "main", "step": "drop", "kind": "nav.wp" },
+    { "at_seq": 3, "on": "reached", "mission": "main", "step": "drop",
+      "kind": "emit", "event": "payload.dropped" },
+    { "seq": 4, "mission": "main", "step": "end",  "kind": "end.hold" }
+  ],
+  "events": {
+    "payload.dropped": { "ttl_s": 300 },
+    "mast.stop": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": { "dropper": { "count": 1 }, "mast": { "count": 1 } },
+    "phases": [],
+    "end": { "on": ["payload.dropped"],
+             "then": { "mast": "hold", "dropper": "rtl", "*": "hold" } },
+    "event_ttl": { "payload.dropped": 300 }
+  }
+}

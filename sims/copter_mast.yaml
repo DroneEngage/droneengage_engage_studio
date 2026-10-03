@@ -1,0 +1,8 @@
+# One quad copter plus a comm-only static unit ("SDR mast") on the real
+# droneengage_server - the TASK-P4A-11 acceptance-9 fleet: a flying role
+# next to a static sensor-lane role. mast1 has no FC, never arms and is
+# never sent a nav command; its package is a sensor mission only.
+version: 1
+units:
+  - {block: copter, name: copter1}
+  - {block: comm_only, name: mast1, at: {north_m: -30}}

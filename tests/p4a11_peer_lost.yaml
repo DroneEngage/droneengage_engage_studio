@@ -1,0 +1,43 @@
+# TASK-P4A-11 acceptance 8 "peer_lost: rtl" - a two-drone op (both units
+# role "pair") whose package carries handlers.peer_lost: "rtl". Both
+# fly a takeoff -> stage -> cond-hold mission; ~10 s into the run
+# copter2's server link is cut for 120 s (fake server, fast roster:
+# sv_peer_lost_s 8). Each side then watches the other turn LOST:
+# sys.peer_lost fires the handler once -> NavMode rtl + the run pauses
+# (handler:peer_lost). The handler is latched once per run - when the
+# link comes back (ROSTER ... back) it must NOT fire again.
+version: 1
+sim: ../sims/copters2_faults_fastroster.yaml
+operation: ../packages/p4a11_pair.deploy.json
+steps:
+  - stop
+  - clear
+  - reset: all
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  - wait: 10                      # rosters already flow from READY; the
+                                # cut lands mid-leg, before any emit
+  - link_cut: {unit: copter2, seconds: 120}
+  - wait_journal: {unit: copter1, re: "ROSTER copter2 lost", timeout: 60}
+  - wait_journal: {unit: copter1, re: "handler peer_lost fired", timeout: 60}
+  - wait_journal: {unit: copter1, re: "NavMode confirmed", timeout: 90}
+  # the cut side sees its own peer go silent and fires the same handler
+  - wait_journal: {unit: copter2, re: "handler peer_lost fired", timeout: 60}
+assert:
+  # each unit declared the other LOST exactly once
+  - journal_count: {unit: copter1, re: "ROSTER copter2 lost", equals: 1}
+  - journal_count: {unit: copter2, re: "ROSTER copter1 lost", equals: 1}
+  - journal_count: {unit: all, re: "event sys\\.peer_lost", equals: 1}
+  # the handler ran exactly once per unit and drove both to rtl
+  - journal_count: {unit: all, re: "handler peer_lost fired.*-> rtl", equals: 1}
+  - journal_count: {unit: all, re: "paused \\(handler:peer_lost\\)", equals: 1}
+  - journal_order: {unit: copter1, first: "ROSTER copter2 lost",
+                   then: "handler peer_lost fired"}
+  - journal_order: {unit: copter1, first: "handler peer_lost fired",
+                   then: "NavMode confirmed"}
+  - journal_count: {unit: all, re: "NavMode confirmed", at_least: 1}
+  # the gate's rtl backstop never ran - the handler beat it
+  - journal_count: {unit: all, re: "timed out", equals: 0}
+teardown: reset

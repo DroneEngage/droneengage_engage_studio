@@ -1,0 +1,9 @@
+{
+  "op": "p4a11_static_end",
+  "roles": {
+    "dropper": { "pkg": "p4a11_dropper.json",
+                 "units": ["copter1"] },
+    "mast":    { "pkg": "p4a11_mast.json",
+                 "units": ["mast1"] }
+  }
+}
