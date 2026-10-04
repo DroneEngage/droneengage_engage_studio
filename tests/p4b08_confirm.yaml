@@ -1,0 +1,102 @@
+# TASK-P4B-08 scenarios 1-4 (injected detections, p4b08_unit package on
+# all three copters):
+#   1. class "phone" k_sources_within {k:2, d_m:60}: one source -> the
+#      target stays a candidate; a second vehicle's detection ~33 m away
+#      -> confirmed by k_sources_within on all three.
+#   2. class "person" auto_with_veto {s:20}: one detection -> candidate;
+#      ~20 s later confirmed by auto_with_veto on all three (VETO_CLOCK
+#      journaled). The package's "drop" sensor mission emits
+#      payload.dropped {tid} 10 s later (gate timeout - inside the 10 s
+#      fleet-clock tolerance so every unit journals confirmed first) ->
+#      scenario 4: served by serves on all.
+#   3. a second "person" cluster: an operator Veto (1093 dismissed)
+#      inside the window -> dismissed by operator; past the window it
+#      still does not confirm. A "fire" detection (no confirm entry ->
+#      operator_confirm) stays a candidate until a 1093 confirm ->
+#      confirmed by operator, which triggers the "engage" mission.
+# Detections are injected with `fire det.<cls> {payload}` on a unit: its
+# sensor mission re-emits the payload as the fleet event (a real 1090:
+# acks, retries, catch-up all apply).
+version: 1
+sim: ../sims/copters3.yaml
+operation: ../packages/p4b08.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  - wait: 15
+
+  # ---- 1: k_sources_within {k:2, d_m:60} on "phone"
+  - fire: {event: det.phone, unit: 1,
+           until: {re: "BUS_OUT.*n=target\\.phone", count: 1},
+           payload: {pos: [-35.3600, 149.16500], unc_m: 20, conf: 0.7}}
+  - wait_journal: {unit: all, re: "WM_NEW", timeout: 30}
+  - wait: 8                                     # one source: stays candidate
+  - fire: {event: det.phone, unit: 2,
+           until: {re: "BUS_OUT.*n=target\\.phone", count: 1},
+           payload: {pos: [-35.3603, 149.16500], unc_m: 20, conf: 0.6}}
+  - wait_journal: {unit: 1, re: "WM_STATE .* confirmed by k_sources_within", timeout: 30}
+  - wait_journal: {unit: 2, re: "WM_STATE .* confirmed by k_sources_within", timeout: 30}
+  - wait_journal: {unit: 3, re: "WM_STATE .* confirmed by k_sources_within", timeout: 30}
+  - wait: 15                                    # a roster period: digests compare
+
+  # ---- 2: auto_with_veto {s:20} on "person" - the timer confirms
+  - fire: {event: det.person, unit: 1,
+           until: {re: "BUS_OUT.*n=target\\.person", count: 1},
+           payload: {pos: [-35.3615, 149.16500], unc_m: 20, conf: 0.8}}
+  - wait_journal: {unit: 1, re: "WM_STATE .* confirmed by auto_with_veto", timeout: 50}
+  - wait_journal: {unit: 2, re: "WM_STATE .* confirmed by auto_with_veto", timeout: 50}
+  - wait_journal: {unit: 3, re: "WM_STATE .* confirmed by auto_with_veto", timeout: 50}
+  - wait_journal: {unit: 1, re: "VETO_CLOCK .* (fleet|local)", timeout: 10}
+
+  # ---- 4 (early, driven by the package): the confirm activated "drop",
+  #      which emitted payload.dropped {tid} -> served everywhere
+  - wait_journal: {unit: 1, re: "BUS_OUT.*n=payload\\.dropped", timeout: 30}
+  - wait_journal: {unit: 1, re: "WM_STATE .* served by serves", timeout: 30}
+  - wait_journal: {unit: 2, re: "WM_STATE .* served by serves", timeout: 30}
+  - wait_journal: {unit: 3, re: "WM_STATE .* served by serves", timeout: 30}
+
+  # ---- 3: a second "person" cluster - Veto (dismiss) inside the window
+  - fire: {event: det.person, unit: 2,
+           until: {re: "WM_NEW", count: 3, unit: 1, tries: 10},
+           payload: {pos: [-35.3650, 149.16500], unc_m: 20, conf: 0.8}}
+  - send: '{"ty":"i","mt":1093,"tg":"_AGN_","ms":{"v":1,"run":"{RUN}","ops":[{"o":"state","tid":"{WM_TID:1}","st":"dismissed","t":1,"by":"GCS_FLEET","q":1}]}}'
+  - wait_journal: {unit: 1, re: "WM_STATE .* dismissed by operator", timeout: 30}
+  - wait_journal: {unit: 2, re: "WM_STATE .* dismissed by operator", timeout: 30}
+  - wait_journal: {unit: 3, re: "WM_STATE .* dismissed by operator", timeout: 30}
+  - wait: 25                                    # past the window: still dismissed
+
+  # ---- 3b: "fire" has no confirm entry (operator_confirm): only the 1093 wins
+  - fire: {event: det.fire, unit: 1,
+           until: {re: "BUS_OUT.*n=target\\.fire", count: 1},
+           payload: {pos: [-35.3600, 149.16600], unc_m: 20, conf: 0.9}}
+  - wait_journal: {unit: 1, re: "WM_NEW", timeout: 30}
+  - wait: 8                                     # no auto policy: stays candidate
+  - send: '{"ty":"i","mt":1093,"tg":"_AGN_","ms":{"v":1,"run":"{RUN}","ops":[{"o":"state","tid":"{WM_TID:1}","st":"confirmed","t":1,"by":"GCS_FLEET","q":2}]}}'
+  - wait_journal: {unit: 1, re: "WM_STATE .* confirmed by operator", timeout: 30}
+  - wait_journal: {unit: 2, re: "WM_STATE .* confirmed by operator", timeout: 30}
+  - wait_journal: {unit: 3, re: "WM_STATE .* confirmed by operator", timeout: 30}
+  - wait: 15
+
+  - opabort
+
+assert:
+  # 1: exactly one phone cluster, confirmed once by the policy
+  - journal_count: {unit: all, re: "WM_STATE .* confirmed by k_sources_within", equals: 1}
+  # 2: the veto timer confirmed once; the clock form was journaled
+  - journal_count: {unit: all, re: "WM_STATE .* confirmed by auto_with_veto", equals: 1}
+  - journal_count: {unit: all, re: "VETO_CLOCK", at_least: 1}
+  # 4: served on all three
+  - journal_count: {unit: all, re: "WM_STATE .* served by serves", equals: 1}
+  # 3: the veto inside the window = one dismiss; it never confirmed after
+  - journal_count: {unit: all, re: "WM_STATE .* dismissed by operator", equals: 1}
+  - journal_count: {unit: all, re: "WM_STATE .* confirmed", equals: 3}
+  # 3b: operator confirm on the operator_confirm class
+  - journal_count: {unit: all, re: "WM_STATE .* confirmed by operator", equals: 1}
+  - journal_count: {unit: all, re: "activating mission engage", at_least: 1}
+  # four clusters total (phone, person, person #2, fire); same table
+  - journal_count: {unit: all, re: "WM_NEW", equals: 4}
+  - journal_count: {unit: all, re: "WM_DIVERGE", equals: 0}

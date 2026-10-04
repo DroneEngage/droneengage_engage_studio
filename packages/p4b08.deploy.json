@@ -1,0 +1,7 @@
+{
+ "op": "p4b08_confirm",
+ "roles": {
+  "unit": { "pkg": "p4b08_unit.json",
+            "units": ["copter1", "copter2", "copter3"] }
+ }
+}

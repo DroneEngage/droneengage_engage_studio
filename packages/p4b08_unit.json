@@ -1,0 +1,237 @@
+{
+  "schema": "de.package/2.2",
+  "op": "p4b08_confirm",
+  "op_hash": "sha256:p4b08-confirm-policies-test-000000000000000000000000000000000000",
+  "role": "unit",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [],
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [0, 0, 0, 0, 0, 0, 30]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [0, 5, 0, 0, -35.3632, 149.1661, 30]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [0, 0, 0, 0, -35.3632, 149.1661, 30]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [0, 5, 0, 0, -35.363, 149.1665, 30]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [0, 0, 0, 0, -35.363, 149.1665, 30]
+    }
+  ],
+  "missions": {
+    "main": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 10,
+      "segment": {
+        "start": 1,
+        "end": 3
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 300,
+        "then": "rtl"
+      }
+    },
+    "engage": {
+      "trigger": {
+        "type": "event",
+        "event": "sys.target_state"
+      },
+      "priority": 20,
+      "segment": {
+        "start": 4,
+        "end": 5
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 300,
+        "then": "rtl"
+      }
+    },
+    "detect_phone": {
+      "trigger": {
+        "type": "event",
+        "event": "det.phone"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "steps": [
+        {
+          "id": "e",
+          "k": "emit",
+          "event": "target.phone",
+          "payload_from": "trigger"
+        }
+      ]
+    },
+    "detect_person": {
+      "trigger": {
+        "type": "event",
+        "event": "det.person"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "steps": [
+        {
+          "id": "e",
+          "k": "emit",
+          "event": "target.person",
+          "payload_from": "trigger"
+        }
+      ]
+    },
+    "detect_fire": {
+      "trigger": {
+        "type": "event",
+        "event": "det.fire"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "steps": [
+        {
+          "id": "e",
+          "k": "emit",
+          "event": "target.fire",
+          "payload_from": "trigger"
+        }
+      ]
+    },
+    "drop": {
+      "trigger": {
+        "type": "event",
+        "event": "sys.target_state",
+        "when": "${event.p.st == 'confirmed' && event.p.cls == 'person'}"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "steps": [
+        {
+          "id": "hold",
+          "k": "gate",
+          "event": "det.never",
+          "timeout": 10,
+          "on_timeout": "continue"
+        },
+        {
+          "id": "e",
+          "k": "emit",
+          "event": "payload.dropped",
+          "payload_from": "trigger"
+        }
+      ]
+    }
+  },
+  "manifest": [
+    {
+      "seq": 1,
+      "mission": "main",
+      "step": "t",
+      "kind": "nav.takeoff"
+    },
+    {
+      "seq": 2,
+      "mission": "main",
+      "step": "w1",
+      "kind": "nav.wp"
+    },
+    {
+      "seq": 3,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.hold"
+    },
+    {
+      "seq": 4,
+      "mission": "engage",
+      "step": "w",
+      "kind": "nav.wp"
+    },
+    {
+      "seq": 5,
+      "mission": "engage",
+      "step": "end",
+      "kind": "end.hold"
+    }
+  ],
+  "events": {
+    "target.phone": {
+      "target": "phone",
+      "ttl_s": 600
+    },
+    "target.person": {
+      "target": "person",
+      "ttl_s": 600
+    },
+    "target.fire": {
+      "target": "fire",
+      "ttl_s": 600
+    },
+    "payload.dropped": {
+      "serves": "person",
+      "ttl_s": 600
+    },
+    "det.phone": {},
+    "det.person": {},
+    "det.fire": {}
+  },
+  "confirm": {
+    "phone": {
+      "policy": "k_sources_within",
+      "k": 2,
+      "d_m": 60
+    },
+    "person": {
+      "auto_with_veto": 20
+    }
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "unit": {
+        "count": 3
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "det.phone": 300,
+      "det.person": 300,
+      "det.fire": 300
+    },
+    "event_targets": {
+      "target.phone": "phone",
+      "target.person": "person",
+      "target.fire": "fire"
+    },
+    "event_serves": {
+      "payload.dropped": "person"
+    },
+    "event_sticky": [
+      "payload.dropped",
+      "target.fire",
+      "target.person",
+      "target.phone"
+    ]
+  }
+}
