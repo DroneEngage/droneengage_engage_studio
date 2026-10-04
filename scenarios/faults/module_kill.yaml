@@ -1,0 +1,13 @@
+# module_kill: kill de_mavlink on a copter - the module proc dies while
+# de_comm keeps running.
+version: 1
+name: f_module_kill
+transport: fake
+settle_s: 5
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 3, fault: module_kill, unit: c1, module: de_mavlink}
+assert:
+  - proc_dead: {unit: c1, proc: de_mavlink}
+  - proc_alive: {unit: c1, proc: de_comm}

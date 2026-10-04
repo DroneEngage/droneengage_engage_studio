@@ -50,7 +50,14 @@ Pilot (units with an fc):
 
 Link faults (server type fake only):
   link_cut <unit> <s> | kick <unit> | loss <unit> <%> | delay <unit> <ms> |
-  link_clear <unit> | links | clock offset <ms>
+  link_clear <unit> | links | clock offset <ms> |
+  noclock <unit> <0|1>                drop/restore the unit's clock stamps
+                                      (P5-07 no_time_sync: it stays tq=0)
+
+Vehicle faults:
+  param <unit> <NAME> <value>       SITL param set (battery SIM_BATT_VOLTAGE,
+                                    gps SIM_GPS_DISABLE)
+  rc <unit> <chan> <pwm>            RC_CHANNELS_OVERRIDE; pwm 65535 releases
 
 Processes:
   kill <unit> <proc> | restart <unit> <proc> | start_proc <unit> <proc>
@@ -150,7 +157,7 @@ def with_fc(units):
 
 # ------------------------------------------------------------- control port
 
-FAULT_CMDS = ("link", "kick", "clock", "stats")
+FAULT_CMDS = ("link", "kick", "clock", "stats", "noclock")
 
 
 def ctrl(line, read_s=0.4, sim=None):
@@ -260,15 +267,20 @@ def set_fc_mode(m, u, name):
                         table[name])
 
 
-def mav(u, timeout=90):
-    """Connect to the unit's SITL serial0 (one TCP client at a time)."""
+def mav(u, timeout=90, src=254):
+    """Connect to the unit's SITL serial0 (one TCP client at a time).
+    src=255 poses as the GCS (SYSID_MYGCS) - required for
+    RC_CHANNELS_OVERRIDE which SITL ignores from other sysids."""
     from pymavlink import mavutil
     uri = f"tcp:127.0.0.1:{u['fc']['pilot_port']}"
     t0 = time.time()
+    m = None
     while True:
         try:
+            if m is not None:
+                m.close()          # SITL serial0 chokes on abandoned clients
             m = mavutil.mavlink_connection(uri, autoreconnect=False,
-                                           retries=2, source_system=254)
+                                           retries=2, source_system=src)
             if fc_heartbeat(m, u, timeout=8) is not None:
                 m.target_system = u["fc"]["sysid"]
                 m.target_component = FC_COMP
@@ -1265,6 +1277,37 @@ def main(argv):
         ctrl("stats")
     elif c == "clock":
         ctrl(f"clock offset {a[1]}")
+    elif c == "noclock":
+        # P5-07 no_time_sync fault: the fake server stops stamping "ts"
+        # for the unit (it stays tq=0) until `noclock <unit> 0`
+        for u in resolve(a[0]):
+            ctrl(f"noclock {u['party_id']} {a[1]}")
+    elif c == "param":
+        # P5-07 battery/gps faults: runtime SITL parameter set
+        for u in with_fc(resolve(a[0])):
+            m = mav(u)
+            try:
+                m.mav.param_set_send(m.target_system, m.target_component,
+                                     a[1].encode(), float(a[2]), 9)
+                got = m.recv_match(type="PARAM_VALUE", blocking=True,
+                                   timeout=5)
+                ok = got is not None
+                print(f"{u['name']}: {a[1]} <- {a[2]} "
+                      f"({'set' if ok else 'no PARAM_VALUE echo'})")
+            finally:
+                m.close()
+    elif c == "rc":
+        # P5-07 rc_override fault: RC_CHANNELS_OVERRIDE, 65535 releases
+        for u in with_fc(resolve(a[0])):
+            m = mav(u, src=255)
+            try:
+                chans = [65535] * 18
+                chans[int(a[1]) - 1] = int(a[2])
+                m.mav.rc_channels_override_send(m.target_system,
+                                                m.target_component, *chans)
+                print(f"{u['name']}: rc{a[1]} <- {a[2]}")
+            finally:
+                m.close()
     elif c == "server_up":
         for p in server_procs("all"):
             if p not in {k.split(".", 1)[1]

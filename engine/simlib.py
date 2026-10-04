@@ -92,6 +92,7 @@ def repo_dir(env_key, name):
 COMM_REPO = repo_dir("DE_COMM_DIR", "droneengage_communication")
 SERVER_REPO = repo_dir("DE_SERVER_DIR", "droneengage_server")
 AUTH_REPO = repo_dir("DE_AUTH_DIR", "droneengage_authenticator")
+WEBCLIENT_REPO = repo_dir("DE_WEBCLIENT_DIR", "droneengage_webclient_react")
 
 SERVER_PORT = 62008                 # wss; control port is +1
 SLOT_BASE = int(setting("SIM_SLOT_BASE", 10))
@@ -358,7 +359,7 @@ def load_sim(path_or_spec, base_dir=None):
         if isinstance(entry, str):
             entry = {"block": entry}
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
-                            "account"}
+                            "account", "add_modules", "role"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -519,7 +520,19 @@ def _expand_unit(sim, b, name, entry, at, catalog):
          "modules": list(b["modules"]), "ports": {}, "fc": None,
          "config": copy.deepcopy(b["config"]),
          "parm_files": list(b["parm_files"]),
-         "location": None}
+         "location": None, "role": entry.get("role")}
+    # P5-07: a unit may add modules on top of its block (scenario fleet
+    # entries carry `modules:` for the P5-08 stubs). Unknown modules fail
+    # here with the catalog list, before ports are allocated.
+    for m in entry.get("add_modules", []):
+        if m in u["modules"]:
+            continue
+        if m not in catalog:
+            raise SimError(f"unit {name}: unknown add_modules entry {m!r} "
+                           f"(catalog: {', '.join(catalog)})")
+        if catalog.get(m, {}).get("needs_fc") and not b["fc"]:
+            raise SimError(f"unit {name}: module {m} needs an `fc:`")
+        u["modules"].append(m)
     for mod, over in (entry.get("config") or {}).items():
         if mod not in u["modules"] and mod != "sitl":
             raise SimError(f"unit {name}: config for {mod!r} but block "

@@ -1,0 +1,13 @@
+# kill: SIGKILL the unit's de_comm; the pidfile is gone, the proc is
+# dead and its link drops.
+version: 1
+name: f_kill
+transport: fake
+settle_s: 10
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: kill, unit: s1, proc: de_comm}
+assert:
+  - proc_dead: {unit: s1, proc: de_comm}
+  - link_offline: {unit: s1, at_least: 1}

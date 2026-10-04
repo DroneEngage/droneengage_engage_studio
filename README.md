@@ -222,6 +222,65 @@ of SITL (fresh, at home), de_comm and its modules.
 Results land in `results/<timestamp>-<test>/`: journals, logs, the test file
 and the sim manifest.
 
+## Scenarios (de.scenario/1)
+
+`scenarios/*.yaml` rehearse a whole operation on the desk - one versioned
+file carries the fleet, the operation, the operator policy, a scripted
+timeline, faults and assertions:
+
+```
+./run_scenario.py scenarios/faults/link_cut.yaml          # one scenario
+./run_scenario.py scenarios/faults/link_cut.yaml --seed 7 # a seed run
+./run_scenario.py --suite scenarios/faults --seeds 1,2    # suite x seeds
+./sim run scenarios/faults/kill.yaml                      # same engine via sim
+```
+
+Legacy `tests/*.yaml` (`sim:` + `steps:`) keep running unchanged through
+`./sim run` - the same dispatcher picks the engine by file shape.
+
+Format (strict - unknown keys fail against
+`engine/de_scenario.schema.json`):
+
+- `version`, `name`, `seed`, `realtime`, `transport` (`fake` | `real`),
+  `home`, `slot_base`, `world` (P5-08: accepted, not consumed),
+  `operation`, `verify` (P5-06 CLI, absent = recorded skip),
+  `operator` (the bot's standing approve/confirm policy), `fleet`,
+  `timeline`, `assert`, `teardown`, `settle_s`.
+- `fleet:` entries take `id`, `cls` (`copter|plane|rover|static|
+  comm_only` or a `blocks/` name), `role`, absolute `home`/`base`,
+  relative `at`, `modules`, `params`, `config`, `account`.
+- `timeline:` steps are `{t: <s>, do: <step>, ...}` or
+  `{t: <s>, fault: <kind>, ...}`; `t` is seconds from scenario start and
+  may be negative (runs at once). `{on: {unit, re}}` arms a journal
+  watcher instead; `once` defaults true; regex groups substitute as
+  `{M1}`..`{M9}`. The run lasts `last_t + settle_s`.
+- `do:` names either a runner.py step (`arm`, `mode`, `wait`,
+  `link_clear`, ...) or an operator action (`deploy`, `start`, `abort`,
+  `operator act: approve|deny|confirm|dismiss|fire|<1086>`).
+- `fault:` kinds: `link_cut`, `loss`, `delay`, `gcs_disconnect`,
+  `server_down`, `kill`, `restart`, `module_kill`, `battery`, `gps_off`,
+  `mode`, `rc_override`, `server_clock`, `no_time_sync` (fake transport
+  for the link/clock ones). `dur_s` auto-restores where it applies.
+- `assert:` adds `proc_alive`/`proc_dead`, `link_offline`,
+  `roster_value`, `operator_log_count`, `telemetry_value`, `fc_mode`,
+  `distance_to`, `coverage_complete`, `no_sep_violation` to the legacy
+  assertion set. `realtime: true` gates timing asserts - they SKIP with
+  a visible reason when SITL speed-up is not ~1.
+
+Each run gets a seed-derived port block (no cross-seed collisions) and
+`results/<utc>/<name>/`: journals, per-unit and server logs,
+`links.jsonl` (link up/down transitions the monitor saw),
+`telemetry.jsonl` (per-unit FC samples = the tlog), `operator.log` (the
+bot's GCS session journal), `truth.jsonl` when a world supplies it,
+`verify.json`, `summary.json` (PASS/FAIL/SKIP + commit ids + speed-up)
+and `junit.xml`.
+
+**SITL capacity at speed-up 1 (this machine, 14 cores):** 24 copter
+SITLs ran together for 75 s with measured speed-up 0.999-1.002 per
+unit (see `speedup` in `summary.json` - FC `time_boot_ms` vs wall).
+Beyond the tested 24 the FC loops may fall behind; `realtime: true`
+scenarios then report a visible SKIP instead of a timing FAIL.
+
 ## Operator console
 
 `./sim ctl` with no arguments prints the full list. `./sim ctl -s <sim>`

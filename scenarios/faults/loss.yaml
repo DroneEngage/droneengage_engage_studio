@@ -1,0 +1,14 @@
+# loss: 100% seeded loss starves the link until it is cleared - an
+# offline interval appears and the unit comes back after link_clear.
+version: 1
+name: f_loss
+transport: fake
+settle_s: 30
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: loss, unit: s1, percent: 100}
+  - {t: 20, do: link_clear, unit: s1}
+assert:
+  - link_offline: {unit: s1, at_least: 1, min_s: 5}
+  - proc_alive: {unit: s1, proc: de_comm}

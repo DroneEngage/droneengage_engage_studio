@@ -294,6 +294,11 @@ async def handler(ws):
                           flush=True)
                     await ws.close()
                     return
+                if not link_for(party).admit("rx", f"auth <- {party}"):
+                    # the login frame itself rode the lossy link and was
+                    # dropped - the client times out and retries, so a
+                    # 100% loss keeps the unit offline like a real link
+                    continue
                 conn = Conn(ws, party, actor)
                 conns[ws] = conn
                 by_party[party] = conn
@@ -395,6 +400,8 @@ def build_message(line):
 
 async def control_reader(reader, writer):
     global CLOCK_OFFSET_MS
+    # NOCLOCK is a set - mutated in place so --noclock and `noclock`
+    # control lines share it
     print(f"[ctrl] connection from {writer.get_extra_info('peername')}",
           flush=True)
 
@@ -438,6 +445,18 @@ async def control_reader(reader, writer):
                         say(f"clock offset now {CLOCK_OFFSET_MS} ms")
                     else:
                         say(f"clock offset is {CLOCK_OFFSET_MS} ms")
+                    continue
+                if line.startswith("noclock "):
+                    # noclock <party> <0|1> - P5-07 no_time_sync fault:
+                    # stop/restart stamping "ts" into the unit's 9005
+                    # pongs + future 9007s (it stays tq=0 meanwhile)
+                    _, party, flag = line.split()[:3]
+                    if flag == "1":
+                        NOCLOCK.add(party)
+                    else:
+                        NOCLOCK.discard(party)
+                    say(f"noclock {party} = {flag} "
+                        f"(noclock set: {sorted(NOCLOCK)})")
                     continue
                 if line.startswith("kick "):
                     # close the unit's ws: a real transport cut - the unit

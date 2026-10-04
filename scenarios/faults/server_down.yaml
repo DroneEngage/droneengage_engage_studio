@@ -1,0 +1,13 @@
+# server_down: kill every server proc for dur_s. The unit's de_comm
+# stays up, retries, and comes back once the server returns.
+version: 1
+name: f_server_down
+transport: fake
+settle_s: 45
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: server_down, dur_s: 25}
+assert:
+  - link_offline: {unit: s1, at_least: 1, min_s: 5}
+  - proc_alive: {unit: server, proc: fake_server}

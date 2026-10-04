@@ -1,0 +1,13 @@
+# restart: kill + relaunch de_comm. The fresh process reconnects and
+# journals a second CLOCK line (the first was pre-scenario).
+version: 1
+name: f_restart
+transport: fake
+settle_s: 20
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: restart, unit: s1, proc: de_comm}
+assert:
+  - proc_alive: {unit: s1, proc: de_comm}
+  - journal_count: {unit: s1, re: "CLOCK", at_least: 1}

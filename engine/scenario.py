@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""scenario.py - the de.scenario/1 loader (TASK-P5-07).
+
+One versioned scenario file describes a whole rehearsal: operation +
+fleet + world + timeline + operator policy + assertions. The format is
+validated against engine/de_scenario.schema.json on load - unknown keys
+fail fast.
+
+    version: 1
+    name: sar_nominal
+    seed: 42
+    realtime: true                  # timing asserts need SITL speed-up 1
+    transport: fake                 # fake | real | {server: block}
+    world: ../worlds/forest_a.yaml  # P5-08 - accepted, not consumed yet
+    operation: ../ops/sar.deop      # or a deploy spec / package
+    verify: {expect_errors: 0}      # P5-06 CLI before deploy
+    home: [lat, lng, alt, yaw]      # fleet home (absolute)
+    fleet:
+      - {id: cam1, cls: copter, role: cam_scout, home: [..], modules: [..]}
+      - {id: mast, cls: static, role: sdr_mast,  base: [..]}
+    operator:                       # the bot's standing policy
+      approve: {launch: {after_s: 5}, action: {after_s: 3}}
+      confirm: {person: {after_s: 10}}
+    timeline:
+      - {t: 0,   do: deploy}
+      - {t: 5,   do: start, start: {searcher: standby}}
+      - {t: 300, fault: link_cut, unit: s2, dur_s: 60}
+      - {on: {unit: amb, re: "APPROVAL_REQ .* launch"}, do: operator,
+         act: deny, once: true}
+    assert:
+      - journal_count: {unit: all, re: "BUS_IN phone.signal", eq: 1}
+      - distance_to: {unit: amb, re: "ACTION .*release.* ok",
+                      truth: person_1, max_m: 15}
+
+`t:` is seconds from the scenario start (the moment the timeline engine
+begins, after bring-up + verify); negative `t` runs at once, before the
+nominal start. `on:` arms a journal watcher; its regex match groups are
+available to the step's string args as {M1}..{M9} (e.g. req=(\\S+) ->
+req: "{M1}").
+
+A legacy tests/*.yaml file (version 1, `sim:` + `steps:`) loads as
+{legacy: True} unchanged - the scenario runner executes the same steps
+through the P4A-03 machinery and adds the new results layout.
+"""
+
+import json
+import os
+import re
+
+import yaml
+
+import simlib
+
+SCHEMA_PATH = os.path.join(simlib.ENGINE_DIR, "de_scenario.schema.json")
+
+# de.scenario/1 fleet cls -> blocks/ name (a blocks/ name itself also
+# works: `cls: copter_lowbat`)
+CLS_BLOCK = {"copter": "copter", "plane": "plane", "rover": "rover",
+             "static": "comm_only", "comm_only": "comm_only"}
+
+
+def is_legacy_spec(raw):
+    """A P4A-03 test file: version 1 with sim:/steps: and no scenario
+    keys. Runs unchanged through the new runner."""
+    return isinstance(raw, dict) and "steps" in raw and \
+        "timeline" not in raw and "fleet" not in raw
+
+
+def _validate(raw, path):
+    try:
+        import jsonschema
+    except ImportError:
+        jsonschema = None
+    schema = json.load(open(SCHEMA_PATH))
+    if jsonschema:
+        try:
+            jsonschema.validate(raw, schema)
+        except jsonschema.ValidationError as e:
+            where = ".".join(str(p) for p in e.absolute_path) or "<root>"
+            raise simlib.SimError(
+                f"{path}: de.scenario/1 violation at {where}: {e.message}")
+    else:
+        # jsonschema not installed: still enforce the fail-fast rules
+        allowed = set(schema["properties"])
+        bad = set(raw) - allowed
+        if bad:
+            raise simlib.SimError(f"{path}: unknown keys {sorted(bad)}")
+        for req in schema["required"]:
+            if req not in raw:
+                raise simlib.SimError(f"{path}: missing required key {req!r}")
+        for ent in raw.get("fleet", []):
+            bad = set(ent) - set(schema["properties"]["fleet"]["items"]
+                                 ["properties"])
+            if bad:
+                raise simlib.SimError(
+                    f"{path}: fleet {ent.get('id')}: unknown keys {sorted(bad)}")
+    for i, step in enumerate(raw.get("timeline", [])):
+        if ("t" in step) == ("on" in step):
+            raise simlib.SimError(
+                f"{path}: timeline[{i}] needs exactly one of t:/on:")
+        if ("do" in step) == ("fault" in step):
+            raise simlib.SimError(
+                f"{path}: timeline[{i}] needs exactly one of do:/fault:")
+
+
+def _absolute_to_at(home, pos):
+    """[lat,lng,alt,yaw] absolute -> sim `at` meters-from-home."""
+    import math
+    lat, lng, alt = pos[0], pos[1], pos[2]
+    yaw = pos[3] if len(pos) > 3 else home[3]
+    return {
+        "north_m": (lat - home[0]) * 111320.0,
+        "east_m": (lng - home[1]) * 111320.0 * math.cos(math.radians(home[0])),
+        "alt_m": alt - home[2],
+        "yaw": yaw,
+    }
+
+
+def _server_spec(scn, slot_base):
+    """transport: fake|real|{...} -> a sim `server:` block. The scenario
+    seed drives the fake server's link RNG when no explicit seed is set;
+    the server port rides the same slot block so --seeds runs can never
+    share ports (parallel `sim up` still refuses a real clash)."""
+    t = scn.get("transport", "real")
+    if isinstance(t, str):
+        srv = {"type": t}
+    else:
+        srv = dict(t)
+    srv.setdefault("port", simlib.SERVER_PORT + slot_base)
+    if srv.get("type") == "fake" and "seed" not in srv:
+        srv["seed"] = scn["seed"]
+    return srv
+
+
+def _fleet_units(scn, home):
+    """fleet: entries -> sim `units:` entries. `cls` picks the block;
+    `modules` lands as add_modules; `params` as fc.params; `home`/`base`
+    are absolute positions converted to meters offsets. A tlog is enabled
+    on every de_mavlink unit - the position assertions read them."""
+    units = []
+    for ent in scn["fleet"]:
+        block = CLS_BLOCK.get(ent["cls"], ent["cls"])
+        if block not in simlib.list_blocks():
+            raise simlib.SimError(
+                f"scenario {scn['name']}: unknown cls/block {ent['cls']!r} "
+                f"for unit {ent['id']} (cls: {sorted(CLS_BLOCK)} or a "
+                f"block from {', '.join(simlib.list_blocks())})")
+        u = {"block": block, "name": ent["id"]}
+        pos = ent.get("home") or ent.get("base")
+        if pos is not None:
+            u["at"] = _absolute_to_at(home, pos)
+        elif ent.get("at"):
+            u["at"] = dict(ent["at"])
+        if ent.get("role"):
+            u["role"] = ent["role"]
+        if ent.get("modules"):
+            u["add_modules"] = list(ent["modules"])
+        if ent.get("params"):
+            u["fc"] = {"params": dict(ent["params"])}
+        cfg = dict(ent.get("config") or {})
+        # SITL tlogs feed distance_to / no_sep_violation / the realtime
+        # speed-up check - enable on units that run de_mavlink
+        if "de_mavlink" in simlib.load_block(block)["modules"]:
+            cfg = simlib.deep_merge(
+                {"de_mavlink": {"tlog_enabled": True}}, cfg)
+        if cfg:
+            u["config"] = cfg
+        if ent.get("account"):
+            u["account"] = ent["account"]
+        units.append(u)
+    return units
+
+
+def _yaml_bool_keys(raw):
+    """YAML 1.1 parses the bare key `on:` as True (yes/no/on/off are
+    booleans). The format says `on:` - rename it back before
+    validation so the spec's syntax works unquoted."""
+    for step in raw.get("timeline") or []:
+        if isinstance(step, dict) and True in step:
+            step["on"] = step.pop(True)
+
+
+def load_scenario(path, seed=None):
+    """-> a normalized run spec. Raises simlib.SimError on any format
+    violation (unknown keys, bad timeline steps, unknown cls)."""
+    path = os.path.abspath(path)
+    raw = yaml.safe_load(open(path)) or {}
+    base = os.path.dirname(path)
+    _yaml_bool_keys(raw)
+    if is_legacy_spec(raw):
+        return {"legacy": True, "file": path, "test": raw,
+                "name": os.path.splitext(os.path.basename(path))[0],
+                "seed": seed or 1}
+    _validate(raw, path)
+    home = tuple(raw.get("home", simlib.HOME))
+    if len(home) == 3:
+        home = home + (simlib.HOME[3],)
+    seed = int(seed if seed is not None else raw.get("seed", 1))
+    scn = {
+        "legacy": False,
+        "file": path,
+        "name": raw["name"],
+        "description": raw.get("description", ""),
+        "seed": seed,
+        "realtime": bool(raw.get("realtime", False)),
+        "transport": raw.get("transport", "real"),
+        "world": (os.path.join(base, raw["world"])
+                  if isinstance(raw.get("world"), str) else None),
+        "operation": (os.path.join(base, raw["operation"])
+                      if raw.get("operation") else None),
+        "verify": raw.get("verify"),
+        "fleet": raw["fleet"],
+        "operator": raw.get("operator") or {},
+        "timeline": raw.get("timeline", []),
+        "assert": raw.get("assert", []),
+        "teardown": raw.get("teardown", "land"),
+        "settle_s": float(raw.get("settle_s", 30)),
+        "raw": raw,
+    }
+    # one port block per run: the scenario may pin slot_base, else it is
+    # derived from the seed so --seeds runs never share ports (a parallel
+    # `sim up` would still refuse a clash)
+    slot_base = int(raw.get("slot_base") or (10 + (seed % 9) * 25))
+    scn["sim"] = {
+        "version": 1,
+        "name": re.sub(r"[^\w-]", "_", scn["name"]),
+        "server": _server_spec(scn, slot_base),
+        "home": list(home),
+        "slot_base": slot_base,
+        "units": _fleet_units(scn, home),
+    }
+    return scn

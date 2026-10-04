@@ -1,0 +1,14 @@
+# delay: a 3 s delay must NOT drop the link - zero offline intervals
+# and the proc stays up.
+version: 1
+name: f_delay
+transport: fake
+settle_s: 10
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: delay, unit: s1, ms: 3000}
+  - {t: 15, do: link_clear, unit: s1}
+assert:
+  - link_offline: {unit: s1, eq: 0}
+  - proc_alive: {unit: s1, proc: de_comm}

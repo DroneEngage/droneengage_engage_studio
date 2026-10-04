@@ -41,7 +41,8 @@ def _pids_dirs(name=None):
 
 def down(name=None, quiet=False):
     dirs = [d for d in _pids_dirs(name) if os.path.isdir(d)]
-    if not dirs:
+    strays = _stray_pids(name)
+    if not dirs and not strays:
         if not quiet:
             print("nothing running" if name is None
                   else f"sim {name!r}: nothing running")
@@ -69,8 +70,42 @@ def down(name=None, quiet=False):
     for p in pids:
         if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
             os.kill(p, signal.SIGKILL)
+    strays = [p for p in strays if p not in pids]
+    for p in strays:
+        if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
+            os.kill(p, signal.SIGTERM)
+    t0 = time.time()
+    while time.time() - t0 < 3 and any(os.path.isdir(f"/proc/{p}") for p in strays):
+        time.sleep(0.2)
+    for p in strays:
+        if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
+            os.kill(p, signal.SIGKILL)
     if not quiet:
-        print(f"sim stopped ({len(pids)} processes)")
+        print(f"sim stopped ({len(pids) + len(strays)} processes)")
+
+
+def _stray_pids(name=None):
+    """Live pids whose command line runs under run/<name>/ (or any run/<sim>/
+    when name is None) but that no pidfile tracks - e.g. a restart that
+    outlived a crashed supervisor.  pid_is_ours still gates every kill."""
+    root = os.path.join(simlib.RUN_DIR, name) + "/" if name \
+        else simlib.RUN_DIR + "/"
+    out = []
+    try:
+        entries = os.listdir("/proc")
+    except OSError:
+        return out
+    for e in entries:
+        if not e.isdigit():
+            continue
+        try:
+            cmd = open(f"/proc/{e}/cmdline", "rb").read() \
+                .replace(b"\0", b" ").decode(errors="replace")
+        except OSError:
+            continue
+        if root in cmd:
+            out.append(int(e))
+    return out
 
 
 def wait_port(port, timeout):

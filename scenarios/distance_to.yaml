@@ -1,0 +1,18 @@
+# distance_to: the copter sits at the default SITL home; synthetic truth
+# puts person_1 ~45 m east. The deploy produces a "package loaded"
+# journal line during the run - its timestamp pins the telemetry sample
+# time (CLOCK is logged at de_comm boot, before the run's journal marks).
+version: 1
+name: distance_to
+transport: fake
+operation: ../packages/copter_square.json
+settle_s: 10
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 3, do: deploy}
+assert:
+  - distance_to: {unit: c1, re: "package loaded", truth: person_1,
+                  truth_file: ../worlds/synthetic/truth.jsonl,
+                  min_m: 10, max_m: 150}
+  - coverage_complete: {truth_file: ../worlds/synthetic/truth.jsonl}

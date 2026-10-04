@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""run_scenario.py - de.scenario/1 runner (TASK-P5-07).
+
+  ./run_scenario.py <scenario.yaml> [--seed N] [--keep]
+  ./run_scenario.py --suite <dir> --seeds 1,2,3
+
+Each run gets its own port block (seed-derived slot_base) and its own
+results/<utc>/<name>/ directory: journals, process logs, telemetry.jsonl
+(tlog), operator.log, truth.jsonl, verify.json, summary.json, junit.xml.
+Exit 0 only when every non-SKIP assertion passed.
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "engine"))
+import scenario_runner
+
+if __name__ == "__main__":
+    sys.exit(scenario_runner.main(sys.argv[1:]))

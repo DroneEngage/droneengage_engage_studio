@@ -1,0 +1,15 @@
+# no_time_sync: the fake server stops stamping "ts" into the unit's
+# 9005 pongs. A restarted unit never syncs - its CLOCK journal line
+# stays at tq=0 (the roster 1092 is a full-server-mode frame; the
+# journal is the observable here).
+version: 1
+name: f_no_time_sync
+transport: fake
+settle_s: 25
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: no_time_sync, unit: s1, dur_s: 60}
+  - {t: 6, fault: restart, unit: s1, proc: de_comm}
+assert:
+  - journal_count: {unit: s1, re: "CLOCK .*tq=0", at_least: 1}

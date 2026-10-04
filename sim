@@ -87,11 +87,12 @@ def main(argv):
             import ctl
             ctl.main(a)
         elif c == "run":
-            import runner
+            import scenario_runner
             files = [x for x in a if not x.startswith("--")]
             if len(files) != 1:
                 sys.exit("usage: ./sim run <test.yaml> [--keep]")
-            return runner.run(files[0], keep="--keep" in a)
+            # legacy tests -> runner.py, de.scenario/1 -> the P5-07 engine
+            return scenario_runner.run(files[0], keep="--keep" in a)
         elif c == "logs":
             sim_name = None
             if a and a[0] in ("-s", "--sim"):

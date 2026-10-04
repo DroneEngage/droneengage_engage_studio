@@ -1,0 +1,14 @@
+# link_cut: the unit's link is severed for dur_s. The link monitor sees
+# it vanish from the server's online list and come back when the cut
+# expires - the journal has no "comm line" lines without a v2 package.
+version: 1
+name: f_link_cut
+transport: fake
+settle_s: 40
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: link_cut, unit: s1, dur_s: 25}
+assert:
+  - link_offline: {unit: s1, at_least: 1, min_s: 5}
+  - proc_alive: {unit: s1, proc: de_comm}

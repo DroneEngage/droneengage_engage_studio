@@ -1,0 +1,13 @@
+# server_clock: skew the server's stamped clock -1 h, then restart the
+# unit so its next CLOCK line shows the huge fleet-minus-unix offset.
+version: 1
+name: f_server_clock
+transport: fake
+settle_s: 20
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: server_clock, offset_ms: -3600000}
+  - {t: 6, fault: restart, unit: s1, proc: de_comm}
+assert:
+  - journal_count: {unit: s1, re: "fleet_minus_unix_ms=-3[0-9]{6}", at_least: 1}

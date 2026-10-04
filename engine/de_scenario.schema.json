@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://droneengage/de.scenario/1",
+  "title": "de.scenario/1 - Phase-5 scenario (TASK-P5-07)",
+  "type": "object",
+  "required": ["version", "name", "fleet", "timeline"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {"const": 1},
+    "name": {"type": "string", "pattern": "^[A-Za-z0-9][\\w-]*$"},
+    "description": {"type": "string"},
+    "seed": {"type": "integer", "default": 1},
+    "realtime": {"type": "boolean", "default": false,
+      "description": "timing asserts need SITL speed-up 1 (V9); SKIP visibly otherwise"},
+    "transport": {
+      "description": "fake | real, or a sim server: block",
+      "oneOf": [
+        {"type": "string", "enum": ["fake", "real"]},
+        {"type": "object",
+         "required": ["type"],
+         "additionalProperties": false,
+         "properties": {
+           "type": {"enum": ["fake", "real"]},
+           "port": {"type": "integer"},
+           "control_port": {"type": "integer"},
+           "auth": {"type": "boolean"},
+           "seed": {"type": "integer"},
+           "noclock": {"type": "array", "items": {"type": "string"}},
+           "clock_offset_ms": {"type": "integer"},
+           "account": {"type": "object", "additionalProperties": false,
+             "properties": {"user": {"type": "string"},
+                            "code": {"type": ["string", "integer"]}}}}
+        }
+      ]
+    },
+    "home": {"type": "array", "minItems": 3, "maxItems": 4,
+             "items": {"type": "number"},
+             "description": "fleet home [lat,lng,alt,yaw]; fleet home:/base: are absolute positions"},
+    "slot_base": {"type": "integer", "minimum": 1, "maximum": 240},
+    "world": {"type": ["string", "null"],
+      "description": "world.yaml (P5-08) - accepted, consumed only when P5-08 lands"},
+    "operation": {"type": "string",
+      "description": "compiled operation (.deop) or a deploy spec / package file"},
+    "verify": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "expect_errors": {"type": "integer", "minimum": 0},
+        "expect_rules": {"type": "array", "items": {"type": "string"}},
+        "cli": {"type": "string",
+          "description": "override path to the P5-06 verify CLI (verify-op.js)"}
+      }
+    },
+    "fleet": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "cls"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+          "cls": {"type": "string",
+            "description": "copter|plane|rover|static, or a blocks/ name"},
+          "role": {"type": "string"},
+          "home": {"type": "array", "minItems": 3, "maxItems": 4,
+                   "items": {"type": "number"},
+                   "description": "absolute [lat,lng,alt,yaw] for vehicles"},
+          "base": {"type": "array", "minItems": 3, "maxItems": 4,
+                   "items": {"type": "number"},
+                   "description": "absolute [lat,lng,alt,yaw] for statics"},
+          "at": {"type": "object",
+            "description": "meters offset from scenario home (alternative to home:/base:)",
+            "additionalProperties": false,
+            "properties": {"north_m": {"type": "number"},
+                           "east_m": {"type": "number"},
+                           "alt_m": {"type": "number"},
+                           "yaw": {"type": "number"}}},
+          "modules": {"type": "array", "items": {"type": "string"},
+            "description": "extra modules on top of the class block (P5-08 stubs)"},
+          "params": {"type": "object",
+            "description": "extra SITL params (fc.params)"},
+          "config": {"type": "object",
+            "description": "per-module config overlay (sim unit config:)"},
+          "account": {"type": "object", "additionalProperties": false,
+            "properties": {"user": {"type": "string"},
+                           "code": {"type": ["string", "integer"]}}}
+        }
+      }
+    },
+    "operator": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "the operator bot's standing policy; keys are approval kinds (launch/action/activate) or target classes",
+      "properties": {
+        "approve": {"type": "object", "additionalProperties":
+          {"type": "object", "additionalProperties": false,
+           "properties": {"after_s": {"type": "number", "minimum": 0}}}},
+        "deny": {"type": "object", "additionalProperties":
+          {"type": "object", "additionalProperties": false,
+           "properties": {"after_s": {"type": "number", "minimum": 0}}}},
+        "confirm": {"type": "object", "additionalProperties":
+          {"type": "object", "additionalProperties": false,
+           "properties": {"after_s": {"type": "number", "minimum": 0}}}},
+        "dismiss": {"type": "object", "additionalProperties":
+          {"type": "object", "additionalProperties": false,
+           "properties": {"after_s": {"type": "number", "minimum": 0}}}}
+      }
+    },
+    "timeline": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "allOf": [
+          {"oneOf": [{"required": ["t"]}, {"required": ["on"]}]},
+          {"oneOf": [{"required": ["do"]}, {"required": ["fault"]}]}
+        ],
+        "properties": {
+          "t": {"type": "number",
+            "description": "seconds from the scenario start; negative = run before the timeline clock starts"},
+          "on": {"type": "object",
+            "required": ["unit", "re"],
+            "additionalProperties": false,
+            "properties": {"unit": {"type": ["string", "integer"]},
+                           "re": {"type": "string"}}},
+          "do": {"type": "string"},
+          "fault": {"type": "string"},
+          "once": {"type": "boolean"}
+        }
+      }
+    },
+    "assert": {
+      "type": "array",
+      "items": {"type": "object", "minProperties": 1, "maxProperties": 1}
+    },
+    "teardown": {"enum": ["land", "reset", "none"], "default": "land"},
+    "settle_s": {"type": "number", "minimum": 0, "default": 30,
+      "description": "seconds on: watchers stay armed after the last t: step"}
+  }
+}

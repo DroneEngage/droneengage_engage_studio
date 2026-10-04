@@ -1,0 +1,12 @@
+# rc_override: throttle channel overridden to 1600 for dur_s, then
+# released (65535). Telemetry sees chan3_raw jump.
+version: 1
+name: f_rc_override
+transport: fake
+settle_s: 5
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 3, fault: rc_override, unit: c1, chan: 3, pwm: 1600, dur_s: 15}
+assert:
+  - telemetry_value: {unit: c1, field: rc3, gt: 1400}

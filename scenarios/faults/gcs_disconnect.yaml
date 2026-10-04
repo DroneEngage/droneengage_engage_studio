@@ -1,0 +1,14 @@
+# gcs_disconnect: the operator bot (a real GCS session) drops for dur_s
+# and reconnects. The action and the reconnect are journaled to
+# operator.log.
+version: 1
+name: f_gcs_disconnect
+transport: fake
+settle_s: 5
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: gcs_disconnect, dur_s: 10}
+assert:
+  - operator_log_count: {re: "FAULT gcs_disconnect", eq: 1}
+  - operator_log_count: {re: "SESSION .* online", at_least: 1}

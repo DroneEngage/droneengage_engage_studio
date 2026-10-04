@@ -1,0 +1,11 @@
+# mode: force the FC into RTL; the heartbeat mode lands in telemetry.
+version: 1
+name: f_mode
+transport: fake
+settle_s: 5
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 3, fault: mode, unit: c1, mode: RTL}
+assert:
+  - fc_mode: {unit: c1, mode: RTL}
