@@ -1,0 +1,34 @@
+# TASK-P4A-05 scenario 2a: copter2's link is cut for 60 s while the scout
+# emits (TTL 300 s). copter3 activates live; copter2 must activate within a
+# few seconds of its link coming back (retry/catch-up), never twice.
+version: 1
+sim: ../../sims/copters3_faults.yaml
+operation: ../../packages/p4a05.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  # rosters (sv_roster_hz 0.2 -> one per 5 s) teach the scout its
+  # recipients before the emit
+  - wait: 15
+  - link_cut: {unit: 2, seconds: 60}
+  - wait: 2
+  - fire: {event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
+  - wait_journal: {unit: 3, re: "activating mission work", timeout: 60}
+  - wait_journal: {unit: 2, re: "comm line online", timeout: 120}
+  - wait_journal: {unit: 2, re: "activating mission work", timeout: 60}
+  - wait: 5
+
+  - opabort
+
+assert:
+  - journal_count: {unit: 2, re: "activating mission work", equals: 1}
+  - journal_count: {unit: 3, re: "activating mission work", equals: 1}
+  - journal_count: {unit: 1, re: "UNDELIVERED", equals: 0}
+  - journal_count: {unit: 1, re: "^DELIVERED.*n=area\\.clear", at_least: 1}
+  # "within a few seconds" of the link returning (record the number)
+  - journal_time_delta: {u1: 2, re1: "comm line online", u2: 2,
+                         re2: "activating mission work", max_s: 15}

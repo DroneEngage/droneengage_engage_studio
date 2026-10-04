@@ -1,0 +1,68 @@
+# nightly-sitl - the whole scenario library on real SITL, every night.
+#
+#   python3 ci/run_suite.py --roots scenarios --seeds 1,2,3
+#
+# Runs every scenarios/**/*.yaml (p0, p2, su, p4a, faults, closed_env,
+# verify, top-level) once per seed, serially. Verify-gate scenarios are
+# PASS only when verify.json carries the declared expect_rules. A
+# fail-then-pass is reported FLAKY with both attempts in
+# results/nightly/summary.md - never silently green.
+#
+# MUST run on a machine that owns the machine: self-hosted runner with
+# the full DroneEngage workspace checked out as siblings of this repo
+# (de_code layout), the sibling binaries built (de_comm, de_mavlink,
+# de_server, de_camera...), ArduPilot SITL installed, and nothing else
+# bound to the sim port ranges. See ci/README.md. It is NOT a
+# GitHub-hosted job.
+name: nightly-sitl
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      roots:
+        description: "space-separated suite roots"
+        default: "scenarios"
+      seeds:
+        description: "comma-separated seeds"
+        default: "1,2,3"
+
+jobs:
+  suite:
+    runs-on: [self-hosted, linux, sitl]
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: python deps
+        run: pip install pyyaml jsonschema pymavlink websockets
+
+      - name: fleet down (clean machine for the suite)
+        run: ./sim down || true
+
+      - name: scenario suite
+        run: |
+          python3 ci/run_suite.py \
+            --roots ${{ github.event.inputs.roots || 'scenarios' }} \
+            --seeds ${{ github.event.inputs.seeds || '1,2,3' }}
+
+      - name: summary into job page
+        if: always()
+        run: cat results/nightly/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nightly-suite-${{ github.run_number }}
+          path: |
+            results/nightly/
+            results/
+          retention-days: 30
+
+      - name: fleet down (leave the runner clean)
+        if: always()
+        run: ./sim down || true

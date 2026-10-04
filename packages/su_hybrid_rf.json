@@ -1,0 +1,365 @@
+{
+  "events": {
+    "rf.hit": {
+      "payload": {
+        "pos": "geo",
+        "rssi_dbm": "number"
+      }
+    },
+    "sdr.signal": {
+      "payload": {
+        "pos": "geo",
+        "rssi_dbm": "number"
+      }
+    }
+  },
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        30.1,
+        31.1,
+        50
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        30.2,
+        31.2,
+        50
+      ]
+    },
+    {
+      "c": 21,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        30,
+        31,
+        0
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        300,
+        0,
+        0,
+        0,
+        30,
+        31,
+        0
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        30,
+        31,
+        0
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        30.15,
+        31.15,
+        50
+      ]
+    },
+    {
+      "c": 92,
+      "ft": 2,
+      "mv": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        60,
+        0,
+        0,
+        0,
+        30.15,
+        31.15,
+        50
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        300,
+        0,
+        0,
+        0,
+        30.15,
+        31.15,
+        50
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        30.15,
+        31.15,
+        50
+      ]
+    }
+  ],
+  "handlers": {},
+  "hash": "sha256:c3c00c52d77172c0cd732c49b31516aedd32e9e996b3d44ef890991fe18e4e20",
+  "manifest": [
+    {
+      "kind": "nav.takeoff",
+      "mission": "sector",
+      "seq": 1,
+      "step": "t"
+    },
+    {
+      "kind": "nav.wp",
+      "mission": "sector",
+      "seq": 2,
+      "step": "w1"
+    },
+    {
+      "at_seq": 2,
+      "do": "camera.capture",
+      "kind": "action",
+      "mission": "sector",
+      "on": "reached",
+      "step": "w1"
+    },
+    {
+      "kind": "nav.wp",
+      "mission": "sector",
+      "seq": 3,
+      "step": "w2"
+    },
+    {
+      "kind": "nav.land",
+      "mission": "sector",
+      "seq": 4,
+      "step": "l"
+    },
+    {
+      "kind": "end.hold",
+      "mission": "sector",
+      "seq": 5,
+      "step": "end"
+    },
+    {
+      "kind": "end.contingency",
+      "mission": "sector",
+      "seq": 6,
+      "step": "end"
+    },
+    {
+      "kind": "end.guard",
+      "mission": "sector",
+      "seq": 7,
+      "step": "end"
+    },
+    {
+      "kind": "nav.guided",
+      "mission": "investigate",
+      "seq": 8,
+      "step": "g"
+    },
+    {
+      "kind": "nav.guided_flag",
+      "mission": "investigate",
+      "seq": 9,
+      "step": "g"
+    },
+    {
+      "kind": "nav.loiter",
+      "mission": "investigate",
+      "seq": 10,
+      "step": "l"
+    },
+    {
+      "kind": "end.hold",
+      "mission": "investigate",
+      "seq": 11,
+      "step": "end"
+    },
+    {
+      "kind": "end.contingency",
+      "mission": "investigate",
+      "seq": 12,
+      "step": "end"
+    },
+    {
+      "kind": "end.guard",
+      "mission": "investigate",
+      "seq": 13,
+      "step": "end"
+    }
+  ],
+  "missions": {
+    "investigate": {
+      "end_backstop": {
+        "then": "rtl",
+        "timeout": 300
+      },
+      "end_state": "hold",
+      "priority": 0,
+      "segment": {
+        "end": 13,
+        "start": 8
+      },
+      "trigger": {
+        "event": "rf.hit",
+        "type": "event"
+      }
+    },
+    "rf_watch": {
+      "claims": [],
+      "end_state": "repeat",
+      "on_exit": [
+        {
+          "do": "camera.record",
+          "with": {
+            "on": false
+          }
+        },
+        {
+          "do": "sdr.stop"
+        }
+      ],
+      "priority": 0,
+      "repeat_min_s": 20,
+      "sensor": true,
+      "steps": [
+        {
+          "do": "sdr.scan",
+          "id": "scan",
+          "k": "do",
+          "on_error": "continue",
+          "timeout": 10,
+          "with": {
+            "f_end": 870000000,
+            "f_start": 868000000
+          }
+        },
+        {
+          "event": "sdr.signal",
+          "id": "hear",
+          "k": "gate",
+          "on_timeout": "end",
+          "timeout": 600
+        },
+        {
+          "event": "rf.hit",
+          "id": "tell",
+          "k": "emit",
+          "payload_from": "hear"
+        }
+      ],
+      "trigger": {
+        "type": "manual"
+      }
+    },
+    "sector": {
+      "end_backstop": {
+        "then": "rtl",
+        "timeout": 300
+      },
+      "end_state": "hold",
+      "priority": 0,
+      "segment": {
+        "end": 7,
+        "start": 1
+      },
+      "trigger": {
+        "type": "op.start"
+      }
+    }
+  },
+  "op": "sector_rf",
+  "op_hash": "sha256:483943293051f0d08ef98c46de6377133cc67ae93fa3f4a2effd2158ba90470d",
+  "requires": [],
+  "role": "scout",
+  "schema": "de.package/2.1",
+  "vehicle": {
+    "type": "copter"
+  }
+}

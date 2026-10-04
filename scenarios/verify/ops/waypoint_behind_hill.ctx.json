@@ -1,0 +1,11 @@
+{
+    "_note": "P5-04 — GEO-003 ctx: a DemGrid with a 60 m hill 100 m north/east of origin (data[row=north][col=east], step 100 m); the bound unit's home sits on the flat origin so home_elev = 0.",
+    "dem": {
+        "type": "grid",
+        "origin": [30.0, 31.0],
+        "step_m": 100,
+        "data": [[0, 0, 0], [0, 60, 0], [0, 0, 0]]
+    },
+    "binding": { "solo": ["u1"] },
+    "fleet": { "u1": { "cls": "copter", "home": [30.0, 31.0] } }
+}

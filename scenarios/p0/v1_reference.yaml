@@ -1,0 +1,28 @@
+# p0/v1_reference - the Phase-0 reference plan end to end.
+# Phase 0 (TASK-04 sitl_gate_check.py) proved the compiled v1 fc_items
+# fly in AUTO when pushed to SITL over MAVLink. This scenario is the same
+# check through the REAL stack: the package is deployed to a copter over
+# the comm server, the run is started, and the unit must fly the segment
+# and journal "mission main completed" - the smallest green path in the
+# library (deploy -> start -> completed on the real binaries).
+version: 1
+name: p0_v1_reference
+transport: real
+operation: ../../packages/copter_square.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm, unit: c1}
+  - {t: 9, do: start}
+  - {t: 12, do: wait_journal, unit: c1, re: "mission main completed",
+     timeout: 300}
+assert:
+  - journal_count: {unit: c1, re: "RUN run .* started", equals: 1}
+  - journal_count: {unit: c1, re: "mission main completed", equals: 1}
+  - journal_count: {unit: c1, re: "handler .* fired", equals: 0}
+  - journal_count: {unit: c1, re: "comm line offline", equals: 0}
+teardown: land

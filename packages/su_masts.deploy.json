@@ -1,0 +1,16 @@
+{
+  "roles": {
+    "cam_mast": {
+      "pkg": "su_mast_cam_end.json",
+      "units": [
+        "cam1"
+      ]
+    },
+    "sdr_mast": {
+      "pkg": "su_mast_sdr_end.json",
+      "units": [
+        "sdr1"
+      ]
+    }
+  }
+}

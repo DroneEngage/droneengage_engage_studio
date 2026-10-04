@@ -1,0 +1,55 @@
+# TASK-P4A-04 scenario "static_chain" (acceptance 1, 3, 4, 5):
+# 3 copters, de.package/2.2 fleet packages: copter1 is the "scout" role
+# (flies main, emits `area.clear` on the bus at its first waypoint),
+# copter2+copter3 are "worker" (mission "work" triggers on the event).
+# Then: replay (same id twice -> dup), stale run ("other run"), and a
+# forged sender (src != sd -> "sender mismatch"). The 30% loss run lives
+# in p4a04_loss.yaml (acceptance 2 - it only records the loss rate).
+# Ported to the two-phase deploy: a roles spec + opstart (P4A-09).
+version: 1
+sim: ../../sims/copters3_faults.yaml
+operation: ../../packages/p4a04.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  # the scout reaches w1 -> emit publishes area.clear on the bus ->
+  # both workers activate "work" exactly once
+  - wait_journal: {unit: 2, re: "activating mission work", timeout: 300}
+  - wait_journal: {unit: 3, re: "activating mission work", timeout: 300}
+
+  # ---- acceptance 3: replay. The same 1090 twice; the second is a dup
+  # (silent - the dup counter moves, no BUS_IN). sd=src=probe1 is a
+  # well-formed foreign sender, seq 1 (a fresh source delivers in order)
+  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"probe1","ms":{"v":1,"op":"static_chain","oh":"sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0","run":"{RUN}","id":"replay-0001","src":"probe1","role":"worker","seq":1,"t":0,"age":0,"ttl":300,"n":"chain.probe","p":{"k":1}}}'
+  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"probe1","ms":{"v":1,"op":"static_chain","oh":"sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0","run":"{RUN}","id":"replay-0001","src":"probe1","role":"worker","seq":1,"t":0,"age":0,"ttl":300,"n":"chain.probe","p":{"k":1}}}'
+
+  # ---- acceptance 4: an event for a dead/old run drops "other run"
+  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"probe1","ms":{"v":1,"op":"static_chain","oh":"sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0","run":"stale-run-1","id":"stale-0001","src":"probe1","role":"worker","seq":2,"t":0,"age":0,"ttl":300,"n":"chain.probe","p":{}}}'
+
+  # ---- acceptance 5: forged sender - envelope src != stamped sd
+  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"mallory","ms":{"v":1,"op":"static_chain","oh":"sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0","run":"{RUN}","id":"forge-0001","src":"probe1","role":"worker","seq":3,"t":0,"age":0,"ttl":300,"n":"chain.probe","p":{}}}'
+  - wait: 3
+  - opabort
+
+assert:
+  # the scout emitted once; the workers did not emit at all
+  - journal_count: {unit: 1, re: "BUS_OUT.*n=area\\.clear", equals: 1}
+  - journal_count: {unit: 2, re: "BUS_OUT.*n=area\\.clear", equals: 0}
+  - journal_count: {unit: 3, re: "BUS_OUT.*n=area\\.clear", equals: 0}
+  # each worker received the scout's copy exactly once; the scout got none
+  - journal_count: {unit: 2, re: "BUS_IN.*n=area\\.clear", equals: 1}
+  - journal_count: {unit: 3, re: "BUS_IN.*n=area\\.clear", equals: 1}
+  - journal_count: {unit: 1, re: "BUS_IN.*n=area\\.clear", equals: 0}
+  # the event-triggered mission activated exactly once per worker, and
+  # never on the scout (it has no "work" mission)
+  - journal_count: {unit: 2, re: "activating mission work", equals: 1}
+  - journal_count: {unit: 3, re: "activating mission work", equals: 1}
+  - journal_count: {unit: 1, re: "activating mission work", equals: 0}
+  # replay: two identical envelopes -> exactly one BUS_IN on every unit
+  - journal_count: {unit: all, re: "BUS_IN.*n=chain\\.probe", equals: 1}
+  - journal_count: {unit: all, re: "BUS_DROP.*why=other run", equals: 1}
+  - journal_count: {unit: all, re: "BUS_DROP.*why=sender mismatch", equals: 1}

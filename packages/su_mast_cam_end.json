@@ -1,0 +1,111 @@
+{
+  "events": {
+    "detect.confirm": {},
+    "detect.detected": {
+      "payload": {
+        "conf": "number",
+        "pos": "geo"
+      }
+    },
+    "op.done": {
+      "ttl_s": 120
+    },
+    "watch.report": {}
+  },
+  "fc_items": [],
+  "fleet": {
+    "end": {
+      "on": [
+        "op.done"
+      ],
+      "then": {
+        "*": "hold"
+      }
+    },
+    "event_ttl": {
+      "op.done": 120
+    },
+    "phases": [],
+    "roles": {
+      "cam_mast": {
+        "count": 1
+      },
+      "sdr_mast": {
+        "count": 1
+      }
+    }
+  },
+  "handlers": {},
+  "hash": "sha256:ecf13524222f95b779a333aaac4bb09fc3ee98a63e54b34384f842fb9bef0d5a",
+  "manifest": [],
+  "missions": {
+    "report": {
+      "claims": [],
+      "end_state": "hold",
+      "on_exit": [],
+      "priority": 0,
+      "sensor": true,
+      "steps": [
+        {
+          "event": "watch.report",
+          "id": "tell",
+          "k": "emit",
+          "payload_from": "trigger"
+        }
+      ],
+      "trigger": {
+        "type": "manual"
+      }
+    },
+    "watch": {
+      "claims": [],
+      "end_state": "repeat",
+      "on_exit": [
+        {
+          "do": "camera.record",
+          "with": {
+            "on": false
+          }
+        }
+      ],
+      "priority": 0,
+      "repeat_min_s": 10,
+      "sensor": true,
+      "steps": [
+        {
+          "event": "detect.detected",
+          "id": "seen",
+          "k": "gate",
+          "on_timeout": "end",
+          "timeout": 900
+        },
+        {
+          "do": "camera.capture",
+          "id": "shot",
+          "k": "do",
+          "on_error": "continue",
+          "timeout": 10
+        },
+        {
+          "else": "standby",
+          "event": "detect.confirm",
+          "id": "route",
+          "k": "branch",
+          "then": "report",
+          "timeout": 30
+        }
+      ],
+      "trigger": {
+        "type": "op.start"
+      }
+    }
+  },
+  "op": "su_op_end",
+  "op_hash": "sha256:su_op_end_two_masts",
+  "requires": [],
+  "role": "cam_mast",
+  "schema": "de.package/2.2",
+  "vehicle": {
+    "type": "static"
+  }
+}

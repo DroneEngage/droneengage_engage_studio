@@ -1,0 +1,22 @@
+# faults/gps_loss_one_unit - GPS loss on a single unit: SIM_GPS1_FIXTYPE
+# is forced to 0 on c2 while c1 keeps its 3D fix. Telemetry proves the
+# split - c2's fix_type drops below 3 while c1 stays >=3 - and both
+# de_comm processes keep running (a GPS fault is an FC event, not a
+# comms event). The fault stays in place through the asserts; teardown
+# reset power-cycles the SITL so the param cannot leak into the next
+# scenario on a reused sim.
+version: 1
+name: f_gps_loss_one_unit
+transport: fake
+settle_s: 15
+fleet:
+  - {id: c1, cls: copter}
+  - {id: c2, cls: copter}
+timeline:
+  - {t: 5, fault: gps_off, unit: c2}
+  - {t: 15, do: wait, seconds: 15}
+assert:
+  - telemetry_value: {unit: c2, field: fix_type, lt: 3}
+  - telemetry_value: {unit: c1, field: fix_type, ge: 3}
+  - proc_alive: {unit: all, proc: de_comm}
+teardown: reset

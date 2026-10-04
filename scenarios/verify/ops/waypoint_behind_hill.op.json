@@ -1,0 +1,20 @@
+{
+    "_note": "P5-04 — GEO-003 BAD: the ctx DemGrid puts a 60 m hill at ~[30.0009, 31.0010]; wp 'w' at 40 m rel gets AGL ~= 40 + 0 - 60 = -20 m < min_agl_m 10 -> error (the leg up the slope fires too).",
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "geo003_bad",
+    "roles": { "solo": { "count": 1, "vehicle": "copter" } },
+    "missions": {
+        "solo": {
+            "main": {
+                "trigger": "op.start",
+                "end": "land",
+                "steps": [
+                    { "id": "t", "nav": "takeoff", "alt": 40, "pos": [30.0, 31.0] },
+                    { "id": "w", "nav": "wp", "pos": [30.0009, 31.0010, 40] },
+                    { "id": "l", "nav": "land", "pos": [30.0, 31.0] }
+                ]
+            }
+        }
+    }
+}

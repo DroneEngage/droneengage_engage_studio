@@ -1,0 +1,34 @@
+# p2/p2_guided - P2-09 guided backend + P2-05 step actions/emits: the
+# emits_actions package flies takeoff -> wp -> gate -> nav.guided +
+# nav.guided_flag -> wp -> rtl, with an emit and module actions stamped
+# on the waypoints. The scenario proves the guided rows drive the FC
+# through the guided backend ("guided ... requested" / the run reaching
+# the post-guided waypoints) and that every on-start/on-reached emit
+# fires exactly once; the camera/payload actions land "unavailable" on a
+# bare copter - the dispatch is journaled, the mission is unaffected.
+version: 1
+name: p2_guided
+transport: real
+operation: ../../packages/p2_09_guided.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 60
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm, unit: c1}
+  - {t: 9, do: start}
+  # the ev.gate hold passes on its own (on_timeout continue, 60 s);
+  # firing early just shortens the wait - either path is accepted
+  - {t: 40, do: fire, event: ev.gate, unit: c1}
+  - {t: 45, do: wait_journal, unit: c1, re: "mission main completed",
+     timeout: 300}
+assert:
+  - journal_count: {unit: c1, re: "emit go\\.mark", at_least: 1}
+  - journal_count: {unit: c1, re: "emit v1\\.7", equals: 1}
+  - journal_count: {unit: c1, re: "emit v1\\.9", equals: 1}
+  - journal_count: {unit: c1, re: "mission main completed", equals: 1}
+  - journal_order: {unit: c1, first: "emit v1\\.7",
+                    then: "emit v1\\.9"}
+teardown: land

@@ -1,0 +1,89 @@
+{
+  "fileType": "de_operation",
+  "schema": "de.operation/2",
+  "op": "dyn_good",
+  "area": [
+    [
+      30.04,
+      31.04
+    ],
+    [
+      30.052,
+      31.04
+    ],
+    [
+      30.052,
+      31.052
+    ],
+    [
+      30.04,
+      31.052
+    ]
+  ],
+  "alt_layers": {
+    "base": 40,
+    "step": 6,
+    "count": 6
+  },
+  "events": {
+    "detect.phone": {
+      "target": "phone",
+      "payload": {
+        "pos": "geo",
+        "unc_m": "number",
+        "conf": "number"
+      }
+    }
+  },
+  "roles": {
+    "scout": {
+      "count": 3,
+      "vehicle": "copter",
+      "layer": 1
+    }
+  },
+  "missions": {
+    "scout": {
+      "scan": {
+        "trigger": {
+          "event": "detect.phone",
+          "when": "${target.conf >= 0.5}",
+          "once_per": "target"
+        },
+        "allocate": {
+          "policy": "partition",
+          "split": "strips",
+          "region": "${square_around(target.pos, 400)}",
+          "max_n": 2,
+          "bid_window_s": 5
+        },
+        "gen": {
+          "type": "lawnmower",
+          "params": {
+            "area": "${alloc.sector}",
+            "spacing": 60,
+            "alt": "${alloc.layer_alt}"
+          }
+        },
+        "end": "hold"
+      },
+      "orbit_t": {
+        "trigger": {
+          "event": "detect.phone",
+          "when": "${target.conf >= 0.5}",
+          "once_per": "target"
+        },
+        "gen": {
+          "type": "orbit",
+          "params": {
+            "center": "${target.pos}",
+            "r": 60,
+            "turns": 2,
+            "alt": 40
+          }
+        },
+        "end": "hold"
+      }
+    }
+  }
+}

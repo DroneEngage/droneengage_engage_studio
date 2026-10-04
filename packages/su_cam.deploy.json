@@ -1,0 +1,11 @@
+{
+  "op": "cam_watch",
+  "roles": {
+    "cam_mast": {
+      "pkg": "su_cam_fleet.json",
+      "units": [
+        "cam"
+      ]
+    }
+  }
+}

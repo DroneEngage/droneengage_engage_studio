@@ -1,0 +1,55 @@
+# TASK-P4A-11 acceptance 9 "static SDR mast, end.then hold" - one copter
+# (role dropper) plus mast1, a comm-only static unit (role mast). The
+# fleet end rule is {on:["payload.dropped"], then:{mast:"hold",
+# dropper:"rtl","*":"hold"}}. The copter emits payload.dropped at its
+# second waypoint; on OP_END:
+#   - mast1 (sensor mission "mast", a standing gate on "mast.stop")
+#     stops its sensor lane -> S: op end - 1 sensor slot(s) ending and
+#     its on_exit action sdr.stop is dispatched (the sim has no real sdr
+#     module, so the dispatch lands "unavailable" - the on_exit journal
+#     line is what is asserted). A static package then reaches COMPLETED
+#     as soon as every slot's on_exit has been dispatched.
+#   - copter1 takes NavMode rtl, lands and completes on disarm.
+# mast1 is never armed and never receives a nav command (fc_items []).
+version: 1
+sim: ../../sims/copter_mast.yaml
+operation: ../../packages/p4a11_static.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}   # FC units only - mast1 is skipped
+  - deploy
+  - arm: all                        # copter1 only; a static never arms
+  - opstart
+  # the mast's sensor pass is up and parked on its gate
+  - wait_journal: {unit: mast1, re: "S: mast activated", timeout: 60}
+  - wait_journal: {unit: copter1, re: "emit payload\\.dropped", timeout: 150}
+  - wait_journal: {unit: mast1, re: "S: mast on_exit sdr\\.stop", timeout: 60}
+  # the dropper's end rule really flew it home
+  - wait_journal: {unit: copter1, re: "NavMode confirmed", timeout: 90}
+  - wait_journal: {unit: copter1, re: "vehicle disarmed - run .* completed",
+                   timeout: 180}
+  - opstatus: {seconds: 8}          # records st=COMPLETED on the log
+assert:
+  # every unit saw the end event once, with its role's policy
+  - journal_count: {unit: all, re: "event sys\\.op_end", equals: 1}
+  - journal_count: {unit: copter1, re: "OP_END payload\\.dropped -> rtl", equals: 1}
+  - journal_count: {unit: mast1, re: "OP_END payload\\.dropped -> hold", equals: 1}
+  # the mast's sensor lane was ended by the op end; its slot's on_exit
+  # dispatched sdr.stop exactly once ("run stopped (op end)" accepted if
+  # the impl journals that phrasing instead of "S: op end")
+  - journal_count: {unit: mast1,
+                   re: "S: (op end|run stopped).*sensor slot\\(s\\) ending",
+                   at_least: 1}
+  - journal_count: {unit: mast1, re: "S: mast on_exit sdr\\.stop id=", equals: 1}
+  # engine reached COMPLETED (static package: once on_exit dispatched)
+  - journal_count: {unit: mast1, re: "completed", at_least: 1}
+  # the mast was never commanded to fly: no nav adapter, no NavMode, no
+  # flight-mission activation, no arm/disarm lines at all
+  - journal_count: {unit: mast1, re: "NavMode", equals: 0}
+  - journal_count: {unit: mast1,
+                   re: "activating mission|nav adapter|takeoff|disarm",
+                   equals: 0}
+  - journal_count: {unit: copter1, re: "vehicle disarmed - run .* completed",
+                   equals: 1}
+teardown: reset

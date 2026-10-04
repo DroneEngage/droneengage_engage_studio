@@ -1,0 +1,35 @@
+# faults/battery_low_rtl - low battery mid-mission: SIM_BATT_VOLTAGE
+# drops to 10.5 V while the p2_10_handlers wide_search is airborne.
+# Five seconds of bat_pct under the supervisor's low-battery threshold
+# fires "handler battery_low fired ... -> rtl", pauses the run
+# ("paused (handler:battery_low)") and the FC takes the rtl backstop -
+# the declared policy, not a journal note. The battery self-test
+# (faults/battery.yaml) proves the injection; this proves the op-level
+# reaction.
+version: 1
+name: f_battery_low_rtl
+transport: fake
+operation: ../../packages/p2_10_handlers.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm, unit: c1}
+  - {t: 9, do: start}
+  - {t: 15, do: wait_journal, unit: c1, re: "RUN run .* started",
+     timeout: 60}
+  - {t: 20, fault: battery, unit: c1, volts: 10.5, dur_s: 90}
+  - {t: 30, do: wait_journal, unit: c1, re: "handler battery_low fired",
+     timeout: 90}
+  - {t: 40, do: wait_journal, unit: c1, re: "NavMode", timeout: 60}
+assert:
+  - journal_count: {unit: c1, re: "handler battery_low fired.*-> rtl",
+                    equals: 1}
+  - journal_count: {unit: c1, re: "paused \\(handler:battery_low\\)",
+                    equals: 1}
+  - journal_count: {unit: c1, re: "NavMode confirmed", at_least: 1}
+  - telemetry_value: {unit: c1, field: bat_v, lt: 11.0}
+teardown: reset

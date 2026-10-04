@@ -1,0 +1,20 @@
+# verify/verify_deadlock - the deploy gate blocks a deadlocked op:
+# ops/deadlock.op.json holds a searcher/scout staging cycle (stage@g2
+# waits staging.go which lead only emits after its own gate g1 on
+# staging.ready, which in turn waits on stage's e3). The pre-deploy
+# verifier reports error LIV-003 with the full cycle path; the run
+# stops before fleet bring-up - deploy NEVER happens, verify.json in
+# the results dir carries the findings. Expected exit is 1 (the gate
+# working), same contract as ../verify_gate.yaml.
+version: 1
+name: verify_deadlock
+transport: fake
+operation: ops/deadlock.op.json
+verify: {cli: ../support/verify_wrap.js, expect_errors: 1,
+         expect_rules: ["LIV-003"]}
+settle_s: 1
+fleet:
+  - {id: s1, cls: static}
+timeline: []
+assert: []
+teardown: none

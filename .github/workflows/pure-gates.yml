@@ -1,0 +1,85 @@
+# pure-gates - every push, no SITL, no servers, seconds only.
+#
+#   check_library.py  engine/*.py compile, every scenario/sim yaml
+#                     parses, de.scenario/1 files load through
+#                     engine/scenario.py (schema + fleet expansion),
+#                     every packages/*.json parses
+#   library counts    fails loudly if a library folder is empty so a
+#                     bad checkout can never look green
+#   verify ops        check_verify_ops.py: scenarios/verify ops must be
+#                     blocked by the webclient verifier with exactly the
+#                     declared expect_rules; every other op under
+#                     scenarios/ must verify clean (needs the webclient
+#                     repo - checked out alongside, same sibling layout
+#                     the runner uses locally)
+#
+# Real transports, SITL and the fake-fleet bring-up are NOT in this
+# workflow - they run nightly on a machine that has them
+# (.github/workflows/nightly-sitl.yml).
+name: pure-gates
+on: [push, pull_request]
+
+jobs:
+  library:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: python deps
+        run: pip install pyyaml jsonschema pymavlink websockets
+
+      - name: library check
+        run: python3 ci/check_library.py
+
+      - name: library folders non-empty
+        run: |
+          for d in p0 p2 su p4a faults closed_env verify; do
+            n=$(ls scenarios/$d/*.yaml 2>/dev/null | wc -l)
+            echo "scenarios/$d: $n yaml"
+            [ "$n" -gt 0 ] || exit 1
+          done
+          [ -f scenarios/p4b/README.md ] || {
+            echo "scenarios/p4b/README.md missing"; exit 1; }
+
+  verifier-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: droneengage_simulation_land
+
+      - name: webclient (verifier sources)
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ vars.WEBCLIENT_REPO || 'HefnySco/droneengage_webclient_react' }}
+          path: droneengage_webclient_react
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: python deps
+        run: pip install pyyaml jsonschema pymavlink websockets
+
+      # verify_wrap.js transpiles the verifier's .ts through the
+      # webclient's own typescript - only that module is needed, not a
+      # full npm ci.
+      - name: webclient typescript (for the .ts verifier hook)
+        working-directory: droneengage_webclient_react
+        run: npm install --no-save --no-audit --no-fund typescript
+
+      - name: verify-gate ops blocked with declared rules
+        working-directory: droneengage_simulation_land
+        env:
+          DE_WEBCLIENT_DIR: ${{ github.workspace }}/droneengage_webclient_react
+        run: |
+          pip install pyyaml
+          python3 ci/check_verify_ops.py

@@ -1,0 +1,32 @@
+# closed_env/clock_skew - T5 clock semantics in a sealed environment:
+# the fake server stamps fleet time 3 h ahead (clock_offset_ms
+# 10800000) and unit s2 never gets a clock (server noclock list). s1
+# journals "CLOCK fleet_minus_unix_ms=+108xxxxx, err=..., tq=2" (fully
+# synced on server time) while s2 journals "CLOCK ... tq=0" (no sync
+# source - it must not guess). This is the closed-env precondition the
+# P4A closed test relies on, now a standalone two-static check that
+# runs offline with no GPS. Real-time ops on s2 (e.g. time gates)
+# would journal TIME_GATE_UNARMED - that is tested in the p4a10 closed
+# scenario next to this file.
+version: 1
+name: ce_clock_skew
+transport:
+  type: fake
+  clock_offset_ms: 10800000
+  noclock: [s2]
+settle_s: 20
+fleet:
+  - {id: s1, cls: static}
+  - {id: s2, cls: static}
+timeline:
+  # CLOCK is journaled at de_comm boot - before the run's journal marks.
+  # A de_comm restart rewrites it post-mark (ctl reset is FC-only; the
+  # noclock server list still applies to s2's new boot).
+  - {t: 5, do: restart, unit: all, proc: de_comm}
+  - {t: 20, do: wait_journal, unit: all, re: "CLOCK", timeout: 90}
+assert:
+  - journal_count: {unit: s1, re: "fleet_minus_unix_ms=10[78][0-9]{5}",
+                    at_least: 1}
+  - journal_count: {unit: s1, re: "CLOCK .*tq=2", at_least: 1}
+  - journal_count: {unit: s2, re: "CLOCK .*tq=0", at_least: 1}
+teardown: none

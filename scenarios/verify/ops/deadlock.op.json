@@ -1,0 +1,42 @@
+{
+    "_note": "P5-02 — LIV-003 BAD: two-role deadlock — searcher waits 'staging.go' (scout emits it only after ITS gate), scout waits 'staging.ready' (searcher emits it only after ITS gate). Neither produces first.",
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "liv003_bad",
+    "roles": {
+        "searcher": { "count": 1, "vehicle": "copter" },
+        "scout": { "count": 1, "vehicle": "copter" }
+    },
+    "events": {
+        "staging.go": {},
+        "staging.ready": {}
+    },
+    "missions": {
+        "searcher": {
+            "stage": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "t", "nav": "takeoff", "alt": 30 },
+                    { "id": "g2", "gate": { "event": "staging.go" }, "timeout": 300, "on_timeout": "rtl" },
+                    { "id": "e3", "emit": "staging.ready" },
+                    { "id": "w", "nav": "wp", "pos": [30.1, 31.1, 50] },
+                    { "id": "r", "nav": "rtl" }
+                ]
+            }
+        },
+        "scout": {
+            "lead": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "t", "nav": "takeoff", "alt": 30 },
+                    { "id": "g1", "gate": { "event": "staging.ready" }, "timeout": 300, "on_timeout": "rtl" },
+                    { "id": "e5", "emit": "staging.go" },
+                    { "id": "w", "nav": "wp", "pos": [30.2, 31.2, 50] },
+                    { "id": "r", "nav": "rtl" }
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,58 @@
+# TASK-P4A-11 acceptance 7 "phases + end" - 3 copters on the real
+# server, roles searcher/searcher/scout (p4a11.deploy.json). The shared
+# progress model in every role package:
+#   fleet.phases: [{id:"search"} (initial - entered at START),
+#                  {id:"localize", enter_on:"phone.signal"}]
+#   fleet.end:    {on:["payload.dropped"],
+#                  then:{searcher:"rtl", scout:"hold", "*":"hold"}}
+# Both searchers emit phone.signal on reaching their staging waypoint
+# (two envelopes, deduped per source - PHASE localize is a once-per-unit
+# edge either way); the scout emits payload.dropped at its second
+# waypoint. On OP_END the searchers take NavMode rtl and land; the
+# scout's then-rule is hold - no FC command, it finishes its segment.
+version: 1
+sim: ../../sims/copters3.yaml
+operation: ../../packages/p4a11.deploy.json
+steps:
+  - stop
+  - clear
+  # power-cycle so every unit starts at its sim home - the emit legs
+  # depend on where the fleet parked
+  - reset: all
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  # the phase edge must land on every unit (events are bus-reliable)
+  - wait_journal: {unit: all, re: "PHASE localize", timeout: 120}
+  - wait_journal: {unit: all, re: "OP_END payload\\.dropped", timeout: 180}
+  # the searchers' rtl resolves through the nav adapter
+  - wait_journal: {unit: copter1, re: "NavMode confirmed", timeout: 90}
+  - wait_journal: {unit: copter2, re: "NavMode confirmed", timeout: 60}
+assert:
+  # initial phase entered at START, then the phone.signal edge - exactly
+  # once per unit even though two searchers emit it
+  - journal_count: {unit: all, re: "PHASE search", equals: 1}
+  - journal_count: {unit: all, re: "PHASE localize", equals: 1}
+  - journal_order: {unit: all, first: "PHASE search", then: "PHASE localize"}
+  - journal_order: {unit: all, first: "PHASE localize", then: "OP_END payload\\.dropped"}
+  # the fleet agreed - no divergence diagnostic on any unit
+  - journal_count: {unit: all, re: "PHASE_DIVERGE", equals: 0}
+  # the emits that drove the transitions
+  - journal_count: {unit: copter1,copter2, re: "emit phone\\.signal", equals: 1}
+  - journal_count: {unit: copter3, re: "emit payload\\.dropped", equals: 1}
+  - journal_count: {unit: all, re: "BUS_IN.*n=phone\\.signal", at_least: 1}
+  - journal_count: {unit: copter1,copter2, re: "BUS_IN.*n=payload\\.dropped", equals: 1}
+  # OP_END once per unit, with the per-role policy journaled
+  - journal_count: {unit: all, re: "event sys\\.op_end", equals: 1}
+  - journal_count: {unit: copter1,copter2, re: "OP_END payload\\.dropped -> rtl", equals: 1}
+  - journal_count: {unit: copter3, re: "OP_END payload\\.dropped -> hold", equals: 1}
+  # the searchers really flew home; the scout was never given a mode
+  - journal_count: {unit: copter1,copter2, re: "NavMode confirmed", at_least: 1}
+  - journal_order: {unit: copter1, first: "OP_END payload\\.dropped", then: "NavMode confirmed"}
+  - journal_order: {unit: copter2, first: "OP_END payload\\.dropped", then: "NavMode confirmed"}
+  - journal_count: {unit: copter3, re: "NavMode", equals: 0}
+  - journal_count: {unit: copter3, re: "paused \\(|handler .* fired", equals: 0}
+  # the gate's rtl backstop never ran - OP_END got there first
+  - journal_count: {unit: all, re: "timed out", equals: 0}
+teardown: reset

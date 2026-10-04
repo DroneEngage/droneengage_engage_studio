@@ -1,0 +1,24 @@
+{
+    "_note": "P5-03 — CAP-001 BAD: role 'eye' requires 'sound' (not on u1) and invokes 'gpio.write' (also not on u1).",
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "cap001_bad",
+    "roles": { "eye": { "count": 1, "vehicle": "copter", "requires": ["sound"] } },
+    "missions": {
+        "eye": {
+            "main": {
+                "trigger": "op.start",
+                "end": "rtl",
+                "steps": [
+                    { "id": "t", "nav": "takeoff", "alt": 30 },
+                    { "id": "w", "nav": "wp", "pos": [30.1, 31.1, 50],
+                      "actions": [
+                          { "on": "reached", "do": "sound.say" },
+                          { "on": "reached", "do": "gpio.write", "with": { "pin": "led" } }
+                      ] },
+                    { "id": "r", "nav": "rtl" }
+                ]
+            }
+        }
+    }
+}

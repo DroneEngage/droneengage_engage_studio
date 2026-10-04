@@ -1,0 +1,19 @@
+{
+    "_note": "P5-03 — CAP-001 ctx: unit u1 bound to role 'eye' advertises camera only — no 'sound'/'gpio' namespaces.",
+    "binding": { "eye": ["u1"] },
+    "registries": {
+        "u1": {
+            "caps": {
+                "camera": {
+                    "ch": "c1", "module": "de_camera", "ver": "1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "camera", "module": "de_camera", "ver": "1.0",
+                        "actions": { "capture": { "params": { "count": { "type": "int", "optional": true } } } },
+                        "events": { "captured": {} }
+                    }
+                }
+            },
+            "state": {}, "t": 0
+        }
+    }
+}

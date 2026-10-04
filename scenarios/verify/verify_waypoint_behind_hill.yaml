@@ -1,0 +1,19 @@
+# verify/verify_waypoint_behind_hill - the deploy gate blocks an op
+# whose leg digs into terrain: ops/waypoint_behind_hill.op.json flies a
+# copter leg over the ctx's synthetic DEM (a 60 m hill 100 m north/east
+# of origin) at an AGL that goes negative. The verifier reports GEO-003
+# ("AGL -17.7 m < min_agl_m 10 m" on the leg and at the waypoint); the
+# run stops before fleet bring-up - deploy NEVER happens. This is the
+# terrain-clearance half of the safety gate. Expected exit is 1.
+version: 1
+name: verify_waypoint_behind_hill
+transport: fake
+operation: ops/waypoint_behind_hill.op.json
+verify: {cli: ../support/verify_wrap.js, expect_errors: 2,
+         expect_rules: ["GEO-003"]}
+settle_s: 1
+fleet:
+  - {id: s1, cls: static}
+timeline: []
+assert: []
+teardown: none

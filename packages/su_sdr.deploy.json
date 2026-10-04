@@ -1,0 +1,11 @@
+{
+  "op": "rf_watch",
+  "roles": {
+    "sdr_mast": {
+      "pkg": "su_sdr_fleet.json",
+      "units": [
+        "mast"
+      ]
+    }
+  }
+}

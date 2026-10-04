@@ -1,0 +1,29 @@
+# p2/p2_switch - P2-06 mission switch on a branch edge: the p2_06_branch
+# package flies "search" and parks at a branch.hold step waiting on
+# "ev.found" (30 s, else: continue the search). Firing the event switches
+# the active mission: the journal shows "branch b -> mission orbit_here"
+# and "activating mission orbit_here" - the FC leaves the search segment
+# for the orbit segment with no restart and no deploy. This is the v2
+# branch/switch primitive the later fleet ops build on.
+version: 1
+name: p2_switch
+transport: real
+operation: ../../packages/p2_06_branch.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 40
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm, unit: c1}
+  - {t: 9, do: start}
+  - {t: 30, do: fire, event: ev.found, unit: c1,
+     until: {re: "branch .* -> mission orbit_here", tries: 8, every_s: 8}}
+assert:
+  - journal_count: {unit: c1, re: "branch .* -> mission orbit_here",
+                    equals: 1}
+  - journal_count: {unit: c1, re: "activating mission orbit_here",
+                    equals: 1}
+  - journal_count: {unit: c1, re: "branch .* timed out", equals: 0}
+teardown: land

@@ -1,0 +1,91 @@
+{
+  "events": {
+    "op.done": {
+      "ttl_s": 120
+    },
+    "phone.signal": {
+      "payload": {
+        "pos": "geo",
+        "rssi_dbm": "number"
+      }
+    },
+    "sdr.signal": {}
+  },
+  "fc_items": [],
+  "fleet": {
+    "end": {
+      "on": [
+        "op.done"
+      ],
+      "then": {
+        "*": "hold"
+      }
+    },
+    "event_ttl": {
+      "op.done": 120
+    },
+    "phases": [],
+    "roles": {
+      "cam_mast": {
+        "count": 1
+      },
+      "sdr_mast": {
+        "count": 1
+      }
+    }
+  },
+  "handlers": {},
+  "hash": "sha256:e6c33cad8883bc4dd5b3992d50c980964e4bb6ce1c810a969bb68eb4f82d2213",
+  "manifest": [],
+  "missions": {
+    "watch_rf": {
+      "claims": [],
+      "end_state": "repeat",
+      "on_exit": [
+        {
+          "do": "sdr.stop"
+        }
+      ],
+      "priority": 0,
+      "repeat_min_s": 30,
+      "sensor": true,
+      "steps": [
+        {
+          "do": "sdr.scan",
+          "id": "scan",
+          "k": "do",
+          "on_error": "continue",
+          "timeout": 10,
+          "with": {
+            "f_end": 870000000,
+            "f_start": 868000000
+          }
+        },
+        {
+          "event": "sdr.signal",
+          "id": "listen",
+          "k": "gate",
+          "on_timeout": "end",
+          "timeout": 600
+        },
+        {
+          "event": "phone.signal",
+          "id": "report",
+          "k": "emit",
+          "payload_from": "listen"
+        }
+      ],
+      "trigger": {
+        "type": "op.start"
+      }
+    }
+  },
+  "op": "su_op_end",
+  "op_hash": "sha256:su_op_end_two_masts",
+  "requires": [],
+  "role": "sdr_mast",
+  "schema": "de.package/2.2",
+  "vehicle": {
+    "type": "static"
+  }
+}

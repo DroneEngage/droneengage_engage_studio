@@ -1,0 +1,22 @@
+# The real comm server dies and comes back. With a package loaded (the
+# supervisor journals comm-line changes only then) every unit must journal
+# the line going offline and online again, and still take a new deploy.
+version: 1
+sim: ../../sims/copters3.yaml
+operation: ../../packages/copter_square.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - kill: {unit: server, proc: de_server}
+  - wait_journal: {unit: all, re: "comm line offline", timeout: 40}
+  - wait: 5
+  - server_up
+  - wait_journal: {unit: all, re: "comm line online", timeout: 60}
+  - clear
+  - deploy                 # the GCS bridge reconnected by itself
+assert:
+  - journal_order: {unit: all, first: "comm line offline", then: "comm line online"}
+  - journal_count: {unit: all, re: "package READY", equals: 2}
+teardown: none

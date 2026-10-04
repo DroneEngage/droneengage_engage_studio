@@ -1,0 +1,309 @@
+{
+  "schema": "de.package/2",
+  "op": "emits_actions",
+  "op_hash": "sha256:fad4802a78d63cfd2db18b7b6dda57b5f4471187d34c7212b1e891ffe8a35be3",
+  "role": "solo",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [
+    "camera",
+    "payload"
+  ],
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        30.1,
+        31.1,
+        50
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        30.2,
+        31.2,
+        50
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        60,
+        0,
+        0,
+        0,
+        30.2,
+        31.2,
+        50
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        30.3,
+        31.3,
+        40
+      ]
+    },
+    {
+      "c": 92,
+      "ft": 2,
+      "mv": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        30.4,
+        31.4,
+        40
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        300,
+        0,
+        0,
+        0,
+        0,
+        0,
+        40
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        40
+      ]
+    }
+  ],
+  "missions": {
+    "main": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "segment": {
+        "start": 1,
+        "end": 11
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 300,
+        "then": "rtl"
+      }
+    }
+  },
+  "manifest": [
+    {
+      "mission": "main",
+      "step": "e0",
+      "kind": "emit",
+      "event": "go.mark",
+      "on": "start",
+      "at_seq": 1
+    },
+    {
+      "seq": 1,
+      "mission": "main",
+      "step": "t",
+      "kind": "nav.takeoff"
+    },
+    {
+      "seq": 2,
+      "mission": "main",
+      "step": "w1",
+      "kind": "nav.wp"
+    },
+    {
+      "at_seq": 2,
+      "on": "start",
+      "mission": "main",
+      "step": "w1",
+      "kind": "action",
+      "do": "camera.capture"
+    },
+    {
+      "at_seq": 2,
+      "on": "reached",
+      "mission": "main",
+      "step": "w1",
+      "kind": "action",
+      "do": "payload.release"
+    },
+    {
+      "mission": "main",
+      "step": "e1",
+      "kind": "emit",
+      "event": "go.mark",
+      "at_seq": 2,
+      "on": "reached"
+    },
+    {
+      "seq": 3,
+      "mission": "main",
+      "step": "w2",
+      "kind": "nav.wp"
+    },
+    {
+      "seq": 4,
+      "mission": "main",
+      "step": "g",
+      "kind": "gate.hold",
+      "event": "ev.gate",
+      "timeout": 60,
+      "on_timeout": "continue",
+      "release": 5
+    },
+    {
+      "mission": "main",
+      "step": "e2",
+      "kind": "emit",
+      "event": "v1.7",
+      "on": "start",
+      "at_seq": 5
+    },
+    {
+      "seq": 5,
+      "mission": "main",
+      "step": "gd",
+      "kind": "nav.guided"
+    },
+    {
+      "seq": 6,
+      "mission": "main",
+      "step": "gd",
+      "kind": "nav.guided_flag"
+    },
+    {
+      "mission": "main",
+      "step": "e3",
+      "kind": "emit",
+      "event": "go.mark",
+      "at_seq": 5,
+      "on": "reached"
+    },
+    {
+      "seq": 7,
+      "mission": "main",
+      "step": "w3",
+      "kind": "nav.wp"
+    },
+    {
+      "seq": 8,
+      "mission": "main",
+      "step": "r",
+      "kind": "nav.rtl"
+    },
+    {
+      "mission": "main",
+      "step": "e4",
+      "kind": "emit",
+      "event": "v1.9",
+      "at_seq": 8,
+      "on": "start"
+    },
+    {
+      "seq": 9,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.hold"
+    },
+    {
+      "seq": 10,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.contingency"
+    },
+    {
+      "seq": 11,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.guard"
+    }
+  ],
+  "events": {
+    "go.mark": {},
+    "ev.gate": {}
+  },
+  "handlers": {},
+  "hash": "sha256:d2893fb3e8dd4c8e4037db57250e560124b879b708d4e110ff6c06f6d9b991a5"
+}

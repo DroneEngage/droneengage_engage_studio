@@ -1,0 +1,47 @@
+# su/su_camera_mast - SU-02 desk run 3 on a static mast: the camera.watch
+# mission (trigger op.start, end repeat 10 s) waits on "detect.detected",
+# then runs a branch.hold on "detect.confirm" (30 s, else: standby).
+# Firing detect.detected releases the gate; no confirm ever arrives, so
+# the branch times out to standby ("branch route timed out -> standby")
+# and the pass ends. A second detection in the next paced pass repeats the cycle.
+# the camera.capture do dispatches over the legacy bridge (journaled
+# "shot ok") and the mission is unaffected. STOP
+# runs on_exit camera.record once.
+version: 1
+name: su_camera_mast
+transport: fake
+operation: ../../packages/su_cam.deploy.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: cam, cls: static}
+timeline:
+  - {t: 0, do: deploy}
+  - {t: 5, do: start}
+  - {t: 8, do: wait_journal, unit: cam,
+     re: "S: watch gate seen waits detect\\.detected", timeout: 60}
+  - {t: 12, do: fire, event: detect.detected, unit: cam,
+     payload: {pos: [-35.3630, 149.1660], kind: "person"}}
+  - {t: 15, do: wait_journal, unit: cam,
+     re: "S: watch branch route timed out -> standby", timeout: 60}
+  # second pass (repeat_min_s 10) - a fresh detection repeats the cycle
+  - {t: 45, do: fire, event: detect.detected, unit: cam,
+     payload: {pos: [-35.3631, 149.1660], kind: "person"}}
+  - {t: 50, do: wait_journal, unit: cam,
+     re: "S: watch gate seen released", timeout: 60}
+  - {t: 80, do: stop}
+assert:
+  - journal_count: {unit: cam, re: "S: watch activated", equals: 1}
+  - journal_count: {unit: cam, re: "S: watch gate seen released",
+                    at_least: 2}
+  - journal_count: {unit: cam, re: "S: watch shot ok",
+                    at_least: 1}
+  - journal_count: {unit: cam, re: "S: watch branch route timed out -> standby",
+                    at_least: 1}
+  - journal_count: {unit: cam, re: "S: watch on_exit camera\\.record",
+                    equals: 1}
+  - journal_count: {unit: cam, re: "NavMode", equals: 0}
+  - journal_count: {unit: cam,
+                    re: "activating mission|nav adapter|takeoff|disarm",
+                    equals: 0}
+teardown: none

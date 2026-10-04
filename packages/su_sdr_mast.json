@@ -1,0 +1,66 @@
+{
+  "events": {
+    "phone.signal": {
+      "payload": {
+        "pos": "geo",
+        "rssi_dbm": "number"
+      }
+    },
+    "sdr.signal": {}
+  },
+  "fc_items": [],
+  "handlers": {},
+  "hash": "sha256:e6c33cad8883bc4dd5b3992d50c980964e4bb6ce1c810a969bb68eb4f82d2213",
+  "manifest": [],
+  "missions": {
+    "watch_rf": {
+      "claims": [],
+      "end_state": "repeat",
+      "on_exit": [
+        {
+          "do": "sdr.stop"
+        }
+      ],
+      "priority": 0,
+      "repeat_min_s": 30,
+      "sensor": true,
+      "steps": [
+        {
+          "do": "sdr.scan",
+          "id": "scan",
+          "k": "do",
+          "on_error": "continue",
+          "timeout": 10,
+          "with": {
+            "f_end": 870000000,
+            "f_start": 868000000
+          }
+        },
+        {
+          "event": "sdr.signal",
+          "id": "listen",
+          "k": "gate",
+          "on_timeout": "end",
+          "timeout": 600
+        },
+        {
+          "event": "phone.signal",
+          "id": "report",
+          "k": "emit",
+          "payload_from": "listen"
+        }
+      ],
+      "trigger": {
+        "type": "op.start"
+      }
+    }
+  },
+  "op": "rf_watch",
+  "op_hash": "sha256:57cd0fe8b6f67b9b726177f4b907cf7fa84f628e5579b099d7d25cb0ebb6bade",
+  "requires": [],
+  "role": "sdr_mast",
+  "schema": "de.package/2.1",
+  "vehicle": {
+    "type": "static"
+  }
+}
