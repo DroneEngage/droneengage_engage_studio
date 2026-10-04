@@ -12,6 +12,8 @@
     "seed": {"type": "integer", "default": 1},
     "realtime": {"type": "boolean", "default": false,
       "description": "timing asserts need SITL speed-up 1 (V9); SKIP visibly otherwise"},
+    "allow_all_skip": {"type": "boolean", "default": false,
+      "description": "accept a run whose every assertion SKIPped (otherwise it fails: it proved nothing)"},
     "transport": {
       "description": "fake | real, or a sim server: block",
       "oneOf": [

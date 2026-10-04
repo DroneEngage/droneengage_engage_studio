@@ -108,6 +108,10 @@ def _wait_journal(u, rx, timeout, marks):
 def run_step(step, t, marks):
     if isinstance(step, str):
         step = {step: True}
+    if not isinstance(step, dict) or len(step) != 1:
+        print(f"bad step {step!r}: one {{name: args}} mapping per step",
+              flush=True)
+        return False
     (name, arg), = step.items()
     if arg is True or arg is None:
         arg = {}
@@ -244,74 +248,19 @@ def run_step(step, t, marks):
 
 # ------------------------------------------------------------------ asserts
 
-def check_assertion(a, m, marks):
-    (name, arg), = a.items()
-    if name == "journal_count":
-        ok = True
-        for u in ctl.resolve(unit_arg(arg), m):
-            n = len(simlib.journal_match(u, arg["re"], marks.get(u["name"])))
-            op = "==" if "equals" in arg else "<=" if "at_most" in arg else ">="
-            want = arg.get("equals", arg.get("at_most", arg.get("at_least", 1)))
-            good = n == want if op == "==" else n <= want if op == "<=" else n >= want
-            print(f"    {u['name']}: {n} match(es) of {arg['re']!r} (want {op} {want})")
-            ok &= good
-        return ok
-    if name == "journal_order":
-        r1, r2 = re.compile(arg["first"]), re.compile(arg["then"])
-        ok = True
-        for u in ctl.resolve(unit_arg(arg), m):
-            lines = simlib.journal_lines(u, marks.get(u["name"]))
-            i1 = next((i for i, l in enumerate(lines) if simlib.line_hit(l, r1)), None)
-            i2 = next((i for i, l in enumerate(lines)
-                       if i1 is not None and i > i1 and simlib.line_hit(l, r2)), None)
-            print(f"    {u['name']}: first@{i1} then@{i2}")
-            ok &= i1 is not None and i2 is not None
-        return ok
-    if name == "journal_time_delta":
-        u1 = ctl.resolve(str(arg.get("u1", arg.get("v1"))), m)[0]
-        u2 = ctl.resolve(str(arg.get("u2", arg.get("v2"))), m)[0]
-        h1 = simlib.journal_match(u1, arg["re1"], marks.get(u1["name"]))
-        h2 = simlib.journal_match(u2, arg["re2"], marks.get(u2["name"]))
-        if not h1 or not h2:
-            print(f"    missing: {u1['name']}={len(h1)} {u2['name']}={len(h2)}")
-            return False
-        t1 = h1[0][0]
-        if u1["name"] == u2["name"]:
-            h2 = [h for h in h2 if h[0] >= t1]
-            if not h2:
-                print(f"    no {arg['re2']!r} after {arg['re1']!r} on {u1['name']}")
-                return False
-        dt = abs(t1 - h2[0][0]) / 1000.0
-        lo, hi = arg.get("min_s"), arg.get("max_s")
-        if lo is None and hi is None:
-            print("    journal_time_delta needs max_s and/or min_s")
-            return False
-        print(f"    |t({u1['name']}:{arg['re1']!r}) - t({u2['name']}:{arg['re2']!r})|"
-              f" = {dt:.1f}s (min {lo}, max {hi})")
-        return (lo is None or dt >= lo) and (hi is None or dt <= hi)
-    if name == "clock_spread":
-        rx = re.compile(r"fleet_minus_unix_ms=(-?\d+)")
-        vals = {}
-        for u in ctl.resolve(unit_arg(arg), m):
-            hits = [ln for ln in simlib.journal_lines(u, marks.get(u["name"]))
-                    if ln[4] == "CLOCK" and rx.search(ln[5])]
-            if hits:
-                vals[u["name"]] = int(rx.search(hits[-1][5]).group(1))
-        if not vals:
-            print("    no CLOCK lines")
-            return False
-        spread = max(vals.values()) - min(vals.values())
-        print(f"    clock spread {spread} ms over {vals} (max {arg.get('max_ms')})")
-        return spread <= arg.get("max_ms", 100)
-    if name == "mission_current":
-        ok = True
-        for u in ctl.with_fc(ctl.resolve(unit_arg(arg), m)):
-            seq = ctl.mission_current(u)
-            print(f"    {u['name']}: MISSION_CURRENT seq={seq} (want {arg['seq']})")
-            ok &= seq == arg["seq"]
-        return ok
-    print(f"    unknown assertion {name!r}")
-    return False
+def check_assertion(a, m, marks, t_file=None):
+    """Legacy assertion -> bool. ONE implementation: checks.py (the same
+    code the de.scenario/1 runner uses), so a fix there fixes both. SKIP
+    is not a failure here, but is printed as such."""
+    import checks
+    ctx = {"manifest": m, "sim": m["name"], "marks": marks,
+           "file": t_file or "", "results_dir": None,
+           "telemetry": None, "bot": None, "baseline": None,
+           "link_events": {}, "operator_log": None}
+    r = checks.check_assertion(a, ctx)
+    val = "" if r["value"] is None else f" value={r['value']}"
+    print(f"    [{r['status']}] {r['name']}:{val} {r['detail']}")
+    return r["status"] != "FAIL"
 
 
 # ------------------------------------------------------------------ main
@@ -324,10 +273,12 @@ def collect_results(t_file, m):
         for sub in ("journal", "logs"):
             d = os.path.join(simlib.unit_dir(u), sub)
             if os.path.isdir(d):
-                shutil.copytree(d, os.path.join(out, u["name"], sub))
+                shutil.copytree(d, os.path.join(out, u["name"], sub),
+                                dirs_exist_ok=True)
     srv = os.path.join(simlib.server_dir(m["name"]), "logs")
     if os.path.isdir(srv):
-        shutil.copytree(srv, os.path.join(out, "server"))
+        shutil.copytree(srv, os.path.join(out, "server"),
+                        dirs_exist_ok=True)
     shutil.copy(t_file, out)
     shutil.copy(simlib.manifest_path(m["name"]), out)
     return out
@@ -369,7 +320,7 @@ def run(t_file, keep=False):
     print("\n== assertions ==")
     results = []
     for a in t.get("assert", []):
-        r = check_assertion(a, m, marks)
+        r = check_assertion(a, m, marks, t_file)
         results.append(r)
         print(f"  [{'PASS' if r else 'FAIL'}] {list(a)[0]}: {list(a.values())[0]}")
 

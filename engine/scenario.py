@@ -59,6 +59,12 @@ CLS_BLOCK = {"copter": "copter", "plane": "plane", "rover": "rover",
              "static": "comm_only", "comm_only": "comm_only"}
 
 
+# every kind scenario_runner._fault implements
+FAULT_KINDS = ("link_cut", "loss", "delay", "gcs_disconnect", "server_down",
+               "kill", "restart", "module_kill", "battery", "gps_off",
+               "server_clock", "no_time_sync", "rc_override", "mode")
+
+
 def is_legacy_spec(raw):
     """A P4A-03 test file: version 1 with sim:/steps: and no scenario
     keys. Runs unchanged through the new runner."""
@@ -94,6 +100,23 @@ def _validate(raw, path):
             if bad:
                 raise simlib.SimError(
                     f"{path}: fleet {ent.get('id')}: unknown keys {sorted(bad)}")
+    # a typo in an assertion name or fault kind must fail HERE, not after
+    # a ten-minute fleet run ("unknown assertion" is only seen at the end)
+    import checks
+    for i, asr in enumerate(raw.get("assert", [])):
+        if not isinstance(asr, dict) or len(asr) != 1:
+            raise simlib.SimError(
+                f"{path}: assert[{i}] must be a single {{name: args}} mapping")
+        nm = next(iter(asr))
+        if nm not in checks.DISPATCH:
+            raise simlib.SimError(
+                f"{path}: assert[{i}] unknown assertion {nm!r} "
+                f"(known: {', '.join(sorted(checks.DISPATCH))})")
+    for i, step in enumerate(raw.get("timeline", [])):
+        if "fault" in step and step["fault"] not in FAULT_KINDS:
+            raise simlib.SimError(
+                f"{path}: timeline[{i}] unknown fault {step['fault']!r} "
+                f"(known: {', '.join(FAULT_KINDS)})")
     for i, step in enumerate(raw.get("timeline", [])):
         if ("t" in step) == ("on" in step):
             raise simlib.SimError(

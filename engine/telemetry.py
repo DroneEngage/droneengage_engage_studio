@@ -42,8 +42,16 @@ class Telemetry:
         self._stop = threading.Event()
         self._threads = []
         self._latest = {}              # unit -> last row (speedup checks)
+        self._speeds = {}              # unit -> recent speed-up samples
+        self.last_error = {}           # unit -> last connect/collect error
 
     def start(self):
+        # a stale file from an earlier run would mix its rows into this
+        # run's pairwise / position assertions
+        try:
+            open(self.path, "w").close()
+        except OSError:
+            pass
         for u in self.units:
             t = threading.Thread(target=self._run, args=(u,), daemon=True)
             t.start()
@@ -60,10 +68,20 @@ class Telemetry:
         return dict(self._latest.get(unit_name) or {})
 
     def speedup(self, unit_name):
-        """The unit's mean SITL speed-up over the recent samples, or
-        None when no SYSTEM_TIME has been seen."""
-        row = self._latest.get(unit_name) or {}
-        return row.get("speedup")
+        """The unit's median SITL speed-up over the last 60 samples, or
+        None when none was measured. The median, not the last sample: one
+        glitch right before the gate must not flip the realtime verdict."""
+        v = sorted(self._speeds.get(unit_name) or [])
+        return v[len(v) // 2] if v else None
+
+    def age_ms(self, unit_name, now_ms=None):
+        """Age of the unit's newest row, or None when it has none - a
+        row from a dead stream must not pass for the current state."""
+        row = self._latest.get(unit_name)
+        if not row:
+            return None
+        return (int(time.time() * 1000) if now_ms is None else now_ms) \
+            - row["t_ms"]
 
     def rows(self, unit_name=None):
         """Read the written file back - [(row)] in order."""
@@ -107,8 +125,8 @@ class Telemetry:
                     m.mav.command_long_send(
                         sysid, 1, 511, 0, mid, us, 0, 0, 0, 0, 0)
                 self._collect(u, m, modes)
-            except Exception:
-                pass
+            except Exception as e:
+                self.last_error[name] = f"{type(e).__name__}: {e}"
             self._stop.wait(3.0)
 
     def _collect(self, u, m, modes):
@@ -165,6 +183,10 @@ class Telemetry:
                 out = dict(row, t_ms=int(wall * 1000),
                            speedup=row.get("speedup"))
                 self._latest[u["name"]] = out
+                if out.get("speedup") is not None:
+                    sp = self._speeds.setdefault(u["name"], [])
+                    sp.append(out["speedup"])
+                    del sp[:-60]
                 try:
                     with open(self.path, "a") as f:
                         f.write(json.dumps(out) + "\n")

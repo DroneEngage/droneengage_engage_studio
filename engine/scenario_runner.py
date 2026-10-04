@@ -62,7 +62,13 @@ def run_verify(scn, results_dir):
         out["skipped"] = "no operation"
         return _verify_out(out, results_dir, True)
     spec = scn.get("verify") or {}
-    cli = spec.get("cli") or os.path.join(simlib.WEBCLIENT_REPO, VERIFY_CLI)
+    # default: the wrapper (hydrates the ctx sidecar and skips compiled
+    # packages / deploy specs, which verify-op.js alone fails VER-000);
+    # the bare webclient CLI only when the wrapper is absent
+    wrap = os.path.join(simlib.SIM_ROOT, "scenarios", "support",
+                        "verify_wrap.js")
+    cli = spec.get("cli") or (wrap if os.path.isfile(wrap) else
+                              os.path.join(simlib.WEBCLIENT_REPO, VERIFY_CLI))
     if spec.get("cli") and not os.path.isabs(cli):
         cli = os.path.join(os.path.dirname(scn["file"]), cli)
     if not os.path.isfile(cli):
@@ -70,8 +76,16 @@ def run_verify(scn, results_dir):
         out["cli"] = cli
         return _verify_out(out, results_dir, True)
     t0 = time.time()
-    r = subprocess.run(["node", cli, scn["operation"]],
-                       capture_output=True, text=True, timeout=120)
+    # --json: without it the CLI prints human text and the findings can
+    # never be counted (a list of {sev, rule, path, msg} on stdout)
+    try:
+        r = subprocess.run(["node", cli, scn["operation"], "--json"],
+                           capture_output=True, text=True, timeout=120)
+    except (subprocess.TimeoutExpired, OSError) as e:
+        out["cli"] = cli
+        out["error"] = f"{type(e).__name__}: {e}"
+        out["ok"] = False
+        return _verify_out(out, results_dir, False)
     out["cli"] = cli
     out["wall_s"] = round(time.time() - t0, 2)
     out["stdout_tail"] = r.stdout[-4000:]
@@ -79,22 +93,41 @@ def run_verify(scn, results_dir):
     try:
         rep = json.loads(r.stdout)
     except ValueError:
-        rep = {}
+        rep = None
     out["report"] = rep
-    errors = rep.get("errors") or []
-    if isinstance(rep.get("error_count"), int):
-        n_err = rep["error_count"]
-    else:
-        n_err = len(errors)
-    rules = sorted({e.get("rule") or e.get("ruleId") or "?"
-                    for e in errors if isinstance(e, dict)})
+    # CLI exit: 0 = no error findings, 1 = error findings, 2 = bad usage /
+    # unreadable input. An unparseable report is a verifier failure, never
+    # "zero errors".
+    # two report shapes: scripts/verify-op.js --json prints a LIST of
+    # findings {sev, rule, ...}; wrapper CLIs (scenarios/support/) print
+    # {error_count, errors:[{rule}]}
+    n_err = rules = None
+    if isinstance(rep, list):
+        errs = [f for f in rep
+                if isinstance(f, dict) and f.get("sev") == "error"]
+        n_err = len(errs)
+    elif isinstance(rep, dict):
+        errs = [e for e in (rep.get("errors") or []) if isinstance(e, dict)]
+        n_err = rep["error_count"] if isinstance(rep.get("error_count"),
+                                                 int) else len(errs)
+    if n_err is None or r.returncode not in (0, 1):
+        out["error"] = (f"verifier exit {r.returncode}, "
+                        + ("no usable JSON report on stdout" if n_err is None
+                           else "unexpected exit code"))
+        out["ok"] = False
+        return _verify_out(out, results_dir, False)
+    rules = sorted({e.get("rule") or e.get("ruleId") or "?" for e in errs})
     out["errors"] = n_err
     out["rules"] = rules
-    ok = r.returncode == 0
-    if "expect_errors" in spec:
-        ok &= n_err == spec["expect_errors"]
-    if spec.get("expect_rules") is not None:
-        ok &= rules == sorted(spec["expect_rules"])
+    if "expect_errors" in spec or spec.get("expect_rules") is not None:
+        # a negative scenario EXPECTS error findings (exit 1 is fine)
+        ok = True
+        if "expect_errors" in spec:
+            ok &= n_err == spec["expect_errors"]
+        if spec.get("expect_rules") is not None:
+            ok &= rules == sorted(spec["expect_rules"])
+    else:
+        ok = n_err == 0
     out["ok"] = ok
     return _verify_out(out, results_dir, ok)
 
@@ -609,6 +642,11 @@ def run_scenario(t_file, seed=None, keep=False):
     ok = True
     try:
         ok &= run_timeline(scn, ctx)
+    except Exception as e:
+        # a runner bug must still reach assertions/teardown/stop(): the
+        # bot, telemetry and link threads and the fleet are never leaked
+        print(f"  TIMELINE ERROR: {type(e).__name__}: {e}", flush=True)
+        ok = False
     finally:
         if recorder is not None:
             recorder.stop()
@@ -645,6 +683,17 @@ def run_scenario(t_file, seed=None, keep=False):
         det = f" ({r['detail']})" if r["detail"] else ""
         print(f"  [{r['status']:4s}] {list(a)[0]}:{val}{det}", flush=True)
 
+    # a failed step is a failed test: surface it as a result so junit/
+    # summary agree with the exit code, and an all-SKIP run proves nothing
+    if not ok:
+        results.append(checks._r("timeline_steps", "FAIL", None,
+                                 "a timeline step failed (see the log)"))
+    elif scn["assert"] and not any(r["status"] == "PASS" for r in results) \
+            and not scn["raw"].get("allow_all_skip"):
+        results.append(checks._r(
+            "evidence", "FAIL", None,
+            "every assertion SKIPped - the run proved nothing "
+            "(set allow_all_skip: true to accept)"))
     if fake:
         runner.run_ctl("link_clear", "all")
     td = "none" if keep else scn["teardown"]

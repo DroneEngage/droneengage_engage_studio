@@ -45,9 +45,20 @@ import ctl
 # these report SKIP instead of a misleading number
 REALTIME_SENSITIVE = {"max_latency", "journal_time_delta"}
 
-CAUSE_RE = r"MISSION_(WRITE|UPLOAD|ACK)|fc mission|mission.*(upload|download)"
+# only a WRITE can change FC mission items - a download/read never does
+CAUSE_RE = r"MISSION_(WRITE|UPLOAD|ACK)|fc mission|mission.*upload"
+# word-bounded: bare "arm" also matched alarm/warm/swarm/harm
 FC_LINE_RE = re.compile(
-    r"MISSION_|MAVLink|FC_(?!items)|fc_cmd|guided_to|set_mode|arm", re.I)
+    r"MISSION_|MAVLink|FC_(?!items)|fc_cmd|guided_to|set_mode|"
+    r"\b(dis)?arm(ed|ing)?\b", re.I)
+
+# assertions that resolve `unit:`; an empty resolution can never pass
+UNIT_ASSERTS = {"journal_count", "journal_consistent", "journal_order", "final_state",
+                "fc_items_unchanged_without_cause", "mission_current",
+                "proc_alive", "proc_dead", "roster_value", "fc_mode",
+                "telemetry_value", "link_offline", "signals_in_range"}
+
+DEFAULT_TRUTH_TOL_MS = 10000      # truth row must be this close in time
 
 
 def _r(name, status, value=None, detail=""):
@@ -101,20 +112,41 @@ def _row_tid(r):
     return r.get("tid") or r.get("id") or r.get("target")
 
 
+def _first(r, *keys):
+    """First key present and not None - 0 is a value, not 'missing'."""
+    for k in keys:
+        if r.get(k) is not None:
+            return r[k]
+    return None
+
+
 def _row_t(r):
-    return r.get("t_ms") or r.get("t") or r.get("ms") or 0
+    t = _first(r, "t_ms", "t", "ms")
+    return 0 if t is None else t
 
 
-def _truth_at(rows, tid, t_ms):
-    """Truth row for tid nearest in time to t_ms."""
+def _lng(r):
+    """lng/lon of a row; 0.0 (the prime meridian) is a valid value."""
+    return _first(r, "lng", "lon")
+
+
+def _truth_at(rows, tid, t_ms, tol_ms=DEFAULT_TRUTH_TOL_MS):
+    """Truth row for tid nearest in time to t_ms, no further than tol_ms
+    (a row from another phase of the run is not evidence)."""
     best = None
     for r in rows:
         if _row_tid(r) != tid or r.get("lat") is None:
             continue
+        # detection / coverage rows reuse the tid but carry the REPORTED
+        # position, not the truth
+        if r.get("type") in ("detection", "coverage"):
+            continue
         d = abs(_row_t(r) - t_ms)
         if best is None or d < best[0]:
             best = (d, r)
-    return best[1] if best else None
+    if best is None or (tol_ms is not None and best[0] > tol_ms):
+        return None
+    return best[1]
 
 
 def _unit_pos_at(ctx, unit_name, t_ms):
@@ -223,8 +255,11 @@ def _journal_delta(name, a, ctx, ms=False):
     marks = ctx["marks"]
     u1 = ctl.resolve(str(a.get("u1", a.get("v1"))), ctx["manifest"])[0]
     u2 = ctl.resolve(str(a.get("u2", a.get("v2"))), ctx["manifest"])[0]
-    h1 = simlib.journal_match(u1, a["re1"], marks.get(u1["name"]))
-    h2 = simlib.journal_match(u2, a["re2"], marks.get(u2["name"]))
+    # RAW (unparsed) journal lines carry ts 0 - never a time reference
+    h1 = [h for h in simlib.journal_match(u1, a["re1"],
+                                          marks.get(u1["name"])) if h[0]]
+    h2 = [h for h in simlib.journal_match(u2, a["re2"],
+                                          marks.get(u2["name"])) if h[0]]
     if not h1 or not h2:
         return _r(name, "FAIL", None,
                   f"missing: {u1['name']}={len(h1)} {u2['name']}={len(h2)}")
@@ -234,13 +269,22 @@ def _journal_delta(name, a, ctx, ms=False):
         if not h2:
             return _r(name, "FAIL", None,
                       f"no {a['re2']!r} after {a['re1']!r} on {u1['name']}")
-    dt = (h2[0][0] - t1) if ms else abs(t1 - h2[0][0]) / 1000.0
     if ms:
+        # latency: signed, re2 must follow re1 (skew_ms tolerates
+        # cross-unit clock skew); a missing limit is an error, not a pass
+        dt = h2[0][0] - t1
         lim = a.get("max_ms")
-        good = lim is None or dt <= lim
+        if lim is None:
+            return _r(name, "FAIL", dt, "needs max_ms")
+        skew = a.get("skew_ms", 0)
+        good = -skew <= dt <= lim
         return _r(name, "PASS" if good else "FAIL", dt,
                   f"{u1['name']}:{a['re1']!r} -> {u2['name']}:{a['re2']!r}"
-                  f" = {dt:.0f} ms (max {lim})")
+                  f" = {dt:.0f} ms (max {lim}, skew {skew})")
+    # ordered: true -> signed (re2 must come AFTER re1); default keeps
+    # the unsigned "within N s of each other" spread across units
+    signed = h2[0][0] - t1
+    dt = (signed if a.get("ordered") else abs(signed)) / 1000.0
     lo, hi = a.get("min_s"), a.get("max_s")
     if lo is None and hi is None:
         return _r(name, "FAIL", dt, "needs max_s and/or min_s")
@@ -261,6 +305,10 @@ def _clock_spread(name, a, ctx):
             vals[u["name"]] = int(rx.search(hits[-1][5]).group(1))
     if not vals:
         return _r(name, "FAIL", None, "no CLOCK lines")
+    if len(vals) < 2:
+        return _r(name, "FAIL", None,
+                  f"CLOCK lines from only {list(vals)} - a spread needs "
+                  "at least two units")
     spread = max(vals.values()) - min(vals.values())
     good = spread <= a.get("max_ms", 100)
     return _r(name, "PASS" if good else "FAIL", spread,
@@ -284,10 +332,12 @@ def _mission_current(name, a, ctx):
 def _distance_to(name, a, ctx):
     marks = ctx["marks"]
     u = ctl.resolve(str(a["unit"]), ctx["manifest"])[0]
-    hits = simlib.journal_match(u, a["re"], marks.get(u["name"]))
+    hits = [h for h in simlib.journal_match(u, a["re"],
+                                            marks.get(u["name"])) if h[0]]
     if not hits:
         return _r(name, "FAIL", None,
-                  f"{u['name']}: no journal line matching {a['re']!r}")
+                  f"{u['name']}: no timestamped journal line matching "
+                  f"{a['re']!r}")
     t = hits[0][0]
     rows, src = _truth_rows(ctx, a.get("truth_file"))
     if rows is None:
@@ -295,10 +345,11 @@ def _distance_to(name, a, ctx):
                   "no truth source (truth_file / run truth.jsonl - "
                   "P5-08 pending)")
     tids = a["truth"] if isinstance(a["truth"], list) else [a["truth"]]
+    tol = a.get("truth_tol_ms", DEFAULT_TRUTH_TOL_MS)
     t0 = t
     tr = None
     for tid in tids:
-        c = _truth_at(rows, tid, t)
+        c = _truth_at(rows, tid, t, tol)
         if c is not None:
             tr = c
             break
@@ -328,17 +379,45 @@ def _distance_to(name, a, ctx):
     # any of the world's people)
     tr, tid_hit = min(
         ((c, tid) for tid in tids
-         for c in [_truth_at(rows, tid, t)] if c is not None),
+         for c in [_truth_at(rows, tid, t, tol)] if c is not None),
         key=lambda p: _haversine(pos["lat"], pos["lng"],
-                                 p[0]["lat"], p[0]["lng"] or 0),
+                                 p[0]["lat"], _lng(p[0]) or 0),
         default=(tr, tids[0]))
-    d = _haversine(pos["lat"], pos["lng"], tr["lat"],
-                   tr["lng"] or tr.get("lon"))
+    d = _haversine(pos["lat"], pos["lng"], tr["lat"], _lng(tr))
     lo, hi = a.get("min_m"), a.get("max_m")
     good = (lo is None or d >= lo) and (hi is None or d <= hi)
     return _r(name, "PASS" if good else "FAIL", round(d, 1),
               f"{u['name']} {pos_src} -> {tid_hit} = {d:.1f} m "
               f"(min {lo}, max {hi}, src {os.path.basename(src)})")
+
+
+def _journal_consistent(name, a, ctx):
+    """Every unit must journal the SAME set of values for capture group 1
+    of `re` (e.g. the target ids of "WM_STATE (\\S+) confirmed ..."), and
+    at least `min_count` (default 1) of them - agreement on nothing is
+    not agreement. Catches units that act on different targets, which a
+    per-unit journal_count (each unit sees 1) cannot."""
+    rx = re.compile(a["re"])
+    if rx.groups < 1:
+        return _r(name, "FAIL", None, "re needs a capture group")
+    sets, bits = {}, []
+    for u in _units(a, ctx):
+        vals = set()
+        for ln in simlib.journal_match(u, a["re"],
+                                       ctx["marks"].get(u["name"])):
+            m = rx.search(ln[4] + " " + ln[5]) or rx.search(ln[5])
+            if m:
+                vals.add(m.group(1))
+        sets[u["name"]] = vals
+        bits.append(f"{u['name']}: {sorted(vals)}")
+    need = int(a.get("min_count", 1))
+    ref = next(iter(sets.values()), set())
+    same = all(v == ref for v in sets.values())
+    enough = all(len(v) >= need for v in sets.values())
+    return _r(name, "PASS" if same and enough and sets else "FAIL",
+              len(ref), "; ".join(bits) +
+              ("" if same else " - units DISAGREE") +
+              ("" if enough else f" - fewer than {need} value(s)"))
 
 
 def _signals_in_range(name, a, ctx):
@@ -349,17 +428,20 @@ def _signals_in_range(name, a, ctx):
     silence. Static units read their fixed position; FC units their
     telemetry."""
     marks = ctx["marks"]
-    ok, bits, total = True, [], 0
+    ok, bits, total, checked = True, [], 0, 0
     rows, src = _truth_rows(ctx, a.get("truth_file"))
     if rows is None:
         return _r(name, "SKIP", None, "no truth source")
+    tol = a.get("truth_tol_ms", DEFAULT_TRUTH_TOL_MS)
     for u in _units(a, ctx):
-        hits = simlib.journal_match(u, a["re"], marks.get(u["name"]))
+        hits = [h for h in simlib.journal_match(u, a["re"],
+                                                marks.get(u["name"]))
+                if h[0]]
         total += len(hits)
         p0 = u.get("position") or {}
         bad = []
         for ln in hits:
-            tr = _truth_at(rows, a["truth"], ln[0])
+            tr = _truth_at(rows, a["truth"], ln[0], tol)
             if tr is None:
                 continue
             if u["fc"]:
@@ -370,8 +452,8 @@ def _signals_in_range(name, a, ctx):
                 lat, lng = p0.get("lat"), p0.get("lng")
             if lat is None:
                 continue
-            d = _haversine(lat, lng, tr["lat"],
-                           tr["lng"] or tr.get("lon"))
+            checked += 1
+            d = _haversine(lat, lng, tr["lat"], _lng(tr))
             if d > a["max_m"]:
                 bad.append(round(d, 1))
         good = not bad
@@ -382,6 +464,12 @@ def _signals_in_range(name, a, ctx):
     if total < need:
         ok = False
         bits.append(f"only {total} signals (need {need})")
+    elif total and checked == 0:
+        # every signal lacked a truth row or a unit position: nothing
+        # was actually compared, so "none out of range" proves nothing
+        return _r(name, "SKIP", total,
+                  f"{total} signals but none could be compared with "
+                  "truth + position")
     return _r(name, "PASS" if ok else "FAIL", total, "; ".join(bits))
 
 
@@ -531,6 +619,10 @@ def _stub_deterministic(name, a, ctx):
             logs.append(open(log_path, "rb").read())
         except OSError as e:
             return _r(name, "FAIL", None, f"replay {i} log: {e}")
+    if not logs[0] or not logs[1]:
+        return _r(name, "FAIL", 0,
+                  "stub produced an empty log - two empty logs are not "
+                  "a determinism proof")
     same = logs[0] == logs[1]
     return _r(name, "PASS" if same else "FAIL", len(logs[0]),
               f"two same-seed selftests, stub log {len(logs[0])} B "
@@ -556,9 +648,9 @@ def _final_state(name, a, ctx):
         good = cur is not None
         if want_states is not None:
             good &= cur in want_states
-        elif a.get("mis") is not None:
+        if a.get("mis") is not None:
             good &= mis == a["mis"]
-        elif a.get("re"):
+        if a.get("re"):
             good &= bool(re.search(a["re"], json.dumps(st)))
         mode = None
         if want_modes is not None:
@@ -575,17 +667,24 @@ def _final_state(name, a, ctx):
 def _fc_items_unchanged(name, a, ctx):
     base = (ctx.get("baseline") or {}).get("missions", {})
     cause = re.compile(a.get("cause_re", CAUSE_RE))
-    ok, bits = True, []
+    ok, bits, skipped, compared = True, [], False, 0
     for u in _units(a, ctx):
         if not u["fc"]:
             bits.append(f"{u['name']}: no fc - skipped")
             continue
         now = mission_signature(u)
         was = base.get(u["name"])
+        if was is None:
+            # no baseline (the download failed at start): cannot tell
+            # "unchanged" from "changed" - say so instead of guessing
+            skipped = True
+            bits.append(f"{u['name']}: no baseline - cannot compare")
+            continue
         if now is None:
             ok = False
             bits.append(f"{u['name']}: mission unreadable now")
             continue
+        compared += 1
         if now == was:
             bits.append(f"{u['name']}: unchanged")
             continue
@@ -595,6 +694,8 @@ def _fc_items_unchanged(name, a, ctx):
         ok &= caused
         bits.append(f"{u['name']}: CHANGED "
                     f"({'caused' if caused else 'NO CAUSE JOURNALED'})")
+    if ok and compared == 0 and skipped:
+        return _r(name, "SKIP", None, "; ".join(bits))
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
 
 
@@ -613,6 +714,17 @@ def _no_fc_command_to_static(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", n_all, "; ".join(bits))
 
 
+def _pid_running(pid):
+    """/proc/<pid> exists and the process is not a zombie (a killed
+    child nobody reaped still has a /proc entry)."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            # state is the field after the ")" that closes comm
+            return f.read().rsplit(")", 1)[1].split()[0] not in ("Z", "X")
+    except (OSError, IndexError):
+        return False
+
+
 def _proc_state(name, a, ctx, want_alive):
     sim = ctx["manifest"]["name"]
     ok, bits, pids = True, [], []
@@ -627,7 +739,7 @@ def _proc_state(name, a, ctx, want_alive):
     live = simlib.read_pids(sim)
     for owner, proc in owners:
         pid = live.get(f"{owner}.{proc}")
-        alive = pid is not None and os.path.isdir(f"/proc/{pid}")
+        alive = pid is not None and _pid_running(pid)
         ok &= alive == want_alive
         pids.append(pid or 0)
         bits.append(f"{owner}.{proc}: {'alive' if alive else 'down'}"
@@ -697,6 +809,9 @@ def _telemetry_value(name, a, ctx):
         return _r(name, "SKIP", None, "no telemetry recorder")
     ok, bits, vals = True, [], []
     for u in _units(a, ctx):
+        old = _stale(tele, u["name"], a)
+        if old:
+            return _r(name, "SKIP", None, old)
         row = tele.latest(u["name"])
         v = row.get(a["field"])
         if v is None:
@@ -710,16 +825,32 @@ def _telemetry_value(name, a, ctx):
               vals[0] if len(vals) == 1 else None, "; ".join(bits))
 
 
+TELEMETRY_MAX_AGE_MS = 10000
+
+
+def _stale(tele, unit_name, a):
+    """Detail string when the unit's newest telemetry row is too old to
+    describe its state now (a dead stream keeps its last row forever)."""
+    age = tele.age_ms(unit_name) if hasattr(tele, "age_ms") else None
+    lim = a.get("max_age_ms", TELEMETRY_MAX_AGE_MS)
+    if age is not None and age > lim:
+        return f"{unit_name}: newest telemetry is {age / 1000:.0f} s old"
+    return None
+
+
 def _fc_mode(name, a, ctx):
     tele = ctx.get("telemetry")
     if not tele:
         return _r(name, "SKIP", None, "no telemetry recorder")
     ok, bits = True, []
     for u in _units(a, ctx):
+        old = _stale(tele, u["name"], a)
+        if old:
+            return _r(name, "SKIP", None, old)
         cur = tele.latest(u["name"]).get("mode")
         if cur is None:
             return _r(name, "SKIP", None, f"{u['name']}: no FC telemetry")
-        ok &= cur == a["mode"]
+        ok &= str(cur).upper() == str(a["mode"]).upper()
         bits.append(f"{u['name']}: mode={cur} (want {a['mode']})")
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
 
@@ -736,6 +867,7 @@ DISPATCH = {
     "detection_precision": _detection_precision,
     "stub_deterministic": _stub_deterministic,
     "signals_in_range": _signals_in_range,
+    "journal_consistent": _journal_consistent,
     "final_state": _final_state,
     "fc_items_unchanged_without_cause": _fc_items_unchanged,
     "no_fc_command_to_static": _no_fc_command_to_static,
@@ -752,8 +884,14 @@ DISPATCH = {
 
 def check_assertion(a, ctx):
     """One {name: args} assertion -> the structured result dict."""
+    if not isinstance(a, dict) or len(a) != 1:
+        return _r("?", "FAIL", None,
+                  f"an assertion is a single {{name: args}} mapping, got {a!r}")
     (name, arg), = a.items()
     arg = arg or {}
+    if not isinstance(arg, dict):
+        return _r(name, "FAIL", None,
+                  f"{name}: arguments must be a mapping, got {arg!r}")
     fn = DISPATCH.get(name)
     if fn is None:
         return _r(name, "FAIL", None, f"unknown assertion {name!r}")
@@ -764,6 +902,10 @@ def check_assertion(a, ctx):
                   "scenario needs realtime but SITL did not hold "
                   f"speed-up 1 ({ctx.get('realtime_note', '?')})")
     try:
+        if name in UNIT_ASSERTS and str(arg.get("unit")) != "server" \
+                and not _units(arg, ctx):
+            return _r(name, "FAIL", None, "no units resolved - an "
+                      "assertion over zero units must not pass")
         return fn(name, arg, ctx)
     except SystemExit as e:
         return _r(name, "FAIL", None, f"resolution error: {e}")

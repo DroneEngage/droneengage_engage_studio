@@ -97,6 +97,15 @@ assert:
   # 3b: operator confirm on the operator_confirm class
   - journal_count: {unit: all, re: "WM_STATE .* confirmed by operator", equals: 1}
   - journal_count: {unit: all, re: "activating mission engage", at_least: 1}
+  # every unit acted on the SAME targets (a per-unit count of 1 cannot
+  # tell two units confirming different clusters from agreement)
+  - journal_consistent: {unit: all, re: "WM_STATE (\\S+) confirmed by k_sources_within"}
+  - journal_consistent: {unit: all, re: "WM_STATE (\\S+) confirmed by auto_with_veto"}
+  - journal_consistent: {unit: all, re: "WM_STATE (\\S+) served by serves"}
+  - journal_consistent: {unit: all, re: "WM_STATE (\\S+) dismissed by operator"}
+  - journal_consistent: {unit: all, re: "WM_STATE (\\S+) confirmed by operator"}
+  # all four clusters are the same four on every unit
+  - journal_consistent: {unit: all, re: "WM_NEW (\\S+)", min_count: 4}
   # four clusters total (phone, person, person #2, fire); same table
   - journal_count: {unit: all, re: "WM_NEW", equals: 4}
   - journal_count: {unit: all, re: "WM_DIVERGE", equals: 0}
