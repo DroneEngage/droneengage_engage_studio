@@ -242,13 +242,23 @@ Format (strict - unknown keys fail against
 `engine/de_scenario.schema.json`):
 
 - `version`, `name`, `seed`, `realtime`, `transport` (`fake` | `real`),
-  `home`, `slot_base`, `world` (P5-08: accepted, not consumed),
+  `home`, `slot_base`, `world` (P5-08 `worlds/*.yaml`: seeded ground
+  truth - entities, motion, attachments, transmitters, clutter, camera
+  and SDR models; consumed by the `stub_*` modules and the truth
+  recorder, which writes `run/<sim>/truth.jsonl` at 1 Hz plus
+  per-detection rows),
   `operation`, `verify` (P5-06 CLI, absent = recorded skip),
   `operator` (the bot's standing approve/confirm policy), `fleet`,
   `timeline`, `assert`, `teardown`, `settle_s`.
 - `fleet:` entries take `id`, `cls` (`copter|plane|rover|static|
   comm_only` or a `blocks/` name), `role`, absolute `home`/`base`,
-  relative `at`, `modules`, `params`, `config`, `account`.
+  relative `at`, `modules`, `params`, `config`, `account`. `modules`
+  can add catalog entries such as the P5-08 world stubs
+  (`stub_ai_box`, `stub_sdr`, `stub_payload`): python databus modules
+  in `stubs/` that read the vehicle pose (SITL serial3 on FC units,
+  the intermodule 9102 feed on statics), run the world's seeded
+  camera/SDR/payload models, and emit the real advert/event contracts
+  (1077/1078 AI messages, `sdr.signal`, `payload.released`).
 - `timeline:` steps are `{t: <s>, do: <step>, ...}` or
   `{t: <s>, fault: <kind>, ...}`; `t` is seconds from scenario start and
   may be negative (runs at once). `{on: {unit, re}}` arms a journal
@@ -263,9 +273,11 @@ Format (strict - unknown keys fail against
   for the link/clock ones). `dur_s` auto-restores where it applies.
 - `assert:` adds `proc_alive`/`proc_dead`, `link_offline`,
   `roster_value`, `operator_log_count`, `telemetry_value`, `fc_mode`,
-  `distance_to`, `coverage_complete`, `no_sep_violation` to the legacy
-  assertion set. `realtime: true` gates timing asserts - they SKIP with
-  a visible reason when SITL speed-up is not ~1.
+  `distance_to` (incl. `detected_cls:` against the bot's seen targets),
+  `coverage_complete`, `no_sep_violation`, `detection_precision`,
+  `signals_in_range`, `stub_deterministic` to the legacy assertion set.
+  `realtime: true` gates timing asserts - they SKIP with a visible
+  reason when SITL speed-up is not ~1.
 
 Each run gets a seed-derived port block (no cross-seed collisions) and
 `results/<utc>/<name>/`: journals, per-unit and server logs,

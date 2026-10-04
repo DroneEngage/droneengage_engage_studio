@@ -204,7 +204,7 @@ def load_scenario(path, seed=None):
         "seed": seed,
         "realtime": bool(raw.get("realtime", False)),
         "transport": raw.get("transport", "real"),
-        "world": (os.path.join(base, raw["world"])
+        "world": (os.path.abspath(os.path.join(base, raw["world"]))
                   if isinstance(raw.get("world"), str) else None),
         "operation": (os.path.join(base, raw["operation"])
                       if raw.get("operation") else None),

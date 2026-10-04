@@ -1,0 +1,11 @@
+{
+  "op": "p5_sdr_watch",
+  "roles": {
+    "sdr_mast": {
+      "pkg": "p5_sdr_watch.json",
+      "units": [
+        "mast"
+      ]
+    }
+  }
+}

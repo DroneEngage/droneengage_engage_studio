@@ -20,6 +20,13 @@ Operator-facing `do:` names (deploy/prepare/start/abort/operator) go
 through the operator bot's own GCS session so the fleet sees one
 consistent operator party; every other `do:` name maps to the runner.py
 step of the same name (arm, land, mode, wait_journal, fire, opmsg, ...).
+
+P5-08 world hook: a scenario `world:` file is loaded and injected into
+the fleet spec before `ensure` (stub config blocks, camera/SDR model
+settings on the real modules). Once the fleet is up, `world_epoch.json`
+is written (the stub start gun) and a TruthRecorder writes
+`run/<sim>/truth.jsonl` at 1 Hz; stub detection rows land in the same
+file. The recorder and epoch are always torn down with the run.
 """
 
 import json
@@ -40,6 +47,7 @@ import scenario
 import checks
 import telemetry as telemetry_mod
 import operator_bot
+import world as world_mod
 
 VERIFY_CLI = os.path.join("scripts", "verify-op.js")
 
@@ -508,6 +516,12 @@ def _collect(scn, m, out, results, verify, extra):
     truth = os.path.join(simlib.run_dir(m["name"]), "truth.jsonl")
     if os.path.isfile(truth):
         shutil.copy(truth, os.path.join(out, "truth.jsonl"))
+    # P5-08 stub logs (stubs/<unit>.log) - the byte-compare artifacts for
+    # the determinism acceptance
+    sdir = os.path.join(simlib.run_dir(m["name"]), "stubs")
+    if os.path.isdir(sdir):
+        shutil.copytree(sdir, os.path.join(out, "stubs"),
+                        dirs_exist_ok=True)
     shutil.copy(scn["file"], out)
     if os.path.isfile(simlib.manifest_path(m["name"])):
         shutil.copy(simlib.manifest_path(m["name"]), out)
@@ -529,12 +543,19 @@ def run_scenario(t_file, seed=None, keep=False):
     out = _results_dir(scn)
     os.makedirs(out, exist_ok=True)
     print(f"== {scn['name']} (seed {scn['seed']}) -> {out}", flush=True)
-    if scn.get("world") and not os.path.isfile(scn["world"]):
-        print(f"  world {scn['world']} missing - "
-              "world-dependent checks will SKIP (P5-08 pending)", flush=True)
-    elif scn.get("world"):
-        print("  world accepted but not consumed yet (P5-08 pending)",
-              flush=True)
+    # P5-08: load the world and inject it into the sim spec BEFORE the
+    # fleet is ensured - the stub config blocks (world path, seed, unit,
+    # pose port) and the geo_projection model land in the generated
+    # module configs, so the stubs and the real projectors share one
+    # camera model and one seeded truth.
+    wld = None
+    if scn.get("world"):
+        if not os.path.isfile(scn["world"]):
+            print(f"  world {scn['world']} missing - "
+                  "world-dependent checks will SKIP", flush=True)
+        else:
+            wld = world_mod.load(scn["world"], scn["seed"])
+            world_mod.prepare_sim(scn, wld)
 
     # pre-deploy verifier (P5-06 CLI; absence is recorded, not fatal)
     if not run_verify(scn, out):
@@ -571,11 +592,26 @@ def run_scenario(t_file, seed=None, keep=False):
                                    args=(ctx, link_stop), daemon=True)
     link_thread.start()
     ctx["baseline"] = checks.capture_baseline(ctx)
+    ctx["world"] = wld
+    recorder = None
+    if wld is not None:
+        # scenario t0: the stubs pause while world_epoch.json is absent,
+        # so this is also their start gun. Truth rows land in
+        # run/<sim>/truth.jsonl at 1 Hz from now on.
+        world_mod.clear_run_state(m["name"])
+        epoch_ms = world_mod.write_epoch(m["name"], scn["world"],
+                                         scn["seed"])
+        recorder = world_mod.TruthRecorder(
+            wld, epoch_ms, world_mod.truth_path(m["name"]))
+        recorder.start()
+        ctx["world_epoch_ms"] = epoch_ms
 
     ok = True
     try:
         ok &= run_timeline(scn, ctx)
     finally:
+        if recorder is not None:
+            recorder.stop()
         # a fault's dur_s restore that never fired inside the timeline
         # runs now instead - faults never leak into a reused fleet
         for t in ctx["timers"]:

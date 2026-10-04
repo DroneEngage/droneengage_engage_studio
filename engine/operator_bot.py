@@ -179,6 +179,10 @@ class OperatorBot:
                     self._targets[tid] = {
                         "cls": p.get("class") or p.get("cls")
                                or (p.get("target") or {}).get("cls"),
+                        # P5-08: the reported position + arrival wall ms -
+                        # distance_to(detected_cls:) reads them
+                        "pos": p.get("pos") or ms.get("pos"),
+                        "t_ms": int(time.time() * 1000),
                         "src": ms.get("src") or sd,
                         "run": ms.get("run", ""),
                         "first_seen": now, "decided": False}

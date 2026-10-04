@@ -1,13 +1,34 @@
-# server_down: kill every server proc for dur_s. The unit's de_comm
-# stays up, retries, and comes back once the server returns.
+# faults/server_down - whole-server outage mid-run: the fake fleet
+# server stops for 20 s while a copter's mission is running. Every unit
+# journals "comm line offline" (the v2 package is loaded, so the link
+# watchdog fires) and "comm line online" once the server is back - and
+# the mission still completes exactly once. Proves a server restart is
+# survivable: no unit loses its run, nothing re-deploys, no duplicate
+# RUN lines. The fleet-wide version lives in
+# scenarios/p4a/p4a11_comm_lost.yaml.
 version: 1
 name: f_server_down
 transport: fake
-settle_s: 45
+operation: ../../packages/copter_square.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 30
 fleet:
-  - {id: s1, cls: static}
+  - {id: c1, cls: copter}
 timeline:
-  - {t: 3, fault: server_down, dur_s: 25}
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm, unit: c1}
+  - {t: 9, do: start}
+  - {t: 15, do: wait_journal, unit: c1, re: "RUN run .* started",
+     timeout: 60}
+  - {t: 25, fault: server_down, dur_s: 20}
+  - {t: 55, do: wait_journal, unit: c1, re: "comm line online",
+     timeout: 90}
+  - {t: 60, do: wait_journal, unit: c1, re: "mission main completed",
+     timeout: 240}
 assert:
-  - link_offline: {unit: s1, at_least: 1, min_s: 5}
-  - proc_alive: {unit: server, proc: fake_server}
+  - journal_count: {unit: c1, re: "comm line offline", at_least: 1}
+  - journal_count: {unit: c1, re: "comm line online", at_least: 1}
+  - journal_count: {unit: c1, re: "RUN run .* started", equals: 1}
+  - journal_count: {unit: c1, re: "mission main completed", equals: 1}
+teardown: land

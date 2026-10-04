@@ -20,7 +20,13 @@ Journal assertions keep the runner.py semantics (same helpers, same
                          telemetry_value (the SITL "tlog")
   - truth JSONL:         distance_to, coverage_complete - rows
                          {tid|id|target, t_ms|t|ms, lat, lng, alt|alt_m}
-                         and coverage rows {type:"coverage", tid, covered}
+                         and coverage rows {type:"coverage", tid, covered};
+                         P5-08 adds detection rows {type:"detection",
+                         src, tid|"clutter", cls, t_ms, sent} read by
+                         detection_precision and signals_in_range, and
+                         distance_to's detected_cls: (bot-seen pos)
+  - stub determinism:    stub_deterministic - two same-seed --selftest
+                         replays must produce byte-identical stub logs
   - 1087 status (bot):   final_state
   - MAVLink mission:     fc_items_unchanged_without_cause
 """
@@ -41,7 +47,7 @@ REALTIME_SENSITIVE = {"max_latency", "journal_time_delta"}
 
 CAUSE_RE = r"MISSION_(WRITE|UPLOAD|ACK)|fc mission|mission.*(upload|download)"
 FC_LINE_RE = re.compile(
-    r"MISSION_|MAVLink|FC_|fc_cmd|guided_to|set_mode|arm", re.I)
+    r"MISSION_|MAVLink|FC_(?!items)|fc_cmd|guided_to|set_mode|arm", re.I)
 
 
 def _r(name, status, value=None, detail=""):
@@ -288,21 +294,95 @@ def _distance_to(name, a, ctx):
         return _r(name, "SKIP", None,
                   "no truth source (truth_file / run truth.jsonl - "
                   "P5-08 pending)")
-    tr = _truth_at(rows, a["truth"], t)
+    tids = a["truth"] if isinstance(a["truth"], list) else [a["truth"]]
+    t0 = t
+    tr = None
+    for tid in tids:
+        c = _truth_at(rows, tid, t)
+        if c is not None:
+            tr = c
+            break
+    pos = _unit_pos_at(ctx, u["name"], t)
+    pos_src = "telemetry"
+    if a.get("detected_cls"):
+        # P5-08: measure the world-model detection the operator bot saw
+        # (the detect.detected envelope's pos), not the unit's own pose -
+        # "the reported detection is within max_m of the truth"
+        bot = ctx.get("bot")
+        cands = [tg for tg in (bot.targets() if bot else {}).values()
+                 if tg.get("cls") == a["detected_cls"] and tg.get("pos")]
+        if not cands:
+            return _r(name, "SKIP", None,
+                      f"operator saw no {a['detected_cls']!r} detection")
+        tg = min(cands, key=lambda g: abs(g.get("t_ms", t) - t))
+        pos = {"lat": tg["pos"][0], "lng": tg["pos"][1]}
+        pos_src = f"detected {a['detected_cls']}"
+        t = tg.get("t_ms", t)
     if tr is None:
         return _r(name, "SKIP", None,
-                  f"no truth row for {a['truth']!r} in {src}")
-    pos = _unit_pos_at(ctx, u["name"], t)
+                  f"no truth row for {tids!r} near t={t0} in {src}")
     if pos is None:
         return _r(name, "SKIP", None,
                   f"no telemetry for {u['name']} near t={t}")
+    # several tids: the closest truth at t (a 'person' detection may be
+    # any of the world's people)
+    tr, tid_hit = min(
+        ((c, tid) for tid in tids
+         for c in [_truth_at(rows, tid, t)] if c is not None),
+        key=lambda p: _haversine(pos["lat"], pos["lng"],
+                                 p[0]["lat"], p[0]["lng"] or 0),
+        default=(tr, tids[0]))
     d = _haversine(pos["lat"], pos["lng"], tr["lat"],
                    tr["lng"] or tr.get("lon"))
     lo, hi = a.get("min_m"), a.get("max_m")
     good = (lo is None or d >= lo) and (hi is None or d <= hi)
     return _r(name, "PASS" if good else "FAIL", round(d, 1),
-              f"{u['name']} -> {a['truth']} = {d:.1f} m "
+              f"{u['name']} {pos_src} -> {tid_hit} = {d:.1f} m "
               f"(min {lo}, max {hi}, src {os.path.basename(src)})")
+
+
+def _signals_in_range(name, a, ctx):
+    """SDR-style gate: every journal line matching `re` must be stamped
+    while the truth entity was within `max_m` of the unit (the stub only
+    reports inside the modelled range - this proves it). Also requires
+    `min_count` (default 1) hits so "never out of range" can't pass on
+    silence. Static units read their fixed position; FC units their
+    telemetry."""
+    marks = ctx["marks"]
+    ok, bits, total = True, [], 0
+    rows, src = _truth_rows(ctx, a.get("truth_file"))
+    if rows is None:
+        return _r(name, "SKIP", None, "no truth source")
+    for u in _units(a, ctx):
+        hits = simlib.journal_match(u, a["re"], marks.get(u["name"]))
+        total += len(hits)
+        p0 = u.get("position") or {}
+        bad = []
+        for ln in hits:
+            tr = _truth_at(rows, a["truth"], ln[0])
+            if tr is None:
+                continue
+            if u["fc"]:
+                up = _unit_pos_at(ctx, u["name"], ln[0])
+                lat, lng = ((up or {}).get("lat"),
+                            (up or {}).get("lng"))
+            else:
+                lat, lng = p0.get("lat"), p0.get("lng")
+            if lat is None:
+                continue
+            d = _haversine(lat, lng, tr["lat"],
+                           tr["lng"] or tr.get("lon"))
+            if d > a["max_m"]:
+                bad.append(round(d, 1))
+        good = not bad
+        ok &= good
+        bits.append(f"{u['name']}: {len(hits)} signals, "
+                    f"{len(bad)} out-of-range{bad[:3]}")
+    need = int(a.get("min_count", 1))
+    if total < need:
+        ok = False
+        bits.append(f"only {total} signals (need {need})")
+    return _r(name, "PASS" if ok else "FAIL", total, "; ".join(bits))
 
 
 def _no_sep_violation(name, a, ctx):
@@ -371,6 +451,90 @@ def _coverage_complete(name, a, ctx):
               round(frac, 3),
               f"{len(done)}/{len(cov)} coverage cells visited "
               f"(src {os.path.basename(src)})")
+
+
+def _detection_precision(name, a, ctx):
+    """Truth detection rows ({"type":"detection", tid, cls, sent} rows
+    the P5-08 stubs append): precision = emitted detections that name a
+    real world entity / all emitted detections of the class - clutter
+    rows (tid "clutter") are the false positives. `min` is the required
+    fraction; `unit` narrows the rows to one stub."""
+    rows, src = _truth_rows(ctx, a.get("truth_file"))
+    if rows is None:
+        return _r(name, "SKIP", None,
+                  "no truth source (truth_file / run truth.jsonl)")
+    det = [r for r in rows if r.get("type") == "detection"
+           and r.get("sent")
+           and (a.get("cls") is None or r.get("cls") == a["cls"])
+           and (a.get("unit") is None or r.get("unit") == a["unit"])]
+    if not det:
+        return _r(name, "SKIP", None,
+                  f"no sent detection rows for cls {a.get('cls')!r} in "
+                  f"{os.path.basename(src)}")
+    good = [r for r in det if r.get("tid") not in (None, "clutter")]
+    prec = len(good) / len(det)
+    want = a.get("min", 1.0)
+    return _r(name, "PASS" if prec >= want else "FAIL",
+              round(prec, 3),
+              f"{len(good)}/{len(det)} detections hit a truth entity "
+              f"({len(det) - len(good)} clutter) >= {want} "
+              f"(src {os.path.basename(src)})")
+
+
+def _stub_deterministic(name, a, ctx):
+    """Same-seed acceptance: run <module> --selftest <poses> twice in a
+    scratch run dir and byte-compare stubs/<unit>.log. Uses the unit's
+    generated module config (the world + signal_detect blocks live run
+    sees), so the compared output is the real model path on a virtual
+    clock."""
+    import subprocess
+    module = a["module"]
+    unit = str(a["unit"])
+    poses = a["poses"]
+    if not os.path.isabs(poses):
+        poses = os.path.join(os.path.dirname(ctx["file"]), poses)
+    if not os.path.isfile(poses):
+        return _r(name, "FAIL", None, f"poses file missing: {poses}")
+    gen = os.path.join(simlib.run_dir(ctx["sim"]), unit, module,
+                       f"{module}.config.json")
+    if not os.path.isfile(gen):
+        return _r(name, "SKIP", None,
+                  f"{unit}.{module} not in this sim's config")
+    scr = os.path.join(simlib.run_dir(ctx["sim"]), "det", unit, module)
+    cfg = os.path.join(scr, f"{module}.config.json")
+    try:
+        os.makedirs(scr, exist_ok=True)
+        with open(gen) as f, open(cfg, "w") as g:
+            g.write(f.read())
+    except OSError as e:
+        return _r(name, "FAIL", None, f"config copy: {e}")
+    script = os.path.join(simlib.SIM_ROOT, "stubs", f"{module}.py")
+    logs = []
+    det_run = os.path.join(simlib.run_dir(ctx["sim"]), "det")
+    log_path = os.path.join(det_run, "stubs", f"{unit}.log")
+    for i in (1, 2):
+        try:
+            if os.path.isfile(log_path):
+                os.unlink(log_path)
+            r = subprocess.run(
+                ["python3", script, "-c", cfg, "--selftest", poses,
+                 "--dur", str(a.get("dur_s", 60))],
+                capture_output=True, text=True,
+                timeout=float(a.get("dur_s", 60)) + 60)
+        except Exception as e:
+            return _r(name, "FAIL", None, f"replay {i}: {e}")
+        if r.returncode != 0:
+            return _r(name, "FAIL", None,
+                      f"replay {i} exit {r.returncode}: "
+                      f"{r.stderr[-300:]}")
+        try:
+            logs.append(open(log_path, "rb").read())
+        except OSError as e:
+            return _r(name, "FAIL", None, f"replay {i} log: {e}")
+    same = logs[0] == logs[1]
+    return _r(name, "PASS" if same else "FAIL", len(logs[0]),
+              f"two same-seed selftests, stub log {len(logs[0])} B "
+              f"({'identical' if same else 'DIFFERS'})")
 
 
 def _final_state(name, a, ctx):
@@ -569,6 +733,9 @@ DISPATCH = {
     "distance_to": _distance_to,
     "no_sep_violation": _no_sep_violation,
     "coverage_complete": _coverage_complete,
+    "detection_precision": _detection_precision,
+    "stub_deterministic": _stub_deterministic,
+    "signals_in_range": _signals_in_range,
     "final_state": _final_state,
     "fc_items_unchanged_without_cause": _fc_items_unchanged,
     "no_fc_command_to_static": _no_fc_command_to_static,

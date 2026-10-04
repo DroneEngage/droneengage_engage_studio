@@ -1,0 +1,31 @@
+# p5/world_detect_person - P5-08 acceptance 1: a copter with stub_ai_box
+# flies takeoff -> 40 m over person_1's patrol line and loiters. The stub
+# reads the real SITL pose (serial3), projects the world truth into
+# normalized 1078 boxes, and de_mavlink's real geo-projector turns them
+# into detect.detected events the world model announces. The reported
+# detection position must land within the P3-07 error budget of the
+# truth (distance_to detected_cls) and the emitted detections must be
+# >=80% true entities (detection_precision).
+version: 1
+name: world_detect_person
+seed: 7
+transport: fake
+world: ../../worlds/forest_a.yaml
+operation: ../../packages/p5_over_person.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: cam1, cls: copter, modules: [stub_ai_box]}
+timeline:
+  - {t: 0, do: deploy}
+  - {t: 5, do: start}
+  - {t: 10, do: wait_journal, unit: cam1,
+     re: "detect\\.detected", timeout: 240}
+assert:
+  - journal_count: {unit: cam1, re: "detect\\.detected",
+                    at_least: 1}
+  - distance_to: {unit: cam1, re: "detect\\.detected",
+                  detected_cls: person,
+                  truth: [person_1, person_2], max_m: 25}
+  - detection_precision: {cls: person, min: 0.8, unit: cam1}
+teardown: land

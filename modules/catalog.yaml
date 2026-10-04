@@ -62,3 +62,35 @@ de_tracker:
   start_delay: 3
   # its getopt string has no "b:" - the local file is read from the cwd
   local: {file: de_tracker.config.local}
+
+# ---------------------------------------------------------------- P5-08
+# World-driven stub sensor modules (stubs/*.py in this repo). A scenario
+# with `world:` injects the world path + seed as config "stub" per unit
+# (engine/world.py). `pose` marks modules that read the vehicle pose on a
+# dedicated SITL serial3 (tcp:3 -> 5763+10k); on static units all stubs
+# fall back to the intermodule 9102 location feed.
+
+stub_ai_box:
+  repo: droneengage_simulation_land
+  bin: stubs/stub_ai_box.py
+  template: stub.json
+  port_base: 58000
+  start_delay: 5
+  pose: true
+  local: {file: stub_ai_box.local}
+
+stub_sdr:
+  repo: droneengage_simulation_land
+  bin: stubs/stub_sdr.py
+  template: stub.json
+  port_base: 59000
+  start_delay: 3
+  local: {file: stub_sdr.local}
+
+stub_payload:
+  repo: droneengage_simulation_land
+  bin: stubs/stub_payload.py
+  template: stub.json
+  port_base: 60000
+  start_delay: 3
+  local: {file: stub_payload.local}
