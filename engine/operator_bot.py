@@ -191,6 +191,15 @@ class OperatorBot:
                 p = ms.get("p") or {}
                 name = ms.get("n") or ""
                 det_cls = self._event_targets.get(name)
+                # 1078 `b` (or `t`) carries the normalized {x,y,w,h}
+                # detection box - a dict for best-object, a list for
+                # multi-target payloads
+                box = p.get("b")
+                if isinstance(box, list):
+                    box = box[0] if box and isinstance(box[0], dict) \
+                        else None
+                if not isinstance(box, dict):
+                    box = None
                 tid = ms.get("tgt") or p.get("tid")
                 if not tid and det_cls:
                     # P4B-10: a detection envelope carries no tid - the
@@ -215,8 +224,7 @@ class OperatorBot:
                         # P5-15: the 1078 box {x,y,w,h} when the envelope
                         # carries it - detection_precision_render IoUs it
                         # against the ID-pass boxes
-                        "box": p.get("b") if isinstance(p.get("b"), dict)
-                               else None,
+                        "box": box,
                         "t_ms": int(time.time() * 1000),
                         "src": ms.get("src") or sd,
                         "run": ms.get("run", ""),
