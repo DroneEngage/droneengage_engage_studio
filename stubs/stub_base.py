@@ -6,7 +6,7 @@ the catalog:  '<module>' -c '<generated config>'. The config carries
 the s2s ports plus a "stub" block:
 
     "stub": {"world": "<world.yaml>", "seed": 1, "unit": "<unit>",
-             "pose_port": 5763+10k}        # SITL serial3 (0 on statics)
+             "pose_port": 5765+10k}        # SITL serial5 (0 on statics)
 
 From the config path the stub derives run/<sim>/ and reads:
   run/<sim>/world_epoch.json   {"epoch_unix_ms"} - scenario t0 written
@@ -16,7 +16,7 @@ From the config path the stub derives run/<sim>/ and reads:
                                "<unix_ms> <kind> <json>"
 
 Pose: units with a flight controller are read on the SITL pose port
-(serial3 MAVLink, ATTITUDE + GLOBAL_POSITION_INT - the same stream
+(serial5 MAVLink, ATTITUDE + GLOBAL_POSITION_INT - the same stream
 de_mavlink projects from, never touching the pilot/fcb/telemetry ports);
 9102 intermodule location reports fill position and yaw everywhere, and
 on a static unit they are the only source (de_comm broadcasts the
@@ -44,7 +44,7 @@ import world as world_mod          # noqa: E402
 import geo_projection as gp        # noqa: E402
 
 _DATABUS = os.path.join(
-    simlib.repo_dir("DE_DATABUS_DIR", "droneengage_databus"), "python")
+    simlib.repo_dir("DE_DATABUS_DIR", "de_databus"), "python")
 if _DATABUS not in sys.path:
     sys.path.insert(0, _DATABUS)
 
@@ -89,7 +89,7 @@ def load_module_cfg(argv):
 
 
 class PoseFeed:
-    """The unit's pose: SITL serial3 (att + position) plus the 9102
+    """The unit's pose: SITL serial5 (att + position) plus the 9102
     intermodule feed (position + yaw cdeg; the only source on statics).
 
     pose() -> {"lat","lng","alt_m","rel_alt_m","roll","pitch","yaw",
@@ -97,8 +97,8 @@ class PoseFeed:
 
     def __init__(self, pose_port, sysid=1, yaw0_deg=0.0):
         self._lock = threading.Lock()
-        self._att = {}            # roll/pitch/yaw rad from serial3
-        self._pos = {}            # lat/lng/alt from serial3 GLOBAL_POSITION_INT
+        self._att = {}            # roll/pitch/yaw rad from serial5
+        self._pos = {}            # lat/lng/alt from serial5 GLOBAL_POSITION_INT
         self._loc9102 = {}        # the intermodule 9102 fields
         self._yaw0 = yaw0_deg
         self._sysid = sysid

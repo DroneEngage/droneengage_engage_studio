@@ -262,9 +262,9 @@ def prepare_sim(scn, world):
         has_fc = bool(simlib.load_block(entry["block"])["fc"])
         stub = {"world": scn["world"], "seed": scn["seed"],
                 "unit": entry["name"], "sysid": slot if has_fc else 1,
-                # mirrors simlib._expand_unit's `pose` handling: serial3
-                # tcp:3 -> 5763+10k on FC units; statics use the 9102 feed
-                "pose_port": (5763 + 10 * slot)
+                # mirrors simlib._expand_unit's `pose` handling: serial5
+                # tcp:5 -> 5765+10k on FC units; statics use the 9102 feed
+                "pose_port": (5765 + 10 * slot)
                              if (has_fc and "stub_ai_box" in mods) else 0}
         for m in STUB_MODULES:
             if m in mods:

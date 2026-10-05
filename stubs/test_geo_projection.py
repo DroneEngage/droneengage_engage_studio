@@ -32,7 +32,7 @@ import geo_projection as gp        # noqa: E402
 # the vendored header copies - first one found wins (they are kept in
 # sync across the de_* repos)
 HEADER_DIRS = [
-    ("DE_DATABUS_DIR", "droneengage_databus",
+    ("DE_DATABUS_DIR", "de_databus",
      "client/src/de_common/helpers"),
     ("DE_MAVLINK_DIR", "droneengage_mavlink", "src/de_common/helpers"),
     ("DE_COMM_DIR", "droneengage_communication", "src/de_common/helpers"),

@@ -67,7 +67,7 @@ de_tracker:
 # World-driven stub sensor modules (stubs/*.py in this repo). A scenario
 # with `world:` injects the world path + seed as config "stub" per unit
 # (engine/world.py). `pose` marks modules that read the vehicle pose on a
-# dedicated SITL serial3 (tcp:3 -> 5763+10k); on static units all stubs
+# dedicated SITL serial5 (tcp:5 -> 5765+10k); on static units all stubs
 # fall back to the intermodule 9102 location feed.
 
 stub_ai_box:

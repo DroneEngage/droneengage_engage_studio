@@ -585,12 +585,13 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             "params": fc.get("params") or {},
         }
         # a catalog module flagged `pose` reads the vehicle pose on its
-        # own SITL serial (serial3, tcp:3 -> 5763+10k) - the P5-08 stubs
-        # use it; serial0/1/2 stay with ctl / de_mavlink / telemetry
+        # own SITL serial (serial5, tcp:5 -> 5765+10k) - the P5-08 stubs
+        # use it; serial0/1/2 stay with ctl / de_mavlink / telemetry and
+        # serial3 stays the SITL GPS device on every unit
         if any(catalog.get(m, {}).get("pose") for m in u["modules"]):
-            u["fc"]["pose_port"] = 5763 + 10 * slot
+            u["fc"]["pose_port"] = 5765 + 10 * slot
             u["fc"]["params"] = deep_merge(
-                {"SERIAL3_PROTOCOL": 2, "SERIAL3_BAUD": 57},
+                {"SERIAL5_PROTOCOL": 2, "SERIAL5_BAUD": 57},
                 u["fc"]["params"])
     return u
 
@@ -922,10 +923,10 @@ def gen_unit(u, sim, catalog):
         sitl_bin = os.path.join(ARDUPILOT_DIR, "build", "sitl", "bin", kind["bin"])
         # SITL kills itself when its parent dies (SITL_State kill(ppid,0)) -
         # run it as a child and wait, keeping this shell as its parent.
-        # serial3 (tcp:3 -> 5763+10k) only exists on units with a
+        # serial5 (tcp:5 -> 5765+10k) only exists on units with a
         # `pose`-flagged catalog module - a dedicated pose feed for the
-        # P5-08 stubs; SERIAL3 stays a GPS on every other unit
-        serial3 = " --serial3 tcp:3" if fc.get("pose_port") else ""
+        # P5-08 stubs; SERIAL3 stays a GPS on every unit
+        serial5 = " --serial5 tcp:5" if fc.get("pose_port") else ""
         write_text(os.path.join(udir, "launch.sitl.sh"),
                    "#!/bin/bash\ncd '%s'\n'%s' -w -M %s -I %d --sysid %d "
                    "--home %.7f,%.7f,%.1f,%.0f --defaults '%s' "
@@ -933,7 +934,7 @@ def gen_unit(u, sim, catalog):
                    "child=$!\necho $child > '%s'\nwait $child\n"
                    % (sdir, sitl_bin, fc["model"], fc["instance"], fc["sysid"],
                       p["lat"], p["lng"], p["alt"], p["yaw"], defaults,
-                      fc["fcb_port"], serial3,
+                      fc["fcb_port"], serial5,
                       pid_path(u["sim"], u["name"], "sitl")), 0o755)
     u.pop("config", None)
     u.pop("parm_files", None)

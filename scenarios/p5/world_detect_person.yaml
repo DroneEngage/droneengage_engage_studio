@@ -1,6 +1,6 @@
 # p5/world_detect_person - P5-08 acceptance 1: a copter with stub_ai_box
 # flies takeoff -> 40 m over person_1's patrol line and loiters. The stub
-# reads the real SITL pose (serial3), projects the world truth into
+# reads the real SITL pose (serial5), projects the world truth into
 # normalized 1078 boxes, and de_mavlink's real geo-projector turns them
 # into detect.detected events the world model announces. The reported
 # detection position must land within the P3-07 error budget of the
