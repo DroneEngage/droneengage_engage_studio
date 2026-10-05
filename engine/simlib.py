@@ -994,6 +994,19 @@ def gen_unit(u, sim, catalog):
             write_json(lpath, {"module_key": f"{u['name']}-{m}"}, indent=1)
             if local.get("arg"):
                 cmd += f" {local['arg']} '{lpath}'"
+        if m == "de_camera" and u.get("cam_labels"):
+            # P5-15 ordering: exclusive_caps loopbacks only advertise
+            # CAPTURE once a producer (yolo's v4l2sink) is attached, and
+            # de_camera aborts on an output-only device - probe a frame
+            # first. Missing label -> gen_render errors before launch
+            ai_dev = v4l2_label_map().get(u["cam_labels"][1])
+            if ai_dev:
+                # one bash -c: `exec` in the launch template applies to
+                # the whole line, and exec-until is not a thing
+                cmd = (f"bash -c \"until timeout 3 '{FFMPEG_BIN}' "
+                       f"-loglevel error -f v4l2 -i '{ai_dev}' "
+                       f"-frames:v 1 -f null - 2>/dev/null; "
+                       f"do sleep 2; done; exec {cmd}\"")
         _launch_script(u, m, mdir, cmd, spec.get("start_delay", 0))
 
     # ---- SITL ----
@@ -1256,8 +1269,14 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
            "&render=cameras&sink=ws://127.0.0.1:%d"
            % (render["web_port"], render["stream_port"],
               render["mav_ws_port"], render["sink_port"]))
+    # --use-angle=gl-egl is the headless GPU path (SwiftShader fallback
+    # needs --enable-unsafe-swiftshader); --enable-logging puts the
+    # page's console in the proc log. --use-gl=egl is NOT valid on
+    # Chrome 150+ (egl-gles2 is not an allowed implementation)
     _render_script(sim, "chromium", rdir,
-                   "'%s' --headless=new --use-gl=egl "
+                   "'%s' --headless=new --use-angle=gl-egl "
+                   "--enable-unsafe-swiftshader "
+                   "--enable-logging=stderr "
                    "--disable-background-timer-throttling "
                    "--disable-renderer-backgrounding "
                    "--user-data-dir='%s/chrome' --no-first-run "

@@ -67,7 +67,9 @@ de_yolo_ai:
   template: de_yolo_ai_generic.config.module.json
   port_base: 57000
   start_delay: 4
-  local: {arg: "-b", file: de_yolo_ai_generic.config.local}
+  # its getopt string is "c:vh" - the local file is the LONG option
+  # --bconfig only (there is no short -b)
+  local: {arg: "--bconfig", file: de_yolo_ai_generic.config.local}
   ready_re: "Found primary device"
   wire:
     source_video_device_name: "{src_label}"

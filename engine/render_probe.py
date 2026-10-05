@@ -50,7 +50,20 @@ def main():
     a = ap.parse_args()
 
     from websockets.sync.client import connect
-    ws = connect(a.stream)
+    # the probe launches with the render procs during `sim up` - the
+    # world stream only opens inside the scenario runner afterwards,
+    # so wait for it instead of dying on the first refused connect
+    ws = None
+    deadline = time.time() + 120
+    while ws is None:
+        try:
+            ws = connect(a.stream)
+        except OSError:
+            if time.time() > deadline:
+                print("render_probe: world stream never opened",
+                      file=sys.stderr)
+                return 1
+            time.sleep(0.5)
     hello = json.loads(ws.recv(timeout=15))
     if hello.get("t") != "hello":
         print(f"render_probe: first frame not hello: {hello.get('t')}",
