@@ -466,7 +466,11 @@ class World:
                 f"{clutter.get('anchor')!r} (image | ground)")
         sdr = dict(SDR_DEFAULTS)
         sdr.update(sensors.get("sdr") or {})
-        self.sensors = {"camera": cam, "sdr": sdr}
+        # sensors.payload is a pass-through for the render feed
+        # (P5-13 hello.units[].payload: mass/drag for the P5-16
+        # drop model - the engine itself does not read it yet)
+        self.sensors = {"camera": cam, "sdr": sdr,
+                        "payload": dict(sensors.get("payload") or {})}
 
     def entity(self, tid):
         return self._by_id.get(tid)
@@ -556,6 +560,55 @@ class World:
         with its footprint ring, band and model parameters, world
         order."""
         return [obs.to_json() for obs in self.obstacles]
+
+    def clutter_at(self, t_s, tick_hz=10.0):
+        """P5-13: the world's own ground-anchored clutter field, as a
+        list of live points {id, lat, lng, cls} at t_s. The stubs'
+        per-camera clutter spawns inside a frustum; the world stream
+        needs world points instead, so the field spawns determinis-
+        tically per tick index (rng(seed,"wsclutter",k)) over the
+        entity/obstacle bbox + 50 m at the configured rate - a same-seed
+        replay produces the same field. Only for anchor: ground."""
+        import geo_projection
+        cl = self.clutter
+        if cl["anchor"] != "ground" or cl["rate_per_km2_min"] <= 0.0:
+            return []
+        st = getattr(self, "_ws_clutter", None)
+        if st is None:
+            st = self._ws_clutter = {"pts": [], "tick": -1, "n": 0}
+        tick = int(t_s * tick_hz + 1e-9)
+        while st["tick"] < tick:
+            st["tick"] += 1
+            xs, ys = [], []
+            for e in self.entities:
+                n, east = geo_projection.geo_latlng_to_ne(
+                    self.origin[0], self.origin[1],
+                    *e.pos_at(t_s, self)[:2])
+                xs.append(east)
+                ys.append(n)
+            for o in self.obstacles:
+                for px, py in o.xy:
+                    xs.append(px)
+                    ys.append(py)
+            if not xs:
+                break
+            lo_x, hi_x = min(xs) - 50.0, max(xs) + 50.0
+            lo_y, hi_y = min(ys) - 50.0, max(ys) + 50.0
+            area_km2 = (hi_x - lo_x) * (hi_y - lo_y) / 1e6
+            p = cl["rate_per_km2_min"] * area_km2 / (60.0 * tick_hz)
+            r = rng(self.seed, "wsclutter", st["tick"])
+            if r.random() < p:
+                st["n"] += 1
+                east = r.uniform(lo_x, hi_x)
+                north = r.uniform(lo_y, hi_y)
+                lat, lng = geo_projection.geo_offset_to_latlng(
+                    self.origin[0], self.origin[1], north, east)
+                st["pts"].append({"id": f"c{st['n']}", "lat": lat,
+                                  "lng": lng, "cls": cl["cls"],
+                                  "exp": t_s + cl["lifetime_s"]})
+        st["pts"] = [c for c in st["pts"] if c["exp"] > t_s]
+        return [{"id": c["id"], "lat": c["lat"], "lng": c["lng"],
+                 "cls": c["cls"]} for c in st["pts"]]
 
     def point_in_building(self, lat, lng, alt_m):
         """True when (lat, lng, alt_above_home) lies inside any

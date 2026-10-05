@@ -572,6 +572,10 @@ def _collect(scn, m, out, results, verify, extra):
     truth = os.path.join(simlib.run_dir(m["name"]), "truth.jsonl")
     if os.path.isfile(truth):
         shutil.copy(truth, os.path.join(out, "truth.jsonl"))
+    # P5-13: the render feed's connect/event log
+    ws_log = os.path.join(simlib.run_dir(m["name"]), "worldstream.log")
+    if os.path.isfile(ws_log):
+        shutil.copy(ws_log, os.path.join(out, "worldstream.log"))
     # P5-08 stub logs (stubs/<unit>.log) - the byte-compare artifacts for
     # the determinism acceptance
     sdir = os.path.join(simlib.run_dir(m["name"]), "stubs")
@@ -661,6 +665,18 @@ def run_scenario(t_file, seed=None, keep=False):
             wld, epoch_ms, world_mod.truth_path(m["name"]))
         recorder.start()
         ctx["world_epoch_ms"] = epoch_ms
+        # P5-13: a render-enabled scenario also opens the world stream
+        # (de.worldstream/1 on render.stream_port) now that the epoch -
+        # the truth clock - is fixed
+        render = m.get("render") or {}
+        if render:
+            import world_stream
+            stream = world_stream.WorldStream(
+                wld, m, epoch_ms, render["stream_port"],
+                world_mod.truth_path(m["name"]),
+                world_stream.log_path(m["name"]))
+            stream.start()
+            ctx["world_stream"] = stream
 
     ok = True
     try:
@@ -671,6 +687,8 @@ def run_scenario(t_file, seed=None, keep=False):
         print(f"  TIMELINE ERROR: {type(e).__name__}: {e}", flush=True)
         ok = False
     finally:
+        if ctx.get("world_stream") is not None:
+            ctx["world_stream"].stop()
         if recorder is not None:
             recorder.stop()
         # a fault's dur_s restore that never fired inside the timeline

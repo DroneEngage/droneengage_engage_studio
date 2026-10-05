@@ -1,0 +1,41 @@
+# p5/render_feed_smoke - P5-13 acceptance (live): a render-enabled
+# scenario opens the world stream and fans MAVLink out to the
+# Mavlink3DMap UDP port, while headless scenarios stay untouched.
+#
+# During the run:
+#   - the world stream serves de.worldstream/1 on
+#     127.0.0.1:<61000 + slot_base> (hello + 10 Hz ticks + cmd);
+#   - every FC unit's SITL gets --serial4 udpclient:127.0.0.1:
+#     <16450 + slot_base> with SR4_* rates set;
+#   - event frames land in truth.jsonl with src render.
+#
+# Probe acceptance (run while the fleet is up - the slot_base is
+# seed-derived, check sim.json or worldstream.log for the ports):
+#   python3 engine/worldstream_probe.py --port <stream_port> \
+#       --seconds 3        # expects tick_hz >= 9
+#   python3 engine/worldstream_probe.py --port <stream_port> \
+#       --inject '{"kind":"payload_landed","unit":"cam1","lat":1,
+#                  "lng":2,"alt_m":0,"hit":"ground"}'
+#     -> the event lands in results/.../truth.jsonl with src render
+#   a UDP listener on <mav_port> counts HEARTBEATs from both sysids
+version: 1
+name: render_feed_smoke
+seed: 7
+transport: fake
+world: ../../worlds/forest_canopy.yaml
+render: {mode: viewer, headless: true}
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: cam1, cls: copter, modules: [stub_ai_box, stub_payload]}
+  - {id: cam2, cls: copter}
+timeline:
+  - {t: 0, do: deploy}
+  - {t: 5, do: start}
+  - {t: 60, do: wait, seconds: 5}
+assert:
+  - proc_alive: {unit: cam1}
+  - proc_alive: {unit: cam2}
+  - telemetry_value: {unit: cam1, field: rel_alt_m, ge: 0}
+  - telemetry_value: {unit: cam2, field: rel_alt_m, ge: 0}
+teardown: land

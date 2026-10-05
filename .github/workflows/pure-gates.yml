@@ -18,7 +18,10 @@
 #                     (seeded behaviour tracks, building rejection,
 #                     environment factors, SITL wind params),
 #                     engine/test_coverage.py (area grids, per-cell
-#                     POD, coverage asserts, runtime budget) and
+#                     POD, coverage asserts, runtime budget),
+#                     engine/test_world_stream.py (the render feed:
+#                     hello/tick contents, port allocation, an
+#                     in-process ws round-trip) and
 #                     stubs/test_golden.py (the stub selftest replays
 #                     vs stubs/golden/*.log) run the model code
 #                     in-process with a databus id shim, so they need
@@ -63,6 +66,7 @@ jobs:
           python3 engine/test_world_obstacles.py
           python3 engine/test_world_behaviour.py
           python3 engine/test_coverage.py
+          python3 engine/test_world_stream.py
           python3 stubs/test_golden.py
 
       - name: library folders non-empty

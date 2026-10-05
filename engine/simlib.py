@@ -328,7 +328,7 @@ def load_sim(path_or_spec, base_dir=None):
     the sim file's stem or an explicit `name:` - owns run/<name>/."""
     spec, src = _sim_spec(path_or_spec, base_dir)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
-                           "slot_base", "units"}
+                           "slot_base", "units", "render"}
     if unknown:
         raise SimError(f"sim: unknown keys {sorted(unknown)}")
     if spec.get("version", 1) != 1:
@@ -348,6 +348,7 @@ def load_sim(path_or_spec, base_dir=None):
         "home": list(home),
         "slot_base": slot_base,
         "units": [],
+        "render": _render_spec(spec.get("render"), slot_base),
     }
     if not sim["server"]["gcs_party"]:
         # parallel external sims share one real server: give each its own
@@ -501,6 +502,39 @@ def load_server(srv, slot_base=None):
     }
 
 
+RENDER_MODES = ("viewer", "cameras", "physics", "full")
+
+# P5-13: the world stream binds 127.0.0.1 like every sim port; the
+# Mavlink3DMap UDP port rides the same slot block so --seeds runs and
+# parallel sims never share it
+STREAM_PORT_BASE = 61000
+MAV_PORT_BASE = 16450
+
+
+def _render_spec(raw, slot_base):
+    """render: {mode, headless, stream_port, mav_port} -> a normalized
+    dict, or None when the scenario did not opt in (D1: absent render
+    means no process, port or param changes - the sim hash, generated
+    from the unit specs, stays byte-identical to before)."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise SimError("render: must be a mapping")
+    bad = set(raw) - {"mode", "headless", "stream_port", "mav_port"}
+    if bad:
+        raise SimError(f"render: unknown keys {sorted(bad)}")
+    mode = raw.get("mode", "viewer")
+    if mode not in RENDER_MODES:
+        raise SimError(f"render: unknown mode {mode!r} "
+                       f"(known: {', '.join(RENDER_MODES)})")
+    return {"mode": mode,
+            "headless": bool(raw.get("headless", False)),
+            "stream_port": int(raw.get("stream_port",
+                                       STREAM_PORT_BASE + slot_base)),
+            "mav_port": int(raw.get("mav_port",
+                                    MAV_PORT_BASE + slot_base))}
+
+
 def check_account(user, code, where):
     """droneengage_authenticator rule (hlp_strings.fn_isValidAccountName /
     fn_isAlphanumeric): a bad name is refused as "API endpoint not found"."""
@@ -594,6 +628,16 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             u["fc"]["pose_port"] = 5765 + 10 * slot
             u["fc"]["params"] = deep_merge(
                 {"SERIAL5_PROTOCOL": 2, "SERIAL5_BAUD": 57},
+                u["fc"]["params"])
+        # P5-13 D4: a render-enabled sim fans MAVLink out to
+        # Mavlink3DMap on serial4 (udpclient -> render.mav_port);
+        # attitude/position at 10 Hz, servo outputs for P5-16
+        if sim.get("render"):
+            u["fc"]["mav_port"] = sim["render"]["mav_port"]
+            u["fc"]["params"] = deep_merge(
+                {"SERIAL4_PROTOCOL": 2,
+                 "SR4_POSITION": 10, "SR4_EXTRA1": 10,
+                 "SR4_RC_CHAN": 2, "SR4_EXT_STAT": 2},
                 u["fc"]["params"])
     return u
 
@@ -732,6 +776,9 @@ def used_ports(sim):
         ports.add(srv["port"])
         if srv["auth"]:
             ports.update((srv["auth_port"], srv["auth_s2s_port"]))
+    if sim.get("render"):
+        ports.update((sim["render"]["stream_port"],
+                      sim["render"]["mav_port"]))
     for u in sim["units"]:
         ports.update(u["ports"].values())
         if u["fc"]:
@@ -927,16 +974,19 @@ def gen_unit(u, sim, catalog):
         # run it as a child and wait, keeping this shell as its parent.
         # serial5 (tcp:5 -> 5765+10k) only exists on units with a
         # `pose`-flagged catalog module - a dedicated pose feed for the
-        # P5-08 stubs; SERIAL3 stays a GPS on every unit
+        # P5-08 stubs; SERIAL3 stays a GPS on every unit. serial4 is the
+        # P5-13 render fan-out (udpclient to the render.mav_port)
         serial5 = " --serial5 tcp:5" if fc.get("pose_port") else ""
+        serial4 = (" --serial4 udpclient:127.0.0.1:%d" % fc["mav_port"]
+                   if fc.get("mav_port") else "")
         write_text(os.path.join(udir, "launch.sitl.sh"),
                    "#!/bin/bash\ncd '%s'\n'%s' -w -M %s -I %d --sysid %d "
                    "--home %.7f,%.7f,%.1f,%.0f --defaults '%s' "
-                   "--serial0 tcp:0 --serial1 tcp:%d --serial2 tcp:2%s &\n"
+                   "--serial0 tcp:0 --serial1 tcp:%d --serial2 tcp:2%s%s &\n"
                    "child=$!\necho $child > '%s'\nwait $child\n"
                    % (sdir, sitl_bin, fc["model"], fc["instance"], fc["sysid"],
                       p["lat"], p["lng"], p["alt"], p["yaw"], defaults,
-                      fc["fcb_port"], serial5,
+                      fc["fcb_port"], serial5, serial4,
                       pid_path(u["sim"], u["name"], "sitl")), 0o755)
     u.pop("config", None)
     u.pop("parm_files", None)
@@ -1080,6 +1130,7 @@ def generate(sim, sim_file=None):
     manifest = {"version": 1, "name": sim["name"], "sim_file": sim_file,
                 "sim_hash": sim["hash"], "server": sim["server"],
                 "server_procs": server_procs,
+                "render": sim.get("render"),
                 "home": sim["home"], "units": units}
     write_json(manifest_path(sim["name"]), manifest, indent=2)
     return manifest

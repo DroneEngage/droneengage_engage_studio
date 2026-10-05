@@ -263,7 +263,15 @@ Format (strict - unknown keys fail against
   `run/<sim>/truth.jsonl` at 1 Hz plus per-detection rows),
   `operation`, `verify` (P5-06 CLI, absent = recorded skip),
   `operator` (the bot's standing approve/confirm policy), `fleet`,
-  `timeline`, `assert`, `teardown`, `settle_s`.
+  `timeline`, `assert`, `teardown`, `settle_s`, `render` (P5-13 opt-in:
+  `{mode: viewer|cameras|physics|full, headless}` opens a
+  `de.worldstream/1` WebSocket server inside the runner on
+  `61000 + slot_base` - hello snapshot + 10 Hz entity/clutter ticks +
+  `cmd payload_release`, with client `event` frames appended to
+  truth.jsonl as `src: render` - and gives every FC unit a
+  `--serial4 udpclient` MAVLink fan-out to `16450 + slot_base` for
+  Mavlink3DMap. Absent = today's headless behaviour, unchanged ports
+  and sim hash; `engine/worldstream_probe.py` is the test client).
 - `fleet:` entries take `id`, `cls` (`copter|plane|rover|static|
   comm_only` or a `blocks/` name), `role`, absolute `home`/`base`,
   relative `at`, `modules`, `params`, `config`, `account`. `modules`

@@ -238,6 +238,7 @@ def load_scenario(path, seed=None):
         "assert": raw.get("assert", []),
         "teardown": raw.get("teardown", "land"),
         "settle_s": float(raw.get("settle_s", 30)),
+        "render": raw.get("render"),
         "raw": raw,
     }
     units = _fleet_units(scn, home)
@@ -252,6 +253,7 @@ def load_scenario(path, seed=None):
         "home": list(home),
         "slot_base": slot_base,
         "units": units,
+        "render": raw.get("render"),
     }
     return scn
 

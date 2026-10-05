@@ -136,6 +136,16 @@
     },
     "teardown": {"enum": ["land", "reset", "none"], "default": "land"},
     "settle_s": {"type": "number", "minimum": 0, "default": 30,
-      "description": "seconds on: watchers stay armed after the last t: step"}
+      "description": "seconds on: watchers stay armed after the last t: step"},
+    "render": {"type": "object",
+      "description": "P5-13 opt-in render feed: the world stream (de.worldstream/1 ws on render.stream_port) plus the MAVLink fan-out to Mavlink3DMap (serial4 udpclient -> render.mav_port). Absent = today's headless behaviour, identical ports",
+      "properties": {
+        "mode": {"enum": ["viewer", "cameras", "physics", "full"],
+          "default": "viewer"},
+        "headless": {"type": "boolean", "default": false},
+        "stream_port": {"type": "integer"},
+        "mav_port": {"type": "integer"}
+      },
+      "additionalProperties": false}
   }
 }
