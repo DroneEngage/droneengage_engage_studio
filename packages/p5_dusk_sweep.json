@@ -1,0 +1,37 @@
+{
+  "schema": "de.package/2",
+  "op": "p5_dusk_sweep",
+  "role": "cam_scout",
+  "vehicle": { "type": "copter" },
+  "requires": [],
+  "fc_items": [
+    { "c": 22, "ft": 3, "mv": [0,0,0,0,0,0,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.3629027,149.1658979,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.3618247,149.1656776,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.3603874,149.1656776,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.3618247,149.1667792,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.3618247,149.1685416,40] },
+    { "c": 17, "ft": 3, "mv": [0,0,0,0,-35.3618247,149.1685416,40] }
+  ],
+  "missions": {
+    "main": {
+      "trigger": { "type": "op.start" },
+      "priority": 0,
+      "segment": { "start": 1, "end": 7 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    }
+  },
+  "manifest": [
+    { "seq": 1, "mission": "main", "step": "t",  "kind": "nav.takeoff" },
+    { "seq": 2, "mission": "main", "step": "w1", "kind": "nav.wp" },
+    { "seq": 3, "mission": "main", "step": "w2", "kind": "nav.wp" },
+    { "seq": 4, "mission": "main", "step": "w3", "kind": "nav.wp" },
+    { "seq": 5, "mission": "main", "step": "w4", "kind": "nav.wp" },
+    { "seq": 6, "mission": "main", "step": "w5", "kind": "nav.wp" },
+    { "seq": 7, "mission": "main", "step": "l",  "kind": "end.hold" }
+  ],
+  "events": {},
+  "handlers": {},
+  "hash": "sha256:0000"
+}

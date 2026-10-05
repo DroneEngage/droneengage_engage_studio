@@ -249,7 +249,13 @@ Format (strict - unknown keys fail against
   (`transmittance`, `rf_loss_db`) -, a camera `lens:` option
   (`angle_linear` the default, `rectilinear` what a real lens does) and
   ground-anchored clutter (`anchor: ground` - a false positive is a
-  fixed ground point, not a sliding pixel). Consumed by the `stub_*`
+  fixed ground point, not a sliding pixel); P5-11 adds per-entity
+  `behaviour:` (seeded `stationary`/`wander`/`trail`/`seek` tracks that
+  avoid buildings), `trails:`/`features:`/`environment:` (sun,
+  visibility, precip, wind - the wind reaches every FC unit's
+  sim.parm as `SIM_WIND_SPD`/`SIM_WIND_DIR`/`SIM_WIND_TURB`, and the
+  camera model dims at dusk unless `kind: thermal`), plus a `state`
+  field on the truth rows. Consumed by the `stub_*`
   modules and the truth recorder, which writes
   `run/<sim>/truth.jsonl` at 1 Hz plus per-detection rows),
   `operation`, `verify` (P5-06 CLI, absent = recorded skip),

@@ -1,0 +1,73 @@
+# forest_dusk - the P5-11 behaviour + environment world (de.world/1).
+#
+# About the SITL home (-35.363262, 149.165237), three people whose
+# motion is modelled, not scripted (parameters are estimates, not
+# lost-person statistics):
+#   person_wander (N 40, E 60) - a correlated random walk inside a
+#                 400 m bound: pauses for ~60 s at a time (the
+#                 exhausted pattern), speed 0.6 m/s, 25 deg of per-
+#                 second heading wander.
+#   person_rest   - walks the 320 m line (80,40) -> (400,40) at
+#                 0.8 m/s, then stops at t = 300 s: "found exhausted",
+#                 the person the thermal unit must find.
+#   hiker         - follows trail_a ((20,140) -> (160,140) ->
+#                 (160,300)) at 1.1 m/s, leaving it for a wander at
+#                 5 %/minute.
+#
+# environment: time_of_day "18:40" -> sun_elev ~ -10 deg, below civil
+# twilight, so an rgb camera's p_detect is 0 - the night case an
+# rgb-only fleet must fail and a thermal (kind: thermal, flat
+# p_detect_thermal, light-insensitive) must pass. visibility 600 m is
+# above every camera's max_range_m, so fog does not factor here; the
+# wind (6 m/s FROM 270, turbulence 0.2 m/s) reaches SITL as
+# SIM_WIND_SPD/DIR/TURB on every FC unit and rides world.wind() for
+# the physics tier (P5-16; gust_mps has no SITL parameter).
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_wander, cls: person, pos: [-35.3629027, 149.1658979],
+     size_m: 0.5,
+     behaviour: {kind: wander, speed_mps: 0.6, turn_sigma_deg: 25,
+                 pause_p: 0.02, pause_s: 60, bound_m: 400}}
+  - {id: person_rest, cls: person, speed_mps: 0.8, size_m: 0.5,
+     path: [[-35.3625434, 149.1656776], [-35.3596688, 149.1656776]],
+     behaviour: {kind: stationary, after_s: 300}}
+  - {id: hiker, cls: person, size_m: 0.5,
+     behaviour: {kind: trail, trail: trail_a, speed_mps: 1.1,
+                 leave_p: 0.05}}
+trails:
+  trail_a: [[-35.3630823, 149.1667792], [-35.3618247, 149.1667792],
+            [-35.3618247, 149.1685416]]
+environment:
+  time_of_day: "18:40"            # sun_elev ~ -10 deg: rgb is blind
+  visibility_m: 600
+  precip: none
+  wind: {speed_mps: 6, dir_deg: 270, gust_mps: 3, turb: 0.2}
+sensors:
+  camera:
+    kind: rgb                      # the world default; a unit may
+    p_detect_thermal: 0.85         # override with camera_kind: thermal
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 4            # static mast camera only; FC units
+                               # use rel_alt
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 0.95
+    p_detect_edge: 0.6
+    max_range_m: 120
+    pos_noise_px: 8
+    fps_boxes: 2
+    size_m: {person: 0.5}
+  sdr:
+    freq_hz: 869000000
+    path_loss_n: 2.7
+    ref_dbm_1m: -30
+    noise_db: 3
+    threshold_dbm: -70
+    bin_hz: 25000
+    sweep_s: 2
+    rf_precip_db_per_km: 0      # UHF estimate: off (see stub_sdr)

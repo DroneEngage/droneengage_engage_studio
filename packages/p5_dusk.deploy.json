@@ -1,0 +1,7 @@
+{
+  "op": "p5_dusk_search",
+  "roles": {
+    "cam_scout": { "pkg": "p5_dusk_sweep.json",
+                   "units": ["cam_rgb", "cam_th"] }
+  }
+}

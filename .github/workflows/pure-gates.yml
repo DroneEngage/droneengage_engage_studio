@@ -14,10 +14,13 @@
 #                     the runner uses locally)
 #   world model tests engine/test_world_obstacles.py (closed-form
 #                     canopy/building LOS + RF, lens round-trips,
-#                     ground clutter) and stubs/test_golden.py (the
-#                     stub selftest replays vs stubs/golden/*.log) run
-#                     the model code in-process with a databus id shim,
-#                     so they need no databus checkout
+#                     ground clutter), engine/test_world_behaviour.py
+#                     (seeded behaviour tracks, building rejection,
+#                     environment factors, SITL wind params) and
+#                     stubs/test_golden.py (the stub selftest replays
+#                     vs stubs/golden/*.log) run the model code
+#                     in-process with a databus id shim, so they need
+#                     no databus checkout
 #
 # Real transports, SITL and the fake-fleet bring-up are NOT in this
 # workflow - they run nightly on a machine that has them
@@ -48,13 +51,15 @@ jobs:
       - name: engine unit tests
         run: python3 engine/test_checks.py
 
-      # P5-10 world model: closed-form obstacle LOS/RF, both lens
-      # round-trips and the ground-clutter replay, plus the stub
-      # selftest golden byte-compares (an obstacle-free world must keep
-      # today's stub output)
+      # P5-10/P5-11 world model: closed-form obstacle LOS/RF, both lens
+      # round-trips, the ground-clutter replay and the seeded behaviour
+      # tracks/environment factors, plus the stub selftest golden
+      # byte-compares (a world without the new keys must keep today's
+      # stub output)
       - name: world model tests
         run: |
           python3 engine/test_world_obstacles.py
+          python3 engine/test_world_behaviour.py
           python3 stubs/test_golden.py
 
       - name: library folders non-empty

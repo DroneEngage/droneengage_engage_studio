@@ -14,7 +14,10 @@ seeded noise floor. The peak goes through the same debounce + throttle
 state machine as CSDRSignalDetector, so sdr.signal fires only while a
 transmitter is genuinely inside the modelled range - and only after
 debounce_sweeps consecutive hits. radius_m is the same
-sdrEstimateRadiusM inversion, clamped [50, 2000].
+sdrEstimateRadiusM inversion, clamped [50, 2000]. P5-11 adds
+rf_precip_db_per_km of excess loss per km of slant path while the
+world's precip is on (default 0 at UHF - documented and effectively
+off).
 
 Config (injected by the world loader):
     signal_detect: {ref_power_dbm, path_loss_n, debounce_sweeps}
@@ -272,6 +275,12 @@ class StubSDR(StubBase):
             loss_db, _blockers = self.world.rf_loss_db(
                 (pose["lat"], pose["lng"],
                  float(pose.get("rel_alt_m") or 0.0)), (lat, lng, ealt))
+            # P5-11 D5: precipitation excess loss, per km of slant
+            # path - 0 dB/km at UHF by default, so documented and
+            # effectively off (a precip: none world skips it entirely)
+            if self.world.environment["precip"] != "none":
+                loss_db += float(self.world.sensors["sdr"]
+                                 ["rf_precip_db_per_km"]) * d / 1000.0
             rssi = self.tx_ref(e) - 10.0 * self.path_loss_n * \
                 math.log10(d) - loss_db
             bi = min(n_bins - 1, int((f - f_start) / step))

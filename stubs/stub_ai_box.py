@@ -20,6 +20,12 @@ Every emitted box also lands a {"type":"detection", tid, cls, ...} row
 in run/<sim>/truth.jsonl (tid "clutter" for the false positives the
 clutter model injects) - detection_precision counts them.
 
+P5-11: the world environment scales the model - p_detect picks up
+f_light * f_precip, max_range_m is capped by visibility_m and pixel
+noise grows 1/f_light in the dark (a unit config camera_kind:
+thermal swaps the nadir/edge ramp for flat p_detect_thermal and
+ignores light - the same dusk world can fly both roles).
+
 Live runs read the scenario clock from run/<sim>/world_epoch.json;
 --selftest <poses.jsonl> replays scripted poses on a virtual clock so
 same-seed stub logs are byte-identical.
@@ -36,6 +42,7 @@ from messages import (  # noqa: E402
     TYPE_AndruavMessage_AI_Recognition_ACTION,
     TYPE_AndruavMessage_AI_Recognition_STATUS,
     TYPE_AndruavMessage_AI_Recognition_TargetLocation)
+import simlib  # noqa: E402
 import geo_projection as gp  # noqa: E402
 
 AI_STATUS_ENABLED = 2
@@ -108,6 +115,19 @@ class StubAIBox(StubBase):
         cam = (self.world.sensors["camera"] if self.world
                else dict(__import__("world").CAMERA_DEFAULTS))
         self.cam = cam
+        # P5-11 D5: a unit config camera_kind (rgb|thermal) overrides
+        # the world camera's kind - one dusk world flies both roles
+        self.cam_kind = str(self.cfg.get("camera_kind")
+                            or cam.get("kind", "rgb"))
+        if self.cam_kind not in ("rgb", "thermal"):
+            raise simlib.SimError(
+                f"stub_ai_box: camera_kind {self.cam_kind!r} "
+                "(rgb | thermal)")
+        self.env_f = (self.world.sensor_factors(self.cam_kind)
+                      if self.world
+                      else {"light": 1.0, "precip": 1.0, "p_scale": 1.0,
+                            "noise_scale": 1.0,
+                            "max_range_m": cam["max_range_m"]})
         self.camera = gp.GeoCameraParams(cam["hfov_deg"], cam["vfov_deg"],
                                          cam.get("lens", "angle_linear"))
         self.mount = gp.GeoMountParams(cam["mount_pitch_deg"],
@@ -254,44 +274,54 @@ class StubAIBox(StubBase):
         u, v, rng_m = uv
         if abs(u) > 0.5 or abs(v) > 0.5:
             return                      # outside the frame
-        if rng_m > cam["max_range_m"]:
+        # P5-11 D5: fog/haze caps the range; night kills rgb outright
+        if rng_m > self.env_f["max_range_m"]:
             return
-        # p_detect interpolates nadir -> frame edge by the off-axis
-        # fraction of the HALF-frame the point occupies
-        edge = max(abs(u), abs(v)) * 2.0
-        p_cam = cam["p_detect_nadir"] + \
-            (cam["p_detect_edge"] - cam["p_detect_nadir"]) * min(1.0, edge)
-        # P5-10 D5: p = p_cam * T - the camera point is this unit's pose,
-        # the target point the entity at alt + size/2, and the SAME
-        # single draw decides, so an obstacle-free world keeps today's
-        # RNG stream and log byte-identical (vis stays 1.0)
+        if self.cam_kind == "thermal":
+            # flat p_detect_thermal, no nadir/edge ramp (D5)
+            p_cam = float(cam.get("p_detect_thermal", 0.85))
+        else:
+            # p_detect interpolates nadir -> frame edge by the off-axis
+            # fraction of the HALF-frame the point occupies
+            edge = max(abs(u), abs(v)) * 2.0
+            p_cam = cam["p_detect_nadir"] + \
+                (cam["p_detect_edge"] - cam["p_detect_nadir"]) * \
+                min(1.0, edge)
+        # p = p_cam * f_env * T: f_env = f_light * f_precip (D5; 1 for
+        # a world with no environment block), T the P5-10 obstacle
+        # transmittance. The SAME single draw decides, so a world with
+        # no obstacles and no environment keeps today's RNG stream and
+        # log byte-identical
         size = self.world.size_m(self.world.entity(tid)) \
             if self.world.entity(tid) else 0.5
         vis, blockers = self.world.transmittance(
             (gp_pose.lat_deg, gp_pose.lng_deg, gp_pose.rel_alt_m),
             (lat, lng, ealt + size / 2.0))
-        p = p_cam * vis
+        p_env = p_cam * self.env_f["p_scale"]
+        p = p_env * vis
         r = self.rng("detect", self.unit, tid, frame)
         draw = r.random()
         if draw >= p:
-            # why "miss": the camera alone failed the draw (draw >= p_cam
-            # on a ray that was at least partially open). why "occluded":
-            # the obstacles are what killed it - and a fully blocked
-            # target (vis 0) is ALWAYS occluded: no draw could ever have
-            # hit it, so the draw says nothing about the camera
+            # why "miss": the camera/environment alone failed the draw
+            # (draw >= p_env on a ray that was at least partially open).
+            # why "occluded": the obstacles are what killed it - and a
+            # fully blocked target (vis 0) is ALWAYS occluded: no draw
+            # could ever have hit it, so the draw says nothing about
+            # the camera
             self.truth.append({"src": "ai", "tid": tid, "cls": cls,
                                "frame": frame, "u": round(u, 4),
                                "v": round(v, 4), "lat": lat, "lng": lng,
                                "alt_m": ealt, "vis": round(vis, 4),
                                "sent": False,
-                               "why": "miss" if draw >= p_cam
+                               "why": "miss" if draw >= p_env
                                and vis > 0.0 else "occluded",
                                "blockers": blockers},
                               ms=self.clock_ms())
             return
-        # pixel noise in normalized units (pos_noise_px / image size)
-        nu = r.gauss(0.0, cam["pos_noise_px"] / cam["img_w"])
-        nv = r.gauss(0.0, cam["pos_noise_px"] / cam["img_h"])
+        # pixel noise in normalized units - worse in the dark (D5)
+        noise_px = cam["pos_noise_px"] * self.env_f["noise_scale"]
+        nu = r.gauss(0.0, noise_px / cam["img_w"])
+        nv = r.gauss(0.0, noise_px / cam["img_h"])
         u_n, v_n = u + nu, v + nv
         # box size: the entity's real size projected at its range
         bw = min(1.0, size / (2.0 * rng_m *
@@ -333,7 +363,12 @@ class StubAIBox(StubBase):
         "ground" fixes the false positive at a seeded ground point in
         the spawn frame's footprint, projects it every frame like an
         entity, and lets the canopy between it and the camera gate it
-        - a rock that looks like a person stays where it is."""
+        - a rock that looks like a person stays where it is. P5-11:
+        the ground-anchored FP also takes the environment p_scale on
+        its existing draw and the visibility range cap; an
+        image-anchored FP is a detector artefact, not a physical
+        object - it keeps its own weather-free behaviour (and its
+        exact RNG stream)."""
         cam = self.cam
         cl = self.world.clutter
         rate = float(cl.get("rate_per_km2_min") or 0.0)
@@ -379,12 +414,16 @@ class StubAIBox(StubBase):
                 u, v, rng_m = uv
                 if abs(u) > 0.5 or abs(v) > 0.5:
                     continue          # outside the frame
+                if rng_m > self.env_f["max_range_m"]:
+                    continue          # past the fog cap
                 # like an entity: the crown between the rock and the
-                # camera gates this false positive too
+                # camera gates this false positive too - and the same
+                # draw takes the weather factor
                 vis, _blockers = self.world.transmittance(
                     (gp_pose.lat_deg, gp_pose.lng_deg, gp_pose.rel_alt_m),
                     (lat, lng, 0.0))
-                if r.random() >= cam["p_detect_edge"] * vis:
+                if r.random() >= cam["p_detect_edge"] * \
+                        self.env_f["p_scale"] * vis:
                     continue
                 row.update({"lat": lat, "lng": lng, "alt_m": 0.0,
                             "vis": round(vis, 4)})
