@@ -21,6 +21,8 @@
 #               "{fcb_port}" / "{pilot_port}" / "{sysid}" / "{comm_port}" /
 #               "{port}" / "{unit}" are filled per unit
 #   ready_re    journal regex (since boot) that marks the module ready;
+#   ready_log_re  same, but matched against logs/<module>.log (stdout)
+#               instead of the de_comm journal;
 #               `sim up` waits for it
 
 de_mavlink:
@@ -70,7 +72,8 @@ de_yolo_ai:
   # its getopt string is "c:vh" - the local file is the LONG option
   # --bconfig only (there is no short -b)
   local: {arg: "--bconfig", file: de_yolo_ai_generic.config.local}
-  ready_re: "Found primary device"
+  # stdout-only signal - the journal never sees module init lines
+  ready_log_re: "Found primary device"
   wire:
     source_video_device_name: "{src_label}"
     output_video_device_name: "{ai_label}"

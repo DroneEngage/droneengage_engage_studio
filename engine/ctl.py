@@ -555,17 +555,21 @@ def wait_ready(units, timeout, marks=None):
     """Every catalog `ready_re` of each unit, in journal lines since
     `marks` (default: since the last `sim up`)."""
     cat = simlib.load_catalog()
-    pending = {(u["name"], mod): (u, rx) for u in units
-               for mod, rx in simlib.ready_checks(u, cat)}
+    pending = {(u["name"], mod): (u, rx, sink) for u in units
+               for mod, rx, sink in simlib.ready_checks(u, cat)}
     t0 = time.time()
     while pending and time.time() - t0 < timeout:
-        for key, (u, rx) in list(pending.items()):
+        for key, (u, rx, sink) in list(pending.items()):
             # a mark of {} (no journal file yet) means "from the start",
             # not "fall back to the boot mark" - that would match the
             # ready line of the previous boot
             since = marks[u["name"]] if marks and u["name"] in marks \
                 else simlib.boot_mark(u)
-            if simlib.journal_match(u, rx, since):
+            if sink == "log":
+                hit = simlib.log_match(u, key[1], rx, since)
+            else:
+                hit = simlib.journal_match(u, rx, since)
+            if hit:
                 print(f"{u['name']}: {key[1]} ready ({time.time() - t0:.0f}s)")
                 del pending[key]
         if pending:

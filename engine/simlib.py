@@ -864,10 +864,21 @@ def procs_of(u):
 
 
 def ready_checks(u, catalog=None):
-    """[(module, regex)] that `sim up` waits for on this unit's journal."""
+    """[(module, regex, sink)] that `sim up` waits for. sink "journal"
+    matches de_comm journal lines; sink "log" matches the module's own
+    proc log (stdout) - for modules like de_yolo_ai whose ready signal
+    never reaches the databus."""
     catalog = catalog or load_catalog()
-    return [(m, catalog[m]["ready_re"]) for m in u["modules"]
-            if m != "de_comm" and catalog.get(m, {}).get("ready_re")]
+    out = []
+    for m in u["modules"]:
+        if m == "de_comm" or m not in catalog:
+            continue
+        spec = catalog[m]
+        if spec.get("ready_re"):
+            out.append((m, spec["ready_re"], "journal"))
+        if spec.get("ready_log_re"):
+            out.append((m, spec["ready_log_re"], "log"))
+    return out
 
 
 # ---------------------------------------------------------------- generation
@@ -994,17 +1005,20 @@ def gen_unit(u, sim, catalog):
             write_json(lpath, {"module_key": f"{u['name']}-{m}"}, indent=1)
             if local.get("arg"):
                 cmd += f" {local['arg']} '{lpath}'"
-        if m == "de_camera" and u.get("cam_labels"):
-            # P5-15 ordering: exclusive_caps loopbacks only advertise
-            # CAPTURE once a producer (yolo's v4l2sink) is attached, and
-            # de_camera aborts on an output-only device - probe a frame
-            # first. Missing label -> gen_render errors before launch
-            ai_dev = v4l2_label_map().get(u["cam_labels"][1])
-            if ai_dev:
+        # P5-15 ordering: exclusive_caps loopbacks only advertise
+        # CAPTURE once a producer is attached, and both consumers abort
+        # on an output-only device - probe a frame first. yolo's source
+        # is primed by render_sink (black frames until real frames come);
+        # de_camera's input is produced by yolo itself. Missing label ->
+        # gen_render errors before launch
+        wait_idx = {"de_yolo_ai": 0, "de_camera": 1}
+        if m in wait_idx and u.get("cam_labels"):
+            wait_dev = v4l2_label_map().get(u["cam_labels"][wait_idx[m]])
+            if wait_dev:
                 # one bash -c: `exec` in the launch template applies to
                 # the whole line, and exec-until is not a thing
                 cmd = (f"bash -c \"until timeout 3 '{FFMPEG_BIN}' "
-                       f"-loglevel error -f v4l2 -i '{ai_dev}' "
+                       f"-loglevel error -f v4l2 -i '{wait_dev}' "
                        f"-frames:v 1 -f null - 2>/dev/null; "
                        f"do sleep 2; done; exec {cmd}\"")
         _launch_script(u, m, mdir, cmd, spec.get("start_delay", 0))
@@ -1371,13 +1385,33 @@ _LINE = re.compile(r"^(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+([A-Z_]+)\s+(.*)$")
 
 
 def journal_mark(u):
-    """Snapshot of a unit's journal file offsets - pass as `since` to only
-    see lines appended after this point."""
-    jdir = journal_dir(u)
-    if not os.path.isdir(jdir):
-        return {}
-    return {os.path.join(jdir, f): os.path.getsize(os.path.join(jdir, f))
-            for f in os.listdir(jdir) if f.endswith(".log")}
+    """Snapshot of a unit's journal AND proc-log file offsets - pass as
+    `since` to only see lines appended after this point. Proc logs are
+    included so log-based ready checks (ready_log_re) can use the same
+    mark dict; journal_lines() ignores non-journal keys."""
+    marks = {}
+    for sub in ("journal", "logs"):
+        d = os.path.join(unit_dir(u), sub)
+        if not os.path.isdir(d):
+            continue
+        for f in os.listdir(d):
+            if f.endswith(".log"):
+                p = os.path.join(d, f)
+                marks[p] = os.path.getsize(p)
+    return marks
+
+
+def log_match(u, proc, rx, since=None):
+    """Lines of run/<sim>/<unit>/logs/<proc>.log appended since the mark
+    matching the regex. For module ready checks whose signal lives on
+    stdout (de_yolo_ai) instead of the de_comm journal."""
+    path = os.path.join(unit_dir(u), "logs", proc + ".log")
+    if not os.path.isfile(path):
+        return []
+    off = since.get(path, 0) if since else 0
+    with open(path, errors="replace") as fh:
+        fh.seek(off)
+        return [ln for ln in fh.read().splitlines() if rx.search(ln)]
 
 
 def _parse_journal_line(ln, f):
