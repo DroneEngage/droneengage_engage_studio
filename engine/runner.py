@@ -42,6 +42,14 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - mission_current: {unit: 1, seq: 4}
     teardown: land                       # land (default) | reset | none
 
+de.scenario/1 files (scenarios/*.yaml - engine/scenario_runner.py)
+add the truth/world assertions of engine/checks.py on top of these:
+distance_to, detection_precision, detection_recall (P5-10: who was
+found, who correctly stayed hidden), time_to_detect (P5-10: seconds
+from the world epoch to the first find), signals_in_range,
+coverage_complete, stub_deterministic, ... - the full list and the
+per-assertion arguments live in the checks.py docstring.
+
 `unit:` takes what ctl takes: a name, 1-based position, block:<b>, a comma
 list or all (`vehicle:` / `v1` / `v2` are accepted as aliases).
 

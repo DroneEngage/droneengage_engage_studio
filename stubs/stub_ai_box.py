@@ -108,7 +108,8 @@ class StubAIBox(StubBase):
         cam = (self.world.sensors["camera"] if self.world
                else dict(__import__("world").CAMERA_DEFAULTS))
         self.cam = cam
-        self.camera = gp.GeoCameraParams(cam["hfov_deg"], cam["vfov_deg"])
+        self.camera = gp.GeoCameraParams(cam["hfov_deg"], cam["vfov_deg"],
+                                         cam.get("lens", "angle_linear"))
         self.mount = gp.GeoMountParams(cam["mount_pitch_deg"],
                                      cam["mount_yaw_deg"],
                                      cam["mount_roll_deg"])
@@ -241,7 +242,7 @@ class StubAIBox(StubBase):
             self._maybe_detect(e.id, e.cls, lat, lng, ealt,
                                pose, att, gp_pose, frame, t_s)
 
-        self._clutter_tick(alt, frame, t_s)
+        self._clutter_tick(alt, frame, t_s, att, gp_pose)
 
     def _maybe_detect(self, tid, cls, lat, lng, ealt,
                       pose, att, gp_pose, frame, t_s):
@@ -258,14 +259,34 @@ class StubAIBox(StubBase):
         # p_detect interpolates nadir -> frame edge by the off-axis
         # fraction of the HALF-frame the point occupies
         edge = max(abs(u), abs(v)) * 2.0
-        p = cam["p_detect_nadir"] + \
+        p_cam = cam["p_detect_nadir"] + \
             (cam["p_detect_edge"] - cam["p_detect_nadir"]) * min(1.0, edge)
+        # P5-10 D5: p = p_cam * T - the camera point is this unit's pose,
+        # the target point the entity at alt + size/2, and the SAME
+        # single draw decides, so an obstacle-free world keeps today's
+        # RNG stream and log byte-identical (vis stays 1.0)
+        size = self.world.size_m(self.world.entity(tid)) \
+            if self.world.entity(tid) else 0.5
+        vis, blockers = self.world.transmittance(
+            (gp_pose.lat_deg, gp_pose.lng_deg, gp_pose.rel_alt_m),
+            (lat, lng, ealt + size / 2.0))
+        p = p_cam * vis
         r = self.rng("detect", self.unit, tid, frame)
-        if r.random() >= p:
+        draw = r.random()
+        if draw >= p:
+            # why "miss": the camera alone failed the draw (draw >= p_cam
+            # on a ray that was at least partially open). why "occluded":
+            # the obstacles are what killed it - and a fully blocked
+            # target (vis 0) is ALWAYS occluded: no draw could ever have
+            # hit it, so the draw says nothing about the camera
             self.truth.append({"src": "ai", "tid": tid, "cls": cls,
                                "frame": frame, "u": round(u, 4),
                                "v": round(v, 4), "lat": lat, "lng": lng,
-                               "alt_m": ealt, "sent": False},
+                               "alt_m": ealt, "vis": round(vis, 4),
+                               "sent": False,
+                               "why": "miss" if draw >= p_cam
+                               and vis > 0.0 else "occluded",
+                               "blockers": blockers},
                               ms=self.clock_ms())
             return
         # pixel noise in normalized units (pos_noise_px / image size)
@@ -273,8 +294,6 @@ class StubAIBox(StubBase):
         nv = r.gauss(0.0, cam["pos_noise_px"] / cam["img_h"])
         u_n, v_n = u + nu, v + nv
         # box size: the entity's real size projected at its range
-        size = self.world.size_m(self.world.entity(tid)) \
-            if self.world.entity(tid) else 0.5
         bw = min(1.0, size / (2.0 * rng_m *
                               math.tan(math.radians(cam["hfov_deg"]) / 2)))
         bh = min(1.0, size / (2.0 * rng_m *
@@ -289,7 +308,8 @@ class StubAIBox(StubBase):
         self.truth.append({"src": "ai", "tid": tid, "cls": cls,
                            "frame": frame, "u": round(u_n, 4),
                            "v": round(v_n, 4), "lat": lat, "lng": lng,
-                           "alt_m": ealt, "conf": conf, "sent": True},
+                           "alt_m": ealt, "vis": round(vis, 4),
+                           "conf": conf, "sent": True},
                           ms=self.clock_ms())
 
     def _tm_us(self):
@@ -302,12 +322,18 @@ class StubAIBox(StubBase):
         import time
         return time.monotonic_ns() // 1000 - 50000
 
-    def _clutter_tick(self, alt, frame, t_s):
+    def _clutter_tick(self, alt, frame, t_s, att, gp_pose):
         """False positives: spawns at rate_per_km2_min over the frame's
         ground footprint, each lives lifetime_s and reports like a
         detection with the clutter class. tid "clutter" lets
         detection_precision tell them apart. `alt` is the camera height
-        tick() resolved (rel alt, or mount_height_m on a static mast)."""
+        tick() resolved (rel alt, or mount_height_m on a static mast).
+        P5-10 D8 anchor: "image" keeps today's fixed pixel (u, v) - the
+        false positive slides over the ground as the drone moves;
+        "ground" fixes the false positive at a seeded ground point in
+        the spawn frame's footprint, projects it every frame like an
+        entity, and lets the canopy between it and the camera gate it
+        - a rock that looks like a person stays where it is."""
         cam = self.cam
         cl = self.world.clutter
         rate = float(cl.get("rate_per_km2_min") or 0.0)
@@ -328,14 +354,44 @@ class StubAIBox(StubBase):
             cum += math.exp(-lam) * lam ** n / math.factorial(n)
         life = float(cl.get("lifetime_s") or 20.0)
         for _i in range(n):
-            self._clutter.append(
-                (t_s + life, r.uniform(-0.45, 0.45),
-                 r.uniform(-0.45, 0.45)))
-        for die, u, v in self._clutter:
+            u = r.uniform(-0.45, 0.45)
+            v = r.uniform(-0.45, 0.45)
+            if cl.get("anchor") == "ground":
+                res = gp.geo_project_to_ground(u, v, 0.1, 0.1,
+                                               self.camera, self.mount,
+                                               att, gp_pose, 0.0, 0.0)
+                if not res.ok:
+                    continue          # not on the ground plane this frame
+                self._clutter.append((t_s + life, res.lat, res.lng))
+            else:
+                self._clutter.append((t_s + life, u, v))
+        for c in self._clutter:
             if not self._class_ok(cl["cls"]):
                 break
-            rng_m = alt / math.cos(
-                math.atan(math.hypot(u * 2 * fn, v * 2 * fv)))
+            row = {"src": "ai", "tid": "clutter", "cls": cl["cls"],
+                   "frame": frame, "sent": True}
+            if cl.get("anchor") == "ground":
+                _die, lat, lng = c
+                uv = gp.geo_ground_to_pixel(lat, lng, 0.0, self.camera,
+                                            self.mount, att, gp_pose)
+                if uv is None:
+                    continue          # behind the camera this frame
+                u, v, rng_m = uv
+                if abs(u) > 0.5 or abs(v) > 0.5:
+                    continue          # outside the frame
+                # like an entity: the crown between the rock and the
+                # camera gates this false positive too
+                vis, _blockers = self.world.transmittance(
+                    (gp_pose.lat_deg, gp_pose.lng_deg, gp_pose.rel_alt_m),
+                    (lat, lng, 0.0))
+                if r.random() >= cam["p_detect_edge"] * vis:
+                    continue
+                row.update({"lat": lat, "lng": lng, "alt_m": 0.0,
+                            "vis": round(vis, 4)})
+            else:
+                _die, u, v = c
+                rng_m = alt / math.cos(
+                    math.atan(math.hypot(u * 2 * fn, v * 2 * fv)))
             bw = min(1.0, 0.5 / (2.0 * rng_m * fn))
             bh = min(1.0, 0.5 / (2.0 * rng_m * fv))
             conf = round(r.uniform(0.4, 0.7), 3)
@@ -345,11 +401,9 @@ class StubAIBox(StubBase):
                    "conf": conf, "tm": self._tm_us()}
             self.emit(TYPE_AndruavMessage_AI_Recognition_TargetLocation,
                       {"b": box})
-            self.truth.append({"src": "ai", "tid": "clutter",
-                               "cls": cl["cls"], "frame": frame,
-                               "u": round(u, 4), "v": round(v, 4),
-                               "conf": conf, "sent": True},
-                              ms=self.clock_ms())
+            row.update({"u": round(u, 4), "v": round(v, 4),
+                        "conf": conf})
+            self.truth.append(row, ms=self.clock_ms())
 
 
 def main(argv):

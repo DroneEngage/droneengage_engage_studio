@@ -11,6 +11,12 @@ box convention (0..1 top-left) converts with geoBoxToCentered.
 
 The forward path is a line-for-line port so the C++ round-trip test
 (stubs/test_geo_projection.py) can compare bit-for-bit projections.
+
+Lens (P5-10 D7): the camera model maps image fraction u to the ray
+either angle-linear (u * fov in tangent space - the product's own
+model, the default) or rectilinear (2u * tan(fov/2) - a real lens and
+Mavlink3DMap's PerspectiveCamera). The world camera may be either;
+the product projector stays angle_linear until P5-18.
 """
 
 import math
@@ -19,6 +25,8 @@ from dataclasses import dataclass, field
 M_PER_DEG_LAT = 111320.0
 MIN_DOWN = 0.0871557427          # sin(5 deg): the ray must point below this
 NEAR_VERTICAL = 0.9659258263     # cos(15 deg): rangefinder region
+
+LENS_MODES = ("angle_linear", "rectilinear")
 
 
 def geo_deg2rad(deg):
@@ -29,6 +37,7 @@ def geo_deg2rad(deg):
 class GeoCameraParams:
     hfov_deg: float = 62.2
     vfov_deg: float = 48.8
+    lens: str = "angle_linear"   # | rectilinear (P5-10 D7)
 
 
 @dataclass
@@ -68,6 +77,10 @@ def geo_box_to_centered(normalized01):
 
 def geo_ray_camera(u, v, cam):
     """Pinhole ray in camera frame (x right, y down, z forward)."""
+    if cam.lens == "rectilinear":
+        return (2.0 * u * math.tan(geo_deg2rad(cam.hfov_deg) / 2.0),
+                2.0 * v * math.tan(geo_deg2rad(cam.vfov_deg) / 2.0),
+                1.0)
     return (math.tan(u * geo_deg2rad(cam.hfov_deg)),
             math.tan(v * geo_deg2rad(cam.vfov_deg)),
             1.0)
@@ -205,6 +218,13 @@ def geo_ground_to_pixel(lat, lng, alt_above_plane_m, cam, mount, att, pose):
     cam_x, cam_y, cam_z = base[1], base[2], base[0]
     if cam_z <= 1e-9:
         return None
-    u = math.atan2(cam_x, cam_z) / geo_deg2rad(cam.hfov_deg)
-    v = math.atan2(cam_y, cam_z) / geo_deg2rad(cam.vfov_deg)
+    if cam.lens == "rectilinear":
+        # the atan-free inverse of geo_ray_camera's 2u*tan(fov/2)
+        u = (cam_x / cam_z) / \
+            (2.0 * math.tan(geo_deg2rad(cam.hfov_deg) / 2.0))
+        v = (cam_y / cam_z) / \
+            (2.0 * math.tan(geo_deg2rad(cam.vfov_deg) / 2.0))
+    else:
+        u = math.atan2(cam_x, cam_z) / geo_deg2rad(cam.hfov_deg)
+        v = math.atan2(cam_y, cam_z) / geo_deg2rad(cam.vfov_deg)
     return (u, v, n)

@@ -17,12 +17,18 @@ epoch, so truth and detections always agree.
       - {id: phone_1, cls: phone, attach: person_1, offset_m: [30,0],
          tx_dbm: 20}
       - {id: mast, cls: phone, pos: [lat,lng], alt_m: 0, tx_dbm: 20}
-    clutter: {cls: person, rate_per_km2_min: 0.2, lifetime_s: 20}
+    obstacles:                       # optional (TASK-P5-10)
+      - {id: wood_n, kind: canopy, poly: [[lat,lng],...], height_m: 15,
+         base_m: 3, gap_fraction: 0.3, rf_db_per_m: 0.3, rf_max_db: 20}
+      - {id: hut_1, kind: building, poly: [[lat,lng],...], height_m: 4,
+         rf_loss_db: 12}
+    clutter: {cls: person, rate_per_km2_min: 0.2, lifetime_s: 20,
+              anchor: ground}
     sensors:
-      camera: {hfov_deg, vfov_deg, mount_pitch_deg, mount_yaw_deg,
-               mount_roll_deg, mount_height_m, img_w, img_h,
-               p_detect_nadir, p_detect_edge, max_range_m, pos_noise_px,
-               fps_boxes, size_m: {person: 0.5, "*": 0.5}}
+      camera: {lens: angle_linear, hfov_deg, vfov_deg, mount_pitch_deg,
+               mount_yaw_deg, mount_roll_deg, mount_height_m, img_w,
+               img_h, p_detect_nadir, p_detect_edge, max_range_m,
+               pos_noise_px, fps_boxes, size_m: {person: 0.5, "*": 0.5}}
       sdr:    {freq_hz, path_loss_n, ref_dbm_1m, noise_db, threshold_dbm,
                bin_hz, sweep_s}
 
@@ -33,12 +39,29 @@ Entity motion (t = seconds since the scenario epoch):
           holds the last vertex.
   attach: parent position + offset_m [north, east] (constant offset).
 
+Obstacles (P5-10) are vertical prisms: a footprint polygon (>= 3
+vertices, simple, closed implicitly) over a [base_m, height_m] band
+above the flat home plane. A canopy attenuates light and RF
+Beer-Lambert style - a nadir ray through a full crown sees with
+gap_fraction, an oblique ray at angle theta off nadir with
+gap_fraction**(1/cos theta) - and a building is opaque. Geometry runs
+in local ENU metres about origin (flat earth) with a bbox prefilter;
+transmittance()/rf_loss_db() are pure and use no rng.
+
+Obstacle defaults are ESTIMATES (plausible UHF/foliage magnitudes, not
+measurements - each world overrides them): canopy base_m 3,
+gap_fraction 0.3, rf_db_per_m 0.3, rf_max_db 20; building base_m 0,
+rf_loss_db 12. height_m is always required.
+
 All randomness derives streams from (scenario seed, purpose, unit, entity,
-tick) so two same-seed runs produce identical model output.
+tick) so two same-seed runs produce identical model output. A world
+with no obstacles and the default sensor keys replays byte-identically
+through the stubs (stubs/golden, test_golden.py).
 """
 
 import hashlib
 import json
+import math
 import os
 import random
 import threading
@@ -49,6 +72,7 @@ import simlib
 VERSION = 1
 
 CAMERA_DEFAULTS = {
+    "lens": "angle_linear",              # | rectilinear (P5-10 D7)
     "hfov_deg": 62.2, "vfov_deg": 48.8,
     "mount_pitch_deg": -90.0, "mount_yaw_deg": 0.0, "mount_roll_deg": 0.0,
     "mount_height_m": 0.0,               # static units only (SU-04)
@@ -65,9 +89,17 @@ SDR_DEFAULTS = {
 }
 
 CLUTTER_DEFAULTS = {"cls": "person", "rate_per_km2_min": 0.0,
-                    "lifetime_s": 20.0}
+                    "lifetime_s": 20.0,
+                    "anchor": "image"}    # | ground (P5-10 D8)
 
 DEFAULT_SIZE_M = {"person": 0.5, "car": 4.0, "phone": 0.2, "*": 0.5}
+
+# obstacle defaults (ESTIMATES - see the module docstring)
+CANOPY_DEFAULTS = {"base_m": 3.0, "gap_fraction": 0.3,
+                   "rf_db_per_m": 0.3, "rf_max_db": 20.0}
+BUILDING_DEFAULTS = {"base_m": 0.0, "rf_loss_db": 12.0}
+OBSTACLE_KEYS = {"id", "kind", "poly", "height_m", "base_m",
+                 "gap_fraction", "rf_db_per_m", "rf_max_db", "rf_loss_db"}
 
 
 # ---------------------------------------------------------------- model
@@ -150,12 +182,22 @@ class World:
         self.origin = list(spec.get("origin") or [])
         self.entities = [Entity(e, path) for e in spec.get("entities") or []]
         self._by_id = {e.id: e for e in self.entities}
+        self.obstacles = [Obstacle(o, path, i, self.origin)
+                          for i, o in enumerate(spec.get("obstacles") or [])]
         clutter = dict(CLUTTER_DEFAULTS)
         clutter.update(spec.get("clutter") or {})
         self.clutter = clutter
         sensors = spec.get("sensors") or {}
         cam = dict(CAMERA_DEFAULTS)
         cam.update(sensors.get("camera") or {})
+        if cam.get("lens") not in ("angle_linear", "rectilinear"):
+            raise simlib.SimError(
+                f"{path}: sensors.camera: unknown lens {cam.get('lens')!r} "
+                "(angle_linear | rectilinear)")
+        if clutter.get("anchor") not in ("image", "ground"):
+            raise simlib.SimError(
+                f"{path}: clutter: unknown anchor "
+                f"{clutter.get('anchor')!r} (image | ground)")
         sdr = dict(SDR_DEFAULTS)
         sdr.update(sensors.get("sdr") or {})
         self.sensors = {"camera": cam, "sdr": sdr}
@@ -184,6 +226,71 @@ class World:
         sizes.update(self.sensors["camera"].get("size_m") or {})
         return float(sizes.get(e.cls, sizes["*"]))
 
+    # ------------------------------------------------------ obstacles
+
+    def _enu(self, lla):
+        """(x=east, y=north, z=alt) metres about world.origin - the
+        flat-earth frame every obstacle query runs in (D9)."""
+        import geo_projection
+        north_m, east_m = geo_projection.geo_latlng_to_ne(
+            self.origin[0], self.origin[1], lla[0], lla[1])
+        return (east_m, north_m, lla[2])
+
+    def transmittance(self, a_lla, b_lla):
+        """(T in [0, 1], blocker_ids) for the a->b ray. Canopy
+        attenuates exp(-k*L) with L the ray path inside the band (a
+        nadir ray through a full crown sees with gap_fraction, an
+        oblique ray with gap_fraction**(1/cos theta)); a building is
+        opaque. a/b are (lat, lng, alt_above_home_m). Pure, no rng; an
+        obstacle-free world answers (1.0, []) without geometry work.
+        blocker_ids lists every obstacle the ray crosses, world order."""
+        if not self.obstacles:
+            return (1.0, [])
+        a = self._enu(a_lla)
+        b = self._enu(b_lla)
+        seg_m = math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2
+                          + (b[2] - a[2]) ** 2)
+        t_out, blockers, blocked = 1.0, [], False
+        for obs in self.obstacles:
+            dt = obs.path_fraction(a, b)
+            if dt <= 0.0:
+                continue
+            blockers.append(obs.id)
+            if obs.kind == "building":
+                blocked = True          # opaque - any entry kills the ray
+            else:
+                t_out *= math.exp(-obs.k * dt * seg_m)
+        return (0.0 if blocked else t_out, blockers)
+
+    def rf_loss_db(self, a_lla, b_lla):
+        """(excess_loss_db >= 0, blocker_ids) for the a->b ray: canopy
+        rf_db_per_m per metre of path inside the band, capped at
+        rf_max_db per crown, plus rf_loss_db per building crossed
+        (D6). Pure, no rng; an obstacle-free world answers (0.0, [])."""
+        if not self.obstacles:
+            return (0.0, [])
+        a = self._enu(a_lla)
+        b = self._enu(b_lla)
+        seg_m = math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2
+                          + (b[2] - a[2]) ** 2)
+        loss, blockers = 0.0, []
+        for obs in self.obstacles:
+            dt = obs.path_fraction(a, b)
+            if dt <= 0.0:
+                continue
+            blockers.append(obs.id)
+            if obs.kind == "canopy":
+                loss += min(obs.rf_db_per_m * dt * seg_m, obs.rf_max_db)
+            else:
+                loss += obs.rf_loss_db
+        return (loss, blockers)
+
+    def obstacles_json(self):
+        """Renderer-ready obstacle list (P5-13): one dict per obstacle
+        with its footprint ring, band and model parameters, world
+        order."""
+        return [obs.to_json() for obs in self.obstacles]
+
 
 def _dist(lat1, lng1, lat2, lng2):
     import geo_projection
@@ -193,6 +300,223 @@ def _dist(lat1, lng1, lat2, lng2):
 def _ne_to_latlng(lat, lng, north_m, east_m):
     import geo_projection
     return geo_projection.geo_offset_to_latlng(lat, lng, north_m, east_m)
+
+
+# --------------------------------------------------------- obstacle math
+
+def _seg_orient(px, py, qx, qy, rx, ry):
+    """Cross product sign of q-p x r-p: -1, 0 (collinear) or 1."""
+    v = (qx - px) * (ry - py) - (qy - py) * (rx - px)
+    if abs(v) < 1e-9:
+        return 0
+    return 1 if v > 0 else -1
+
+
+def _seg_touch(p1, p2, p3, p4):
+    """True when the closed segments p1-p2 and p3-p4 share any point."""
+    def on(a, b, c):
+        return min(a[0], b[0]) - 1e-9 <= c[0] <= max(a[0], b[0]) + 1e-9 \
+            and min(a[1], b[1]) - 1e-9 <= c[1] <= max(a[1], b[1]) + 1e-9
+    d1 = _seg_orient(*p1, *p2, *p3)
+    d2 = _seg_orient(*p1, *p2, *p4)
+    d3 = _seg_orient(*p3, *p4, *p1)
+    d4 = _seg_orient(*p3, *p4, *p2)
+    if d1 * d2 < 0 and d3 * d4 < 0:
+        return True                  # proper crossing
+    return ((d1 == 0 and on(p1, p2, p3)) or (d2 == 0 and on(p1, p2, p4))
+            or (d3 == 0 and on(p3, p4, p1)) or (d4 == 0 and on(p3, p4, p2)))
+
+
+def _cross_t(ax, ay, bx, by, cx, cy, dx, dy):
+    """t in [0, 1] where segment a->b crosses segment c->d, else None
+    (parallel/collinear edges return None - the caller's midpoint
+    tests decide those degenerate boundaries)."""
+    d1x, d1y = bx - ax, by - ay
+    d2x, d2y = dx - cx, dy - cy
+    den = d1x * d2y - d1y * d2x
+    if abs(den) < 1e-12:
+        return None
+    t = ((cx - ax) * d2y - (cy - ay) * d2x) / den
+    u = ((cx - ax) * d1y - (cy - ay) * d1x) / den
+    if 0.0 <= t <= 1.0 and 0.0 <= u <= 1.0:
+        return t
+    return None
+
+
+def _point_in_poly(x, y, pts):
+    """Even-odd ray cast - True when (x, y) is inside the vertex ring."""
+    inside = False
+    n = len(pts)
+    j = n - 1
+    for i in range(n):
+        xi, yi = pts[i]
+        xj, yj = pts[j]
+        if (yi > y) != (yj > y) and \
+                x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _poly_simple(pts):
+    """A vertex ring is simple when no edge is degenerate and no two
+    non-adjacent edges share a point (adjacent edges share exactly
+    their common vertex)."""
+    n = len(pts)
+    for i in range(n):
+        if pts[i] == pts[(i + 1) % n]:
+            return False
+    for i in range(n):
+        e1 = (pts[i], pts[(i + 1) % n])
+        for j in range(i + 1, n):
+            if (j - i) % n in (1, n - 1):
+                continue              # adjacent
+            if _seg_touch(e1[0], e1[1], pts[j], pts[(j + 1) % n]):
+                return False
+    return True
+
+
+class Obstacle:
+    """One vertical prism: a footprint polygon (lat/lng ring, closed
+    implicitly) extruded over the [base_m, height_m] band above the
+    home plane. A canopy attenuates Beer-Lambert style with
+    k = -ln(gap_fraction)/(height_m - base_m) (D3); a building is
+    opaque (D4). All stored geometry is local ENU about world.origin
+    (x east, y north, D9)."""
+
+    def __init__(self, spec, path, idx, origin):
+        oid = spec.get("id")
+        self.id = str(oid) if oid else ""
+        label = f"obstacle {self.id!r}" if self.id else f"obstacle #{idx}"
+        if not isinstance(spec, dict):
+            raise simlib.SimError(f"{path}: {label}: not a mapping")
+        if not self.id:
+            raise simlib.SimError(f"{path}: {label}: missing 'id'")
+        kind = spec.get("kind")
+        if kind not in ("canopy", "building"):
+            raise simlib.SimError(
+                f"{path}: {label}: kind must be canopy|building, "
+                f"got {kind!r}")
+        self.kind = kind
+        allowed = {"id", "kind", "poly", "height_m", "base_m"}
+        allowed |= ({"gap_fraction", "rf_db_per_m", "rf_max_db"}
+                    if kind == "canopy" else {"rf_loss_db"})
+        bad = set(spec) - allowed
+        if bad:
+            raise simlib.SimError(
+                f"{path}: {label}: unknown keys {sorted(bad)} "
+                f"({kind} allows {sorted(allowed)})")
+        poly = spec.get("poly")
+        if not isinstance(poly, list) or len(poly) < 3:
+            raise simlib.SimError(
+                f"{path}: {label}: poly needs at least 3 vertices")
+        for p in poly:
+            if not isinstance(p, (list, tuple)) or len(p) != 2 or \
+                    not all(isinstance(c, (int, float))
+                            and not isinstance(c, bool) for c in p):
+                raise simlib.SimError(
+                    f"{path}: {label}: poly vertices are [lat, lng] pairs")
+        self.poly = [list(p) for p in poly]
+        if self.poly[0] == self.poly[-1]:
+            self.poly = self.poly[:-1]     # closed implicitly
+        if len(self.poly) < 3:
+            raise simlib.SimError(
+                f"{path}: {label}: poly needs at least 3 vertices")
+        dflt = CANOPY_DEFAULTS if kind == "canopy" else BUILDING_DEFAULTS
+        self.base_m = float(spec.get("base_m", dflt["base_m"]))
+        if "height_m" not in spec:
+            raise simlib.SimError(f"{path}: {label}: missing 'height_m'")
+        self.height_m = float(spec["height_m"])
+        if not 0.0 <= self.base_m < self.height_m:
+            raise simlib.SimError(
+                f"{path}: {label}: needs 0 <= base_m < height_m "
+                f"(got {self.base_m} >= {self.height_m})")
+        if kind == "canopy":
+            self.gap_fraction = float(
+                spec.get("gap_fraction", dflt["gap_fraction"]))
+            if not 0.0 < self.gap_fraction <= 1.0:
+                raise simlib.SimError(
+                    f"{path}: {label}: needs 0 < gap_fraction <= 1 "
+                    f"(got {self.gap_fraction})")
+            self.rf_db_per_m = float(
+                spec.get("rf_db_per_m", dflt["rf_db_per_m"]))
+            self.rf_max_db = float(spec.get("rf_max_db", dflt["rf_max_db"]))
+            self.k = -math.log(self.gap_fraction) / \
+                (self.height_m - self.base_m)
+        else:
+            self.rf_loss_db = float(
+                spec.get("rf_loss_db", dflt["rf_loss_db"]))
+        # local ENU footprint + bbox (the query prefilter)
+        import geo_projection
+        self.xy = [tuple(reversed(geo_projection.geo_latlng_to_ne(
+            origin[0], origin[1], p[0], p[1]))) for p in self.poly]
+        xs = [p[0] for p in self.xy]
+        ys = [p[1] for p in self.xy]
+        self.min_x, self.max_x = min(xs), max(xs)
+        self.min_y, self.max_y = min(ys), max(ys)
+        if not _poly_simple(self.xy):
+            raise simlib.SimError(f"{path}: {label}: poly is not simple "
+                                  "(self-intersecting footprint)")
+
+    def to_json(self):
+        out = {"id": self.id, "kind": self.kind, "poly": self.poly,
+               "base_m": self.base_m, "height_m": self.height_m}
+        if self.kind == "canopy":
+            out.update({"gap_fraction": self.gap_fraction,
+                        "rf_db_per_m": self.rf_db_per_m,
+                        "rf_max_db": self.rf_max_db})
+        else:
+            out["rf_loss_db"] = self.rf_loss_db
+        return out
+
+    def path_fraction(self, a, b):
+        """The fraction of the a->b segment (local ENU) inside the prism
+        - footprint AND band - 0.0 when the ray misses. The footprint
+        enters as parameter intervals (crossings split the segment,
+        midpoints decide inside/outside, correct for concave rings),
+        intersected with the z interval inside the band."""
+        ax, ay, az = a
+        bx, by, bz = b
+        if max(ax, bx) < self.min_x or min(ax, bx) > self.max_x or \
+                max(ay, by) < self.min_y or min(ay, by) > self.max_y:
+            return 0.0
+        if max(az, bz) < self.base_m or min(az, bz) > self.height_m:
+            return 0.0
+        ts = {0.0, 1.0}
+        n = len(self.xy)
+        for i in range(n):
+            cx, cy = self.xy[i]
+            dx, dy = self.xy[(i + 1) % n]
+            t = _cross_t(ax, ay, bx, by, cx, cy, dx, dy)
+            if t is not None:
+                ts.add(t)
+        inside = []
+        marks = sorted(ts)
+        for t0, t1 in zip(marks, marks[1:]):
+            tm = 0.5 * (t0 + t1)
+            if _point_in_poly(ax + (bx - ax) * tm, ay + (by - ay) * tm,
+                              self.xy):
+                inside.append((t0, t1))
+        if not inside:
+            return 0.0
+        # the band along the segment: z(t) = az + t*(bz-az) in the band
+        if az == bz:
+            if not self.base_m <= az <= self.height_m:
+                return 0.0
+            band_lo, band_hi = 0.0, 1.0
+        else:
+            tb = (self.base_m - az) / (bz - az)
+            th = (self.height_m - az) / (bz - az)
+            band_lo = max(0.0, min(tb, th))
+            band_hi = min(1.0, max(tb, th))
+            if band_lo > band_hi:
+                return 0.0
+        total = 0.0
+        for t0, t1 in inside:
+            lo, hi = max(t0, band_lo), min(t1, band_hi)
+            if hi > lo:
+                total += hi - lo
+        return total
 
 
 def load(path, seed):
@@ -205,14 +529,16 @@ def load(path, seed):
         raise simlib.SimError(f"{path}: unsupported world version "
                               f"{spec.get('version')!r}")
     bad = set(spec) - {"version", "origin", "entities", "clutter",
-                       "sensors"}
+                       "sensors", "obstacles"}
     if bad:
         raise simlib.SimError(f"{path}: unknown keys {sorted(bad)}")
-    w = World(spec, int(seed), path)
-    if len(w.origin) != 2:
+    if len(list(spec.get("origin") or [])) != 2:
         raise simlib.SimError(f"{path}: origin must be [lat, lng]")
+    w = World(spec, int(seed), path)
     if len({e.id for e in w.entities}) != len(w.entities):
         raise simlib.SimError(f"{path}: duplicate entity id")
+    if len({o.id for o in w.obstacles}) != len(w.obstacles):
+        raise simlib.SimError(f"{path}: duplicate obstacle id")
     return w
 
 

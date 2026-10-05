@@ -255,8 +255,11 @@ class StubSDR(StubBase):
                 for _ in range(n_bins)]
         # each transmitter inside the band lifts its bin by the
         # log-distance RSSI at the unit's current SLANT range (a copter
-        # 40 m above a phone is 40 m away, not 1 m)
-        owner = {}                       # bin -> (rssi, tid) strongest emitter
+        # 40 m above a phone is 40 m away, not 1 m), less the obstacle
+        # excess loss on the unit->emitter ray (P5-10 D6: canopy
+        # rf_db_per_m per metre inside the band + rf_loss_db per
+        # building crossed)
+        owner = {}                       # bin -> (rssi, tid, loss_db)
         for e in self.world.rf_entities():
             f = e.freq_hz if e.freq_hz is not None else \
                 float(self.world.sensors["sdr"]["freq_hz"])
@@ -266,12 +269,15 @@ class StubSDR(StubBase):
             h = gp.geo_distance_m(pose["lat"], pose["lng"], lat, lng)
             dz = float(pose.get("rel_alt_m") or 0.0) - ealt
             d = max(1.0, math.hypot(h, dz))
+            loss_db, _blockers = self.world.rf_loss_db(
+                (pose["lat"], pose["lng"],
+                 float(pose.get("rel_alt_m") or 0.0)), (lat, lng, ealt))
             rssi = self.tx_ref(e) - 10.0 * self.path_loss_n * \
-                math.log10(d)
+                math.log10(d) - loss_db
             bi = min(n_bins - 1, int((f - f_start) / step))
             bins[bi] = max(bins[bi], rssi)
-            if rssi > owner.get(bi, (-1e9, None))[0]:
-                owner[bi] = (rssi, e.id)
+            if rssi > owner.get(bi, (-1e9, None, 0.0))[0]:
+                owner[bi] = (rssi, e.id, loss_db)
         det = self.detector.process_sweep(f_start, step, bins, t_s)
         if det is None:
             return
@@ -293,6 +299,8 @@ class StubSDR(StubBase):
             else "clutter"
         self.truth.append({"src": "sdr", "tid": tid, "cls": "rf",
                            "freq": freq, "rssi_dbm": round(rssi, 1),
+                           "loss_db": round(own[2], 1)
+                           if tid != "clutter" else 0.0,
                            "lat": pose["lat"], "lng": pose["lng"],
                            "sent": True}, ms=self.clock_ms())
 

@@ -1,0 +1,12 @@
+0 SCAN {"f_start": 868500000.0, "f_end": 869500000.0, "threshold_dbm": -70.0}
+22000 EVENT {"d": "sdr.signal", "ed": {"freq": 869012500.0, "rssi_dbm": -66.3, "pos": [-35.36281, 149.16609, 0.0], "radius_m": 50.0, "snr_db": 33.1}}
+22000 STATE {"peak_dbm": -66.3, "peak_freq": 869012500.0}
+26000 EVENT {"d": "sdr.signal", "ed": {"freq": 869012500.0, "rssi_dbm": -62.4, "pos": [-35.36281, 149.16609, 0.0], "radius_m": 50.0, "snr_db": 37.0}}
+26000 STATE {"peak_dbm": -62.4, "peak_freq": 869012500.0}
+30000 EVENT {"d": "sdr.signal", "ed": {"freq": 869012500.0, "rssi_dbm": -56.9, "pos": [-35.36281, 149.16609, 0.0], "radius_m": 50.0, "snr_db": 43.4}}
+30000 STATE {"peak_dbm": -56.9, "peak_freq": 869012500.0}
+34000 EVENT {"d": "sdr.signal", "ed": {"freq": 869012500.0, "rssi_dbm": -50.1, "pos": [-35.36281, 149.16609, 0.0], "radius_m": 50.0, "snr_db": 49.9}}
+34000 STATE {"peak_dbm": -50.1, "peak_freq": 869012500.0}
+38000 EVENT {"d": "sdr.signal", "ed": {"freq": 869012500.0, "rssi_dbm": -52.9, "pos": [-35.36281, 149.16609, 0.0], "radius_m": 50.0, "snr_db": 47.0}}
+38000 STATE {"peak_dbm": -52.9, "peak_freq": 869012500.0}
+40000 END {"frames": 801}

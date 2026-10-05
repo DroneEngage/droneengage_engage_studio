@@ -329,6 +329,178 @@ class T(unittest.TestCase):
         self.assertEqual(scenario._seed_slot_base(7, [{"block": "copter"}]),
                          10 + 7 * 25)
 
+    # -------------------------------------- P5-10 recall / time to find
+
+    def _truth_file(self, rows):
+        f = tempfile.NamedTemporaryFile("w", suffix=".jsonl",
+                                         delete=False)
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+        f.close()
+        self.addCleanup(os.unlink, f.name)
+        return f.name
+
+    def _bot(self, targets):
+        class Bot:
+            def targets(self):
+                return targets
+        return Bot()
+
+    def test_detection_recall_ai_fraction_and_dominant_why(self):
+        rows = [
+            {"tid": "pa", "cls": "person", "t_ms": 1000, "lat": -35.0,
+             "lng": 149.0, "alt_m": 0.0},
+            {"tid": "pb", "cls": "person", "t_ms": 1000, "lat": -35.1,
+             "lng": 149.1, "alt_m": 0.0},
+            {"type": "detection", "src": "ai", "unit": "u1",
+             "tid": "pa", "cls": "person", "t_ms": 5000, "sent": True},
+            {"type": "detection", "src": "ai", "unit": "u1",
+             "tid": "pb", "cls": "person", "t_ms": 6000, "sent": False,
+             "why": "occluded", "blockers": ["hut_1"]},
+            {"type": "detection", "src": "ai", "unit": "u1",
+             "tid": "pb", "cls": "person", "t_ms": 7000, "sent": False,
+             "why": "occluded", "blockers": ["hut_1"]},
+            {"type": "detection", "src": "ai", "unit": "u1",
+             "tid": "pb", "cls": "person", "t_ms": 8000, "sent": False,
+             "why": "miss"},
+        ]
+        f = self._truth_file(rows)
+        a = {"detection_recall": {"truth": ["pa", "pb"], "src": "ai",
+                                  "min": 0.5, "truth_file": f}}
+        r = run(a, {})
+        self.assertEqual(r["status"], "PASS")
+        self.assertEqual(r["value"], 0.5)
+        self.assertIn("missed pb (occluded)", r["detail"])
+        # recall defaults to "found them all" when no bound is given
+        self.assertEqual(run({"detection_recall": {
+            "truth": ["pa", "pb"], "src": "ai", "truth_file": f}}, {}
+        )["status"], "FAIL")
+        # a row from another stub unit is not this one's evidence
+        rows_u2 = rows + [
+            {"type": "detection", "src": "ai", "unit": "u2",
+             "tid": "pb", "cls": "person", "t_ms": 8000, "sent": True}]
+        f2 = self._truth_file(rows_u2)
+        r = run({"detection_recall": {"truth": "pb", "src": "ai",
+                                       "unit": "u1", "truth_file": f2}}, {})
+        self.assertEqual((r["status"], r["value"]), ("FAIL", 0.0))
+
+    def test_detection_recall_negative_control_and_never_in_frame(self):
+        rows = [
+            {"tid": "ph", "cls": "person", "t_ms": 1000, "lat": -35.0,
+             "lng": 149.0, "alt_m": 0.0},
+            {"tid": "pz", "cls": "person", "t_ms": 1000, "lat": -35.2,
+             "lng": 149.2, "alt_m": 0.0},
+            {"type": "detection", "src": "ai", "tid": "ph",
+             "cls": "person", "t_ms": 5000, "sent": False,
+             "why": "occluded", "blockers": ["hut_1"]},
+        ]
+        f = self._truth_file(rows)
+        r = run({"detection_recall": {"truth": "ph", "src": "ai",
+                                       "max": 0, "truth_file": f}}, {})
+        self.assertEqual(r["status"], "PASS")     # correctly stayed hidden
+        self.assertIn("occluded", r["detail"])
+        # pz was never in frame: no detection row at all
+        r = run({"detection_recall": {"truth": "pz", "src": "ai",
+                                       "max": 0, "truth_file": f}}, {})
+        self.assertEqual(r["status"], "PASS")
+        self.assertIn("no in-frame row", r["detail"])
+
+    def test_detection_recall_by_class_and_sdr(self):
+        rows = [
+            {"tid": "pa", "cls": "person", "t_ms": 1000, "lat": -35.0,
+             "lng": 149.0, "alt_m": 0.0},
+            {"tid": "pc", "cls": "person", "t_ms": 1000, "lat": -35.1,
+             "lng": 149.1, "alt_m": 0.0},
+            {"tid": "f1", "cls": "rf", "t_ms": 1000, "lat": -35.0,
+             "lng": 149.0, "alt_m": 0.0},
+            {"type": "detection", "src": "ai", "tid": "pa",
+             "cls": "person", "t_ms": 5000, "sent": True},
+            {"type": "detection", "src": "sdr", "tid": "f1",
+             "cls": "rf", "t_ms": 9000, "sent": True},
+        ]
+        f = self._truth_file(rows)
+        r = run({"detection_recall": {"truth": "person", "src": "ai",
+                                       "truth_file": f}}, {})
+        self.assertEqual((r["status"], r["value"]), ("FAIL", 0.5))
+        r = run({"detection_recall": {"truth": "rf", "src": "sdr",
+                                       "truth_file": f}}, {})
+        self.assertEqual((r["status"], r["value"]), ("PASS", 1.0))
+
+    def test_detection_recall_bot_chain_match_m(self):
+        rows = [
+            {"tid": "pa", "cls": "person", "t_ms": 1000, "lat": -35.0,
+             "lng": 149.0, "alt_m": 0.0},
+            {"tid": "pb", "cls": "person", "t_ms": 1000, "lat": -35.1,
+             "lng": 149.1, "alt_m": 0.0},
+        ]
+        f = self._truth_file(rows)
+        # a person target 10 m of pa's truth: the whole chain found pa
+        bot = self._bot({"t1": {"cls": "person",
+                                "pos": [-35.0, 149.00009], "t_ms": 9000}})
+        r = run({"detection_recall": {"truth": ["pa", "pb"],
+                                      "truth_file": f}}, {},
+                bot=bot, world_epoch_ms=1000)
+        self.assertEqual((r["status"], r["value"]), ("FAIL", 0.5))
+        # the same target is 10+ km from pb - match_m is per truth entity
+        # ... and a phone target never matches a person truth
+        bot2 = self._bot({"t1": {"cls": "person",
+                                 "pos": [-35.0, 149.00009], "t_ms": 9000},
+                          "t2": {"cls": "phone",
+                                 "pos": [-35.1, 149.1], "t_ms": 9000}})
+        r = run({"detection_recall": {"truth": ["pa", "pb"],
+                                      "truth_file": f}}, {}, bot=bot2,
+                world_epoch_ms=1000)
+        self.assertEqual(r["value"], 0.5)
+        # no operator session -> SKIP, not a silent pass
+        self.assertEqual(run({"detection_recall": {
+            "truth": "pa", "truth_file": f}}, {})["status"], "SKIP")
+        # bad src fails loud
+        self.assertEqual(run({"detection_recall": {
+            "truth": "pa", "src": "nope", "truth_file": f}}, {},
+            bot=bot)["status"], "FAIL")
+
+    def test_time_to_detect_from_the_epoch(self):
+        rows = [
+            {"tid": "pa", "cls": "person", "t_ms": 1000, "lat": -35.0,
+             "lng": 149.0, "alt_m": 0.0},
+            {"type": "detection", "src": "ai", "tid": "pa",
+             "cls": "person", "t_ms": 6000, "sent": True},
+            {"type": "detection", "src": "sdr", "tid": "pa",
+             "cls": "person", "t_ms": 4000, "sent": True},
+        ]
+        f = self._truth_file(rows)
+        r = run({"time_to_detect": {"truth": "pa", "src": "ai",
+                                     "max_s": 10, "truth_file": f}}, {},
+                world_epoch_ms=1000)
+        self.assertEqual((r["status"], r["value"], r["detail"][:3]),
+                         ("PASS", 5.0, "pa "))
+        r = run({"time_to_detect": {"truth": "pa", "src": "ai",
+                                     "max_s": 3, "truth_file": f}}, {},
+                world_epoch_ms=1000)
+        self.assertEqual(r["status"], "FAIL")
+        # never found fails even with a generous budget
+        r = run({"time_to_detect": {"truth": "pa", "src": "ai",
+                                     "max_s": 99,
+                                     "truth_file": self._truth_file(
+                                         [rows[0]])}}, {},
+                world_epoch_ms=1000)
+        self.assertEqual(r["status"], "FAIL")
+        # needs max_s / one entity / the epoch
+        self.assertIn("needs max_s", run({"time_to_detect": {
+            "truth": "pa", "truth_file": f}}, {},
+            world_epoch_ms=1000)["detail"])
+        self.assertIn("exactly one entity", run({"time_to_detect": {
+            "truth": ["pa", "pb"], "src": "ai", "max_s": 10,
+            "truth_file": f}}, {}, world_epoch_ms=1000)["detail"])
+        self.assertEqual(run({"time_to_detect": {
+            "truth": "pa", "max_s": 10, "truth_file": f}}, {})["status"],
+            "SKIP")                     # no world epoch
+        # realtime: true scenarios SKIP it when speed-up is off
+        self.assertEqual(run({"time_to_detect": {
+            "truth": "pa", "max_s": 10, "truth_file": f}}, {},
+            world_epoch_ms=1000, realtime_required=True,
+            realtime_ok=False)["status"], "SKIP")
+
 
 if __name__ == "__main__":
     unittest.main()

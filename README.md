@@ -243,10 +243,15 @@ Format (strict - unknown keys fail against
 
 - `version`, `name`, `seed`, `realtime`, `transport` (`fake` | `real`),
   `home`, `slot_base`, `world` (P5-08 `worlds/*.yaml`: seeded ground
-  truth - entities, motion, attachments, transmitters, clutter, camera
-  and SDR models; consumed by the `stub_*` modules and the truth
-  recorder, which writes `run/<sim>/truth.jsonl` at 1 Hz plus
-  per-detection rows),
+  truth - entities, motion, attachments, transmitters, clutter,
+  camera and SDR models; P5-10 adds `obstacles` - canopy crowns and
+  buildings as vertical prisms the stubs attenuate/occlude through
+  (`transmittance`, `rf_loss_db`) -, a camera `lens:` option
+  (`angle_linear` the default, `rectilinear` what a real lens does) and
+  ground-anchored clutter (`anchor: ground` - a false positive is a
+  fixed ground point, not a sliding pixel). Consumed by the `stub_*`
+  modules and the truth recorder, which writes
+  `run/<sim>/truth.jsonl` at 1 Hz plus per-detection rows),
   `operation`, `verify` (P5-06 CLI, absent = recorded skip),
   `operator` (the bot's standing approve/confirm policy), `fleet`,
   `timeline`, `assert`, `teardown`, `settle_s`.
@@ -283,7 +288,13 @@ Format (strict - unknown keys fail against
   `roster_value`, `operator_log_count`, `telemetry_value`, `fc_mode`,
   `distance_to` (incl. `detected_cls:` against the bot's seen targets),
   `coverage_complete`, `no_sep_violation`, `detection_precision`,
-  `signals_in_range`, `stub_deterministic` to the legacy assertion set.
+  `detection_recall` (P5-10: the fraction of the named truth entities
+  that were found - `src: ai|sdr|bot` (bot = the whole product chain),
+  `match_m:` for the bot src, `max: 0` is the "must stay hidden"
+  negative control, the detail line lists each miss's dominant why),
+  `time_to_detect` (P5-10: seconds from the world epoch to the first
+  find, `max_s:`; realtime-sensitive), `signals_in_range`,
+  `stub_deterministic` to the legacy assertion set.
   `journal_count` takes `total: true` to compare the sum over its units
   instead of every unit's own count.
   `realtime: true` gates timing asserts - they SKIP with a visible

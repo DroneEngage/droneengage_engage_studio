@@ -27,6 +27,8 @@ except ImportError:
     HAVE_DATABUS = False
 
 FOREST = os.path.join(ROOT, "worlds", "forest_a.yaml")
+sys.path.insert(0, os.path.join(ROOT, "engine"))
+import geo_projection as gp  # noqa: E402
 
 
 def make(mod_cls, module, d, extra=None):
@@ -119,7 +121,8 @@ class T(unittest.TestCase):
         s = make(stub_ai_box.StubAIBox, "stub_ai_box", self.d)
         s.world.clutter["rate_per_km2_min"] = 5e5   # force spawns
         s._vt_ms = 0
-        s._clutter_tick(12.0, 1, 0.5)
+        s._clutter_tick(12.0, 1, 0.5, gp.GeoAttitude(),
+                        gp.GeoPose(rel_alt_m=12.0))
         self.assertTrue(s._clutter, "a 12 m mast camera saw no clutter")
         with open(os.path.join(self.d, "run", "sim", "truth.jsonl")) as f:
             rows = [json.loads(ln) for ln in f]

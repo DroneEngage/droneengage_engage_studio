@@ -25,7 +25,12 @@ Journal assertions keep the runner.py semantics (same helpers, same
                          P5-08 adds detection rows {type:"detection",
                          src, tid|"clutter", cls, t_ms, sent} read by
                          detection_precision and signals_in_range, and
-                         distance_to's detected_cls: (bot-seen pos)
+                         distance_to's detected_cls: (bot-seen pos);
+                         P5-10 adds the detection rows' vis / why /
+                         blockers (ai) and loss_db (sdr) fields, read by
+                         detection_recall (who was found, who correctly
+                         stayed hidden) and time_to_detect (seconds
+                         from the world epoch to the first find)
   - stub determinism:    stub_deterministic - two same-seed --selftest
                          replays must produce byte-identical stub logs
   - 1087 status (bot):   final_state
@@ -45,7 +50,7 @@ import ctl
 # assertions that are only meaningful when SITL really runs at ~1x; when
 # the scenario asks realtime: true and the measured speed-up is off,
 # these report SKIP instead of a misleading number
-REALTIME_SENSITIVE = {"max_latency", "journal_time_delta"}
+REALTIME_SENSITIVE = {"max_latency", "journal_time_delta", "time_to_detect"}
 
 # only a WRITE can change FC mission items - a download/read never does
 CAUSE_RE = r"MISSION_(WRITE|UPLOAD|ACK)|fc mission|mission.*upload"
@@ -58,7 +63,8 @@ FC_LINE_RE = re.compile(
 UNIT_ASSERTS = {"journal_count", "journal_consistent", "journal_order", "final_state",
                 "fc_items_unchanged_without_cause", "mission_current",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
-                "telemetry_value", "link_offline", "signals_in_range"}
+                "telemetry_value", "link_offline", "signals_in_range",
+                "detection_recall"}
 
 DEFAULT_TRUTH_TOL_MS = 10000      # truth row must be this close in time
 
@@ -592,6 +598,172 @@ def _detection_precision(name, a, ctx):
               f"(src {os.path.basename(src)})")
 
 
+def _entity_rows(rows):
+    """The recorder's 1 Hz entity rows - a detection/coverage row reuses
+    the tid but reports the REPORTED position, not the truth."""
+    return [r for r in rows
+            if r.get("type") not in ("detection", "coverage")]
+
+
+def _entity_cls(rows, tid):
+    for r in _entity_rows(rows):
+        if r.get("tid") == tid:
+            return r.get("cls")
+    return None
+
+
+def _recall_targets(rows, spec):
+    """detection_recall's truth: id | [ids] | cls -> the entity ids it
+    names. A string that matches an entity row's tid is an id; anything
+    else is read as a class name (every entity of that class)."""
+    if isinstance(spec, list):
+        return [str(t) for t in spec]
+    spec = str(spec)
+    if any(r.get("tid") == spec for r in _entity_rows(rows)):
+        return [spec]
+    return [str(t) for t in sorted({r.get("tid") for r in _entity_rows(rows)
+                                    if r.get("cls") == spec
+                                    and r.get("tid")})]
+
+
+def _first_find(a, ctx, rows, tid, cls):
+    """(found, t_ms of the first find or None) for one truth entity -
+    the shared finder of detection_recall and time_to_detect. src ai |
+    sdr: the earliest sent detection row with that tid (unit: narrows
+    the rows to one stub). src bot (the default): the earliest operator
+    target of the entity's class within match_m of the entity's truth
+    at the target's t_ms - the whole product chain."""
+    src = str(a.get("src", "bot"))
+    match_m = float(a.get("match_m", 25))
+    tol = a.get("truth_tol_ms", DEFAULT_TRUTH_TOL_MS)
+    if src in ("ai", "sdr"):
+        best = None
+        for r in rows:
+            if r.get("type") != "detection" or not r.get("sent") \
+                    or r.get("src") != src or _row_tid(r) != tid:
+                continue
+            if a.get("unit") is not None and r.get("unit") != a["unit"]:
+                continue
+            t = _row_t(r)
+            if best is None or t < best:
+                best = t
+        return (best is not None, best)
+    bot = ctx.get("bot")
+    best = None
+    for tg in (bot.targets() or {}).values():
+        if tg.get("cls") != cls or not tg.get("pos"):
+            continue
+        tr = _truth_at(rows, tid, tg.get("t_ms", 0), tol)
+        if tr is None:
+            continue
+        if _haversine(tg["pos"][0], tg["pos"][1],
+                      tr["lat"], _lng(tr)) > match_m:
+            continue
+        t = tg.get("t_ms", 0)
+        if best is None or t < best:
+            best = t
+    return (best is not None, best)
+
+
+def _dominant_why(rows, a, tid):
+    """The most frequent why over the entity's unsent ai rows - the
+    reason it stayed hidden (no row at all -> it was never in frame)."""
+    counts = {}
+    for r in rows:
+        if r.get("type") != "detection" or r.get("sent") \
+                or r.get("src") != "ai" or _row_tid(r) != tid:
+            continue
+        if a.get("unit") is not None and r.get("unit") != a["unit"]:
+            continue
+        counts[r.get("why") or "?"] = counts.get(r.get("why") or "?", 0) + 1
+    if not counts:
+        return "no in-frame row"
+    return max(sorted(counts), key=counts.get)
+
+
+def _recall_common(name, a, ctx):
+    """The shared preamble: rows + src + targets, or the result to
+    return instead."""
+    rows, src_file = _truth_rows(ctx, a.get("truth_file"))
+    if rows is None:
+        return None, _r(name, "SKIP", None,
+                        "no truth source (truth_file / run truth.jsonl)")
+    src = str(a.get("src", "bot"))
+    if src not in ("ai", "sdr", "bot"):
+        return None, _r(name, "FAIL", None,
+                        f"src must be ai|sdr|bot, got {src!r}")
+    if src == "bot" and not ctx.get("bot"):
+        return None, _r(name, "SKIP", None, "no operator session")
+    tids = _recall_targets(rows, a["truth"])
+    if not tids:
+        return None, _r(name, "FAIL", None,
+                        f"no truth entities match {a['truth']!r} in "
+                        f"{os.path.basename(src_file)}")
+    return (rows, tids), None
+
+
+def _detection_recall(name, a, ctx):
+    """Recall over the named truth entities: the fraction that were
+    *found*. Found means: src ai|sdr - at least one sent: true detection
+    row with that tid; src bot (the default) - an operator target of
+    the entity's class within match_m (default 25 m) of the entity's
+    truth at the target's t_ms, i.e. the whole product chain. `max: 0`
+    is the negative control ("must stay hidden"); the detail line lists
+    the found and missed ids with each miss's dominant why."""
+    common, early = _recall_common(name, a, ctx)
+    if early is not None:
+        return early
+    rows, tids = common
+    found, missed = [], []
+    for tid in tids:
+        cls = _entity_cls(rows, tid)
+        hit, _t = _first_find(a, ctx, rows, tid, cls) if cls is not None \
+            else (False, None)
+        (found if hit else missed).append(tid)
+    frac = len(found) / len(tids)
+    lo, hi = a.get("min"), a.get("max")
+    if lo is None and hi is None:
+        lo = 1.0                    # recall defaults to "found them all"
+    good = (lo is None or frac >= lo) and (hi is None or frac <= hi)
+    bits = [f"found {found}"] if found else ["found none"]
+    if missed:
+        bits.append("missed " + ", ".join(
+            f"{t} ({_dominant_why(rows, a, t)})" for t in missed))
+    return _r(name, "PASS" if good else "FAIL", round(frac, 3),
+              "; ".join(bits) + f" (src {a.get('src', 'bot')})")
+
+
+def _time_to_detect(name, a, ctx):
+    """Seconds from the scenario epoch (world_epoch.json) to the first
+    find of one truth entity (the same found rule as detection_recall;
+    match_m applies to the bot src). FAIL when the entity is never
+    found or the time exceeds max_s; realtime: true scenarios SKIP
+    this when SITL did not hold speed-up ~1."""
+    if a.get("max_s") is None:
+        return _r(name, "FAIL", None, "needs max_s")
+    common, early = _recall_common(name, a, ctx)
+    if early is not None:
+        return early
+    rows, tids = common
+    if len(tids) != 1:
+        return _r(name, "FAIL", None,
+                  f"truth must name exactly one entity, got {a['truth']!r}")
+    epoch = ctx.get("world_epoch_ms")
+    if epoch is None:
+        return _r(name, "SKIP", None,
+                  "no world epoch - time_to_detect needs a P5-08 world run")
+    tid = tids[0]
+    hit, t_ms = _first_find(a, ctx, rows, tid, _entity_cls(rows, tid))
+    if not hit:
+        return _r(name, "FAIL", None,
+                  f"{tid} never found (src {a.get('src', 'bot')})")
+    dt = (t_ms - epoch) / 1000.0
+    good = dt <= float(a["max_s"])
+    return _r(name, "PASS" if good else "FAIL", round(dt, 1),
+              f"{tid} found {dt:.1f} s after the epoch "
+              f"(src {a.get('src', 'bot')}, max {a['max_s']})")
+
+
 def _stub_deterministic(name, a, ctx):
     """Same-seed acceptance: run <module> --selftest <poses> twice in a
     scratch run dir and byte-compare stubs/<unit>.log. Uses the unit's
@@ -904,6 +1076,8 @@ DISPATCH = {
     "no_sep_violation": _no_sep_violation,
     "coverage_complete": _coverage_complete,
     "detection_precision": _detection_precision,
+    "detection_recall": _detection_recall,
+    "time_to_detect": _time_to_detect,
     "stub_deterministic": _stub_deterministic,
     "signals_in_range": _signals_in_range,
     "journal_consistent": _journal_consistent,

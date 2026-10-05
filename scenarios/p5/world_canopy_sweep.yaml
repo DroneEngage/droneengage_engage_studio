@@ -1,0 +1,39 @@
+# p5/world_canopy_sweep - P5-10 acceptance 1: a copter with stub_ai_box
+# flies the 3-leg lawnmower of packages/p5_canopy_sweep.json at 40 m
+# over all three forest_canopy people (a leg each over the open
+# ground, the wood_n crown and the hut). The person in the open must
+# be found within the sweep budget; the person inside hut_1 must stay
+# hidden with every in-frame row why "occluded", blockers hut_1
+# (detection_recall max 0 is the negative control); person_canopy -
+# under the crown, gap 0.3 - is REPORTED, not asserted: whether a 40 m
+# lawnmower finds a person under canopy is the property under study
+# (max 1 is vacuous, it only prints the recall). distance_to budget
+# note: the world camera is rectilinear while the product projector
+# stays angle_linear until P5-18, so a reported position keeps up to
+# ~1 m of projector error - inside the 25 m budget.
+version: 1
+name: world_canopy_sweep
+seed: 7
+transport: fake
+world: ../../worlds/forest_canopy.yaml
+operation: ../../packages/p5_canopy_sweep.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: cam1, cls: copter, modules: [stub_ai_box]}
+timeline:
+  - {t: 0, do: deploy}
+  - {t: 5, do: start}
+  - {t: 10, do: wait_journal, unit: cam1,
+     re: "mission main completed", timeout: 300}
+assert:
+  - detection_recall: {truth: person_open, min: 1}
+  - detection_recall: {truth: person_hut, max: 0}
+  # reported, not asserted - the property under study
+  - detection_recall: {truth: person_canopy, max: 1}
+  - time_to_detect: {truth: person_open, max_s: 120}
+  - detection_precision: {cls: person, min: 0.8, unit: cam1}
+  - distance_to: {unit: cam1, re: "detect\\.detected",
+                  detected_cls: person,
+                  truth: [person_open, person_canopy], max_m: 25}
+teardown: land
