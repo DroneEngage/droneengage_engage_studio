@@ -1,0 +1,9 @@
+description: |
+  Rendered-camera copter (P5-15): the copter block + the real
+  de_yolo_ai_generic (ONNX) + de_camera. The Mavlink3DMap render farm
+  paints this unit's camera view into the v4l2loopback device
+  DE-SRC-{cam_index}; yolo reads it, annotates to DE-AI-{cam_index},
+  and de_camera streams that to the WebClient. Needs the loopback
+  labels (tools/setup_v4l2loopback.sh N) plus render.mode: cameras.
+extends: copter
+add_modules: [de_yolo_ai, de_camera]

@@ -212,6 +212,11 @@ class OperatorBot:
                         # P5-08: the reported position + arrival wall ms -
                         # distance_to(detected_cls:) reads them
                         "pos": p.get("pos") or ms.get("pos"),
+                        # P5-15: the 1078 box {x,y,w,h} when the envelope
+                        # carries it - detection_precision_render IoUs it
+                        # against the ID-pass boxes
+                        "box": p.get("b") if isinstance(p.get("b"), dict)
+                               else None,
                         "t_ms": int(time.time() * 1000),
                         "src": ms.get("src") or sd,
                         "run": ms.get("run", ""),

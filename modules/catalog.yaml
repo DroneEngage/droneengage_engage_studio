@@ -40,11 +40,11 @@ de_mavlink:
   ready_re: "nav adapter hello"
 
 de_camera:
-  repo: droneengage_camera
+  repo: drone_engage_camera_2025
   dir_env: DE_CAMERA_DIR
-  # de_camera is built inside the WebRTC tree (out/<target>/de_camera);
-  # copy it to droneengage_camera/bin/ or set DE_CAMERA_BIN in sim.local.env
-  bin: bin/de_camera
+  # de_camera ships a prebuilt x86 binary in the repo (WebRTC gn/ninja
+  # builds land in compiled_bin/); DE_CAMERA_BIN overrides
+  bin: compiled_bin/de_camera
   bin_env: DE_CAMERA_BIN
   template: de_camera.config.module.json
   port_base: 64000
@@ -52,6 +52,27 @@ de_camera:
   local: {file: de_camera.config.local}
   set:
     media_folder: "./img"
+
+# P5-15: the real generic YOLO AI (ONNX runtime) on the rendered feed.
+# It finds its V4L2 devices by card label, like in the field: the render
+# sink's ffmpeg writes Mavlink3DMap frames to DE-SRC-{cam_index}, the
+# module detects them and writes annotated frames to DE-AI-{cam_index},
+# which the unit's de_camera streams. model_path is wired absolute so
+# the run/<unit>/<module>/ cwd does not need a copy.
+de_yolo_ai:
+  repo: drone_engage_yolo_ai_generic
+  dir_env: DE_YOLO_AI_DIR
+  bin: bin/de_yolo_generic
+  bin_env: DE_YOLO_AI_BIN
+  template: de_yolo_ai_generic.config.module.json
+  port_base: 57000
+  start_delay: 4
+  local: {arg: "-b", file: de_yolo_ai_generic.config.local}
+  ready_re: "Found primary device"
+  wire:
+    source_video_device_name: "DE-SRC-{cam_index}"
+    output_video_device_name: "DE-AI-{cam_index}"
+    model_path: "{module_dir}/yolo11n.onnx"
 
 de_tracker:
   repo: droneengage_visual_tracker

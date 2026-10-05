@@ -219,6 +219,13 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False):
         print(f"render viewer: http://127.0.0.1:{render['web_port']}"
               f"/?world=ws://127.0.0.1:{render['stream_port']}"
               f"&mavlink=ws://127.0.0.1:{render['mav_ws_port']}")
+        if render.get("mode") in ("cameras", "full") \
+                and "render_sink" in m.get("render_procs", []):
+            if not wait_port(render["sink_port"], 15):
+                sys.exit(f"render_sink did not open {render['sink_port']} "
+                         f"- see {rdir}/render/logs/render_sink.log")
+            print(f"render farm: sink ws://127.0.0.1:{render['sink_port']} "
+                  "+ headless chromium")
 
     # ---- units ----
     for u in m["units"]:

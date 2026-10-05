@@ -51,9 +51,13 @@ class T(unittest.TestCase):
         sim = _sim({"mode": "viewer", "headless": True})
         self.assertEqual(simlib.gen_render(sim), [])
 
-    def test_cameras_mode_launches_nothing(self):
+    def test_cameras_mode_no_cam_units_is_viewer_only(self):
+        # P5-15: mode cameras without a de_yolo_ai unit has nothing to
+        # feed loopbacks with - the viewer procs still launch (the page
+        # renders the world), the farm does not
         sim = _sim({"mode": "cameras"})
-        self.assertEqual(simlib.gen_render(sim), [])
+        self.assertEqual(sorted(simlib.gen_render(sim)),
+                         ["mav_bridge", "web"])
 
     def test_viewer_scripts(self):
         # a fake Mavlink3DMap tree: gen_render validates file existence

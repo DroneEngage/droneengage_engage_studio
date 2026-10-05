@@ -97,6 +97,10 @@ WEBCLIENT_REPO = repo_dir("DE_WEBCLIENT_DIR", "droneengage_webclient_react")
 # render modes that launch the viewer
 MAVLINK3DMAP_DIR = setting("MAVLINK3DMAP_DIR",
                            os.path.expanduser("~/code/Mavlink3DMap"))
+# P5-15: the headless render farm is a stock Chromium/Chrome plus the
+# sink's per-unit ffmpeg - both machine binaries
+CHROMIUM_BIN = setting("CHROMIUM_BIN", "google-chrome")
+FFMPEG_BIN = setting("FFMPEG", "ffmpeg")
 
 SERVER_PORT = 62008                 # wss; control port is +1
 SLOT_BASE = int(setting("SIM_SLOT_BASE", 10))
@@ -517,6 +521,7 @@ STREAM_PORT_BASE = 61000
 MAV_PORT_BASE = 16450
 MAV_WS_PORT_BASE = 8801
 WEB_PORT_BASE = 8070
+SINK_PORT_BASE = 8090
 
 
 def _render_spec(raw, slot_base):
@@ -530,7 +535,7 @@ def _render_spec(raw, slot_base):
     if not isinstance(raw, dict):
         raise SimError("render: must be a mapping")
     bad = set(raw) - {"mode", "headless", "stream_port", "mav_port",
-                      "mav_ws_port", "web_port"}
+                      "mav_ws_port", "web_port", "sink_port"}
     if bad:
         raise SimError(f"render: unknown keys {sorted(bad)}")
     mode = raw.get("mode", "viewer")
@@ -546,7 +551,9 @@ def _render_spec(raw, slot_base):
             "mav_ws_port": int(raw.get("mav_ws_port",
                                        MAV_WS_PORT_BASE + slot_base)),
             "web_port": int(raw.get("web_port",
-                                    WEB_PORT_BASE + slot_base))}
+                                    WEB_PORT_BASE + slot_base)),
+            "sink_port": int(raw.get("sink_port",
+                                     SINK_PORT_BASE + slot_base))}
 
 
 def check_account(user, code, where):
@@ -588,6 +595,20 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             raise SimError(f"unit {name}: config for {mod!r} but block "
                            f"{b['name']} does not run it")
         u["config"][mod] = deep_merge(u["config"].get(mod, {}), over)
+    # P5-15 D7: rendered-camera units get a stable per-sim index; the
+    # de_yolo_ai catalog wire turns it into the DE-SRC-k / DE-AI-k card
+    # labels the module finds by name, and the paired de_camera reads
+    # yolo's annotated output device.
+    if "de_yolo_ai" in u["modules"]:
+        k = sum(1 for x in sim["units"]
+                if "de_yolo_ai" in x["modules"])
+        u["cam_index"] = k
+        if "de_camera" in u["modules"]:
+            u["config"]["de_camera"] = deep_merge(
+                {"camera": {"camera_list":
+                            [{"name": "AI",
+                              "device_name": f"DE-AI-{k}"}]}},
+                u["config"].get("de_camera") or {})
     # per-unit account: the drone's own login, like a real vehicle.
     # `{name}` in user expands to the unit name so `count:` fleets get
     # quad1@.., quad2@.. - None falls back to server.account
@@ -798,7 +819,8 @@ def used_ports(sim):
         ports.update((sim["render"]["stream_port"],
                       sim["render"]["mav_port"],
                       sim["render"]["mav_ws_port"],
-                      sim["render"]["web_port"]))
+                      sim["render"]["web_port"],
+                      sim["render"]["sink_port"]))
     for u in sim["units"]:
         ports.update(u["ports"].values())
         if u["fc"]:
@@ -937,13 +959,15 @@ def gen_unit(u, sim, catalog):
                    env=(("DE_BOOT_ID_FILE", boot_id),))
 
     # ---- generic s2s modules ----
-    ctx = {"unit": u["name"], "comm_port": u["ports"]["de_comm"]}
+    ctx = {"unit": u["name"], "comm_port": u["ports"]["de_comm"],
+           "cam_index": u.get("cam_index", 0)}
     if u["fc"]:
         ctx.update({k: u["fc"][k] for k in ("fcb_port", "pilot_port", "sysid")})
     for m in u["modules"]:
         if m == "de_comm":
             continue
         spec = catalog[m]
+        ctx["module_dir"] = module_dir(spec)
         mdir = os.path.join(udir, m)
         mcfg = load_config(module_template(spec))
         mcfg = deep_merge(mcfg, spec.get("set"))
@@ -1148,15 +1172,95 @@ def _render_script(sim, proc, cwd, cmd):
     return path
 
 
+# /sys scan is a function so tests can point it at a fixture tree
+def v4l2_label_map(sysfs_root="/sys/class/video4linux"):
+    """card label -> /dev/videoN for every V4L2 device on the box."""
+    out = {}
+    if not os.path.isdir(sysfs_root):
+        return out
+    for name in os.listdir(sysfs_root):
+        try:
+            with open(os.path.join(sysfs_root, name, "name")) as f:
+                out[f.read().strip()] = f"/dev/{name}"
+        except OSError:
+            continue
+    return out
+
+
+def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
+    """P5-15: render.mode cameras|full adds the frame farm on top of the
+    viewer procs: render_sink.js demuxes the binary WS frames into one
+    ffmpeg per camera unit writing that unit's DE-SRC-k loopback device,
+    a headless Chromium runs the ?render=cameras page, and one
+    render_probe per unit reads the strip back off the device for the
+    render_latency rows."""
+    sink_js = os.path.join(m3d, "backend", "src", "render_sink.js")
+    cam_units = [u for u in sim["units"]
+                 if "de_yolo_ai" in u["modules"]]
+    if not cam_units:
+        # cameras mode on a sim with no de_yolo_ai unit: the viewer
+        # procs still answer (the page renders the world), but there
+        # is nothing to feed loopback devices with
+        return []
+    labels = v4l2_label_map()
+    mapping = []
+    for u in cam_units:
+        label = f"DE-SRC-{u['cam_index']}"
+        dev = labels.get(label)
+        if not dev:
+            n = len(cam_units)
+            raise SimError(
+                f"render: v4l2loopback label {label!r} not found - "
+                f"run 'sudo tools/setup_v4l2loopback.sh {max(1, n)}' "
+                "first (one-time root setup, P5-15 D6)")
+        mapping.append({"unit_idx": sim["units"].index(u),
+                        "name": u["name"], "cam_index": u["cam_index"],
+                        "device": dev, "fps": 10})
+    if not os.path.isfile(sink_js):
+        raise SimError(f"render: {sink_js} not found - Mavlink3DMap needs "
+                       "the P5-15 render_sink backend")
+    sink_map = os.path.join(rdir, "sink_map.json")
+    write_json(sink_map, {"units": mapping}, indent=1)
+    _render_script(sim, "render_sink", os.path.join(m3d, "backend"),
+                   "'%s' --require '%s' ./src/render_sink.js -w %d "
+                   "--map '%s' --ffmpeg '%s'"
+                   % (NODE, marker, render["sink_port"], sink_map,
+                      FFMPEG_BIN))
+    url = ("http://127.0.0.1:%d/index_4w.html"
+           "?world=ws://127.0.0.1:%d&mavlink=ws://127.0.0.1:%d"
+           "&render=cameras&sink=ws://127.0.0.1:%d"
+           % (render["web_port"], render["stream_port"],
+              render["mav_ws_port"], render["sink_port"]))
+    _render_script(sim, "chromium", rdir,
+                   "'%s' --headless=new --use-gl=egl "
+                   "--disable-background-timer-throttling "
+                   "--disable-renderer-backgrounding "
+                   "--user-data-dir='%s/chrome' --no-first-run "
+                   "'%s'" % (CHROMIUM_BIN, rdir, url))
+    probe = os.path.join(ENGINE_DIR, "render_probe.py")
+    for m in mapping:
+        _render_script(
+            sim, f"render_probe_{m['cam_index']}", rdir,
+            "'%s' '%s' --device '%s' --unit '%s' "
+            "--stream 'ws://127.0.0.1:%d'"
+            % (sys.executable, probe, m["device"], m["name"],
+               render["stream_port"]))
+    procs = ["render_sink", "chromium"]
+    procs += [f"render_probe_{m['cam_index']}" for m in mapping]
+    return procs
+
+
 def gen_render(sim):
-    """P5-14 D7: render.mode viewer|full (and not headless) launches
-    Mavlink3DMap: the UDP->WebSocket bridge bound to render.mav_port
-    serving MAVLink on ws render.mav_ws_port, and a vite dev server on
-    render.web_port. Scripts and logs live under run/<sim>/render/;
-    the de_sim_marker.cjs preload puts the run dir in the node cmdline
-    so pid_is_ours/`sim down` treat them like every other process."""
+    """P5-14 D7: render.mode viewer|cameras|full (and not headless)
+    launches Mavlink3DMap: the UDP->WebSocket bridge bound to
+    render.mav_port serving MAVLink on ws render.mav_ws_port, and a
+    vite dev server on render.web_port. cameras|full adds the P5-15
+    frame farm (sink + chromium + probes). Scripts and logs live under
+    run/<sim>/render/; the de_sim_marker.cjs preload puts the run dir
+    in the node cmdline so pid_is_ours/`sim down` treat them like every
+    other process."""
     render = sim.get("render") or {}
-    if not render or render["mode"] not in ("viewer", "full") \
+    if not render or render["mode"] not in ("viewer", "cameras", "full") \
             or render["headless"]:
         return []
     m3d = MAVLINK3DMAP_DIR
@@ -1190,7 +1294,11 @@ def gen_render(sim):
                    "'%s' --require '%s' '%s' --port %d --strictPort "
                    "--host 127.0.0.1"
                    % (NODE, marker, vite_js, render["web_port"]))
-    return ["mav_bridge", "web"]
+    procs = ["mav_bridge", "web"]
+    if render["mode"] in ("cameras", "full"):
+        procs += _camera_render_procs(sim, render, rdir, marker, m3d,
+                                      vite_js)
+    return procs
 
 
 def generate(sim, sim_file=None):

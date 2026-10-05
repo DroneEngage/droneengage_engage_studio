@@ -283,7 +283,28 @@ Format (strict - unknown keys fail against
   from `$MAVLINK3DMAP_DIR` (sim.local.env), pid-tracked under
   `run/<sim>/render/` - `./sim up` prints the viewer URL
   `http://127.0.0.1:<web>/?world=ws://127.0.0.1:<stream>`
-  and opens no browser. `headless: true` streams without them).
+  and opens no browser. `headless: true` streams without them.
+  P5-15: `mode: cameras|full` adds the rendered-camera farm on
+  `blocks/copter_cam3d` units (real `de_yolo_ai` + `de_camera`):
+  headless Chromium (`$CHROMIUM_BIN`) renders each unit's
+  hello-advertised camera into `[32-byte header][JPEG]` frames on a
+  `8090 + slot_base` binary WebSocket; `render_sink.js` demuxes them
+  into one ffmpeg per unit writing that unit's `DE-SRC-<cam_index>`
+  v4l2loopback device. de_yolo_ai detects on it and writes annotated
+  frames to `DE-AI-<cam_index>`, which de_camera streams. A 16-cell
+  frame-number strip in the bottom rows lets `engine/render_probe.py`
+  (one per unit) decode frames back off the device and post
+  `src: render_probe` `frame_seen` rows; every 5th frame a
+  quarter-res ID pass recolours truth entities to unique flats and
+  posts `src: render_vis` `visibility` rows (px + normalized box) -
+  the honest "was it actually visible" truth for
+  `detection_recall {src: render_vis}`, `visible_px`,
+  `detection_precision_render` (IoU vs the 1078 boxes) and
+  `render_latency` (pose -> device p95). Needs one-time
+  `sudo tools/setup_v4l2loopback.sh <n>` (two labelled loopbacks per
+  camera unit) - `sim up` fails with that hint when the labels are
+  missing. Statistical tier, not byte-deterministic: nightly/
+  on-demand, never the pure gates).
 - `fleet:` entries take `id`, `cls` (`copter|plane|rover|static|
   comm_only` or a `blocks/` name), `role`, absolute `home`/`base`,
   relative `at`, `modules`, `params`, `config`, `account`. `modules`

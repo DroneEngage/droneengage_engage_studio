@@ -864,10 +864,10 @@ def _recall_common(name, a, ctx):
         return None, _r(name, "SKIP", None,
                         "no truth source (truth_file / run truth.jsonl)")
     src = str(a.get("src", "bot"))
-    if src not in ("ai", "sdr", "bot"):
+    if src not in ("ai", "sdr", "bot", "render_vis"):
         return None, _r(name, "FAIL", None,
-                        f"src must be ai|sdr|bot, got {src!r}")
-    if src == "bot" and not ctx.get("bot"):
+                        f"src must be ai|sdr|bot|render_vis, got {src!r}")
+    if src in ("bot", "render_vis") and not ctx.get("bot"):
         return None, _r(name, "SKIP", None, "no operator session")
     tids = _recall_targets(rows, a["truth"])
     if not tids:
@@ -889,6 +889,31 @@ def _detection_recall(name, a, ctx):
     if early is not None:
         return early
     rows, tids = common
+    # P5-15 D5/D8: src render_vis narrows the denominator to entities
+    # the ID pass actually rendered >= min_px for >= min_frames frames -
+    # the recall is over what the pixels could show, not what the model
+    # guessed. "Found" stays the whole product chain (bot target).
+    src_label = str(a.get("src", "bot"))
+    if a.get("src") == "render_vis":
+        min_px = float(a.get("min_px", 16))
+        min_frames = int(a.get("min_frames", 1))
+        seen = {}
+        for r in rows:
+            if r.get("type") != "event" or r.get("src") != "render_vis" \
+                    or r.get("kind") != "visibility":
+                continue
+            if a.get("unit") is not None and r.get("unit") != a["unit"]:
+                continue
+            if float(r.get("px") or 0) >= min_px:
+                seen.setdefault(r.get("tid"), set()).add(r.get("frame_no"))
+        tids = [t for t in tids
+                if len(seen.get(t) or ()) >= min_frames]
+        if not tids:
+            return _r(name, "FAIL", None,
+                      "no truth entity reached the render_vis "
+                      f"visibility bar (min_px {min_px:g}, "
+                      f"min_frames {min_frames})")
+        a = dict(a, src="bot")
     found, missed = [], []
     for tid in tids:
         cls = _entity_cls(rows, tid)
@@ -905,7 +930,7 @@ def _detection_recall(name, a, ctx):
         bits.append("missed " + ", ".join(
             f"{t} ({_dominant_why(rows, a, t)})" for t in missed))
     return _r(name, "PASS" if good else "FAIL", round(frac, 3),
-              "; ".join(bits) + f" (src {a.get('src', 'bot')})")
+              "; ".join(bits) + f" (src {src_label})")
 
 
 def _time_to_detect(name, a, ctx):
@@ -1241,6 +1266,161 @@ def _fc_mode(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
 
 
+def _render_latency(name, a, ctx):
+    """P5-15: p95 pose->V4L2 latency over the render chain. The render
+    farm's frame_meta events (src render, t_ms = pose sample) join the
+    probe's frame_seen rows (src render_probe, t_ms = device readback)
+    on (unit, frame_no); latency = seen - pose. `unit:` narrows to one
+    camera unit; p95_max_ms bounds the 95th percentile."""
+    if a.get("p95_max_ms") is None:
+        return _r(name, "FAIL", None, "needs p95_max_ms")
+    rows, src = _truth_rows(ctx, a.get("truth_file"))
+    if rows is None:
+        return _r(name, "SKIP", None,
+                  "no truth source (truth_file / run truth.jsonl)")
+    metas = {}
+    for r in rows:
+        if r.get("type") == "event" and r.get("src") == "render" \
+                and r.get("kind") == "frame_meta":
+            if a.get("unit") is not None and r.get("unit") != a["unit"]:
+                continue
+            metas[(r.get("unit"), r.get("frame_no"))] = _row_t(r)
+    lat = []
+    for r in rows:
+        if r.get("type") == "event" and r.get("src") == "render_probe" \
+                and r.get("kind") == "frame_seen":
+            if a.get("unit") is not None and r.get("unit") != a["unit"]:
+                continue
+            t0 = metas.get((r.get("unit"), r.get("frame_no")))
+            if t0 is not None:
+                lat.append(_row_t(r) - t0)
+    if not lat:
+        return _r(name, "SKIP", None,
+                  f"no joined frame_meta/frame_seen pairs in "
+                  f"{os.path.basename(src)}")
+    lat.sort()
+    p95 = lat[min(len(lat) - 1, int(0.95 * (len(lat) - 1)))]
+    good = p95 <= float(a["p95_max_ms"])
+    return _r(name, "PASS" if good else "FAIL", p95,
+              f"p95 {p95} ms over {len(lat)} joined frames "
+              f"(max {a['p95_max_ms']})")
+
+
+def _visible_px(name, a, ctx):
+    """P5-15 ID-pass visibility of a truth entity: how many ID-pass
+    frames painted it >= min_px (default 1). Bounds: `min_frames` /
+    `max_frames` on that count, and `max_px` on the biggest single-frame
+    paint - `max_px: 0` is the occluded control ("never visible in any
+    pass"). `unit:` narrows to one camera's passes."""
+    rows, src = _truth_rows(ctx, a.get("truth_file"))
+    if rows is None:
+        return _r(name, "SKIP", None,
+                  "no truth source (truth_file / run truth.jsonl)")
+    tids = _recall_targets(rows, a["truth"])
+    if not tids:
+        return _r(name, "FAIL", None,
+                  f"no truth entities match {a['truth']!r}")
+    min_px = float(a.get("min_px", 1))
+    stats = {}
+    any_rows = False
+    for r in rows:
+        if r.get("type") != "event" or r.get("src") != "render_vis" \
+                or r.get("kind") != "visibility":
+            continue
+        if a.get("unit") is not None and r.get("unit") != a["unit"]:
+            continue
+        any_rows = True
+        tid = r.get("tid")
+        if tid not in tids:
+            continue
+        s = stats.setdefault(tid, {"frames": 0, "max_px": 0})
+        px = float(r.get("px") or 0)
+        s["max_px"] = max(s["max_px"], px)
+        if px >= min_px:
+            s["frames"] += 1
+    if not any_rows:
+        return _r(name, "SKIP", None,
+                  "no render_vis rows - the ID pass ran nowhere")
+    bits, good = [], True
+    for tid in tids:
+        s = stats.get(tid) or {"frames": 0, "max_px": 0}
+        if a.get("min_frames") is not None \
+                and s["frames"] < int(a["min_frames"]):
+            good = False
+        if a.get("max_frames") is not None \
+                and s["frames"] > int(a["max_frames"]):
+            good = False
+        if a.get("max_px") is not None \
+                and s["max_px"] > float(a["max_px"]):
+            good = False
+        bits.append(f"{tid}: {s['frames']} frame(s) >= {min_px:g}px, "
+                    f"peak {s['max_px']:g}px")
+    return _r(name, "PASS" if good else "FAIL",
+              max((stats.get(t) or {}).get("frames", 0) for t in tids),
+              "; ".join(bits))
+
+
+def _iou(b1, b2):
+    """IoU of two normalized {x,y,w,h} boxes (top-left origin)."""
+    x0 = max(b1["x"], b2["x"]); y0 = max(b1["y"], b2["y"])
+    x1 = min(b1["x"] + b1["w"], b2["x"] + b2["w"])
+    y1 = min(b1["y"] + b1["h"], b2["y"] + b2["h"])
+    inter = max(0.0, x1 - x0) * max(0.0, y1 - y0)
+    if inter <= 0:
+        return 0.0
+    a1 = b1["w"] * b1["h"]; a2 = b2["w"] * b2["h"]
+    return inter / (a1 + a2 - inter) if (a1 + a2 - inter) > 0 else 0.0
+
+
+def _detection_precision_render(name, a, ctx):
+    """P5-15: of the 1078 boxes the real chain reported (bot world-model
+    targets carrying `box`), the fraction matching an ID-pass box of the
+    same unit's temporally-nearest visibility frame at IoU >= `iou`
+    (default 0.3). `unit:` narrows to one camera unit's reports."""
+    iou_min = float(a.get("iou", 0.3))
+    rows, src = _truth_rows(ctx, a.get("truth_file"))
+    if rows is None:
+        return _r(name, "SKIP", None,
+                  "no truth source (truth_file / run truth.jsonl)")
+    bot = ctx.get("bot")
+    if not bot:
+        return _r(name, "SKIP", None, "no operator session")
+    # visibility boxes per unit: frame_no -> [(tid, box)]
+    vis = {}
+    for r in rows:
+        if r.get("type") == "event" and r.get("src") == "render_vis" \
+                and r.get("kind") == "visibility" and r.get("box"):
+            vis.setdefault(r.get("unit"), []).append(r)
+    if not vis:
+        return _r(name, "SKIP", None,
+                  "no render_vis box rows - the ID pass ran nowhere")
+    targets = [tg for tg in (bot.targets() or {}).values()
+               if isinstance(tg.get("box"), dict)]
+    if a.get("unit") is not None:
+        targets = [tg for tg in targets if tg.get("src") == a["unit"]]
+    if not targets:
+        return _r(name, "SKIP", None,
+                  "no bot targets carry a 1078 box")
+    matched = 0
+    for tg in targets:
+        vrows = vis.get(tg.get("src")) or []
+        if not vrows:
+            continue
+        # nearest-ID-pass rows for that unit (same frame_no group)
+        t = tg.get("t_ms", 0)
+        best_frame = min(vrows, key=lambda r: abs(_row_t(r) - t))
+        group = [r["box"] for r in vrows
+                 if r.get("frame_no") == best_frame.get("frame_no")]
+        if group and max(_iou(tg["box"], b) for b in group) >= iou_min:
+            matched += 1
+    prec = matched / len(targets)
+    lo = a.get("min")
+    good = True if lo is None else prec >= float(lo)
+    return _r(name, "PASS" if good else "FAIL", round(prec, 3),
+              f"{matched}/{len(targets)} 1078 boxes matched the ID pass "
+              f"(iou {iou_min:g}, min {lo})")
+
+
 DISPATCH = {
     "journal_count": _journal_count,
     "journal_order": _journal_order,
@@ -1253,7 +1433,10 @@ DISPATCH = {
     "pod_mean": _pod_mean,
     "pod_at": _pod_at,
     "detection_precision": _detection_precision,
+    "detection_precision_render": _detection_precision_render,
     "detection_recall": _detection_recall,
+    "render_latency": _render_latency,
+    "visible_px": _visible_px,
     "time_to_detect": _time_to_detect,
     "stub_deterministic": _stub_deterministic,
     "signals_in_range": _signals_in_range,
