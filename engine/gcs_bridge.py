@@ -96,6 +96,9 @@ async def session(srv):
     global ws_conn
     import websockets
     while True:
+        # a clean close (server restart) ends `async for` without an
+        # exception - the retry delay must exist on that path too
+        delay = 5
         try:
             host, port, key = await asyncio.get_running_loop().run_in_executor(
                 None, login, srv)

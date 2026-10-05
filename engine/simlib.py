@@ -163,14 +163,16 @@ def strip_comments(text):
 
 def load_config(path):
     try:
-        return json.loads(strip_comments(open(path).read()))
+        with open(path) as f:
+            return json.loads(strip_comments(f.read()))
     except ValueError as e:
         raise SimError(f"{path}: bad JSON: {e}")
 
 
 def load_yaml(path):
     try:
-        return yaml.safe_load(open(path)) or {}
+        with open(path) as f:
+            return yaml.safe_load(f) or {}
     except OSError as e:
         raise SimError(f"cannot read {path}: {e}")
 
@@ -1098,25 +1100,71 @@ def journal_mark(u):
             for f in os.listdir(jdir) if f.endswith(".log")}
 
 
-def journal_lines(u, since=None):
-    """[(unix_ms, engine, mission, seq, kind, msg, file)], oldest file first."""
-    out = []
+def _parse_journal_line(ln, f):
+    m = _LINE.match(ln.strip())
+    if m:
+        return (int(m.group(1)), m.group(2), m.group(3),
+                m.group(4), m.group(5), m.group(6), f)
+    return (0, "-", "-", "-", "RAW", ln.strip(), f)
+
+
+def _journal_files(u):
     jdir = journal_dir(u)
-    files = sorted(
-        (os.path.join(jdir, f) for f in os.listdir(jdir) if f.endswith(".log")),
-        key=os.path.getmtime) if os.path.isdir(jdir) else []
-    for f in files:
+    if not os.path.isdir(jdir):
+        return []
+    return sorted(os.path.join(jdir, f) for f in os.listdir(jdir)
+                  if f.endswith(".log"))
+
+
+def _merge_by_time(per_file):
+    """One time-ordered list from per-file line lists. A unit appends to
+    several journal files at once (none.pre / <pkg>.pre / <run>), so file
+    order (mtime or name) is not event order. RAW lines (ts 0) inherit the
+    timestamp of the line before them in their own file."""
+    keyed = []
+    for fi, lines in enumerate(per_file):
+        last = 0
+        for li, ln in enumerate(lines):
+            last = ln[0] or last
+            keyed.append((last, fi, li, ln))
+    keyed.sort(key=lambda k: k[:3])
+    return [k[3] for k in keyed]
+
+
+def journal_lines(u, since=None):
+    """[(unix_ms, engine, mission, seq, kind, msg, file)] in event-time
+    order across every journal file of the unit."""
+    per_file = []
+    for f in _journal_files(u):
         off = since.get(f, 0) if since else 0
         with open(f, errors="replace") as fh:
             fh.seek(off)
-            for ln in fh:
-                m = _LINE.match(ln.strip())
-                if m:
-                    out.append((int(m.group(1)), m.group(2), m.group(3),
-                                m.group(4), m.group(5), m.group(6), f))
-                else:
-                    out.append((0, "-", "-", "-", "RAW", ln.strip(), f))
-    return out
+            per_file.append([_parse_journal_line(ln, f) for ln in fh])
+    return _merge_by_time(per_file)
+
+
+def journal_read_new(u, offsets):
+    """Lines appended since `offsets` ({file: byte offset}, updated in
+    place), time-ordered. Only complete lines are consumed, so a line
+    being written is picked up whole on the next call. For pollers (the
+    scenario `on:` watchers) - an index into journal_lines() is not stable
+    because new lines land in the middle of the merged order."""
+    per_file = []
+    for f in _journal_files(u):
+        try:
+            with open(f, "rb") as fh:
+                fh.seek(offsets.get(f, 0))
+                data = fh.read()
+        except OSError:
+            continue
+        end = data.rfind(b"\n") + 1
+        if not end:
+            continue
+        offsets[f] = offsets.get(f, 0) + end
+        text = data[:end].decode(errors="replace")
+        per_file.append([_parse_journal_line(ln, f)
+                         for ln in text.splitlines()])
+    return _merge_by_time(per_file)
 
 
 def line_hit(ln, rx):

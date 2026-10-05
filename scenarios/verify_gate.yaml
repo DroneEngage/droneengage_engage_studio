@@ -1,12 +1,12 @@
 # verify_gate: the P5-06 verify step must stop the run BEFORE deploy when
 # the operation has findings. support/fake_verify.js emits one error, and
-# verify.expect_errors: 0 makes the gate fail -> exit 1, verify.json holds
+# verify.expect_* declare it: the gate blocks -> exit 1, verify.json holds
 # the report, no unit ever comes up (the fleet never leaves the ground).
 version: 1
 name: verify_gate
 transport: fake
 operation: ../packages/copter_square.json
-verify: {cli: support/fake_verify.js, expect_errors: 0}
+verify: {cli: support/fake_verify.js, expect_errors: 1}
 settle_s: 1
 fleet:
   - {id: s1, cls: static}

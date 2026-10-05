@@ -105,6 +105,9 @@ class PoseFeed:
         self._port = pose_port
         self._stop = threading.Event()
         self._thread = None
+        # live runs set this: a sample older than this is not the pose now
+        # (a dead SITL stream must not keep "seeing" from where it froze)
+        self.max_age_ms = None
 
     def start(self):
         if self._port:
@@ -164,9 +167,17 @@ class PoseFeed:
 
     def pose(self):
         with self._lock:
-            pos = dict(self._pos or self._loc9102)
+            mav_pos = dict(self._pos)
             att = dict(self._att)
             loc = dict(self._loc9102)
+        if self.max_age_ms is not None:
+            now = now_ms()
+
+            def fresh(d):
+                return d if d and now - d.get("t_ms", 0) <= self.max_age_ms \
+                    else {}
+            mav_pos, att, loc = fresh(mav_pos), fresh(att), fresh(loc)
+        pos = mav_pos or loc
         if not pos:
             return None
         out = {"lat": pos["lat"], "lng": pos["lng"],
@@ -178,7 +189,7 @@ class PoseFeed:
                               loc.get("yaw",
                                       self._yaw0 * 3.14159265 / 180.0)),
                "t_ms": now_ms(),
-               "src": "mav" if self._pos else "9102"}
+               "src": "mav" if mav_pos else "9102"}
         return out
 
 
@@ -358,17 +369,33 @@ class StubBase:
     def tick(self, t_s, frame):
         raise NotImplementedError
 
+    def reset_run(self):
+        """A new scenario epoch began (a reused sim keeps the stub
+        process): drop every per-run model state so the run starts as on a
+        fresh fleet. Subclasses extend."""
+
+    POSE_MAX_AGE_MS = 3000
+
     def run(self):
         """The live loop: wait for the epoch, then tick at ~20 Hz (the
         models quantize to their own frame/sweep indices so pacing jitter
         does not change the emitted sequence)."""
+        self.pose_feed.max_age_ms = self.POSE_MAX_AGE_MS
         self.pose_feed.start()
         last_frame = None
+        run_epoch = None
         while not self.exit_me:
             t_s = self.now_s()
             if t_s is None:
                 self.exit_me_wait(0.5)
                 continue
+            ep = self.epoch.epoch_ms()
+            if ep != run_epoch:
+                if run_epoch is not None:
+                    self.log.log("RUN", {"epoch_unix_ms": ep, "reset": True})
+                    self.reset_run()
+                run_epoch = ep
+                last_frame = None
             frame = int(t_s * 20.0)
             if frame != last_frame:
                 last_frame = frame
@@ -426,9 +453,3 @@ class StubBase:
         end = time.time() + s
         while not self.exit_me and time.time() < end:
             time.sleep(min(0.02, end - time.time()))
-
-
-def now_virtual_ms(stub):
-    """ms timestamp for stub rows: virtual t under selftest (deterministic),
-    unix ms live."""
-    return getattr(stub, "_vt_ms", now_ms())

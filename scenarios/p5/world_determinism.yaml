@@ -16,8 +16,11 @@ timeline: []
 assert:
   - stub_deterministic: {module: stub_ai_box, unit: st1,
                          poses: ../../worlds/pose_cam1.jsonl, dur_s: 30}
+  # ground-level poses: the SDR model ranges on slant distance, so the
+  # airborne pose_cam1 track never hears the -10 dBm phone and the
+  # compare would be over two signal-free logs
   - stub_deterministic: {module: stub_sdr, unit: st1,
-                         poses: ../../worlds/pose_cam1.jsonl, dur_s: 30}
+                         poses: ../../worlds/pose_mast.jsonl, dur_s: 30}
   - stub_deterministic: {module: stub_payload, unit: st1,
                          poses: ../../worlds/pose_drop.jsonl, dur_s: 20}
 teardown: none

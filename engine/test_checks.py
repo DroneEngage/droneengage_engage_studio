@@ -154,6 +154,36 @@ class T(unittest.TestCase):
                 {"fc_mode": {"unit": "u1", "mode": "GUIDED"}}, c)
         self.assertEqual(r["status"], "SKIP")
 
+    def test_telemetry_value_pick(self):
+        class Tele:
+            def latest(self, n):
+                return {"bat_v": 12.6}
+
+            def rows(self, n):
+                return [{"unit": n, "bat_v": 12.6},
+                        {"unit": n, "bat_v": 10.4},
+                        {"unit": n, "bat_v": 12.3}]
+
+            def age_ms(self, n):
+                return 0
+        c, _ = ctx({}, telemetry=Tele())
+        with mock.patch.object(checks.ctl, "resolve",
+                               lambda tok, m=None: _resolve(tok, c)):
+            # latest row already recovered past the sag -> FAIL
+            r = checks.check_assertion(
+                {"telemetry_value": {"unit": "u1", "field": "bat_v",
+                                     "lt": 11.0}}, c)
+            self.assertEqual(r["status"], "FAIL")
+            # the recorded series still proves the dip happened
+            r = checks.check_assertion(
+                {"telemetry_value": {"unit": "u1", "field": "bat_v",
+                                     "lt": 11.0, "pick": "min"}}, c)
+            self.assertEqual(r["status"], "PASS")
+            r = checks.check_assertion(
+                {"telemetry_value": {"unit": "u1", "field": "bat_v",
+                                     "lt": 11.0, "pick": "bogus"}}, c)
+            self.assertEqual(r["status"], "FAIL")
+
     def test_speedup_is_median(self):
         import telemetry
         t = telemetry.Telemetry([], os.devnull)
@@ -191,17 +221,19 @@ class T(unittest.TestCase):
                 # exit 1 + errors, but no expectation -> blocked
                 self.assertFalse(scenario_runner.run_verify(scn, d))
                 self.assertIn("--json", m.call_args[0][0])
-                # negative scenario expecting exactly those errors -> ok
+                # negative scenario expecting exactly those errors:
+                # the findings match (verify.json ok) but the gate still
+                # blocks - a dirty op never reaches the fleet
                 scn["verify"] = {"cli": cli, "expect_errors": 1,
                                  "expect_rules": ["LIV-001"]}
-                self.assertTrue(scenario_runner.run_verify(scn, d))
+                self.assertFalse(scenario_runner.run_verify(scn, d))
             obj = json.dumps({"error_count": 1,
                               "errors": [{"rule": "bad"}]})
             with mock.patch.object(scenario_runner.subprocess, "run",
                                    return_value=fake(1, obj)):
                 scn["verify"] = {"cli": cli, "expect_errors": 1,
                                  "expect_rules": ["bad"]}
-                self.assertTrue(scenario_runner.run_verify(scn, d))
+                self.assertFalse(scenario_runner.run_verify(scn, d))
             with mock.patch.object(scenario_runner.subprocess, "run",
                                    return_value=fake(0, "not json")):
                 scn["verify"] = {"cli": cli}
@@ -212,6 +244,90 @@ class T(unittest.TestCase):
             with mock.patch.object(scenario_runner.subprocess, "run",
                                    return_value=fake(0, "[]")):
                 self.assertTrue(scenario_runner.run_verify(scn, d))
+
+    def test_cmp_applies_every_bound(self):
+        self.assertEqual(checks._cmp({"at_least": 1, "at_most": 3}, 2)[0],
+                         True)
+        self.assertEqual(checks._cmp({"at_least": 1, "at_most": 3}, 5)[0],
+                         False)
+        self.assertEqual(checks._cmp({"gt": 0, "lt": 10}, 10)[0], False)
+        self.assertEqual(checks._cmp({}, 0)[0], False)
+
+    def test_link_offline_open_interval_needs_min_s(self):
+        import time as _t
+        now = int(_t.time() * 1000)
+        c = {"manifest": {"name": "t", "units": [U1]},
+             "link_events": {"p1": [(now - 2000, False)]}}
+        with mock.patch.object(checks.ctl, "resolve",
+                               lambda tok, m=None: [U1]):
+            r = checks.check_assertion(
+                {"link_offline": {"unit": "u1", "min_s": 30}}, c)
+            self.assertEqual(r["value"], 0)    # open 2 s, not 30
+            c["link_events"]["p1"] = [(now - 40000, False)]
+            r = checks.check_assertion(
+                {"link_offline": {"unit": "u1", "min_s": 30}}, c)
+            self.assertEqual(r["value"], 1)
+
+    def test_journal_lines_time_order_across_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            u = {"name": "u1", "sim": "t"}
+            jd = os.path.join(d, "journal")
+            os.makedirs(jd)
+            with mock.patch.object(simlib, "journal_dir", lambda _u: jd):
+                a, b = os.path.join(jd, "a.log"), os.path.join(jd, "b.log")
+                open(b, "w").write("1000 E m 0 NOTE first\n")
+                open(a, "w").write("2000 E m 0 NOTE second\n")
+                # a later append to the older file must not reorder events
+                open(b, "a").write("3000 E m 0 NOTE third\n")
+                msgs = [ln[5] for ln in simlib.journal_lines(u)]
+                self.assertEqual(msgs, ["first", "second", "third"])
+                # incremental reads: every line once, partial lines held
+                offs = {}
+                got = [ln[5] for ln in simlib.journal_read_new(u, offs)]
+                self.assertEqual(got, ["first", "second", "third"])
+                open(a, "a").write("4000 E m 0 NOTE fou")
+                self.assertEqual(simlib.journal_read_new(u, offs), [])
+                open(a, "a").write("rth\n")
+                got = [ln[5] for ln in simlib.journal_read_new(u, offs)]
+                self.assertEqual(got, ["fourth"])
+
+    def test_wait_reply_survives_ring_trim(self):
+        import operator_bot
+        bot = operator_bot.OperatorBot(
+            {"name": "t", "units": [], "server": {"type": "fake"}})
+        for i in range(450):
+            bot._on_frame({"mt": 1087, "sd": "x", "ms": {"i": i}})
+        mark = bot.reply_mark()
+        bot._on_frame({"mt": 1094, "sd": "u1", "ms": {"a": "aborted"}})
+        hit = bot.wait_reply(lambda m: m.get("mt") == 1094, 1, since=mark)
+        self.assertIsNotNone(hit)
+        # an answer from before the mark is not an answer to this request
+        mark = bot.reply_mark()
+        self.assertIsNone(bot.wait_reply(lambda m: m.get("mt") == 1094,
+                                         0.3, since=mark))
+
+    def test_policy_decides_each_request_once(self):
+        import operator_bot
+        bot = operator_bot.OperatorBot(
+            {"name": "t", "units": [], "server": {"type": "fake"}},
+            policy={"approve": {"launch": {"after_s": 0}}})
+        sent = []
+        bot._submit = lambda coro: (sent.append(1), coro.close())
+        bot._on_frame({"mt": 1087, "sd": "u1",
+                       "ms": {"approvals": [{"req": "r1", "kind": "launch"}]}})
+        for _ in range(5):
+            bot._policy_once()
+        self.assertEqual(len(sent), 1)
+
+    def test_seed_slot_base_fits_camera_fleets(self):
+        import scenario
+        units = [{"block": "copter_camera"}, {"block": "copter_camera"}]
+        for s in range(9):
+            sb = scenario._seed_slot_base(s, units)
+            self.assertLessEqual(64000 + 10 * (sb + 1), 65535)
+        # a fleet that fits keeps the historical block
+        self.assertEqual(scenario._seed_slot_base(7, [{"block": "copter"}]),
+                         10 + 7 * 25)
 
 
 if __name__ == "__main__":

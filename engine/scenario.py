@@ -240,16 +240,49 @@ def load_scenario(path, seed=None):
         "settle_s": float(raw.get("settle_s", 30)),
         "raw": raw,
     }
+    units = _fleet_units(scn, home)
     # one port block per run: the scenario may pin slot_base, else it is
     # derived from the seed so --seeds runs never share ports (a parallel
     # `sim up` would still refuse a clash)
-    slot_base = int(raw.get("slot_base") or (10 + (seed % 9) * 25))
+    slot_base = int(raw.get("slot_base") or _seed_slot_base(seed, units))
     scn["sim"] = {
         "version": 1,
         "name": re.sub(r"[^\w-]", "_", scn["name"]),
         "server": _server_spec(scn, slot_base),
         "home": list(home),
         "slot_base": slot_base,
-        "units": _fleet_units(scn, home),
+        "units": units,
     }
     return scn
+
+
+def _seed_slot_base(seed, units):
+    """10 + 25*(seed % 9), unless that block pushes this fleet's highest
+    module port past 65535 or an FC sysid past 250 (de_camera 64000 +
+    10*k overflows from k=154) - then the seed picks among the blocks that
+    fit, so a camera fleet runs on every seed."""
+    cat = simlib.load_catalog()
+    top = simlib.DE_COMM_PORT_BASE
+    has_fc = False
+    for u in units:
+        b = simlib.load_block(u["block"])
+        has_fc |= bool(b["fc"])
+        for m in b["modules"] + list(u.get("add_modules", [])):
+            if m in cat:
+                top = max(top, int(cat[m]["port_base"]))
+    last = len(units) - 1
+
+    def fits(sb):
+        return top + 10 * (sb + last) <= 65535 and \
+            (not has_fc or sb + last <= 250)
+
+    cands = [10 + 25 * i for i in range(9)]
+    pick = cands[seed % 9]
+    if fits(pick):
+        return pick
+    ok = [c for c in cands if fits(c)]
+    if not ok:
+        raise simlib.SimError(
+            f"{len(units)} units with module ports up to {top} fit no "
+            "slot block - pin a lower slot_base or split the fleet")
+    return ok[seed % len(ok)]

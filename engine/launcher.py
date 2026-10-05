@@ -237,6 +237,10 @@ def ensure(sim_src, timeout=180):
         for u in m["units"]:
             need |= {f"{u['name']}.{p}" for p in simlib.procs_of(u)}
         if need <= alive:
+            # a test owns the machine on the reuse path too
+            for other in simlib.live_sim_names():
+                if other != sim["name"]:
+                    down(other, quiet=True)
             ctl.CTX = sim["name"]
             return m
         print(f"sim incomplete (down: {sorted(need - alive)}) - restarting")

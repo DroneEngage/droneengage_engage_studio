@@ -287,7 +287,9 @@ Format (strict - unknown keys fail against
   `journal_count` takes `total: true` to compare the sum over its units
   instead of every unit's own count.
   `realtime: true` gates timing asserts - they SKIP with a visible
-  reason when SITL speed-up is not ~1.
+  reason when SITL speed-up is not ~1. `telemetry_value` reads the last
+  sample by default; `pick: min|max` reads the extreme of the recorded
+  series (a sag that recovers by disarm still counts).
 
 Each run gets a seed-derived port block (no cross-seed collisions) and
 `results/<utc>/<name>/`: journals, per-unit and server logs,

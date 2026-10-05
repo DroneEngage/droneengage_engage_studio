@@ -187,6 +187,12 @@ class StubAIBox(StubBase):
         except Exception:
             pass
 
+    def reset_run(self):
+        self._sel = None
+        self._last_frame = -1
+        self._clutter = []
+        self._status_next = 0.0
+
     def _class_ok(self, cls):
         """A SEARCH selection limits detections to the chosen classes."""
         if not self._sel:
@@ -235,7 +241,7 @@ class StubAIBox(StubBase):
             self._maybe_detect(e.id, e.cls, lat, lng, ealt,
                                pose, att, gp_pose, frame, t_s)
 
-        self._clutter_tick(pose, att, gp_pose, frame, t_s)
+        self._clutter_tick(alt, frame, t_s)
 
     def _maybe_detect(self, tid, cls, lat, lng, ealt,
                       pose, att, gp_pose, frame, t_s):
@@ -296,17 +302,17 @@ class StubAIBox(StubBase):
         import time
         return time.monotonic_ns() // 1000 - 50000
 
-    def _clutter_tick(self, pose, att, gp_pose, frame, t_s):
+    def _clutter_tick(self, alt, frame, t_s):
         """False positives: spawns at rate_per_km2_min over the frame's
         ground footprint, each lives lifetime_s and reports like a
         detection with the clutter class. tid "clutter" lets
-        detection_precision tell them apart."""
+        detection_precision tell them apart. `alt` is the camera height
+        tick() resolved (rel alt, or mount_height_m on a static mast)."""
         cam = self.cam
         cl = self.world.clutter
         rate = float(cl.get("rate_per_km2_min") or 0.0)
         if rate <= 0.0:
             return
-        alt = pose["rel_alt_m"]
         fn = math.tan(math.radians(cam["hfov_deg"]) / 2)
         fv = math.tan(math.radians(cam["vfov_deg"]) / 2)
         area_km2 = (2 * alt * fn) * (2 * alt * fv) / 1e6

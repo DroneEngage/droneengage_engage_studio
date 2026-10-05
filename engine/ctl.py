@@ -553,7 +553,11 @@ def wait_ready(units, timeout, marks=None):
     t0 = time.time()
     while pending and time.time() - t0 < timeout:
         for key, (u, rx) in list(pending.items()):
-            since = (marks or {}).get(u["name"]) or simlib.boot_mark(u)
+            # a mark of {} (no journal file yet) means "from the start",
+            # not "fall back to the boot mark" - that would match the
+            # ready line of the previous boot
+            since = marks[u["name"]] if marks and u["name"] in marks \
+                else simlib.boot_mark(u)
             if simlib.journal_match(u, rx, since):
                 print(f"{u['name']}: {key[1]} ready ({time.time() - t0:.0f}s)")
                 del pending[key]
@@ -780,8 +784,10 @@ def _bridge_gcs_roundtrip(build, secs):
             {"ty": "s", "mt": 9005, "ms": {}}), 3):
         ts = (g.get("ms") or {}).get("ts")
         if ts:
-            # the pong's server-side stamp, aged by the reply's delay
-            fleet_now = ts + (time.time() - t0) * 500.0
+            # the pong is stamped right after the ping goes out, but the
+            # stream is read only after the whole window - age the stamp
+            # by everything since the ping (over-estimates by <= one RTT)
+            fleet_now = ts + (time.time() - t0) * 1000.0
     frames = []
     for tg, msg in build(fleet_now):
         msg["tg"] = tg

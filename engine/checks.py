@@ -17,7 +17,8 @@ Journal assertions keep the runner.py semantics (same helpers, same
   - journals:            proc_alive/proc_dead, operator_log_count,
                          no_fc_command_to_static
   - telemetry.jsonl:     distance_to, no_sep_violation, fc_mode,
-                         telemetry_value (the SITL "tlog")
+                         telemetry_value (the SITL "tlog"; pick: latest|
+                         min|max over the recorded series)
   - truth JSONL:         distance_to, coverage_complete - rows
                          {tid|id|target, t_ms|t|ms, lat, lng, alt|alt_m}
                          and coverage rows {type:"coverage", tid, covered};
@@ -36,6 +37,7 @@ import json
 import math
 import os
 import re
+import time
 
 import simlib
 import ctl
@@ -206,20 +208,26 @@ def capture_baseline(ctx):
 
 # ---------------------------------------------------------------- checks
 
+_CMP_OPS = (("eq", "==", lambda x, w: x == w),
+            ("equals", "==", lambda x, w: x == w),
+            ("at_least", ">=", lambda x, w: x >= w),
+            ("at_most", "<=", lambda x, w: x <= w),
+            ("lt", "<", lambda x, w: x < w), ("le", "<=", lambda x, w: x <= w),
+            ("gt", ">", lambda x, w: x > w), ("ge", ">=", lambda x, w: x >= w))
+
+
 def _cmp(a, v, detail=""):
-    """{eq|equals, at_least, at_most, lt, gt, le, ge} on a number."""
-    if "eq" in a or "equals" in a:
-        want = a.get("eq", a.get("equals"))
-        return v == want, f"{v} == {want}"
-    if "at_least" in a:
-        return v >= a["at_least"], f"{v} >= {a['at_least']}"
-    if "at_most" in a:
-        return v <= a["at_most"], f"{v} <= {a['at_most']}"
-    for k, op in (("lt", lambda x, w: x < w), ("le", lambda x, w: x <= w),
-                  ("gt", lambda x, w: x > w), ("ge", lambda x, w: x >= w)):
+    """{eq|equals, at_least, at_most, lt, gt, le, ge} on a number. Every
+    bound given must hold ({at_least: 1, at_most: 3} is a range); none
+    given means >= 1."""
+    good, txt = True, []
+    for k, sym, op in _CMP_OPS:
         if k in a:
-            return op(v, a[k]), f"{v} {k} {a[k]}"
-    return v >= 1, f"{v} >= 1"
+            good &= op(v, a[k])
+            txt.append(f"{v} {sym} {a[k]}")
+    if not txt:
+        return v >= 1, f"{v} >= 1"
+    return good, " and ".join(txt)
 
 
 def _journal_count(name, a, ctx):
@@ -779,16 +787,19 @@ def _link_offline(name, a, ctx):
     interval still open at assert time counts once."""
     events = ctx.get("link_events") or {}
     min_s = float(a.get("min_s", 0))
+    now_ms = int(time.time() * 1000)
     ok, bits, total = True, [], 0
     for u in _units(a, ctx):
         ev = events.get(u["party_id"], [])
         n = 0
         t_off = None
-        for t, online in ev + [(float("inf"), True)]:
+        # the sentinel closes an interval still open now: it counts only
+        # if it has already lasted min_s
+        for t, online in ev + [(now_ms, True)]:
             if not online and t_off is None:
                 t_off = t
             elif online and t_off is not None:
-                dur = (t - t_off) / 1000.0 if t != float("inf") else min_s
+                dur = (t - t_off) / 1000.0
                 if dur >= min_s:
                     n += 1
                 t_off = None
@@ -822,20 +833,33 @@ def _telemetry_value(name, a, ctx):
     tele = ctx.get("telemetry")
     if not tele:
         return _r(name, "SKIP", None, "no telemetry recorder")
+    pick = a.get("pick", "latest")
     ok, bits, vals = True, [], []
     for u in _units(a, ctx):
-        old = _stale(tele, u["name"], a)
-        if old:
-            return _r(name, "SKIP", None, old)
-        row = tele.latest(u["name"])
-        v = row.get(a["field"])
+        lbl = a["field"]
+        if pick == "latest":
+            old = _stale(tele, u["name"], a)
+            if old:
+                return _r(name, "SKIP", None, old)
+            v = tele.latest(u["name"]).get(a["field"])
+        elif pick in ("min", "max"):
+            # a sag/spike that recovers before the assert window (SITL
+            # resets consumed_mah on disarm) still lives in the series
+            series = [r.get(a["field"]) for r in tele.rows(u["name"])]
+            series = [x for x in series if isinstance(x, (int, float))
+                      and not isinstance(x, bool)]
+            v = (min if pick == "min" else max)(series) if series else None
+            lbl = f"{pick}({a['field']})"
+        else:
+            return _r(name, "FAIL", None,
+                      f"bad pick {pick!r} (latest|min|max)")
         if v is None:
-            bits.append(f"{u['name']}: no {a['field']} - SKIP")
+            bits.append(f"{u['name']}: no {lbl} - SKIP")
             return _r(name, "SKIP", None, "; ".join(bits))
         vals.append(v)
         good, txt = _cmp(a, v)
         ok &= good
-        bits.append(f"{u['name']}: {a['field']} {txt}")
+        bits.append(f"{u['name']}: {lbl} {txt}")
     return _r(name, "PASS" if ok else "FAIL",
               vals[0] if len(vals) == 1 else None, "; ".join(bits))
 
