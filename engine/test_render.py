@@ -53,6 +53,16 @@ def run_assert(a, ctx):
 
 class T(unittest.TestCase):
 
+    def setUp(self):
+        # the machine's sim.local.env may re-point the camera labels
+        # (SIM_V4L2_*_LABELS) - tests exercise the default scheme unless
+        # they set the override themselves
+        local = {k: v for k, v in simlib._LOCAL.items()
+                 if not k.startswith("SIM_V4L2_")}
+        p = mock.patch.object(simlib, "_LOCAL", local)
+        p.start()
+        self.addCleanup(p.stop)
+
     # -------------------------------------------------- simlib wiring
 
     def test_cam3d_block_expands_with_cam_index(self):
@@ -87,7 +97,8 @@ class T(unittest.TestCase):
         spec = {"render": {"mode": "cameras"},
                 "units": [{"block": "copter_cam3d", "name": "cam1"}]}
         sim = simlib.load_sim(spec, base_dir=ROOT)
-        fake_labels = {"DE-SRC-0": "/dev/video6"}
+        fake_labels = {"DE-SRC-0": "/dev/video6",
+                       "DE-AI-0": "/dev/video7"}
         with tempfile.TemporaryDirectory() as td, \
                 mock.patch.object(simlib, "MAVLINK3DMAP_DIR", td), \
                 mock.patch.object(simlib, "run_dir",
@@ -142,6 +153,21 @@ class T(unittest.TestCase):
             with self.assertRaises(simlib.SimError) as e:
                 simlib.gen_render(sim)
             self.assertIn("setup_v4l2loopback.sh", str(e.exception))
+
+    def test_cam_labels_env_override(self):
+        """Machines with an existing named-VC setup re-point the sim at
+        their labels via SIM_V4L2_SRC_LABELS / SIM_V4L2_AI_LABELS."""
+        env = {"SIM_V4L2_SRC_LABELS": "SIM-CAM1,SIM-CAM2",
+               "SIM_V4L2_AI_LABELS": "DE-AI"}
+        with mock.patch.object(simlib, "_LOCAL", {}), \
+                mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(simlib.cam_labels(0), ("DE-SRC-0", "DE-AI-0"))
+            self.assertEqual(simlib.cam_labels(2), ("DE-SRC-2", "DE-AI-2"))
+        with mock.patch.object(simlib, "_LOCAL", {}), \
+                mock.patch.dict(os.environ, env):
+            self.assertEqual(simlib.cam_labels(0), ("SIM-CAM1", "DE-AI"))
+            # index past the lists falls back to the default scheme
+            self.assertEqual(simlib.cam_labels(1), ("SIM-CAM2", "DE-AI-1"))
 
     def test_prepare_sim_injects_geo_for_yolo_unit(self):
         """de_yolo_ai units get the world camera's geo_projection on

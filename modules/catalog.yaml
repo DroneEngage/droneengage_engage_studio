@@ -70,8 +70,8 @@ de_yolo_ai:
   local: {arg: "-b", file: de_yolo_ai_generic.config.local}
   ready_re: "Found primary device"
   wire:
-    source_video_device_name: "DE-SRC-{cam_index}"
-    output_video_device_name: "DE-AI-{cam_index}"
+    source_video_device_name: "{src_label}"
+    output_video_device_name: "{ai_label}"
     model_path: "{module_dir}/yolo11n.onnx"
 
 de_tracker:

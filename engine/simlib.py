@@ -596,18 +596,20 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                            f"{b['name']} does not run it")
         u["config"][mod] = deep_merge(u["config"].get(mod, {}), over)
     # P5-15 D7: rendered-camera units get a stable per-sim index; the
-    # de_yolo_ai catalog wire turns it into the DE-SRC-k / DE-AI-k card
-    # labels the module finds by name, and the paired de_camera reads
-    # yolo's annotated output device.
+    # de_yolo_ai catalog wire turns it into the source/AI card labels
+    # (cam_labels - DE-SRC-k/DE-AI-k or the machine's named-VC labels)
+    # the module finds by name, and the paired de_camera reads yolo's
+    # annotated output device.
     if "de_yolo_ai" in u["modules"]:
         k = sum(1 for x in sim["units"]
                 if "de_yolo_ai" in x["modules"])
         u["cam_index"] = k
+        u["cam_labels"] = cam_labels(k)
         if "de_camera" in u["modules"]:
             u["config"]["de_camera"] = deep_merge(
                 {"camera": {"camera_list":
                             [{"name": "AI",
-                              "device_name": f"DE-AI-{k}"}]}},
+                              "device_name": u["cam_labels"][1]}]}},
                 u["config"].get("de_camera") or {})
     # per-unit account: the drone's own login, like a real vehicle.
     # `{name}` in user expands to the unit name so `count:` fleets get
@@ -960,7 +962,9 @@ def gen_unit(u, sim, catalog):
 
     # ---- generic s2s modules ----
     ctx = {"unit": u["name"], "comm_port": u["ports"]["de_comm"],
-           "cam_index": u.get("cam_index", 0)}
+           "cam_index": u.get("cam_index", 0),
+           "src_label": u.get("cam_labels", ("", ""))[0],
+           "ai_label": u.get("cam_labels", ("", ""))[1]}
     if u["fc"]:
         ctx.update({k: u["fc"][k] for k in ("fcb_port", "pilot_port", "sysid")})
     for m in u["modules"]:
@@ -1172,6 +1176,23 @@ def _render_script(sim, proc, cwd, cmd):
     return path
 
 
+def cam_labels(k):
+    """v4l2loopback card labels for rendered-camera unit k: default
+    DE-SRC-k / DE-AI-k (what tools/setup_v4l2loopback.sh creates). On a
+    machine that already runs a named-VC setup, comma lists in
+    sim.local.env re-point the sim at the existing labels - e.g.
+    SIM_V4L2_SRC_LABELS=SIM-CAM1 and SIM_V4L2_AI_LABELS=DE-AI reuse the
+    camera repo's sh_camera_create_named_vc.sh devices instead."""
+    srcs = [s.strip() for s in
+            (setting("SIM_V4L2_SRC_LABELS", "") or "").split(",")
+            if s.strip()]
+    ais = [s.strip() for s in
+           (setting("SIM_V4L2_AI_LABELS", "") or "").split(",")
+           if s.strip()]
+    return ((srcs[k] if k < len(srcs) else f"DE-SRC-{k}"),
+            (ais[k] if k < len(ais) else f"DE-AI-{k}"))
+
+
 # /sys scan is a function so tests can point it at a fixture tree
 def v4l2_label_map(sysfs_root="/sys/class/video4linux"):
     """card label -> /dev/videoN for every V4L2 device on the box."""
@@ -1205,17 +1226,21 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
     labels = v4l2_label_map()
     mapping = []
     for u in cam_units:
-        label = f"DE-SRC-{u['cam_index']}"
-        dev = labels.get(label)
-        if not dev:
+        src_label, ai_label = u.get("cam_labels",
+                                    cam_labels(u["cam_index"]))
+        missing = [l for l in (src_label, ai_label)
+                   if l not in labels]
+        if missing:
             n = len(cam_units)
             raise SimError(
-                f"render: v4l2loopback label {label!r} not found - "
+                f"render: v4l2loopback label(s) {missing} not found - "
                 f"run 'sudo tools/setup_v4l2loopback.sh {max(1, n)}' "
-                "first (one-time root setup, P5-15 D6)")
+                "for the sim's own DE-SRC/DE-AI pair, or reuse an "
+                "existing named-VC setup via SIM_V4L2_SRC_LABELS / "
+                "SIM_V4L2_AI_LABELS in sim.local.env (P5-15)")
         mapping.append({"unit_idx": sim["units"].index(u),
                         "name": u["name"], "cam_index": u["cam_index"],
-                        "device": dev, "fps": 10})
+                        "device": labels[src_label], "fps": 10})
     if not os.path.isfile(sink_js):
         raise SimError(f"render: {sink_js} not found - Mavlink3DMap needs "
                        "the P5-15 render_sink backend")
