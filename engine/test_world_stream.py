@@ -99,9 +99,13 @@ class T(unittest.TestCase):
         on = _sim(render={"mode": "viewer"}, slot_base=10)
         self.assertEqual(on["render"]["stream_port"], 61010)
         self.assertEqual(on["render"]["mav_port"], 16460)
+        self.assertEqual(on["render"]["mav_ws_port"], 8811)
+        self.assertEqual(on["render"]["web_port"], 8080)
         ports = simlib.used_ports(on)
         self.assertIn(61010, ports)
         self.assertIn(16460, ports)
+        self.assertIn(8811, ports)
+        self.assertIn(8080, ports)
         cam1 = next(u for u in on["units"] if u["name"] == "cam1")
         self.assertEqual(cam1["fc"]["mav_port"], 16460)
         self.assertEqual(cam1["fc"]["params"]["SR4_POSITION"], 10)
@@ -112,8 +116,9 @@ class T(unittest.TestCase):
     def test_absent_render_is_identical(self):
         off = _sim(render=None, slot_base=10)
         self.assertIsNone(off["render"])
-        self.assertNotIn(61010, simlib.used_ports(off))
-        self.assertNotIn(16460, simlib.used_ports(off))
+        ports = simlib.used_ports(off)
+        for p in (61010, 16460, 8811, 8080):
+            self.assertNotIn(p, ports)
         for u in off["units"]:
             if u["fc"]:
                 self.assertNotIn("mav_port", u["fc"])
@@ -144,8 +149,13 @@ class T(unittest.TestCase):
         open(truth, "w").close()
         log = os.path.join(d, "worldstream.log")
         epoch = int(time.time() * 1000) - 3000
+
+        class _Bot:
+            def targets(self):
+                return {"tid_42": {"cls": "person",
+                                   "pos": {"lat": 1.5, "lng": 2.5}}}
         stream = world_stream.WorldStream(w, sim, epoch, 61999,
-                                          truth, log)
+                                          truth, log, bot=_Bot())
         stream.start()
         try:
             hello, frames = asyncio.run(
@@ -160,6 +170,14 @@ class T(unittest.TestCase):
         self.assertEqual(len(cmds), 1)
         self.assertEqual(cmds[0]["cmd"], "payload_release")
         self.assertEqual(cmds[0]["unit"], "cam1")
+        # P5-14 overlay: a 1 Hz belief layer rides the same ticks
+        ols = [f["overlay"] for f in ticks if f.get("overlay")]
+        self.assertTrue(ols)
+        last = ols[-1]
+        self.assertEqual(last["states"].get("person_open"), "seen")
+        self.assertEqual(last["states"].get("person_hut"), "occluded")
+        self.assertEqual(last["targets"]["tid_42"]["cls"], "person")
+        self.assertEqual(last["detections"][-1]["tid"], "person_open")
         evs = [json.loads(ln) for ln in open(truth)
                if json.loads(ln).get("type") == "event"]
         self.assertEqual(len(evs), 1)
@@ -187,6 +205,18 @@ async def _client(port, truth_path, seconds):
                 {"src": "payload", "type": "detection", "unit": "cam1",
                  "tid": "payload", "cls": "payload_drop",
                  "lat": 1.0, "lng": 2.0, "alt_m": 20.0,
+                 "t_ms": int(time.time() * 1000)}) + "\n")
+            # P5-14 overlay rows: a sent look (seen + a detection
+            # marker) and an occluded one
+            f.write(json.dumps(
+                {"src": "ai", "type": "detection", "unit": "cam1",
+                 "tid": "person_open", "cls": "person", "sent": True,
+                 "lat": 1.0, "lng": 2.0, "alt_m": 0.0,
+                 "t_ms": int(time.time() * 1000)}) + "\n")
+            f.write(json.dumps(
+                {"src": "ai", "type": "detection", "unit": "cam1",
+                 "tid": "person_hut", "cls": "person", "sent": False,
+                 "why": "occluded",
                  "t_ms": int(time.time() * 1000)}) + "\n")
         t0 = time.time()
         while time.time() - t0 < seconds:

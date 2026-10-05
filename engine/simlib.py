@@ -93,6 +93,10 @@ COMM_REPO = repo_dir("DE_COMM_DIR", "droneengage_communication")
 SERVER_REPO = repo_dir("DE_SERVER_DIR", "droneengage_server")
 AUTH_REPO = repo_dir("DE_AUTH_DIR", "droneengage_authenticator")
 WEBCLIENT_REPO = repo_dir("DE_WEBCLIENT_DIR", "droneengage_webclient_react")
+# P5-14: Mavlink3DMap lives outside the DE_CODE tree; only needed for
+# render modes that launch the viewer
+MAVLINK3DMAP_DIR = setting("MAVLINK3DMAP_DIR",
+                           os.path.expanduser("~/code/Mavlink3DMap"))
 
 SERVER_PORT = 62008                 # wss; control port is +1
 SLOT_BASE = int(setting("SIM_SLOT_BASE", 10))
@@ -506,21 +510,27 @@ RENDER_MODES = ("viewer", "cameras", "physics", "full")
 
 # P5-13: the world stream binds 127.0.0.1 like every sim port; the
 # Mavlink3DMap UDP port rides the same slot block so --seeds runs and
-# parallel sims never share it
+# parallel sims never share it. P5-14 adds the bridge's WebSocket port
+# (8801+slot = 8811 on the default slot, Mavlink3DMap's own default)
+# and the viewer's http port (8070+slot = 8080, again its default).
 STREAM_PORT_BASE = 61000
 MAV_PORT_BASE = 16450
+MAV_WS_PORT_BASE = 8801
+WEB_PORT_BASE = 8070
 
 
 def _render_spec(raw, slot_base):
-    """render: {mode, headless, stream_port, mav_port} -> a normalized
-    dict, or None when the scenario did not opt in (D1: absent render
-    means no process, port or param changes - the sim hash, generated
-    from the unit specs, stays byte-identical to before)."""
+    """render: {mode, headless, stream_port, mav_port, mav_ws_port,
+    web_port} -> a normalized dict, or None when the scenario did not
+    opt in (D1: absent render means no process, port or param changes -
+    the sim hash, generated from the unit specs, stays byte-identical
+    to before)."""
     if raw is None:
         return None
     if not isinstance(raw, dict):
         raise SimError("render: must be a mapping")
-    bad = set(raw) - {"mode", "headless", "stream_port", "mav_port"}
+    bad = set(raw) - {"mode", "headless", "stream_port", "mav_port",
+                      "mav_ws_port", "web_port"}
     if bad:
         raise SimError(f"render: unknown keys {sorted(bad)}")
     mode = raw.get("mode", "viewer")
@@ -532,7 +542,11 @@ def _render_spec(raw, slot_base):
             "stream_port": int(raw.get("stream_port",
                                        STREAM_PORT_BASE + slot_base)),
             "mav_port": int(raw.get("mav_port",
-                                    MAV_PORT_BASE + slot_base))}
+                                    MAV_PORT_BASE + slot_base)),
+            "mav_ws_port": int(raw.get("mav_ws_port",
+                                       MAV_WS_PORT_BASE + slot_base)),
+            "web_port": int(raw.get("web_port",
+                                    WEB_PORT_BASE + slot_base))}
 
 
 def check_account(user, code, where):
@@ -669,6 +683,10 @@ def server_dir(sim):
     return os.path.join(run_dir(sim), "server")
 
 
+def render_dir(sim):
+    return os.path.join(run_dir(sim), "render")
+
+
 def manifest_path(sim):
     return os.path.join(run_dir(sim), "sim.json")
 
@@ -778,7 +796,9 @@ def used_ports(sim):
             ports.update((srv["auth_port"], srv["auth_s2s_port"]))
     if sim.get("render"):
         ports.update((sim["render"]["stream_port"],
-                      sim["render"]["mav_port"]))
+                      sim["render"]["mav_port"],
+                      sim["render"]["mav_ws_port"],
+                      sim["render"]["web_port"]))
     for u in sim["units"]:
         ports.update(u["ports"].values())
         if u["fc"]:
@@ -1118,6 +1138,61 @@ def check_binaries(sim):
                        + "\n  ".join(missing))
 
 
+def _render_script(sim, proc, cwd, cmd):
+    """launch.<proc>.sh under run/<sim>/render/ for the synthetic
+    'render' owner (pidfiles render.<proc>.pid)."""
+    path = os.path.join(render_dir(sim["name"]), f"launch.{proc}.sh")
+    write_text(path,
+               "#!/bin/bash\ncd '%s'\necho $$ > '%s'\nexec %s\n"
+               % (cwd, pid_path(sim["name"], "render", proc), cmd), 0o755)
+    return path
+
+
+def gen_render(sim):
+    """P5-14 D7: render.mode viewer|full (and not headless) launches
+    Mavlink3DMap: the UDP->WebSocket bridge bound to render.mav_port
+    serving MAVLink on ws render.mav_ws_port, and a vite dev server on
+    render.web_port. Scripts and logs live under run/<sim>/render/;
+    the de_sim_marker.cjs preload puts the run dir in the node cmdline
+    so pid_is_ours/`sim down` treat them like every other process."""
+    render = sim.get("render") or {}
+    if not render or render["mode"] not in ("viewer", "full") \
+            or render["headless"]:
+        return []
+    m3d = MAVLINK3DMAP_DIR
+    bridge = os.path.join(m3d, "backend", "src", "udp2websocket.js")
+    # npm workspaces hoist vite to the repo root; a standalone
+    # frontend install keeps it under frontend/node_modules
+    vite_js = next((p for p in (
+            os.path.join(m3d, "node_modules", "vite", "bin", "vite.js"),
+            os.path.join(m3d, "frontend", "node_modules", "vite",
+                         "bin", "vite.js"))
+            if os.path.isfile(p)), None)
+    for p in (bridge, vite_js):
+        if not p or not os.path.isfile(p):
+            raise SimError(
+                f"render: {p} not found - set MAVLINK3DMAP_DIR in "
+                "sim.local.env (or render.headless: true to run the "
+                "stream without the viewer)")
+    rdir = render_dir(sim["name"])
+    os.makedirs(rdir, exist_ok=True)
+    os.makedirs(pids_dir(sim["name"]), exist_ok=True)
+    marker = os.path.join(rdir, "de_sim_marker.cjs")
+    write_text(marker,
+               "// sim pid marker: preloaded via node --require so the "
+               "render\n// procs' cmdline names run/<sim>/ "
+               "(simlib.pid_is_ours).\n")
+    _render_script(sim, "mav_bridge", os.path.join(m3d, "backend"),
+                   "'%s' --require '%s' ./src/udp2websocket.js -p %d -w %d"
+                   % (NODE, marker, render["mav_port"],
+                      render["mav_ws_port"]))
+    _render_script(sim, "web", os.path.join(m3d, "frontend"),
+                   "'%s' --require '%s' '%s' --port %d --strictPort "
+                   "--host 127.0.0.1"
+                   % (NODE, marker, vite_js, render["web_port"]))
+    return ["mav_bridge", "web"]
+
+
 def generate(sim, sim_file=None):
     """Write run/<sim>/<unit>/... for every unit and the sim's manifest."""
     catalog = load_catalog()
@@ -1127,9 +1202,11 @@ def generate(sim, sim_file=None):
     for u in units:
         gen_unit(u, sim, catalog)
     server_procs = gen_server(sim)
+    render_procs = gen_render(sim)
     manifest = {"version": 1, "name": sim["name"], "sim_file": sim_file,
                 "sim_hash": sim["hash"], "server": sim["server"],
                 "server_procs": server_procs,
+                "render_procs": render_procs,
                 "render": sim.get("render"),
                 "home": sim["home"], "units": units}
     write_json(manifest_path(sim["name"]), manifest, indent=2)

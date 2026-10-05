@@ -270,11 +270,20 @@ Format (strict - unknown keys fail against
   `{mode: viewer|cameras|physics|full, headless}` opens a
   `de.worldstream/1` WebSocket server inside the runner on
   `61000 + slot_base` - hello snapshot + 10 Hz entity/clutter ticks +
-  `cmd payload_release`, with client `event` frames appended to
+  `cmd payload_release` + a 1 Hz `overlay` block (bot world-model
+  targets, per-tid seen/miss/occluded states, recent detection
+  markers, P5-14), with client `event` frames appended to
   truth.jsonl as `src: render` - and gives every FC unit a
   `--serial4 udpclient` MAVLink fan-out to `16450 + slot_base` for
   Mavlink3DMap. Absent = today's headless behaviour, unchanged ports
-  and sim hash; `engine/worldstream_probe.py` is the test client).
+  and sim hash; `engine/worldstream_probe.py` is the test client.
+  P5-14: `mode: viewer|full` with `headless: false` also launches
+  Mavlink3DMap's `udp2websocket.js` (UDP `16450 + slot_base` ->
+  ws `8801 + slot_base`) and a vite dev server on `8070 + slot_base`
+  from `$MAVLINK3DMAP_DIR` (sim.local.env), pid-tracked under
+  `run/<sim>/render/` - `./sim up` prints the viewer URL
+  `http://127.0.0.1:<web>/?world=ws://127.0.0.1:<stream>`
+  and opens no browser. `headless: true` streams without them).
 - `fleet:` entries take `id`, `cls` (`copter|plane|rover|static|
   comm_only` or a `blocks/` name), `role`, absolute `home`/`base`,
   relative `at`, `modules`, `params`, `config`, `account`. `modules`

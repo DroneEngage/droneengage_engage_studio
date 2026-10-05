@@ -16,7 +16,10 @@ back into the same truth.jsonl the assertions read (D6).
      "units":[{"name","sysid","block","camera":{..},"payload":{..}}]}
     {"t":"tick","t_s":12.3,"t_unix_ms":0,
      "entities":[{"id","lat","lng","alt_m","heading_deg","moving"}],
-     "clutter":[{"id","lat","lng","cls"}]}
+     "clutter":[{"id","lat","lng","cls"}],
+     "overlay":{"targets":{tid:{cls,pos}},        # every 10th tick
+               "states":{tid:"seen|miss|occluded"},
+               "detections":[{tid,cls,lat,lng,alt_m,t_ms}]}}
     {"t":"cmd","cmd":"payload_release","unit":"cam1","t_unix_ms":0}
 
     {"t":"event","kind":"payload_landed|visibility|collision|
@@ -39,6 +42,8 @@ import time
 
 SCHEMA = "de.worldstream/1"
 TICK_HZ = 10.0
+OVERLAY_EVERY_TICKS = 10        # overlay rides every 10th tick (1 Hz)
+MAX_DETECTIONS = 40             # recent-detection marker cap
 
 # catalog modules that make a unit a camera / a payload carrier in
 # hello.units (the world supplies the camera model; the renderer needs
@@ -93,6 +98,19 @@ def tick_frame(world, epoch_ms):
             "entities": ents, "clutter": world.clutter_at(t_s, TICK_HZ)}
 
 
+def overlay_frame(bot, states, detections):
+    """P5-14 D5: the belief layer, sent once a second. targets is the
+    operator's world model (reported pos + cls - the viewer draws the
+    uncertainty ring), states the latest truth-row outcome per tid
+    (seen/miss/occluded), detections the recent sent look rows."""
+    targets = {}
+    if bot is not None:
+        for tid, r in (bot.targets() or {}).items():
+            targets[tid] = {"cls": r.get("cls"), "pos": r.get("pos")}
+    return {"targets": targets, "states": dict(states),
+            "detections": list(detections)}
+
+
 class WorldStream:
     """The per-run de.worldstream/1 server. start() spawns a daemon
     thread with its own asyncio loop; stop() shuts it down. Client
@@ -100,18 +118,21 @@ class WorldStream:
     run/<sim>/worldstream.log (collected into results/)."""
 
     def __init__(self, world, manifest, epoch_ms, port, truth_path,
-                 log_path):
+                 log_path, bot=None):
         self.world = world
         self.manifest = manifest
         self.epoch_ms = epoch_ms
         self.port = int(port)
         self.truth_path = truth_path
         self.log_path = log_path
+        self.bot = bot                      # overlay.targets (P5-14)
         self._clients = set()
         self._thread = None
         self._loop = None
         self._closing = None
         self._counts = {"events": 0, "ticks": 0, "cmds": 0}
+        self._states = {}                   # tid -> seen|miss|occluded
+        self._detections = []               # recent sent look rows
         self._stop = threading.Event()
 
     # ------------------------------------------------------- lifecycle
@@ -159,7 +180,11 @@ class WorldStream:
     async def _tick_loop(self):
         import websockets
         while True:
-            msg = json.dumps(tick_frame(self.world, self.epoch_ms))
+            frame = tick_frame(self.world, self.epoch_ms)
+            if self._counts["ticks"] % OVERLAY_EVERY_TICKS == 0:
+                frame["overlay"] = overlay_frame(
+                    self.bot, self._states, self._detections)
+            msg = json.dumps(frame)
             self._counts["ticks"] += 1
             if self._clients:
                 websockets.broadcast(self._clients, msg)
@@ -189,6 +214,7 @@ class WorldStream:
                     row = json.loads(ln)
                 except ValueError:
                     continue
+                self._observe_row(row)
                 if row.get("cls") != "payload_drop":
                     continue
                 cmd = {"t": "cmd", "cmd": "payload_release",
@@ -199,6 +225,27 @@ class WorldStream:
                 if self._clients:
                     websockets.broadcast(self._clients,
                                          json.dumps(cmd))
+
+    def _observe_row(self, row):
+        """truth.jsonl look rows -> overlay state: a stub row with a
+        tid and a sent/why verdict is the LATEST outcome for that
+        entity (D4 - the viewer draws occluded entities as outlines),
+        and every sent row carries the reported position for a
+        detection marker."""
+        tid = row.get("tid")
+        if not tid:
+            return
+        if row.get("sent"):
+            self._states[tid] = "seen"
+            if row.get("lat") is not None:
+                self._detections.append(
+                    {"tid": tid, "cls": row.get("cls"),
+                     "lat": row["lat"], "lng": row.get("lng"),
+                     "alt_m": row.get("alt_m"),
+                     "t_ms": row.get("t_ms")})
+                del self._detections[:-MAX_DETECTIONS]
+        elif row.get("why") in ("miss", "occluded"):
+            self._states[tid] = row["why"]
 
     # --------------------------------------------------------- client
 

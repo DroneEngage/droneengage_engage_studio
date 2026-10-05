@@ -576,6 +576,11 @@ def _collect(scn, m, out, results, verify, extra):
     ws_log = os.path.join(simlib.run_dir(m["name"]), "worldstream.log")
     if os.path.isfile(ws_log):
         shutil.copy(ws_log, os.path.join(out, "worldstream.log"))
+    # P5-14: Mavlink3DMap bridge/web logs when the viewer launched
+    rdir = os.path.join(simlib.render_dir(m["name"]), "logs")
+    if os.path.isdir(rdir):
+        shutil.copytree(rdir, os.path.join(out, "render"),
+                        dirs_exist_ok=True)
     # P5-08 stub logs (stubs/<unit>.log) - the byte-compare artifacts for
     # the determinism acceptance
     sdir = os.path.join(simlib.run_dir(m["name"]), "stubs")
@@ -674,7 +679,7 @@ def run_scenario(t_file, seed=None, keep=False):
             stream = world_stream.WorldStream(
                 wld, m, epoch_ms, render["stream_port"],
                 world_mod.truth_path(m["name"]),
-                world_stream.log_path(m["name"]))
+                world_stream.log_path(m["name"]), bot=bot)
             stream.start()
             ctx["world_stream"] = stream
 

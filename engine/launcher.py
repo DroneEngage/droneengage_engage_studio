@@ -203,6 +203,23 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False):
     if not wait_port(srv["control_port"], 15):
         sys.exit(f"control port did not open - see {rdir}/server/logs/")
 
+    # ---- render viewer (P5-14): Mavlink3DMap bridge + vite dev ----
+    render = m.get("render") or {}
+    for p in m.get("render_procs", []):
+        ctl.start_proc("render", p)
+    if render and m.get("render_procs"):
+        if not wait_port(render["mav_ws_port"], 15):
+            sys.exit(f"mav_bridge did not open {render['mav_ws_port']} - "
+                     f"see {rdir}/render/logs/mav_bridge.log")
+        # vite cold-starts slowly on a big dep tree; warn, don't fail -
+        # the URL still works once it is up
+        if not wait_port(render["web_port"], 30):
+            print(f"web viewer slow to open {render['web_port']} - "
+                  f"see {rdir}/render/logs/web.log")
+        print(f"render viewer: http://127.0.0.1:{render['web_port']}"
+              f"/?world=ws://127.0.0.1:{render['stream_port']}"
+              f"&mavlink=ws://127.0.0.1:{render['mav_ws_port']}")
+
     # ---- units ----
     for u in m["units"]:
         simlib.save_boot_mark(u)
@@ -234,6 +251,7 @@ def ensure(sim_src, timeout=180):
     if m and m.get("sim_hash") == sim["hash"]:
         alive = set(simlib.read_pids(sim["name"]))
         need = {f"server.{p}" for p in m["server_procs"]}
+        need |= {f"render.{p}" for p in m.get("render_procs", [])}
         for u in m["units"]:
             need |= {f"{u['name']}.{p}" for p in simlib.procs_of(u)}
         if need <= alive:

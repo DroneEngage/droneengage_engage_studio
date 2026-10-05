@@ -144,7 +144,9 @@
           "default": "viewer"},
         "headless": {"type": "boolean", "default": false},
         "stream_port": {"type": "integer"},
-        "mav_port": {"type": "integer"}
+        "mav_port": {"type": "integer"},
+        "mav_ws_port": {"type": "integer"},
+        "web_port": {"type": "integer"}
       },
       "additionalProperties": false}
   }

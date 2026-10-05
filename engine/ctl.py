@@ -470,8 +470,8 @@ def mission_current(u, timeout=5):
 
 def owner_sim(owner):
     """Sim owning a process owner: a unit's own sim, or the context sim
-    for the synthetic 'server' owner."""
-    if owner == "server":
+    for the synthetic 'server'/'render' owners."""
+    if owner in ("server", "render"):
         return _ctx_name()
     u = simlib.find_unit(owner)
     if not u:
@@ -480,8 +480,11 @@ def owner_sim(owner):
 
 
 def owner_dir(owner):
-    return simlib.server_dir(owner_sim(owner)) if owner == "server" \
-        else simlib.unit_dir(simlib.find_unit(owner))
+    if owner == "server":
+        return simlib.server_dir(owner_sim(owner))
+    if owner == "render":
+        return simlib.render_dir(owner_sim(owner))
+    return simlib.unit_dir(simlib.find_unit(owner))
 
 
 def kill_proc(owner, proc):

@@ -67,6 +67,7 @@ jobs:
           python3 engine/test_world_behaviour.py
           python3 engine/test_coverage.py
           python3 engine/test_world_stream.py
+          python3 engine/test_render_viewer.py
           python3 stubs/test_golden.py
 
       - name: library folders non-empty
