@@ -36,4 +36,24 @@ assert:
   - distance_to: {unit: cam1, re: "detect\\.detected",
                   detected_cls: person,
                   truth: [person_open, person_canopy], max_m: 25}
+  # P5-12: the sweep must cover its declared sector, and the
+  # planning/sensor split is asserted per person - pod_at says whether
+  # the plan LOOKED at the cell, detection_recall says whether the
+  # chain REPORTED the person. person_open sits right under a leg,
+  # person_hut's cell ray always ends inside the building (POD 0 -
+  # a planning-free occlusion), person_canopy's is under the crown.
+  # Each pod_at carries its own small poly because the people stand
+  # outside sector_a.
+  - coverage_complete: {area: sector_a, cell_m: 5, min: 0.95,
+                        unit: cam1}
+  - pod_mean: {area: sector_a, cell_m: 5, min: 0.8}
+  - pod_at: {truth: person_open, min: 0.9,
+             poly: [[-35.363118, 149.166019], [-35.363028, 149.166019],
+                    [-35.363028, 149.166129], [-35.363118, 149.166129]]}
+  - pod_at: {truth: person_canopy, min: 0.5,
+             poly: [[-35.362804, 149.166019], [-35.362714, 149.166019],
+                    [-35.362714, 149.166129], [-35.362804, 149.166129]]}
+  - pod_at: {truth: person_hut, max: 0,
+             poly: [[-35.362445, 149.166019], [-35.362355, 149.166019],
+                    [-35.362355, 149.166129], [-35.362445, 149.166129]]}
 teardown: land

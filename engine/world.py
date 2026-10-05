@@ -64,6 +64,8 @@ Entity motion (t = seconds since the scenario epoch):
 
 trails:   {name: [[lat, lng], ...]}      # >= 2 vertices
 features: {name: {pos: [lat,lng] | line: [[..]>=2] | poly: [[..]>=3]}}
+areas:    {name: {poly: [[lat,lng],...]}}# named search polygons the
+          coverage assertions grid over (P5-12 D2)
 environment (P5-11, static per run - D4):
   time_of_day:  "hh:mm" local -> a sun-elevation ESTIMATE
                 (60 deg at noon, sinusoidal, -60 at midnight; use
@@ -430,6 +432,7 @@ class World:
         self._by_id = {e.id: e for e in self.entities}
         self.obstacles = [Obstacle(o, path, i, self.origin)
                           for i, o in enumerate(spec.get("obstacles") or [])]
+        self.areas = _parse_areas(spec.get("areas"), path)
         for e in self.entities:
             b = e.behaviour
             if b is None:
@@ -1031,6 +1034,30 @@ def _parse_features(spec, path, origin):
     return out
 
 
+def _parse_areas(spec, path):
+    """areas: {name: {poly: [[lat,lng],...]}} -> {name: {"poly"}} - the
+    named search polygons coverage_complete/pod_mean grid over
+    (P5-12 D2)."""
+    out = {}
+    for name, a in (spec or {}).items():
+        label = f"{path}: areas.{name}"
+        if not isinstance(a, dict):
+            raise simlib.SimError(f"{label}: not a mapping")
+        bad = set(a) - {"poly"}
+        if bad:
+            raise simlib.SimError(f"{label}: unknown keys {sorted(bad)}")
+        poly = a.get("poly")
+        if not isinstance(poly, list) or len(poly) < 3 or \
+                not all(isinstance(p, (list, tuple)) and len(p) == 2 and
+                        all(isinstance(c, (int, float))
+                            and not isinstance(c, bool) for c in p)
+                        for p in poly):
+            raise simlib.SimError(
+                f"{label}: poly needs >= 3 [lat, lng] vertices")
+        out[str(name)] = {"poly": [list(p) for p in poly]}
+    return out
+
+
 def _parse_environment(spec, path):
     """environment: -> {"sun_elev_deg", "visibility_m", "precip",
     "wind"} with the documented defaults. Static per run (D4)."""
@@ -1110,7 +1137,7 @@ def load(path, seed):
                               f"{spec.get('version')!r}")
     bad = set(spec) - {"version", "origin", "entities", "clutter",
                        "sensors", "obstacles", "trails", "features",
-                       "environment"}
+                       "environment", "areas"}
     if bad:
         raise simlib.SimError(f"{path}: unknown keys {sorted(bad)}")
     if len(list(spec.get("origin") or [])) != 2:

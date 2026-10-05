@@ -56,6 +56,15 @@ obstacles:
      poly: [[-35.362436, 149.166030], [-35.362382, 149.166030],
             [-35.362382, 149.166096], [-35.362436, 149.166096]],
      height_m: 4, rf_loss_db: 12}
+# P5-12: the search area the coverage asserts grade. N 22-72 x E
+# 66-84 sits inside the sweep's covered bands whichever way the
+# footprint orients (the nadir half-extents are 18.1 m vfov / 24.1 m
+# hfov about each leg), so a full sweep covers it entirely; the three
+# people sit outside it on purpose - pod_at grades them with its own
+# small poly instead.
+areas:
+  sector_a: {poly: [[-35.363064, 149.165964], [-35.362615, 149.165964],
+                    [-35.362615, 149.166162], [-35.363064, 149.166162]]}
 clutter: {cls: person, rate_per_km2_min: 0.2, lifetime_s: 20,
           anchor: ground}
 sensors:

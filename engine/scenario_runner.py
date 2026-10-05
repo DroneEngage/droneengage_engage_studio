@@ -738,6 +738,21 @@ def run_scenario(t_file, seed=None, keep=False):
     link_stop.set()
     link_thread.join(5)
 
+    # P5-12: the coverage artefact pair per computed grid, when any
+    # coverage assertion ran (coverage.geojson opens in any GIS)
+    if ctx.get("coverage_grids"):
+        import coverage as coverage_mod
+        multi = len(ctx["coverage_grids"]) > 1
+        for g in ctx["coverage_grids"].values():
+            tag = f"_{g['area']}" if multi else ""
+            simlib.write_json(
+                os.path.join(out, f"coverage{tag}.json"),
+                dict(coverage_mod.summary(g["grid"]), area=g["area"],
+                     cell_m=g["cell_m"], units=g["units"]))
+            simlib.write_json(
+                os.path.join(out, f"coverage{tag}.geojson"),
+                coverage_mod.geojson(g["grid"]))
+
     n_pass, n_skip = _collect(
         scn, m, out, results, True,
         [(tele_path, "telemetry.jsonl"),

@@ -257,7 +257,8 @@ Format (strict - unknown keys fail against
   visibility, precip, wind - the wind reaches every FC unit's
   sim.parm as `SIM_WIND_SPD`/`SIM_WIND_DIR`/`SIM_WIND_TURB`, and the
   camera model dims at dusk unless `kind: thermal`), plus a `state`
-  field on the truth rows. Consumed by the `stub_*`
+  field on the truth rows; P5-12 adds `areas:` - named search
+  polygons the coverage asserts grade). Consumed by the `stub_*`
   modules and the truth recorder, which writes
   `run/<sim>/truth.jsonl` at 1 Hz plus per-detection rows),
   `operation`, `verify` (P5-06 CLI, absent = recorded skip),
@@ -295,7 +296,15 @@ Format (strict - unknown keys fail against
 - `assert:` adds `proc_alive`/`proc_dead`, `link_offline`,
   `roster_value`, `operator_log_count`, `telemetry_value`, `fc_mode`,
   `distance_to` (incl. `detected_cls:` against the bot's seen targets),
-  `coverage_complete`, `no_sep_violation`, `detection_precision`,
+  `coverage_complete` (P5-12 gains an `area:`/`poly:` form: the tlog's
+  camera-unit poses - now including ATTITUDE - replayed through the
+  world camera/LOS model onto a `cell_m:` grid; `min:` the covered
+  fraction; `coverage.json` + `coverage.geojson` land in the run dir),
+  `pod_mean` (mean cumulative POD over the area, `min:`) and `pod_at`
+  (the POD of the cell holding a truth entity at `t_s:`/run end -
+  `min:`/`max:`; paired with `detection_recall` it splits planning
+  failures - low POD - from sensor/chain failures - high POD, no
+  find), `no_sep_violation`, `detection_precision`,
   `detection_recall` (P5-10: the fraction of the named truth entities
   that were found - `src: ai|sdr|bot` (bot = the whole product chain),
   `match_m:` for the bot src, `max: 0` is the "must stay hidden"

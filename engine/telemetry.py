@@ -5,9 +5,13 @@ One background thread per FC unit, on the SITL serial2 TCP port
 (fc["aux_port"] - serial0 stays free for ctl pilot commands). Records
 one JSONL row per sample:
 
-    {t_ms, unit, lat, lng, alt_m, rel_alt_m, hdg, armed, mode,
+    {t_ms, unit, lat, lng, alt_m, rel_alt_m, hdg, roll, pitch, yaw,
+     armed, mode,
      bat_v, bat_pct, fix_type, ekf_ok, rc1..rc4, t_unix_usec, t_boot_ms,
      speedup}
+
+roll/pitch/yaw (rad, ATTITUDE) were added for P5-12: the coverage
+footprint is wrong by up to alt * tan(bank) in turns without them.
 
 t_ms is wall unix ms (the fleet clock, unsynced); t_unix_usec/t_boot_ms
 come from the FC's own SYSTEM_TIME so truth matching can use sim time;
@@ -105,6 +109,7 @@ class Telemetry:
     _WANT = [(2, 500000),      # SYSTEM_TIME     (speedup, sim clock)
              (1, 500000),      # SYS_STATUS      (battery)
              (24, 500000),     # GPS_RAW_INT     (fix_type)
+             (30, 500000),     # ATTITUDE        (roll/pitch/yaw - P5-12)
              (33, 500000),     # GLOBAL_POSITION_INT
              (65, 500000),     # RC_CHANNELS     (rc_override)
              (193, 1000000)]   # EKF_STATUS_REPORT
@@ -157,6 +162,8 @@ class Telemetry:
                            bat_pct=msg.battery_remaining)
             elif t == "GPS_RAW_INT":
                 row.update(fix_type=msg.fix_type)
+            elif t == "ATTITUDE":
+                row.update(roll=msg.roll, pitch=msg.pitch, yaw=msg.yaw)
             elif t == "EKF_STATUS_REPORT":
                 row.update(ekf_ok=bool(msg.flags & 0x10))
             elif t == "RC_CHANNELS":

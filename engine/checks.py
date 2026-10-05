@@ -46,6 +46,8 @@ import time
 
 import simlib
 import ctl
+import coverage as coverage_mod
+import geo_projection as gp
 
 # assertions that are only meaningful when SITL really runs at ~1x; when
 # the scenario asks realtime: true and the measured speed-up is off,
@@ -545,7 +547,102 @@ def _no_sep_violation(name, a, ctx):
               f"h_m={h_min} v_m={v_min}")
 
 
+def _coverage_grid(name, a, ctx):
+    """The shared P5-12 preamble: resolve the area, pick the camera
+    units, build or reuse the computed grid. -> (grid, result) where
+    result is set (and grid None) on SKIP/FAIL. The grid is cached on
+    ctx["coverage_grids"] keyed by (area, cell_m, units) so sibling
+    asserts share it and _collect can write the artefacts."""
+    wld = ctx.get("world")
+    if wld is None:
+        return None, _r(name, "SKIP", None,
+                        "no world - coverage needs a P5-08 world run")
+    cell_m = float(a.get("cell_m", coverage_mod.DEFAULT_CELL_M))
+    if a.get("poly"):
+        poly, area_id = [list(p) for p in a["poly"]], "inline"
+    elif a.get("area"):
+        area_id = str(a["area"])
+        spec_a = wld.areas.get(area_id)
+        if spec_a is None:
+            return None, _r(name, "FAIL", None,
+                            f"unknown world area {area_id!r} "
+                            f"(areas: {sorted(wld.areas)})")
+        poly = spec_a["poly"]
+    else:
+        return None, _r(name, "FAIL", None, "needs area: or poly:")
+    if a.get("unit") is not None:
+        units = [u["name"] for u in _units(a, ctx)]
+        if not units:
+            return None, _r(name, "SKIP", None,
+                            f"unit {a['unit']!r} resolves to none")
+    else:
+        # every fleet unit running the camera stub (D1 - the cameras
+        # that really looked)
+        units = [u["name"] for u in ctx["manifest"]["units"]
+                 if "stub_ai_box" in u.get("modules", [])]
+    if not units:
+        return None, _r(name, "SKIP", None,
+                        "no camera units in this run")
+    key = (area_id, cell_m, tuple(sorted(units)))
+    grids = ctx.setdefault("coverage_grids", {})
+    if key in grids:
+        return grids[key], None
+    tele = ctx.get("telemetry")
+    if tele is None:
+        return None, _r(name, "SKIP", None, "no telemetry recorder")
+    cam = wld.sensors["camera"]
+    by_name = {u["name"]: u for u in ctx["manifest"]["units"]}
+    looks, n_rows, missing_att = [], 0, set()
+    for uname in units:
+        u = by_name.get(uname) or {}
+        # the stub's own camera_kind override decides thermal vs rgb
+        kind = str(((u.get("config") or {}).get("stub_ai_box") or {})
+                   .get("camera_kind") or cam.get("kind", "rgb"))
+        env_f = wld.sensor_factors(kind)
+        for r in coverage_mod.thin_rows(tele.rows(uname),
+                                        cam["fps_boxes"]):
+            n_rows += 1
+            if r.get("lat") is None or r.get("rel_alt_m") is None:
+                continue
+            if r.get("roll") is None or r.get("pitch") is None \
+                    or r.get("yaw") is None:
+                missing_att.add(uname)
+                continue
+            looks.append((gp.GeoAttitude(r["roll"], r["pitch"],
+                                        r["yaw"]),
+                          gp.GeoPose(r["lat"], r["lng"],
+                                     r["rel_alt_m"]),
+                          env_f, kind))
+    if not looks:
+        return None, _r(
+            name, "SKIP", None,
+            "telemetry lacks attitude (old tlog?)" if missing_att
+            else f"no usable telemetry rows for {units}")
+    grid = {"grid": coverage_mod.compute(poly, wld.origin, cell_m, wld,
+                                         cam, looks),
+            "area": area_id, "cell_m": cell_m, "units": units}
+    grids[key] = grid
+    det = []
+    if missing_att:
+        det.append("attitude missing for "
+                   + ",".join(sorted(missing_att)))
+    grid["note"] = "; ".join(det)
+    return grid, None
+
+
 def _coverage_complete(name, a, ctx):
+    if a.get("area") or a.get("poly"):
+        grid, early = _coverage_grid(name, a, ctx)
+        if early is not None:
+            return early
+        s = coverage_mod.summary(grid["grid"])
+        want = float(a.get("min", 1.0))
+        good = s["coverage"] >= want
+        return _r(name, "PASS" if good else "FAIL",
+                  round(s["coverage"], 3),
+                  f"{s['covered']}/{s['cells']} cells covered "
+                  f"({s['looks']} looks, {grid['units']})"
+                  + (f" [{grid['note']}]" if grid.get("note") else ""))
     if a.get("re"):
         ok, bits = True, []
         for u in _units(a, ctx):
@@ -568,6 +665,84 @@ def _coverage_complete(name, a, ctx):
               round(frac, 3),
               f"{len(done)}/{len(cov)} coverage cells visited "
               f"(src {os.path.basename(src)})")
+
+
+def _pod_mean(name, a, ctx):
+    """P5-12: the mean cumulative POD over the whole search area -
+    "would a person ANYWHERE in sector_a likely have been found?"
+    Needs min (an unbounded POD assert is vacuous)."""
+    if a.get("min") is None:
+        return _r(name, "FAIL", None, "needs min")
+    grid, early = _coverage_grid(name, a, ctx)
+    if early is not None:
+        return early
+    s = coverage_mod.summary(grid["grid"])
+    good = s["pod_mean"] >= float(a["min"])
+    return _r(name, "PASS" if good else "FAIL", round(s["pod_mean"], 3),
+              f"mean POD {s['pod_mean']:.3f} over {s['cells']} cells "
+              f"(coverage {s['coverage']:.3f})")
+
+
+def _pod_at(name, a, ctx):
+    """P5-12: the POD of the cell holding one truth entity - the
+    planning/sensor split: high pod_at + missed detection = a sensor
+    chain failure; low pod_at = a planning failure. The position is
+    the entity's truth at t_s (seconds since the world epoch) or the
+    last truth row when t_s is omitted. min and max both accepted
+    (max: 0 asserts an occluded cell)."""
+    if a.get("min") is None and a.get("max") is None:
+        return _r(name, "FAIL", None, "needs min and/or max")
+    tid = a.get("truth")
+    if not tid:
+        return _r(name, "FAIL", None, "needs truth:")
+    wld = ctx.get("world")
+    if wld is None:
+        return _r(name, "SKIP", None,
+                  "no world - pod_at needs a P5-08 world run")
+    e = wld.entity(str(tid))
+    if e is None:
+        return _r(name, "FAIL", None,
+                  f"unknown truth entity {tid!r}")
+    if a.get("t_s") is not None:
+        lat, lng, _alt = e.pos_at(float(a["t_s"]), wld)
+        where = f"t_s {a['t_s']}"
+    else:
+        rows, src = _truth_rows(ctx, a.get("truth_file"))
+        last = None
+        for r in _entity_rows(rows or []):
+            if _row_tid(r) == str(tid) and r.get("lat") is not None:
+                last = r
+        if last is None:
+            return _r(name, "SKIP", None,
+                      f"no truth rows for {tid} - pass t_s to locate "
+                      "it without a recorder")
+        lat, lng = last["lat"], _lng(last)
+        where = f"truth row t {_row_t(last)}"
+    if a.get("area") or a.get("poly"):
+        grid, early = _coverage_grid(name, a, ctx)
+        if early is not None:
+            return early
+    else:
+        grids = ctx.get("coverage_grids") or {}
+        if len(grids) != 1:
+            return _r(name, "FAIL", None,
+                      "pod_at needs area:/poly: (or exactly one "
+                      "coverage_complete/pod_mean grid before it)")
+        grid = next(iter(grids.values()))
+    cell = coverage_mod.cell_at(grid["grid"], lat, lng)
+    if cell is None:
+        return _r(name, "FAIL", None,
+                  f"{tid} at ({lat:.6f},{lng:.6f}) lies outside the "
+                  f"{grid['area']} area")
+    pod = cell["pod"]
+    good = True
+    if a.get("min") is not None:
+        good &= pod >= float(a["min"])
+    if a.get("max") is not None:
+        good &= pod <= float(a["max"])
+    return _r(name, "PASS" if good else "FAIL", round(pod, 3),
+              f"{tid} ({where}) sits in a cell with POD {pod:.3f} "
+              f"({cell['looks']} looks)")
 
 
 def _detection_precision(name, a, ctx):
@@ -1075,6 +1250,8 @@ DISPATCH = {
     "distance_to": _distance_to,
     "no_sep_violation": _no_sep_violation,
     "coverage_complete": _coverage_complete,
+    "pod_mean": _pod_mean,
+    "pod_at": _pod_at,
     "detection_precision": _detection_precision,
     "detection_recall": _detection_recall,
     "time_to_detect": _time_to_detect,
