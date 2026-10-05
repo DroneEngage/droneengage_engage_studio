@@ -277,7 +277,9 @@ Format (strict - unknown keys fail against
   `coverage_complete`, `no_sep_violation`, `detection_precision`,
   `signals_in_range`, `stub_deterministic` to the legacy assertion set.
   `realtime: true` gates timing asserts - they SKIP with a visible
-  reason when SITL speed-up is not ~1.
+  reason when SITL speed-up is not ~1. `telemetry_value` reads the last
+  sample by default; `pick: min|max` reads the extreme of the recorded
+  series (a sag that recovers by disarm still counts).
 
 Each run gets a seed-derived port block (no cross-seed collisions) and
 `results/<utc>/<name>/`: journals, per-unit and server logs,

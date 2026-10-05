@@ -17,7 +17,8 @@ Journal assertions keep the runner.py semantics (same helpers, same
   - journals:            proc_alive/proc_dead, operator_log_count,
                          no_fc_command_to_static
   - telemetry.jsonl:     distance_to, no_sep_violation, fc_mode,
-                         telemetry_value (the SITL "tlog")
+                         telemetry_value (the SITL "tlog"; pick: latest|
+                         min|max over the recorded series)
   - truth JSONL:         distance_to, coverage_complete - rows
                          {tid|id|target, t_ms|t|ms, lat, lng, alt|alt_m}
                          and coverage rows {type:"coverage", tid, covered};
@@ -817,20 +818,33 @@ def _telemetry_value(name, a, ctx):
     tele = ctx.get("telemetry")
     if not tele:
         return _r(name, "SKIP", None, "no telemetry recorder")
+    pick = a.get("pick", "latest")
     ok, bits, vals = True, [], []
     for u in _units(a, ctx):
-        old = _stale(tele, u["name"], a)
-        if old:
-            return _r(name, "SKIP", None, old)
-        row = tele.latest(u["name"])
-        v = row.get(a["field"])
+        lbl = a["field"]
+        if pick == "latest":
+            old = _stale(tele, u["name"], a)
+            if old:
+                return _r(name, "SKIP", None, old)
+            v = tele.latest(u["name"]).get(a["field"])
+        elif pick in ("min", "max"):
+            # a sag/spike that recovers before the assert window (SITL
+            # resets consumed_mah on disarm) still lives in the series
+            series = [r.get(a["field"]) for r in tele.rows(u["name"])]
+            series = [x for x in series if isinstance(x, (int, float))
+                      and not isinstance(x, bool)]
+            v = (min if pick == "min" else max)(series) if series else None
+            lbl = f"{pick}({a['field']})"
+        else:
+            return _r(name, "FAIL", None,
+                      f"bad pick {pick!r} (latest|min|max)")
         if v is None:
-            bits.append(f"{u['name']}: no {a['field']} - SKIP")
+            bits.append(f"{u['name']}: no {lbl} - SKIP")
             return _r(name, "SKIP", None, "; ".join(bits))
         vals.append(v)
         good, txt = _cmp(a, v)
         ok &= good
-        bits.append(f"{u['name']}: {a['field']} {txt}")
+        bits.append(f"{u['name']}: {lbl} {txt}")
     return _r(name, "PASS" if ok else "FAIL",
               vals[0] if len(vals) == 1 else None, "; ".join(bits))
 

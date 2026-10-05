@@ -120,7 +120,10 @@ def run_verify(scn, results_dir):
     out["errors"] = n_err
     out["rules"] = rules
     if "expect_errors" in spec or spec.get("expect_rules") is not None:
-        # a negative scenario EXPECTS error findings (exit 1 is fine)
+        # a negative scenario EXPECTS error findings (exit 1 is fine):
+        # expectations only classify the run at suite level (GATE-PASS
+        # vs FAIL through verify.json), they never let a dirty op past
+        # the gate - deploy refuses verifier errors, expected or not
         ok = True
         if "expect_errors" in spec:
             ok &= n_err == spec["expect_errors"]
@@ -129,7 +132,7 @@ def run_verify(scn, results_dir):
     else:
         ok = n_err == 0
     out["ok"] = ok
-    return _verify_out(out, results_dir, ok)
+    return _verify_out(out, results_dir, ok and n_err == 0)
 
 
 def _verify_out(out, results_dir, proceed):
@@ -324,9 +327,21 @@ def _fault(step, scn, ctx):
     if kind == "battery":
         ok = runner.run_ctl("param", unit, "SIM_BATT_VOLTAGE",
                             a.get("volts", 10.5))
+        # the supervisor's battery_low watches remaining PERCENT, which
+        # the FC derives from consumed mAh vs BATT_CAPACITY - a voltage
+        # sag alone never moves it. cap_mah shrinks the pack so remaining
+        # collapses to 0% at once (must stay >10 mAh: below that the FC
+        # reports the reading invalid, which would reset the handler).
+        if a.get("cap_mah") is not None:
+            ok &= runner.run_ctl("param", unit, "BATT_CAPACITY",
+                                 a["cap_mah"])
         if dur:
             _schedule(ctx, float(dur), runner.run_ctl,
                       "param", unit, "SIM_BATT_VOLTAGE", a.get("ok_volts", 12.6))
+            if a.get("cap_mah") is not None:
+                _schedule(ctx, float(dur), runner.run_ctl,
+                          "param", unit, "BATT_CAPACITY",
+                          a.get("ok_cap_mah", 3300))
         return ok
     if kind == "gps_off":
         # SIM_GPS1_FIXTYPE forces the fix the sim GPS reports (6=3D_DGPS,

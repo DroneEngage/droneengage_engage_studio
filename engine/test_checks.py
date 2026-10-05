@@ -154,6 +154,36 @@ class T(unittest.TestCase):
                 {"fc_mode": {"unit": "u1", "mode": "GUIDED"}}, c)
         self.assertEqual(r["status"], "SKIP")
 
+    def test_telemetry_value_pick(self):
+        class Tele:
+            def latest(self, n):
+                return {"bat_v": 12.6}
+
+            def rows(self, n):
+                return [{"unit": n, "bat_v": 12.6},
+                        {"unit": n, "bat_v": 10.4},
+                        {"unit": n, "bat_v": 12.3}]
+
+            def age_ms(self, n):
+                return 0
+        c, _ = ctx({}, telemetry=Tele())
+        with mock.patch.object(checks.ctl, "resolve",
+                               lambda tok, m=None: _resolve(tok, c)):
+            # latest row already recovered past the sag -> FAIL
+            r = checks.check_assertion(
+                {"telemetry_value": {"unit": "u1", "field": "bat_v",
+                                     "lt": 11.0}}, c)
+            self.assertEqual(r["status"], "FAIL")
+            # the recorded series still proves the dip happened
+            r = checks.check_assertion(
+                {"telemetry_value": {"unit": "u1", "field": "bat_v",
+                                     "lt": 11.0, "pick": "min"}}, c)
+            self.assertEqual(r["status"], "PASS")
+            r = checks.check_assertion(
+                {"telemetry_value": {"unit": "u1", "field": "bat_v",
+                                     "lt": 11.0, "pick": "bogus"}}, c)
+            self.assertEqual(r["status"], "FAIL")
+
     def test_speedup_is_median(self):
         import telemetry
         t = telemetry.Telemetry([], os.devnull)
@@ -191,17 +221,19 @@ class T(unittest.TestCase):
                 # exit 1 + errors, but no expectation -> blocked
                 self.assertFalse(scenario_runner.run_verify(scn, d))
                 self.assertIn("--json", m.call_args[0][0])
-                # negative scenario expecting exactly those errors -> ok
+                # negative scenario expecting exactly those errors:
+                # the findings match (verify.json ok) but the gate still
+                # blocks - a dirty op never reaches the fleet
                 scn["verify"] = {"cli": cli, "expect_errors": 1,
                                  "expect_rules": ["LIV-001"]}
-                self.assertTrue(scenario_runner.run_verify(scn, d))
+                self.assertFalse(scenario_runner.run_verify(scn, d))
             obj = json.dumps({"error_count": 1,
                               "errors": [{"rule": "bad"}]})
             with mock.patch.object(scenario_runner.subprocess, "run",
                                    return_value=fake(1, obj)):
                 scn["verify"] = {"cli": cli, "expect_errors": 1,
                                  "expect_rules": ["bad"]}
-                self.assertTrue(scenario_runner.run_verify(scn, d))
+                self.assertFalse(scenario_runner.run_verify(scn, d))
             with mock.patch.object(scenario_runner.subprocess, "run",
                                    return_value=fake(0, "not json")):
                 scn["verify"] = {"cli": cli}

@@ -25,8 +25,6 @@ server:
   # else SIM_AUTH_* / SIM_UNIT_AUTH_* from sim.local.env (out of git)
 units:
   - {block: copter, name: quad1}
-  - {block: copter, name: quad2}
-  - {block: copter, name: quad3}
     # account: {user: quad1, code: ...}
     #   # this unit's own login; must exist on your authenticator in the
     #   # same team as the GCS account or the GCS won't see the unit.
