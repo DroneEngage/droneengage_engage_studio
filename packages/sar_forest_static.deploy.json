@@ -1,0 +1,38 @@
+{
+  "op": "sar_forest_static",
+  "roles": {
+    "cam_scout": {
+      "pkg": "sar_forest_static_cam_scout.pkg.json",
+      "units": [
+        "scout1"
+      ]
+    },
+    "searcher": {
+      "pkg": "sar_forest_static_searcher.pkg.json",
+      "units": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    },
+    "ambulance": {
+      "pkg": "sar_forest_static_ambulance.pkg.json",
+      "units": [
+        "amb1"
+      ]
+    },
+    "sdr_mast": {
+      "pkg": "sar_forest_static_sdr_mast.pkg.json",
+      "units": [
+        "sdrm1",
+        "sdrm2"
+      ]
+    },
+    "cam_mast": {
+      "pkg": "sar_forest_static_cam_mast.pkg.json",
+      "units": [
+        "camm1"
+      ]
+    }
+  }
+}

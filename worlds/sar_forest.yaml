@@ -1,0 +1,71 @@
+# sar_forest - the P4B-10 ground-truth world (de.world/1).
+#
+# Around the SITL home (-35.363262, 149.165237), inside the op's ~1.2x1 km
+# convex search area:
+#   person_1 - the casualty, STATIC at X = (+300 N, +250 E) of home
+#              (-35.3605671, 149.1679909). Deep enough inside the area
+#              that lawnmower legs pass within a camera footprint of it.
+#   phone_1  - X + 30 m north (attach person_1, offset_m [30, 0]); the
+#              RF emitter the sdr model gates on.
+#   (a second person decoy near the SW corner was dropped: a confirmed
+#   second target would activate ambulance.deliver a second time -
+#   once_per: target - and break the single-drop assertions.)
+#   clutter  - off (rate 0): the acceptance runs are deterministic.
+#
+# sensors.sdr gate math (stub_sdr/stub_base model; thr is the sdr.scan
+# threshold_dbm, the -70 default when the op passes none):
+#   rssi(d) = ref_dbm_1m + tx_dbm - 10*n*log10(d)
+#           = -15 + 20 - 27*log10(d) = 5 - 27*log10(d)
+#   rssi >= -70  <=>  d <= 10^((5+70)/27) = 10^2.778 ~= 600 m
+#   (tx 20 dBm is phone-class; ref_dbm_1m -15 absorbs the RX gain the
+#   lab-scale model needs - forest_a's -30 would gate at ~167 m.)
+# radius_m note: sdr.signal carries the sdrEstimateRadiusM range
+# inversion, not a configurable uncertainty - it equals the modelled
+# range, so ~600 m at the first hit, ~200 m only once a receiver closes
+# to 200 m, floored at 50 m. The spec's "radius 200 m" is not reachable
+# without a stub change; consumers should treat radius_m as reported.
+# 3-sweep debounce at sweep_s 2 -> first signal ~6 s after entering range.
+#
+# sensors.camera range math: spec asks "a box when within 50 m
+# horizontally of X", but the stub gates on SLANT range and the nadir
+# FOV already bounds the ground footprint to +-24..28 m at the 40/46 m
+# layer altitudes (~48-55 m wide - the 50 m intent). max_range_m 100
+# keeps the cam_scout's 82 m survey layer inside the gate (82 m nadir
+# slant, ~40-49 m horizontal reach) while the FOV - not the range -
+# stays the effective horizontal gate at every layer.
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_1, cls: person, pos: [-35.3605671, 149.1679909],
+     size_m: 0.5}
+  - {id: phone_1, cls: phone, attach: person_1, offset_m: [30, 0],
+     tx_dbm: 20, freq_hz: 869000000, size_m: 0.2}
+clutter: {cls: person, rate_per_km2_min: 0, lifetime_s: 20}
+sensors:
+  camera:
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 4            # static mast camera only (SU-04); FC
+                               # units use rel_alt (the 40-46 m layers)
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 0.95
+    p_detect_edge: 0.6
+    detect_cls: [person]        # a phone is RF-only: a 1078 box carries no
+                                # class, so a visible phone would read as a
+                                # second person target
+    max_range_m: 100             # slant; covers nadir at the 82 m scout layer
+    pos_noise_px: 8
+    fps_boxes: 2
+    size_m: {person: 0.5, phone: 0.2}
+  sdr:
+    freq_hz: 869000000
+    path_loss_n: 2.7
+    ref_dbm_1m: -15              # -15+20dBm tx -> ~600 m modelled gate
+    noise_db: 3
+    threshold_dbm: -70           # selftest + the sdr.scan default
+    bin_hz: 25000
+    sweep_s: 2

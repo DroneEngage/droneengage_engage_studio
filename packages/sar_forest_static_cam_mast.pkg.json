@@ -1,0 +1,158 @@
+{
+  "schema": "de.package/2.2",
+  "op": "sar_forest_static",
+  "op_hash": "sha256:e648610af43465366725362c742e2e595d4fe603f8e754a117622290f11d1e26",
+  "role": "cam_mast",
+  "vehicle": {
+    "type": "static"
+  },
+  "requires": [
+    "camera"
+  ],
+  "fc_items": [],
+  "missions": {
+    "watch": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "repeat",
+      "repeat_min_s": 30,
+      "claims": [
+        "camera"
+      ],
+      "on_exit": [
+        {
+          "do": "camera.record",
+          "with": {
+            "on": false
+          }
+        }
+      ],
+      "steps": [
+        {
+          "id": "record",
+          "k": "do",
+          "do": "camera.record",
+          "with": {
+            "on": true
+          },
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "seen",
+          "k": "gate",
+          "event": "detect.detected",
+          "timeout": 3600,
+          "on_timeout": "end"
+        },
+        {
+          "id": "shot",
+          "k": "do",
+          "do": "camera.capture",
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "report",
+          "k": "emit",
+          "event": "detect.detected",
+          "payload_from": "seen"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "detect.detected": {
+      "target": "person",
+      "payload": {
+        "tid": "string",
+        "pos": "geo",
+        "unc_m": "number",
+        "conf": "number"
+      }
+    }
+  },
+  "handlers": {
+    "comm_lost": "continue",
+    "battery_low": "rtl",
+    "peer_lost": "continue"
+  },
+  "fleet": {
+    "roles": {
+      "cam_scout": {
+        "count": 1
+      },
+      "searcher": {
+        "count": 3
+      },
+      "ambulance": {
+        "count": 1
+      },
+      "sdr_mast": {
+        "count": 2
+      },
+      "cam_mast": {
+        "count": 1
+      }
+    },
+    "phases": [
+      {
+        "id": "search"
+      },
+      {
+        "id": "localize",
+        "enter_on": "sys.target_new"
+      },
+      {
+        "id": "deliver",
+        "enter_on": "sys.target_state"
+      },
+      {
+        "id": "recover",
+        "enter_on": "payload.dropped"
+      }
+    ],
+    "event_ttl": {
+      "payload.released": 300
+    },
+    "end": {
+      "on": [
+        "payload.dropped"
+      ],
+      "then": {
+        "ambulance": "rtl",
+        "searcher": "rtl",
+        "cam_scout": "hold",
+        "sdr_mast": "hold",
+        "cam_mast": "hold"
+      }
+    },
+    "event_targets": {
+      "detect.detected": "person",
+      "sdr.signal": "phone"
+    },
+    "event_serves": {
+      "payload.dropped": "person"
+    },
+    "event_sticky": [
+      "detect.detected",
+      "payload.dropped",
+      "sdr.signal"
+    ]
+  },
+  "confirm": {
+    "phone": {
+      "policy": "k_sources_within",
+      "k": 2,
+      "d_m": 50
+    },
+    "person": {
+      "policy": "operator_confirm"
+    }
+  },
+  "hash": "sha256:3a09be41bef40405ed72516e09e7f7604ffd97838cdf9ef31c6c5767726b4878"
+}

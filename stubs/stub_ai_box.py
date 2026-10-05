@@ -8,7 +8,7 @@ class list + status over AI_Recognition_STATUS (1077) and honoring a
 SEARCH class selection on AI_Recognition_ACTION (1076).
 
 This stub does exactly that - against the de.world/1 truth. Every
-fps_boxes frame it takes the unit's pose (SITL serial3 attitude +
+fps_boxes frame it takes the unit's pose (SITL serial5 attitude +
 position on FC units, the 9102 intermodule feed on statics), projects
 each visible entity into the camera frame with the geo_projection port,
 rolls the seeded detection probability (nadir vs frame-edge), adds the
@@ -42,6 +42,62 @@ AI_STATUS_ENABLED = 2
 AI_STATUS_CLASS_LIST = 4
 AI_ACTION_SEARCH = 1
 
+# the stub plays the whole detection chain on the unit: the camera that
+# frames the world plus the tracker the mission may hand a box to - one
+# advert per namespace, as the real de_camera / de_tracker pair would
+# publish (actions mirroring droneengage_camera's de.cap/1 advert).
+ADVERT_CAMERA = {
+    "schema": "de.cap/1",
+    "ns": "camera",
+    "module": "stub_ai_box",
+    "ver": "0.1.0",
+    "actions": {
+        "capture": {
+            "desc": "Capture a photo",
+            "params": {
+                "count": {"type": "int", "min": 1, "max": 100,
+                          "default": 1},
+                "interval_ms": {"type": "int", "min": 0, "max": 60000,
+                                "default": 0, "unit": "ms"},
+            },
+            "timeout_s": 10,
+        },
+        "record": {
+            "desc": "Start/stop video recording",
+            "params": {"on": {"type": "bool"}},
+            "timeout_s": 10,
+        },
+    },
+    "events": {
+        "captured": {
+            "desc": "photo written to storage",
+            "payload": {"file": {"type": "string"},
+                        "pos": {"type": "geo"}},
+        },
+    },
+    "state": {"recording": {"type": "bool"}},
+}
+
+ADVERT_TRACKER = {
+    "schema": "de.cap/1",
+    "ns": "visual_tracker",
+    "module": "stub_ai_box",
+    "ver": "0.1.0",
+    "actions": {
+        "track": {
+            "desc": "Track the object inside a normalized box",
+            "params": {"x": {"type": "number", "min": 0.0, "max": 1.0},
+                       "y": {"type": "number", "min": 0.0, "max": 1.0},
+                       "w": {"type": "number", "min": 0.0, "max": 1.0},
+                       "h": {"type": "number", "min": 0.0, "max": 1.0}},
+            "timeout_s": 10,
+        },
+        "untrack": {"desc": "Drop the tracked object", "timeout_s": 10},
+    },
+    "events": {},
+    "state": {"tracking": {"type": "bool"}},
+}
+
 
 class StubAIBox(StubBase):
     MODULE_CLASS = "gen"
@@ -61,6 +117,46 @@ class StubAIBox(StubBase):
         self._last_frame = -1
         self._clutter = []               # [(die_t_s, u, v)]
         self._status_next = 0.0
+        self._recording = False
+        self._tracking = False
+        self._capture_count = 0
+
+    # ----------------------------------------------------------- invokes
+
+    def on_invoke(self, ns, act, params):
+        """handler(ns, act, params) -> (data, err), as the real modules."""
+        if ns == "camera" and act == "capture":
+            self._capture_count += 1
+            pose = self.pose_feed.pose()
+            pos = [pose["lat"], pose["lng"]] if pose else None
+            result = {"file": f"cap_{self._capture_count}.jpg",
+                      "pos": pos}
+            self.log.log("CAPTURE", result, ms=self.clock_ms())
+            self.state({"captures": self._capture_count})
+            return result, None
+        if ns == "camera" and act == "record":
+            self._recording = bool((params or {}).get("on", True))
+            self.log.log("RECORD", {"on": self._recording},
+                         ms=self.clock_ms())
+            self.state({"recording": self._recording})
+            return {"recording": self._recording}, None
+        if ns == "visual_tracker" and act == "track":
+            self._tracking = True
+            self.log.log("TRACK", {"box": params}, ms=self.clock_ms())
+            self.state({"tracking": True})
+            return {"tracking": True}, None
+        if ns == "visual_tracker" and act == "untrack":
+            self._tracking = False
+            self.log.log("UNTRACK", {}, ms=self.clock_ms())
+            self.state({"tracking": False})
+            return {"tracking": False}, None
+        return None, f"unknown action '{ns}.{act}'"
+
+    # -------------------------------------------------------- databus out
+
+    def state(self, changed, full=False):
+        if self.facade is not None:
+            self.facade.publish_state("camera", changed, full)
 
     # ---------------------------------------------------------- messages
 
@@ -131,6 +227,9 @@ class StubAIBox(StubBase):
 
         for e in self.world.entities:
             if not self._class_ok(e.cls):
+                continue
+            if self.cam.get("detect_cls") and \
+                    e.cls not in self.cam["detect_cls"]:
                 continue
             lat, lng, ealt = e.pos_at(t_s, self.world)
             self._maybe_detect(e.id, e.cls, lat, lng, ealt,
@@ -254,7 +353,9 @@ def main(argv):
         s.log.log("SELFTEST", {"poses": s.selftest}, ms=0)
         s.run_selftest()
         return 0
-    s.connect(msg_filter=[TYPE_AndruavMessage_AI_Recognition_ACTION])
+    s.connect(adverts=[__import__("json").dumps(ADVERT_CAMERA),
+                       __import__("json").dumps(ADVERT_TRACKER)],
+              msg_filter=[TYPE_AndruavMessage_AI_Recognition_ACTION])
     s.status()
     s.run()
     return 0

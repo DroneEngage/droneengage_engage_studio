@@ -1,0 +1,31 @@
+{
+  "op": "sar_forest_veto",
+  "roles": {
+    "cam_scout": {
+      "pkg": "sar_forest_veto_cam_scout.pkg.json",
+      "units": [
+        "scout1"
+      ]
+    },
+    "sdr_scout": {
+      "pkg": "sar_forest_veto_sdr_scout.pkg.json",
+      "units": [
+        "sdr1"
+      ]
+    },
+    "searcher": {
+      "pkg": "sar_forest_veto_searcher.pkg.json",
+      "units": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    },
+    "ambulance": {
+      "pkg": "sar_forest_veto_ambulance.pkg.json",
+      "units": [
+        "amb1"
+      ]
+    }
+  }
+}
