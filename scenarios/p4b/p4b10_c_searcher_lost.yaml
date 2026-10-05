@@ -2,7 +2,7 @@
 # off the fleet mid-sector and the P4B-06 takeover layer finishes its
 # unfinished lanes.
 #
-# s2's server link is cut for 75 s while the sector scan runs (link_cut,
+# s2's server link is cut for 700 s while the sector scan runs (link_cut,
 # not kill - the unit is provably "lost" to the fleet, not dead; its own
 # de_comm keeps flying the FC mission it already holds). Every unit runs
 # sv_peer_lost_s/sv_roster_ttl_s = 8 s so the LOST edge lands quickly -
@@ -32,7 +32,7 @@ operator:
   # the operator confirms late on purpose: the survivors need to finish
   # their own (large) sectors and then fly the orphan's lanes BEFORE the
   # drop ends the op (OP_END rtl would cut the takeover short)
-  confirm: {person: {after_s: 1500}}
+  confirm: {person: {after_s: 1200}}
 fleet:
   - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
      at: {north_m: 0, east_m: 0},
@@ -66,8 +66,12 @@ timeline:
      timeout: 240}
   - {t: 40, do: wait_journal, unit: "s1,s2,s3",
      re: "CLAIM .* index [0-9]+ of 3", timeout: 120}
-  # mid-sector: s2's server link drops for 75 s
-  - {t: 50, fault: link_cut, unit: "s2", dur_s: 75}
+  # mid-sector: s2's server link drops for 700 s - long enough that it is
+  # still LOST when the first survivor frees up (~8-9 min in) and adopts
+  # its lanes. A short cut is not a lost searcher: an owner back before
+  # anyone claimed clears the orphan (sv_takeover onPeerBack). s2 returns
+  # after the takeover and stands down (returning-owner rule).
+  - {t: 50, fault: link_cut, unit: "s2", dur_s: 700}
   - {t: 55, do: wait_journal, unit: "s1,s3",
      re: "ORPHAN .* owner .* lost", timeout: 90}
   # whichever surviving searcher frees its posture first adopts the
@@ -79,7 +83,7 @@ timeline:
      re: "PROGRESS .*:1 complete", timeout: 1200}
   # the rest of the SAR chain still completes
   - {t: 65, do: wait_journal, unit: "all",
-     re: "WM_STATE .* confirmed by operator", timeout: 480}
+     re: "WM_STATE .* confirmed by operator", timeout: 900}
   - {t: 70, do: wait_journal, unit: "amb1", re: "emit payload\\.dropped",
      timeout: 480}
   - {t: 75, do: wait_journal, unit: "all", re: "OP_END payload\\.dropped",
