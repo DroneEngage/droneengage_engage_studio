@@ -200,7 +200,10 @@ short:
   `land`, `reset`, `wait`, `wait_journal`, `wait_online`, `wait_ready`,
   `kill` / `restart` (also `unit: server`), `reboot` (de_comm under a new
   boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
-  (fake server only), `commline`, `send`;
+  (fake server only), `commline`, `send`, `write_file` (`{unit, module,
+  path, json}` - a JSON file into `run/<unit>/<module>/`, for module file
+  seams like de_rpi_gpio's `gpio_inputs.json`; `also: [{path, json}]`
+  writes extra files inside the same call);
 - **fleet ops (P4A-09):** when `operation:` names a deploy spec (a top-level
   `roles` map - see `packages/p4a05.deploy.json`), `deploy` runs the
   two-phase DE_OP_CONTROL (1094) PREPARE per role, and the run goes up

@@ -35,6 +35,10 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - mode: {unit: 1, mode: RTL}
       - wait_online: 60                  # every unit seen by the GCS
       - wait: 10
+      - write_file: {unit: 1, module: de_gpio, path: gpio_inputs.json,
+                     json: {"17": 1}}      # JSON into run/<unit>/<module>/;
+                                          # also: [{path, json}, ...] writes
+                                          # more files in the same ctl call
     assert:
       - journal_count: {unit: all, re: "EVENT_IN area.clear", equals: 1}
       - journal_order: {unit: 1, first: "A re", then: "B re"}
@@ -99,7 +103,8 @@ def unit_arg(arg, key="unit", default="all"):
 
 _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_ready", "loss",
                "delay", "link_cut", "kick", "commline", "link_clear", "kill",
-               "restart", "journal", "mode", "disarm", "fire", "fc"}
+               "restart", "journal", "mode", "disarm", "fire", "fc",
+               "write_file"}
 
 
 def _wait_journal(u, rx, timeout, marks):
@@ -219,6 +224,15 @@ def run_step(step, t, marks):
         return run_ctl(name, unit, arg["seconds"])
     if name in ("kill", "restart"):
         return run_ctl(name, unit, arg.get("proc", "all"))
+    if name == "write_file":
+        # GE-07: JSON file(s) into run/<unit>/<module>/ - drives module
+        # file seams (de_rpi_gpio's gpio_inputs.json). `also` folds extra
+        # writes into the SAME ctl call, so a burst lands inside one
+        # 100 ms read window (a bounce collapses into one state).
+        argv = [unit, arg["module"], arg["path"], json.dumps(arg["json"])]
+        for w in arg.get("also", []):
+            argv += [w["path"], json.dumps(w["json"])]
+        return run_ctl("write_file", *argv)
     if name == "server_up":
         return run_ctl("server_up")
     if name == "mode":

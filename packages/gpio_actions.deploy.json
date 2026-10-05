@@ -1,0 +1,11 @@
+{
+  "op": "gpio_actions",
+  "roles": {
+    "actor": {
+      "pkg": "gpio_actions_actor.pkg.json",
+      "units": [
+        "actor"
+      ]
+    }
+  }
+}

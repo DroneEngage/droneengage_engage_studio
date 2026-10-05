@@ -100,10 +100,12 @@ if (schema.startsWith('de.package/') || isDeploySpec) {
 }
 
 /* ctx sidecar convention: deadlock.op.json -> deadlock.ctx.json
-   (also accepts <name>.json -> <name>.ctx.json) */
-const ctxFile = opFile.replace(/(\.op)?\.json$/, '.ctx.json');
-const ctx = fs.existsSync(ctxFile) ? readJson(ctxFile,
-    `cannot read ctx ${ctxFile}`) : {};
+   (also <name>.deop -> <name>.ctx.json and <name>.json ->
+   <name>.ctx.json). GE-07: without the .deop alternative the replace
+   no-ops and the op file itself is read as ctx. */
+const ctxFile = opFile.replace(/\.op\.json$|\.deop$|\.json$/, '.ctx.json');
+const ctx = fs.existsSync(ctxFile) && ctxFile !== opFile
+    ? readJson(ctxFile, `cannot read ctx ${ctxFile}`) : {};
 if (ctx.dynamic === undefined) ctx.dynamic = { anchors: 20 };
 
 /* hydrate the JSON-able dem spec into a real DemProvider */
@@ -112,6 +114,70 @@ if (ctx.dem !== undefined && typeof ctx.dem === 'object') {
         path.join(WC, 'src', 'js', 'core', 'mission', 'verify', 'dem.ts'));
     const dem = fn_demFromSpec(ctx.dem);
     if (dem !== undefined) ctx.dem = dem;
+}
+
+/* GE-07: two fixes around ctx.registries unit views.
+   1. eventGraph's fn_moduleRoles calls reg.event() directly on each
+      entry - a serialized 1089 view has no such method, so LIV-* crash
+      (VER-001) on any op that waits on a module event. Normalize each
+      entry to a live CapRegistry up front (fn_asRegistry passes live
+      registries through, so the CAP rules see the same objects).
+   2. fn_verifyOperation's VER-000 gate re-runs validateOperation with
+      no registry argument, so it falls back to the Phase-1 stub and
+      cannot name module-advertised per-pin actions (gpio.led & co).
+      Install a COMPOSITE default - ctx caps first, stub second - so
+      restrictive sidecars (a camera-only unit) keep resolving the
+      stub's legacy actions exactly as before; source stays 'stub' so
+      advert-typed param checks are not added at the gate (CAP-002
+      still types them against the unit advert). */
+if (ctx.registries !== null && typeof ctx.registries === 'object') {
+    const { fn_registryFromStub, fn_registryFromUnitCaps } = require(
+        path.join(WC, 'src', 'js', 'core', 'mission', 'capRegistry.ts'));
+    const mergedCaps = {};
+    for (const u of Object.keys(ctx.registries)) {
+        const entry = ctx.registries[u];
+        if (entry !== null && typeof entry === 'object'
+            && typeof entry.namespaces !== 'function') {
+            try {
+                ctx.registries[u] = fn_registryFromUnitCaps(entry, u);
+            } catch (e) {
+                /* leave it; the rules normalize/tolerate raw views */
+            }
+        }
+        const caps = entry !== null && typeof entry === 'object'
+            ? entry.caps : undefined;
+        if (caps !== null && typeof caps === 'object') {
+            Object.assign(mergedCaps, caps);
+        }
+    }
+    if (Object.keys(mergedCaps).length > 0) {
+        const unitRegistry = fn_registryFromUnitCaps(
+            { caps: mergedCaps });
+        const stubRegistry = fn_registryFromStub();
+        const composite = {
+            source: 'stub',
+            namespaces: () => new Set([
+                ...unitRegistry.namespaces(),
+                ...stubRegistry.namespaces()]),
+            action: (n) => unitRegistry.action(n) !== undefined
+                ? unitRegistry.action(n) : stubRegistry.action(n),
+            event: (n) => unitRegistry.event(n) !== undefined
+                ? unitRegistry.event(n) : stubRegistry.event(n),
+            actions: () => [...new Set([
+                ...unitRegistry.actions(),
+                ...stubRegistry.actions()])].sort(),
+        };
+        const validateMod = require(
+            path.join(WC, 'src', 'js', 'core', 'mission', 'validate.ts'));
+        const origValidate = validateMod.validateOperation;
+        validateMod.validateOperation = function (doc, opts) {
+            const withRegistry =
+                (opts !== undefined && opts.registry !== undefined)
+                    ? opts
+                    : { ...(opts || {}), registry: composite };
+            return origValidate(doc, withRegistry);
+        };
+    }
 }
 
 const { fn_verifyOperation } = require(

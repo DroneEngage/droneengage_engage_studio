@@ -42,6 +42,10 @@ Fleet ops (P4A-09, DE_OP_CONTROL 1094):
   journal <unit> [from]             P2-12 download (1088 pages)
   roster <seconds> <min_peers>      listen for 1092 rosters as a GCS
   commline <unit> <s>               in-band cut: 6509 {ws:false, wsd:s}
+  write_file <unit> <module> <path> <json> [<path> <json> ...]
+                                    write JSON file(s) into
+                                    run/<unit>/<module>/ (drives seams like
+                                    de_rpi_gpio's gpio_inputs.json)
 
 Pilot (units with an fc):
   arm <unit>    disarm <unit>    mode <unit> <MODE>    fc <unit>
@@ -637,6 +641,23 @@ def gcs_collect(first, mts, secs, stop_on_last=False):
     return ctrl_stream(f"listen {secs} {','.join(map(str, mts))}", secs)
 
 
+def write_module_file(u, module, relpath, doc):
+    """GE-07: write one JSON document into run/<unit>/<module>/<relpath>,
+    atomically (tmp + rename) so a file-polling module never reads a
+    half-written file. The path may not escape the module directory."""
+    mdir = os.path.realpath(os.path.join(simlib.unit_dir(u), module))
+    p = os.path.realpath(os.path.join(mdir, relpath))
+    if p != mdir and not p.startswith(mdir + os.sep):
+        raise simlib.SimError(f"write_file: {relpath} escapes {mdir}")
+    os.makedirs(os.path.dirname(p) or mdir, exist_ok=True)
+    tmp = p + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(doc, f)
+        f.write("\n")
+    os.replace(tmp, p)
+    return p
+
+
 def journal_download(u, frm=0):
     frames = gcs_collect({"ty": "i", "mt": 1086, "tg": u["party_id"],
                           "ms": {"a": "journal", "from": frm}}, {1088}, 15, True)
@@ -1207,6 +1228,14 @@ def main(argv):
                 sys.exit(f"send: {u['name']} journaled no WM_NEW yet")
             text = text.replace(m.group(0), re.search(r"WM_NEW (\S+)", hits[-1][5]).group(1))
         ctrl("send " + text)
+    elif c == "write_file":
+        u = resolve(a[0])[0]
+        if len(a) < 4 or (len(a) - 2) % 2:
+            sys.exit("write_file <unit> <module> <path> <json> "
+                     "[<path> <json> ...]")
+        for i in range(2, len(a), 2):
+            doc = json.loads(a[i + 1])
+            print(write_module_file(u, a[1], a[i], doc))
     elif c == "journal":
         u = resolve(a[0])[0]
         for ln in journal_download(u, int(a[1]) if len(a) > 1 else 0):

@@ -63,6 +63,28 @@ de_tracker:
   # its getopt string has no "b:" - the local file is read from the cwd
   local: {file: de_tracker.config.local}
 
+# GE-07: gpio.<pin>.<verb> event surface + per-pin do actions. The sim
+# binary is a TEST_MODE_NO_WIRINGPI_LINK build - pins are virtual and
+# INPUT pins read run/<unit>/de_gpio/gpio_inputs.json (the write_file
+# step drives it).
+de_gpio:
+  repo: droneengage_rpi_gpio
+  dir_env: DE_GPIO_DIR
+  # the repo's own binary needs real WiringPi (a Pi); the sim wants the
+  # test-mode build - point DE_GPIO_BIN at it in sim.local.env
+  bin: bin/de_rpi_gpio
+  bin_env: DE_GPIO_BIN
+  # the repo's own template declares Pi board pins; the sim needs the
+  # virtual pin set - a templates/ name the repo does not ship wins there
+  template: de_rpi_gpio.sim.json
+  port_base: 61000
+  start_delay: 3
+  local: {arg: "-b", file: de_rpi_gpio.config.local}
+  # no ready_re: the supervisor journal has no capability-advert line
+  # (de_comm journals caps only as "missing capability" on package load
+  # and gpio.* events only while a run declares them) - start_delay and
+  # the unit-online wait carry bring-up, like the other silent modules
+
 # ---------------------------------------------------------------- P5-08
 # World-driven stub sensor modules (stubs/*.py in this repo). A scenario
 # with `world:` injects the world path + seed as config "stub" per unit

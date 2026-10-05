@@ -1,0 +1,11 @@
+{
+  "op": "gpio_button",
+  "roles": {
+    "node": {
+      "pkg": "gpio_button_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

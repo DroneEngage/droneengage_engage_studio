@@ -1,0 +1,35 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_actions",
+    "comment": "GE-07 do_actions: per-pin capability actions - digital on/off+pulse (led, flash) and PWM width (servo). Each do must journal ok.",
+
+    "roles": {
+        "actor": { "count": 1, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.led.went_on":    {},
+        "gpio.led.went_off":   {},
+        "gpio.flash.went_on":  {},
+        "gpio.flash.went_off": {},
+        "gpio.servo.changed":  {}
+    },
+
+    "missions": {
+        "actor": {
+            "pins": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "led",   "do": "gpio.led",
+                      "with": { "on": true }, "timeout": 10 },
+                    { "id": "flash", "do": "gpio.flash",
+                      "with": { "on": true, "pulse_ms": 300 }, "timeout": 10 },
+                    { "id": "servo", "do": "gpio.servo",
+                      "with": { "pwm": 102 }, "timeout": 10 }
+                ]
+            }
+        }
+    }
+}

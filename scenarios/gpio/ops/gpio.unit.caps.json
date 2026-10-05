@@ -1,0 +1,297 @@
+{
+  "_note": "GE-07: the sim unit's serialized capability view (the 1089 m_Capabilities object a UNIT_CAPABILITIES report carries), used two ways: (1) compile_op.js --caps feeds it to compileOperation as the registry so 'do gpio.led|flash|servo' resolves against the advertised per-pin actions the Phase-1 stub cannot name; (2) the <op>.ctx.json sidecars embed it under registries.<unit> so verify_wrap.js checks do-params and waited-on module events against the same advert (CAP-001/CAP-002). The advert mirrors gpioBuildAdvert() for the sim pin set (modules/templates/de_rpi_gpio.sim.json); the module's wire advert carries no events map (events are per-pin and dynamic) - the entries below describe the documented gpio.<pin>.went_on|went_off|changed surface so the verifier can prove an op's waited-on events have a producer on this unit. ci/check_library.py parses this file strictly - keep it comment-free.",
+  "caps": {
+    "gpio": {
+      "ch": "c1",
+      "module": "de_rpi_gpio",
+      "ver": "1.4.1",
+      "advert": {
+        "schema": "de.cap/1",
+        "ns": "gpio",
+        "module": "droneengage_rpi_gpio",
+        "ver": "1.4.1",
+        "desc": "events: gpio.<pin>.went_on|went_off|changed {v,src}; commands: gpio.<pin>.on|off|toggle|pulse{ms}|set{v}",
+        "actions": {
+          "write": {
+            "desc": "set an output pin (value) or a PWM pin (value = frequency, pwm = width 0..1024)",
+            "params": {
+              "pin": {
+                "type": [
+                  "string",
+                  "int"
+                ],
+                "desc": "pin name (led, power_led, flash, servo, btn) or GPIO number"
+              },
+              "value": {
+                "type": "int",
+                "min": 0
+              },
+              "pwm": {
+                "type": "int",
+                "optional": true,
+                "min": 0,
+                "max": 1024,
+                "desc": "PWM width, PWM pins only"
+              }
+            }
+          },
+          "read": {
+            "desc": "read an input pin",
+            "params": {
+              "pin": {
+                "type": [
+                  "string",
+                  "int"
+                ],
+                "desc": "pin name (led, power_led, flash, servo, btn) or GPIO number"
+              }
+            }
+          },
+          "led": {
+            "desc": "switch 'led' on/off, or pulse it",
+            "timeout_s": 5,
+            "params": {
+              "on": {
+                "type": "bool",
+                "desc": "logical level (active_low aware)"
+              },
+              "pulse_ms": {
+                "type": "int",
+                "optional": true,
+                "min": 1,
+                "max": 4000,
+                "desc": "pulse instead: assert, wait, restore"
+              }
+            }
+          },
+          "power_led": {
+            "desc": "switch 'power_led' on/off, or pulse it",
+            "timeout_s": 5,
+            "params": {
+              "on": {
+                "type": "bool",
+                "desc": "logical level (active_low aware)"
+              },
+              "pulse_ms": {
+                "type": "int",
+                "optional": true,
+                "min": 1,
+                "max": 4000,
+                "desc": "pulse instead: assert, wait, restore"
+              }
+            }
+          },
+          "flash": {
+            "desc": "switch 'flash' on/off, or pulse it",
+            "timeout_s": 5,
+            "params": {
+              "on": {
+                "type": "bool",
+                "desc": "logical level (active_low aware)"
+              },
+              "pulse_ms": {
+                "type": "int",
+                "optional": true,
+                "min": 1,
+                "max": 4000,
+                "desc": "pulse instead: assert, wait, restore"
+              }
+            }
+          },
+          "servo": {
+            "desc": "set PWM width of 'servo' (0 = off)",
+            "params": {
+              "pwm": {
+                "type": "int",
+                "min": 0,
+                "max": 1024
+              },
+              "value": {
+                "type": "int",
+                "optional": true,
+                "min": 1,
+                "desc": "frequency; default = configured"
+              }
+            }
+          }
+        },
+        "events": {
+          "led.went_on": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "led.went_off": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "led.changed": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "flash.went_on": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "flash.went_off": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "flash.changed": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "servo.went_on": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "servo.went_off": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "servo.changed": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "btn.went_on": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "btn.went_off": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "btn.changed": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "power_led.went_on": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "power_led.went_off": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          },
+          "power_led.changed": {
+            "payload": {
+              "v": {
+                "type": "int"
+              },
+              "src": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "state": {
+          "led": {
+            "type": "int",
+            "desc": "GPIO 4 level"
+          },
+          "power_led": {
+            "type": "int",
+            "desc": "GPIO 2 level"
+          },
+          "flash": {
+            "type": "int",
+            "desc": "GPIO 5 level"
+          },
+          "servo": {
+            "type": "int",
+            "desc": "GPIO 18 PWM width"
+          },
+          "btn": {
+            "type": "int",
+            "desc": "GPIO 17 input level"
+          }
+        }
+      }
+    }
+  },
+  "state": {},
+  "t": 0
+}

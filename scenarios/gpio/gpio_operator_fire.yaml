@@ -1,0 +1,46 @@
+# gpio/gpio_operator_fire - GE-07 acceptance 1 + 6: the operator's
+# `fire` reaches the gpio namespace owner through GE-06's local forward
+# leg - WITH and WITHOUT a loaded package.
+#
+#   t=10  fire gpio.led.on     NO package has ever been loaded: GE-06
+#          still forwards the command to de_gpio -> led on (the emit is
+#          invisible to the journal - no package, nothing latches). It
+#          fires at t=10, not t=0: the fire has no retransmit and must
+#          land after de_gpio registers with de_comm (~4 s after up)
+#   t=30  fire gpio.led.off    with the package up: went_off latches -
+#          only possible when the pin WAS on, i.e. the no-package fire
+#          drove it (an off on an already-off pin is no edge)
+#   t=40  toggle -> went_on, t=50 toggle -> went_off
+version: 1
+name: gpio_operator_fire
+transport: fake
+operation: ../../packages/gpio_fire.deploy.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: node, cls: static_gpio}
+timeline:
+  - {t: 10, do: fire, event: gpio.led.on, unit: node}
+  - {t: 14, do: deploy}
+  - {t: 20, do: start}
+  - {t: 30, do: fire, event: gpio.led.off, unit: node}
+  - {t: 32, do: wait_journal, unit: node,
+     re: "EVENT_IN event gpio\\.led\\.went_off latched", timeout: 30}
+  - {t: 40, do: fire, event: gpio.led.toggle, unit: node}
+  - {t: 42, do: wait_journal, unit: node,
+     re: "EVENT_IN event gpio\\.led\\.went_on latched", timeout: 30}
+  - {t: 50, do: fire, event: gpio.led.toggle, unit: node}
+  - {t: 52, do: wait_journal, unit: node,
+     re: "EVENT_IN event gpio\\.led\\.went_off latched", timeout: 30}
+  - {t: 60, do: stop}
+assert:
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.led\\.went_on latched",
+                    equals: 1}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.led\\.went_off latched",
+                    equals: 2}
+  # the manual 'idle' mission stays un-activated: operator fires drive
+  # the pin through the module, never through the sensor lane
+  - journal_count: {unit: node, re: "S: idle activated", equals: 0}
+teardown: none

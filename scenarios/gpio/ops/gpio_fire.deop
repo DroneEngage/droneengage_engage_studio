@@ -1,0 +1,30 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_fire",
+    "comment": "GE-07 operator_fire: the gpio.* events are declared so operator fires republish and latch; the single manual mission never activates - it only keeps the package a valid sensor op.",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.led.toggle":   {},
+        "gpio.led.on":       {},
+        "gpio.led.went_on":  {},
+        "gpio.led.went_off": {},
+        "gpio.idle_tick":    {}
+    },
+
+    "missions": {
+        "node": {
+            "idle": {
+                "trigger": "manual",
+                "end": "hold",
+                "steps": [
+                    { "id": "tick", "emit": "gpio.idle_tick" }
+                ]
+            }
+        }
+    }
+}

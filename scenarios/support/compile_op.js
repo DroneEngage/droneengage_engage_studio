@@ -5,6 +5,21 @@
  *
  *   node scenarios/support/compile_op.js <op.deop> --out-dir <dir>
  *       [--binding role=unit1,unit2;role2=unit3] [--pkg-prefix <name>]
+ *       [--caps <unit-caps.json>] [--fleet]
+ *
+ * GE-07: --caps names a serialized unit capability view (the 1089
+ * m_Capabilities object, {"caps": {<ns>: {advert,...}}}) that becomes
+ * the compile-time registry - ops whose `do` steps address
+ * module-advertised per-pin actions (gpio.led & co) fail the Phase-1
+ * stub with "unknown action" without it. scenarios/gpio/ops/
+ * gpio.unit.caps.json is the sim unit's view.
+ *
+ * --fleet forces the package's `fleet` metadata (schema de.package/2.2)
+ * the way the compiler's multi-role / fleet-feature detection does.
+ * The scenario runner deploys through the 1094 PREPARE two-phase path
+ * (bot.op_deploy / cmd_opdeploy), which answers "not a fleet package"
+ * for a plain 2.1 package - a single-role op that still rides the
+ * deploy-spec pipeline needs this flag.
  *
  * For every role in op.roles the script calls the webclient mission
  * compiler (core/mission/compile.ts compileOperation) with binding
@@ -79,10 +94,12 @@ require.extensions['.ts'] = function (module, filename) {
 
 /* ---- args ---- */
 const USAGE = 'usage: node compile_op.js <op.deop> --out-dir <dir>' +
-    ' [--binding role=unit1,unit2;role2=unit3] [--pkg-prefix <name>]';
+    ' [--binding role=unit1,unit2;role2=unit3] [--pkg-prefix <name>]' +
+    ' [--caps <unit-caps.json>] [--fleet]';
 
 function parseArgs(argv) {
-    const a = { op: null, outDir: null, binding: {}, pkgPrefix: null };
+    const a = { op: null, outDir: null, binding: {}, pkgPrefix: null,
+                caps: null, fleet: false };
     for (let i = 0; i < argv.length; ++i) {
         const t = argv[i];
         if (t === '--out-dir') {
@@ -103,6 +120,10 @@ function parseArgs(argv) {
             }
         } else if (t === '--pkg-prefix') {
             a.pkgPrefix = argv[++i];
+        } else if (t === '--caps') {
+            a.caps = argv[++i];
+        } else if (t === '--fleet') {
+            a.fleet = true;
         } else if (t.startsWith('--')) {
             console.error(`compile_op: unknown option '${t}'\n${USAGE}`);
             process.exit(2);
@@ -175,6 +196,25 @@ if (roles === null || typeof roles !== 'object' ||
 const { compileOperation } = require(
     path.join(WC, 'src', 'js', 'core', 'mission', 'compile.ts'));
 
+/* GE-07: --caps builds the compile-time capability registry from a
+   serialized unit view (fn_registryFromUnitCaps); without it the
+   Phase-1 stub is used and module per-pin actions do not resolve. */
+let registry;
+if (args.caps !== null) {
+    let unitCaps;
+    try {
+        unitCaps = JSON.parse(
+            stripComments(fs.readFileSync(args.caps, 'utf8')));
+    } catch (e) {
+        console.error(`compile_op: cannot read caps ${args.caps}: ` +
+            `${e.message}`);
+        process.exit(2);
+    }
+    const { fn_registryFromUnitCaps } = require(
+        path.join(WC, 'src', 'js', 'core', 'mission', 'capRegistry.ts'));
+    registry = fn_registryFromUnitCaps(unitCaps, 'sim');
+}
+
 const pkgPrefix = args.pkgPrefix || op.op ||
     path.basename(args.op).replace(/\.(deop|op\.json|json)$/, '');
 
@@ -203,7 +243,11 @@ let failed = false;
 const deploy = { op: op.op || pkgPrefix, roles: {} };
 for (const roleName of Object.keys(roles)) {
     const binding = { role: roleName, vehicle: roleVehicle(roleName) };
-    const res = compileOperation(op, binding);
+    const opts = {};
+    if (registry !== undefined) opts.registry = registry;
+    if (args.fleet) opts.fleet = true;
+    const res = compileOperation(op, binding,
+        Object.keys(opts).length ? opts : undefined);
     for (const w of res.warnings || []) {
         console.error(`warning ${w.path}: ${w.message}`);
     }

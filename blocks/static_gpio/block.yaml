@@ -1,0 +1,3 @@
+description: Static unit (no FC) with the GPIO module - gpio.* events and pins
+extends: comm_only
+add_modules: [de_gpio]

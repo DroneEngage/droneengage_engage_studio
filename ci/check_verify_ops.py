@@ -46,7 +46,14 @@ def verify_op(op_path):
     if rules is None:
         rules = sorted({f.get("rule") for f in rep.get("findings", [])
                         if f.get("sev") == "error"} - {None})
-    return rules, rep.get("errors", rep.get("error_count", 0))
+    # verify_wrap reports "errors" as the finding LIST (empty on a clean
+    # op) and "error_count" as the number - a clean op must not compare
+    # [] == 0
+    errs = rep.get("error_count")
+    if errs is None:
+        e = rep.get("errors", 0)
+        errs = len(e) if isinstance(e, list) else e
+    return rules, errs
 
 
 # expected-block ops: verify yaml -> operation -> declared rules

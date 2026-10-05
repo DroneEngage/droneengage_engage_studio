@@ -1,0 +1,42 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_probe",
+    "comment": "GE-07 emit_and_notify: a sensor mission emits gpio command events (led.on, flash.pulse, ghost.on) and gates on the module's went_* notifications. g1/g2 must release; g3 (nonexistent pin) must time out on continue - the emit alone never releases a notification gate.",
+
+    "roles": {
+        "probe": { "count": 1, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.led.on":         {},
+        "gpio.led.went_on":    {},
+        "gpio.flash.pulse":    { "payload": { "ms": "number" } },
+        "gpio.flash.went_off": {},
+        "gpio.ghost.on":       {},
+        "gpio.ghost.went_on":  {},
+        "gpio.probe_done":     {}
+    },
+
+    "missions": {
+        "probe": {
+            "walk": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "e1", "emit": "gpio.led.on" },
+                    { "id": "g1", "gate": { "event": "gpio.led.went_on" },
+                      "timeout": 10, "on_timeout": "end" },
+                    { "id": "e2", "emit": "gpio.flash.pulse",
+                      "payload": { "ms": 300 } },
+                    { "id": "g2", "gate": { "event": "gpio.flash.went_off" },
+                      "timeout": 5, "on_timeout": "end" },
+                    { "id": "e3", "emit": "gpio.ghost.on" },
+                    { "id": "g3", "gate": { "event": "gpio.ghost.went_on" },
+                      "timeout": 5, "on_timeout": "continue" },
+                    { "id": "e4", "emit": "gpio.probe_done" }
+                ]
+            }
+        }
+    }
+}

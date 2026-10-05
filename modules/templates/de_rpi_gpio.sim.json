@@ -1,0 +1,47 @@
+{
+    /*
+        Sim pin set for de_rpi_gpio (TEST_MODE_NO_WIRINGPI_LINK build):
+        led/power_led/flash digital outputs, servo a 50 Hz PWM channel
+        (width 51 ~ 1 ms), btn a debounced input on pin 17 driven by
+        gpio_inputs.json in the module's working directory.
+    */
+    "module_id": "GPIO",
+    "s2s_udp_packet_size": "8192",
+
+    "pins":
+    [
+        {
+            "gpio": 4,
+            "mode": 1,
+            "value": 0,
+            "name": "led"
+        },
+        {
+            "gpio": 2,
+            "mode": 1,
+            "value": 1,
+            "gpio_type": 1,
+            "name": "power_led"
+        },
+        {
+            "gpio": 5,
+            "mode": 1,
+            "value": 0,
+            "pulse_ms": 300,
+            "name": "flash"
+        },
+        {
+            "gpio": 18,
+            "mode": 2,
+            "value": 50,
+            "width": 51,
+            "name": "servo"
+        },
+        {
+            "gpio": 17,
+            "mode": 0,
+            "debounce_ms": 50,
+            "name": "btn"
+        }
+    ]
+}

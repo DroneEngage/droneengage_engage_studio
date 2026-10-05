@@ -1,0 +1,77 @@
+# gpio/gpio_emit_and_notify - GE-07 acceptance 1, 2, 5: a sensor mission
+# emits gpio.<pin>.<verb> command events; the namespace owner (de_gpio)
+# drives the pin and its gpio.<pin>.went_* notifications come back as
+# events, releasing the mission's gates.
+#
+#   e1 emit gpio.led.on        -> module switches led on -> g1 releases
+#   e2 emit gpio.flash.pulse   -> 300 ms pulse           -> g2 releases
+#        on went_off
+#   e3 emit gpio.ghost.on      -> no such pin: g3 MUST time out on
+#        continue (the emit alone never releases a notification gate)
+#   e4 emit gpio.probe_done    -> proves the mission walked past g3
+#
+# power_led is a SYSTEM pin (events disabled): its heartbeat toggles
+# over the whole run but must journal nothing.
+version: 1
+name: gpio_emit_and_notify
+transport: fake
+operation: ../../packages/gpio_probe.deploy.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: probe, cls: static_gpio}
+timeline:
+  # restart de_gpio first: pin state lives in the module process, so a
+  # repeated run must come back to the config initials (led/flash off,
+  # servo 51, power_led on) or the second `gpio.led.on` finds no edge
+  - {t: 0, do: restart, unit: probe, proc: de_gpio}
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 20, do: wait_journal, unit: probe,
+     re: "S: walk gate g1 released by gpio\\.led\\.went_on", timeout: 30}
+  - {t: 25, do: wait_journal, unit: probe,
+     re: "S: walk gate g2 released by gpio\\.flash\\.went_off", timeout: 30}
+  - {t: 30, do: wait_journal, unit: probe,
+     re: "S: walk gate g3 timed out -> continue", timeout: 30}
+  - {t: 35, do: wait_journal, unit: probe,
+     re: "S: walk emit gpio\\.probe_done", timeout: 30}
+  - {t: 40, do: stop}
+assert:
+  - journal_count: {unit: probe, re: "S: walk activated", equals: 1}
+  - journal_count: {unit: probe, re: "S: walk emit gpio\\.led\\.on",
+                    at_least: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk gate g1 released by gpio\\.led\\.went_on",
+                    equals: 1}
+  - journal_count: {unit: probe, re: "S: walk emit gpio\\.flash\\.pulse",
+                    at_least: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk gate g2 released by gpio\\.flash\\.went_off",
+                    equals: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk gate g3 timed out -> continue",
+                    equals: 1}
+  - journal_count: {unit: probe, re: "S: walk emit gpio\\.probe_done",
+                    equals: 1}
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event gpio\\.led\\.went_on latched",
+                    at_least: 1}
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event gpio\\.flash\\.went_off latched",
+                    at_least: 1}
+  # gpio.ghost.on IS emitted and latched (declared) - only the module's
+  # notifications must be absent for a pin that does not exist (the
+  # "gate g3 waits gpio.ghost.went_on" line is the wait itself)
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event gpio\\.ghost\\.went",
+                    equals: 0}
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event gpio\\.ghost\\.on latched",
+                    equals: 1}
+  # SYSTEM pin: the heartbeat toggles all run long but must journal no
+  # EVENT (the boot status advert may still note `state gpio.power_led`,
+  # which is a status line, not an event)
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event gpio\\.power_led",
+                    equals: 0}
+teardown: none

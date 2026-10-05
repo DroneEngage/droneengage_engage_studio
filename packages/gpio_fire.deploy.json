@@ -1,0 +1,11 @@
+{
+  "op": "gpio_fire",
+  "roles": {
+    "node": {
+      "pkg": "gpio_fire_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

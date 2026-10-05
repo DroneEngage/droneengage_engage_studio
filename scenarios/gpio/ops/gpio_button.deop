@@ -1,0 +1,30 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_button",
+    "comment": "GE-07 button_trigger: a debounced INPUT pin (btn, 50 ms) drives gpio.btn.went_on; the lamp mission activates on it and switches led on. A sub-sample bounce must not activate it twice.",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.btn.went_on":  {},
+        "gpio.btn.went_off": {},
+        "gpio.led.went_on":  {},
+        "gpio.led.went_off": {}
+    },
+
+    "missions": {
+        "node": {
+            "lamp": {
+                "trigger": { "event": "gpio.btn.went_on" },
+                "end": "hold",
+                "steps": [
+                    { "id": "lit", "do": "gpio.led",
+                      "with": { "on": true }, "timeout": 10 }
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,60 @@
+{
+  "schema": "de.package/2.2",
+  "op": "gpio_button",
+  "op_hash": "sha256:f95407f3920b7a8c5e35aa9b58c803917798e4eeaad22c8aada14f785d921686",
+  "role": "node",
+  "vehicle": {
+    "type": "static"
+  },
+  "requires": [
+    "gpio"
+  ],
+  "fc_items": [],
+  "missions": {
+    "lamp": {
+      "trigger": {
+        "type": "event",
+        "event": "gpio.btn.went_on"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [
+        "gpio"
+      ],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "lit",
+          "k": "do",
+          "do": "gpio.led",
+          "with": {
+            "on": true
+          },
+          "timeout": 10,
+          "on_error": "end"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "gpio.btn.went_on": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "node": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "gpio.btn.went_on": 300,
+      "gpio.btn.went_off": 300,
+      "gpio.led.went_on": 300,
+      "gpio.led.went_off": 300
+    }
+  },
+  "hash": "sha256:a383393eccfcccea4f9613745f4c4ba98779780b4597787845c16695a915c81d"
+}

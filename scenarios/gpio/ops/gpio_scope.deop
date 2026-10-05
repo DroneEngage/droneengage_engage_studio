@@ -1,0 +1,37 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_scope",
+    "comment": "GE-07 fleet_scope (A-7): a declared gpio.btn.went_on notification republishes to the fleet, so BOTH units' unfiltered remote_heard activates while only the pressing unit's self-filtered own_btn does (when: event.src == self.party). Remote events never reach a module, so the remote unit's led stays off.",
+
+    "roles": {
+        "node": { "count": 2, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.btn.went_on":  {},
+        "gpio.btn.went_off": {},
+        "scope.heard":       {},
+        "scope.own":         {}
+    },
+
+    "missions": {
+        "node": {
+            "remote_heard": {
+                "trigger": { "event": "gpio.btn.went_on" },
+                "end": "hold",
+                "steps": [
+                    { "id": "mark", "emit": "scope.heard" }
+                ]
+            },
+            "own_btn": {
+                "trigger": { "event": "gpio.btn.went_on",
+                             "when": "${event.src == self.party}" },
+                "end": "hold",
+                "steps": [
+                    { "id": "mark", "emit": "scope.own" }
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,79 @@
+{
+  "schema": "de.package/2.2",
+  "op": "gpio_actions",
+  "op_hash": "sha256:5366ada48325531211c57738970176eeaa0cb432428e436f71ded1828fa13677",
+  "role": "actor",
+  "vehicle": {
+    "type": "static"
+  },
+  "requires": [
+    "gpio"
+  ],
+  "fc_items": [],
+  "missions": {
+    "pins": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [
+        "gpio"
+      ],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "led",
+          "k": "do",
+          "do": "gpio.led",
+          "with": {
+            "on": true
+          },
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "flash",
+          "k": "do",
+          "do": "gpio.flash",
+          "with": {
+            "on": true,
+            "pulse_ms": 300
+          },
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "servo",
+          "k": "do",
+          "do": "gpio.servo",
+          "with": {
+            "pwm": 102
+          },
+          "timeout": 10,
+          "on_error": "end"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {},
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "actor": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "gpio.led.went_on": 300,
+      "gpio.led.went_off": 300,
+      "gpio.flash.went_on": 300,
+      "gpio.flash.went_off": 300,
+      "gpio.servo.changed": 300
+    }
+  },
+  "hash": "sha256:dacc15ef853113a40de1f215f95f3892e5134f43e83b9141dfb55ced5a6effec"
+}
