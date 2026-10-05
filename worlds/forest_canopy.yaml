@@ -16,12 +16,11 @@
 #                 alt 8 m (inside the band), so the RF the sdr model
 #                 gates on must cross the crown.
 #
-# camera lens rectilinear (D7 - a real lens; the product projector
-# stays angle_linear until P5-18, so a detect.detected position keeps
-# up to ~1 m of projector error at 40 m nadir - inside every distance
-# budget here) and clutter is ground-anchored (D8 - a false positive
-# is a seeded ground point re-projected every frame; occlusion gates
-# it too).
+# camera lens rectilinear (D7 - a real lens; since P5-18 the product
+# projector uses the same model, so detect.detected positions carry no
+# systematic projector error) and clutter is ground-anchored (D8 - a
+# false positive is a seeded ground point re-projected every frame;
+# occlusion gates it too).
 #
 # sdr gate math (stub_sdr model, threshold -70 dBm, n 2.7,
 # ref_dbm_1m -30 + tx 10):

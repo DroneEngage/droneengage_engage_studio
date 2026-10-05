@@ -25,7 +25,7 @@ epoch, so truth and detections always agree.
     clutter: {cls: person, rate_per_km2_min: 0.2, lifetime_s: 20,
               anchor: ground}
     sensors:
-      camera: {lens: angle_linear, hfov_deg, vfov_deg, mount_pitch_deg,
+      camera: {lens: rectilinear, hfov_deg, vfov_deg, k1, k2, mount_pitch_deg,
                mount_yaw_deg, mount_roll_deg, mount_height_m, img_w,
                img_h, p_detect_nadir, p_detect_edge, max_range_m,
                pos_noise_px, fps_boxes, size_m: {person: 0.5, "*": 0.5}}
@@ -121,10 +121,11 @@ import simlib
 VERSION = 1
 
 CAMERA_DEFAULTS = {
-    "lens": "angle_linear",              # | rectilinear (P5-10 D7)
+    "lens": "rectilinear",               # | angle_linear (P5-10 D7; P5-18 default)
     "kind": "rgb",                       # | thermal (P5-11 D5)
     "p_detect_thermal": 0.85,            # flat p for kind: thermal
     "hfov_deg": 62.2, "vfov_deg": 48.8,
+    "k1": 0.0, "k2": 0.0,                # Brown radial distortion (P5-18 D3)
     "mount_pitch_deg": -90.0, "mount_yaw_deg": 0.0, "mount_roll_deg": 0.0,
     "mount_height_m": 0.0,               # static units only (SU-04)
     "img_w": 1280, "img_h": 720,

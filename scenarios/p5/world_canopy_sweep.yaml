@@ -8,9 +8,9 @@
 # under the crown, gap 0.3 - is REPORTED, not asserted: whether a 40 m
 # lawnmower finds a person under canopy is the property under study
 # (max 1 is vacuous, it only prints the recall). distance_to budget
-# note: the world camera is rectilinear while the product projector
-# stays angle_linear until P5-18, so a reported position keeps up to
-# ~1 m of projector error - inside the 25 m budget.
+# note: since P5-18 the world camera and the product projector share
+# the rectilinear model, so a reported position carries no systematic
+# projector error - comfortably inside the 25 m budget.
 version: 1
 name: world_canopy_sweep
 seed: 7

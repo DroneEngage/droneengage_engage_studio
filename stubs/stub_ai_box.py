@@ -129,7 +129,9 @@ class StubAIBox(StubBase):
                             "noise_scale": 1.0,
                             "max_range_m": cam["max_range_m"]})
         self.camera = gp.GeoCameraParams(cam["hfov_deg"], cam["vfov_deg"],
-                                         cam.get("lens", "angle_linear"))
+                                         cam.get("lens", "rectilinear"),
+                                         cam.get("k1", 0.0),
+                                         cam.get("k2", 0.0))
         self.mount = gp.GeoMountParams(cam["mount_pitch_deg"],
                                      cam["mount_yaw_deg"],
                                      cam["mount_roll_deg"])

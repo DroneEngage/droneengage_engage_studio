@@ -46,7 +46,9 @@ int main (int argc, char** argv)
     const std::string j(argv[1]);
 
     const GeoCameraParams cam  = {field(j, "hfov_deg", 62.2),
-                                  field(j, "vfov_deg", 48.8)};
+                                  field(j, "vfov_deg", 48.8),
+                                  field(j, "k1", 0.0),
+                                  field(j, "k2", 0.0)};
     const GeoMountParams mount = {field(j, "mount_pitch_deg", -90.0),
                                   field(j, "mount_yaw_deg", 0.0),
                                   field(j, "mount_roll_deg", 0.0)};

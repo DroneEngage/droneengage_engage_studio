@@ -247,7 +247,9 @@ Format (strict - unknown keys fail against
   camera and SDR models; P5-10 adds `obstacles` - canopy crowns and
   buildings as vertical prisms the stubs attenuate/occlude through
   (`transmittance`, `rf_loss_db`) -, a camera `lens:` option
-  (`angle_linear` the default, `rectilinear` what a real lens does) and
+  (`rectilinear` the default since P5-18 - what a real pinhole lens and
+  the product projector do; `angle_linear` kept for comparison) and
+  optional Brown `k1`/`k2` distortion,
   ground-anchored clutter (`anchor: ground` - a false positive is a
   fixed ground point, not a sliding pixel); P5-11 adds per-entity
   `behaviour:` (seeded `stationary`/`wander`/`trail`/`seek` tracks that
@@ -359,3 +361,9 @@ machine, so `sim up` stops with a clear "missing binaries" error.
 - The authenticator allows 10 logins/min per IP. All units share 127.0.0.1,
   so an auth sim with more than ~9 units will see some de_comm logins retried.
 - SITL needs ~1-2 min for GPS/EKF before `arm` succeeds. `arm` waits for it.
+- **P5-18 lens flip (release note):** the projection model changed from
+  angle-linear to rectilinear in `de_common::geo_projection` and the
+  harness together. Detection ground positions move by up to ~2.5 % of
+  altitude off-axis, so positions/uncertainties recorded before the fix
+  are **not directly comparable** to post-fix replays (the stub goldens
+  were re-recorded for this reason).

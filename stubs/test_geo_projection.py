@@ -61,6 +61,7 @@ def forward_cpp(u, v, bw, bh, cam, mount, att, pose,
     req = {
         "u": u, "v": v, "bw": bw, "bh": bh,
         "hfov_deg": cam.hfov_deg, "vfov_deg": cam.vfov_deg,
+        "k1": cam.k1, "k2": cam.k2,
         "mount_pitch_deg": mount.pitch_deg,
         "mount_yaw_deg": mount.yaw_deg,
         "mount_roll_deg": mount.roll_deg,
@@ -131,14 +132,19 @@ def main():
         if err > budget:
             fails.append(f"{label}: {err:.3f} m > {budget} m")
 
-    # ---- 3. the Python forward port matches the C++ element for element
+    # ---- 3. the Python forward port matches the C++ element for
+    # element - including the P5-18 rectilinear s_box and a distorted
+    # (k1/k2) camera
     att = gp.GeoAttitude(math.radians(3), math.radians(-7),
                          math.radians(40))
-    for u, v, bw, bh in ((0.0, 0.0, 0.1, 0.1), (0.2, -0.3, 0.05, 0.2),
-                         (-0.4, 0.1, 0.02, 0.02)):
-        c = forward_cpp(u, v, bw, bh, cam, nadir, att, home,
+    cam_k = gp.GeoCameraParams(k1=0.05, k2=0.02)
+    for u, v, bw, bh, ccam in (
+            (0.0, 0.0, 0.1, 0.1, cam), (0.2, -0.3, 0.05, 0.2, cam),
+            (-0.4, 0.1, 0.02, 0.02, cam),
+            (0.3, 0.25, 0.1, 0.1, cam_k), (-0.2, 0.4, 0.1, 0.1, cam_k)):
+        c = forward_cpp(u, v, bw, bh, ccam, nadir, att, home,
                         sigma_att_deg=2.0, sigma_alt_m=2.0)
-        p = gp.geo_project_to_ground(u, v, bw, bh, cam, nadir, att, home,
+        p = gp.geo_project_to_ground(u, v, bw, bh, ccam, nadir, att, home,
                                      2.0, 2.0)
         if c["ok"] != p.ok or (p.ok and (
                 abs(c["lat"] - p.lat) > 1e-9 or

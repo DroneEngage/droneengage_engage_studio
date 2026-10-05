@@ -12,11 +12,13 @@ box convention (0..1 top-left) converts with geoBoxToCentered.
 The forward path is a line-for-line port so the C++ round-trip test
 (stubs/test_geo_projection.py) can compare bit-for-bit projections.
 
-Lens (P5-10 D7): the camera model maps image fraction u to the ray
-either angle-linear (u * fov in tangent space - the product's own
-model, the default) or rectilinear (2u * tan(fov/2) - a real lens and
-Mavlink3DMap's PerspectiveCamera). The world camera may be either;
-the product projector stays angle_linear until P5-18.
+Lens (P5-10 D7, P5-18): the camera model maps image fraction u to the
+ray either rectilinear (2u * tan(fov/2) - a real pinhole lens and
+Mavlink3DMap's PerspectiveCamera; the product's model since P5-18, the
+default) or angle-linear (u * fov in tangent space - kept for
+comparison/legacy worlds). Optional Brown k1/k2 distortion applies to
+the rectilinear coordinates, matching GeoCameraParams in the product
+header.
 """
 
 import math
@@ -37,7 +39,9 @@ def geo_deg2rad(deg):
 class GeoCameraParams:
     hfov_deg: float = 62.2
     vfov_deg: float = 48.8
-    lens: str = "angle_linear"   # | rectilinear (P5-10 D7)
+    lens: str = "rectilinear"    # | angle_linear (P5-10 D7; P5-18 default flip)
+    k1: float = 0.0              # Brown radial distortion (P5-18 D3)
+    k2: float = 0.0
 
 
 @dataclass
@@ -76,11 +80,18 @@ def geo_box_to_centered(normalized01):
 
 
 def geo_ray_camera(u, v, cam):
-    """Pinhole ray in camera frame (x right, y down, z forward)."""
+    """Pinhole ray in camera frame (x right, y down, z forward).
+    Rectilinear: 2u*tan(fov/2); k1/k2 apply the Brown radial distortion
+    x_d = x (1 + k1 r^2 + k2 r^4) on the ideal coordinates - identical
+    to the product geoRayCamera (P5-18)."""
     if cam.lens == "rectilinear":
-        return (2.0 * u * math.tan(geo_deg2rad(cam.hfov_deg) / 2.0),
-                2.0 * v * math.tan(geo_deg2rad(cam.vfov_deg) / 2.0),
-                1.0)
+        x = 2.0 * u * math.tan(geo_deg2rad(cam.hfov_deg) / 2.0)
+        y = 2.0 * v * math.tan(geo_deg2rad(cam.vfov_deg) / 2.0)
+        if cam.k1 == 0.0 and cam.k2 == 0.0:
+            return (x, y, 1.0)
+        r2 = x * x + y * y
+        d = 1.0 + cam.k1 * r2 + cam.k2 * r2 * r2
+        return (x * d, y * d, 1.0)
     return (math.tan(u * geo_deg2rad(cam.hfov_deg)),
             math.tan(v * geo_deg2rad(cam.vfov_deg)),
             1.0)
@@ -183,9 +194,20 @@ def geo_project_to_ground(u, v, box_w, box_h, cam, mount, att, pose,
 
     s_alt = sigma_alt_m / rd
     s_att = geo_deg2rad(sigma_att_deg) * slant_m
-    s_box = 0.5 * slant_m * max(
-        abs(box_w) * geo_deg2rad(cam.hfov_deg),
-        abs(box_h) * geo_deg2rad(cam.vfov_deg))
+    if cam.lens == "rectilinear":
+        # rectilinear angular size of the half box at ITS position
+        # (P5-18 D2 - same atan-difference the product uses)
+        tan_hf = math.tan(0.5 * geo_deg2rad(cam.hfov_deg))
+        tan_vf = math.tan(0.5 * geo_deg2rad(cam.vfov_deg))
+        ang_w = abs(math.atan(2.0 * (u + box_w * 0.5) * tan_hf)
+                    - math.atan(2.0 * (u - box_w * 0.5) * tan_hf))
+        ang_h = abs(math.atan(2.0 * (v + box_h * 0.5) * tan_vf)
+                    - math.atan(2.0 * (v - box_h * 0.5) * tan_vf))
+        s_box = 0.5 * slant_m * max(ang_w, ang_h)
+    else:
+        s_box = 0.5 * slant_m * max(
+            abs(box_w) * geo_deg2rad(cam.hfov_deg),
+            abs(box_h) * geo_deg2rad(cam.vfov_deg))
     res.unc_m = 2.0 * math.sqrt(s_alt * s_alt + s_att * s_att + s_box * s_box)
 
     res.ok = True
@@ -219,11 +241,19 @@ def geo_ground_to_pixel(lat, lng, alt_above_plane_m, cam, mount, att, pose):
     if cam_z <= 1e-9:
         return None
     if cam.lens == "rectilinear":
-        # the atan-free inverse of geo_ray_camera's 2u*tan(fov/2)
-        u = (cam_x / cam_z) / \
-            (2.0 * math.tan(geo_deg2rad(cam.hfov_deg) / 2.0))
-        v = (cam_y / cam_z) / \
-            (2.0 * math.tan(geo_deg2rad(cam.vfov_deg) / 2.0))
+        # the atan-free inverse of geo_ray_camera's 2u*tan(fov/2); with
+        # k1/k2 the distorted radius is undistorted by fixed-point
+        # iteration (deterministic; converges for sane coefficients)
+        xd = cam_x / cam_z
+        yd = cam_y / cam_z
+        x, y = xd, yd
+        if cam.k1 != 0.0 or cam.k2 != 0.0:
+            for _ in range(16):
+                r2 = x * x + y * y
+                d = 1.0 + cam.k1 * r2 + cam.k2 * r2 * r2
+                x, y = xd / d, yd / d
+        u = x / (2.0 * math.tan(geo_deg2rad(cam.hfov_deg) / 2.0))
+        v = y / (2.0 * math.tan(geo_deg2rad(cam.vfov_deg) / 2.0))
     else:
         u = math.atan2(cam_x, cam_z) / geo_deg2rad(cam.hfov_deg)
         v = math.atan2(cam_y, cam_z) / geo_deg2rad(cam.vfov_deg)
