@@ -94,7 +94,7 @@ assert:
   # no OP_END in this scenario: the other roles legitimately keep
   # flying their standby/search missions - only the ambulance comes home
   - final_state: {unit: "amb1", fc_mode: [RTL, LAND]}
-  - final_state: {unit: "scout1,sdr1,s1,s2,s3", fc_mode: [AUTO, LOITER, RTL, LAND]}
+  - final_state: {unit: "scout1,sdr1,s1,s2,s3", fc_mode: [AUTO, GUIDED, LOITER, RTL, LAND]}
   - fc_items_unchanged_without_cause:
       {unit: "all",
        cause_re: "MISSION_(WRITE|UPLOAD|ACK)|fc mission|FC mission|mission.*upload|upload"}

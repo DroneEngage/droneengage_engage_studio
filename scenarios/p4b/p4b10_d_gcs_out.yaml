@@ -91,7 +91,7 @@ assert:
   - journal_count: {unit: "all", re: "OP_END payload\\.dropped", equals: 1}
   - journal_count: {unit: "amb1", re: "emit payload\\.dropped", equals: 1}
   - final_state: {unit: "amb1,s1,s2,s3,sdr1", fc_mode: [RTL, LAND]}
-  - final_state: {unit: "scout1", fc_mode: [AUTO, LOITER, RTL, LAND]}
+  - final_state: {unit: "scout1", fc_mode: [AUTO, GUIDED, LOITER, RTL, LAND]}
   - fc_items_unchanged_without_cause:
       {unit: "all",
        cause_re: "MISSION_(WRITE|UPLOAD|ACK)|fc mission|FC mission|mission.*upload|upload"}

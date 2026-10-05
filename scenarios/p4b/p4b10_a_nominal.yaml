@@ -139,7 +139,7 @@ assert:
   # every vehicle ends RTL or landed; scout1's then-rule is hold - it
   # may legitimately still be finishing its wide_search segment
   - final_state: {unit: "amb1,s1,s2,s3,sdr1", fc_mode: [RTL, LAND]}
-  - final_state: {unit: "scout1", fc_mode: [AUTO, LOITER, RTL, LAND]}
+  - final_state: {unit: "scout1", fc_mode: [AUTO, GUIDED, LOITER, RTL, LAND]}
   # --- global ----------------------------------------------------------
   # the SAR op rewrites FC missions by design (paged/dynamic segment +
   # launch uploads are the journaled cause) - the stock CAUSE_RE only

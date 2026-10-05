@@ -113,7 +113,7 @@ assert:
   - journal_count: {unit: "amb1", re: "emit payload\\.dropped", equals: 1}
   # every vehicle ends RTL/landed - s2 included (its link is back by then)
   - final_state: {unit: "amb1,s1,s2,s3,sdr1", fc_mode: [RTL, LAND]}
-  - final_state: {unit: "scout1", fc_mode: [AUTO, LOITER, RTL, LAND]}
+  - final_state: {unit: "scout1", fc_mode: [AUTO, GUIDED, LOITER, RTL, LAND]}
   - proc_alive: {unit: "s2", proc: de_comm}
   - fc_items_unchanged_without_cause:
       {unit: "all",
