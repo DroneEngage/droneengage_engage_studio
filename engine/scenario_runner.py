@@ -431,10 +431,9 @@ def _watcher_fires(w, ctx):
     u = ctx["units_by_name"].get(w["unit"])
     if u is None:
         return True
-    lines = simlib.journal_lines(u, ctx["marks"].get(u["name"]))
-    new = lines[w["cursor"]:]
-    w["cursor"] = len(lines)
-    for ln in new:
+    if w["offsets"] is None:
+        w["offsets"] = dict(ctx["marks"].get(u["name"]) or {})
+    for ln in simlib.journal_read_new(u, w["offsets"]):
         m = w["rx"].search(ln[4] + " " + ln[5]) or w["rx"].search(ln[5])
         if not m:
             continue
@@ -455,7 +454,7 @@ def run_timeline(scn, ctx):
     t_steps = sorted((s for s in steps if "t" in s), key=lambda s: s["t"])
     watchers = [{"unit": str(s["on"]["unit"]),
                  "rx": re.compile(s["on"]["re"]),
-                 "step": s, "cursor": 0, "fired": 0,
+                 "step": s, "offsets": None, "fired": 0,
                  "once": bool(s.get("once", True)), "armed": True}
                 for s in steps if "on" in s]
     ok = True
@@ -474,6 +473,10 @@ def run_timeline(scn, ctx):
             s = pending.pop(0)
             print(f"  t={s['t']}: {json.dumps(_step_args(s))}", flush=True)
             ok &= _run_step(s, scn, ctx)
+            # a blocking step (wait_journal, deploy) may run past last_t:
+            # settle_s is measured from when the last step really ended
+            if not pending:
+                end = max(end, time.time() + scn["settle_s"])
         for w in watchers:
             if w["armed"]:
                 ok &= _watcher_fires(w, ctx)

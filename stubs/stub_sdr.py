@@ -171,6 +171,17 @@ class StubSDR(StubBase):
         self.peak_freq = 0.0
         self._last_sweep = -1
 
+    def reset_run(self):
+        """A reused sim must not carry a scan, debounce or throttle state
+        from the last scenario into this one."""
+        was = self.scan is not None
+        self.scan = None
+        self.detector.reset()
+        self._last_sweep = -1
+        self.peak_dbm = self.peak_freq = 0.0
+        if was:
+            self.state({"scanning": False})
+
     # ----------------------------------------------------------- invokes
 
     def on_invoke(self, ns, act, params):
@@ -235,26 +246,33 @@ class StubSDR(StubBase):
         f_start, f_end = self.scan["f_start"], self.scan["f_end"]
         n_bins = max(1, int((f_end - f_start) / self.bin_hz))
         n_bins = min(n_bins, 4096)
+        # a wide scan keeps 4096 bins and widens them - a fixed bin_hz
+        # would leave every emitter above f_start + 4096*bin_hz unseen
+        step = (f_end - f_start) / n_bins
         # noise floor: one seeded draw per bin per sweep
         r = self.rng("sdr", self.unit, sweep)
         bins = [-100.0 + r.gauss(0.0, self.noise_db)
                 for _ in range(n_bins)]
-        # each transmitter inside the band lifts its nearest bin by the
-        # log-distance RSSI at the unit's current range
+        # each transmitter inside the band lifts its bin by the
+        # log-distance RSSI at the unit's current SLANT range (a copter
+        # 40 m above a phone is 40 m away, not 1 m)
+        owner = {}                       # bin -> (rssi, tid) strongest emitter
         for e in self.world.rf_entities():
             f = e.freq_hz if e.freq_hz is not None else \
                 float(self.world.sensors["sdr"]["freq_hz"])
             if not (f_start <= f <= f_end):
                 continue
-            lat, lng, _alt = e.pos_at(t_s, self.world)
-            d = max(1.0, gp.geo_distance_m(pose["lat"], pose["lng"],
-                                           lat, lng))
+            lat, lng, ealt = e.pos_at(t_s, self.world)
+            h = gp.geo_distance_m(pose["lat"], pose["lng"], lat, lng)
+            dz = float(pose.get("rel_alt_m") or 0.0) - ealt
+            d = max(1.0, math.hypot(h, dz))
             rssi = self.tx_ref(e) - 10.0 * self.path_loss_n * \
                 math.log10(d)
-            bi = int((f - f_start) / self.bin_hz)
-            if 0 <= bi < n_bins:
-                bins[bi] = max(bins[bi], rssi)
-        det = self.detector.process_sweep(f_start, self.bin_hz, bins, t_s)
+            bi = min(n_bins - 1, int((f - f_start) / step))
+            bins[bi] = max(bins[bi], rssi)
+            if rssi > owner.get(bi, (-1e9, None))[0]:
+                owner[bi] = (rssi, e.id)
+        det = self.detector.process_sweep(f_start, step, bins, t_s)
         if det is None:
             return
         freq, rssi, snr = det
@@ -267,14 +285,12 @@ class StubSDR(StubBase):
                     "snr_db": round(snr, 1)})
         self.state({"peak_dbm": self.peak_dbm,
                     "peak_freq": self.peak_freq})
-        # truth row: the emitter that owns the peak bin (or "clutter")
-        tid = "clutter"
-        for e in self.world.rf_entities():
-            f = e.freq_hz if e.freq_hz is not None else \
-                float(self.world.sensors["sdr"]["freq_hz"])
-            if abs(f - freq) <= self.bin_hz:
-                tid = e.id
-                break
+        # truth row: the strongest emitter in the peak bin, and only if it
+        # (not the noise draw) set the peak - else the event is "clutter"
+        pbin = min(n_bins - 1, int((freq - f_start) / step))
+        own = owner.get(pbin)
+        tid = own[1] if own is not None and own[0] >= rssi - 1e-9 \
+            else "clutter"
         self.truth.append({"src": "sdr", "tid": tid, "cls": "rf",
                            "freq": freq, "rssi_dbm": round(rssi, 1),
                            "lat": pose["lat"], "lng": pose["lng"],

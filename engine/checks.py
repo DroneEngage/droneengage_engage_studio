@@ -36,6 +36,7 @@ import json
 import math
 import os
 import re
+import time
 
 import simlib
 import ctl
@@ -206,20 +207,26 @@ def capture_baseline(ctx):
 
 # ---------------------------------------------------------------- checks
 
+_CMP_OPS = (("eq", "==", lambda x, w: x == w),
+            ("equals", "==", lambda x, w: x == w),
+            ("at_least", ">=", lambda x, w: x >= w),
+            ("at_most", "<=", lambda x, w: x <= w),
+            ("lt", "<", lambda x, w: x < w), ("le", "<=", lambda x, w: x <= w),
+            ("gt", ">", lambda x, w: x > w), ("ge", ">=", lambda x, w: x >= w))
+
+
 def _cmp(a, v, detail=""):
-    """{eq|equals, at_least, at_most, lt, gt, le, ge} on a number."""
-    if "eq" in a or "equals" in a:
-        want = a.get("eq", a.get("equals"))
-        return v == want, f"{v} == {want}"
-    if "at_least" in a:
-        return v >= a["at_least"], f"{v} >= {a['at_least']}"
-    if "at_most" in a:
-        return v <= a["at_most"], f"{v} <= {a['at_most']}"
-    for k, op in (("lt", lambda x, w: x < w), ("le", lambda x, w: x <= w),
-                  ("gt", lambda x, w: x > w), ("ge", lambda x, w: x >= w)):
+    """{eq|equals, at_least, at_most, lt, gt, le, ge} on a number. Every
+    bound given must hold ({at_least: 1, at_most: 3} is a range); none
+    given means >= 1."""
+    good, txt = True, []
+    for k, sym, op in _CMP_OPS:
         if k in a:
-            return op(v, a[k]), f"{v} {k} {a[k]}"
-    return v >= 1, f"{v} >= 1"
+            good &= op(v, a[k])
+            txt.append(f"{v} {sym} {a[k]}")
+    if not txt:
+        return v >= 1, f"{v} >= 1"
+    return good, " and ".join(txt)
 
 
 def _journal_count(name, a, ctx):
@@ -764,16 +771,19 @@ def _link_offline(name, a, ctx):
     interval still open at assert time counts once."""
     events = ctx.get("link_events") or {}
     min_s = float(a.get("min_s", 0))
+    now_ms = int(time.time() * 1000)
     ok, bits, total = True, [], 0
     for u in _units(a, ctx):
         ev = events.get(u["party_id"], [])
         n = 0
         t_off = None
-        for t, online in ev + [(float("inf"), True)]:
+        # the sentinel closes an interval still open now: it counts only
+        # if it has already lasted min_s
+        for t, online in ev + [(now_ms, True)]:
             if not online and t_off is None:
                 t_off = t
             elif online and t_off is not None:
-                dur = (t - t_off) / 1000.0 if t != float("inf") else min_s
+                dur = (t - t_off) / 1000.0
                 if dur >= min_s:
                     n += 1
                 t_off = None

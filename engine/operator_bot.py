@@ -55,6 +55,8 @@ class OperatorBot:
         self._ev_seq = {}             # run -> last seq the bot used (1090)
         self._op_q = 0                # 1093 author sequence
         self._replies = []            # recent non-roster frames (max 400)
+        self._n_replies = 0           # frames ever appended (ring index base)
+        self._decided = set()         # (party, req) the policy already sent
         self._was_connected = True    # start() logs the first connect
 
     # ------------------------------------------------------------- log
@@ -154,6 +156,7 @@ class OperatorBot:
         with self._lock:
             if mt != 1092:               # roster churn is not a reply
                 self._replies.append(msg)
+                self._n_replies += 1
                 del self._replies[:-400]
             if mt == 1092 and sd:
                 self._roster[sd] = ms
@@ -172,6 +175,7 @@ class OperatorBot:
                 for req in list(seen):
                     if req not in live:
                         del seen[req]
+                        self._decided.discard((sd, req))
             elif mt == 1090 and isinstance(ms, dict):
                 tid = ms.get("tgt") or (ms.get("p") or {}).get("tid")
                 if tid and tid not in self._targets:
@@ -315,9 +319,7 @@ class OperatorBot:
             return False
 
     async def _confirm_async(self, tid, tg, state, run):
-        self._op_q += 1
-        op = {"o": "state", "tid": tid, "st": state,
-              "t": self.fleet_ms(), "by": self.party, "q": self._op_q}
+        op = self._next_op(tid, state)
         ms = {"v": 1, "run": run if run is not None else (
             self._run_of(tg) if tg not in ("_AGN_", "_GD_") else ""),
               "ops": [op]}
@@ -336,21 +338,33 @@ class OperatorBot:
                           "WORLD", f"{state} tid={tid} tg={tg}")
 
     def _next_op(self, tid, state):
-        self._op_q += 1
+        # called from the runner thread (confirm) and the loop thread
+        # (policy) - the author sequence must never repeat
+        with self._lock:
+            self._op_q += 1
+            q = self._op_q
         return {"o": "state", "tid": tid, "st": state,
-                "t": self.fleet_ms(), "by": self.party, "q": self._op_q}
+                "t": self.fleet_ms(), "by": self.party, "q": q}
 
     # -------------------------------------------------- op control (1094)
 
-    def wait_reply(self, pred, timeout):
-        """Latest received frame pred(msg)->True, or None. Polls the
-        reply ring from the caller's thread."""
+    def reply_mark(self):
+        """Position in the reply stream - pass as wait_reply(since=) to
+        accept only frames that arrive after this point."""
+        with self._lock:
+            return self._n_replies
+
+    def wait_reply(self, pred, timeout, since=0):
+        """Latest frame with pred(msg)->True among those received after
+        reply_mark() == since, or None. The ring keeps the last 400
+        frames; positions are absolute so trimming never hides new ones."""
         t0 = time.time()
-        seen = 0
+        seen = since
         while time.time() - t0 < timeout:
             with self._lock:
-                frames = self._replies[seen:]
-                seen = len(self._replies)
+                first = self._n_replies - len(self._replies)
+                frames = self._replies[max(0, seen - first):]
+                seen = self._n_replies
             hit = next((m for m in reversed(frames) if pred(m)), None)
             if hit is not None:
                 return hit
@@ -401,6 +415,7 @@ class OperatorBot:
             return False
         self.log("DEPLOY", f"op {op} run {run}: PREPARE -> "
                  + ", ".join(f"{p}={r}" for p, r, _, _ in jobs))
+        mark = self.reply_mark()
         for p, role, text, h in jobs:
             if not self._send(
                     {"ty": "i", "mt": 1094, "tg": p,
@@ -414,7 +429,7 @@ class OperatorBot:
                 lambda m, p=p: m.get("mt") == 1094 and m.get("sd") == p
                 and (m.get("ms") or {}).get("run") == run
                 and (m.get("ms") or {}).get("a") in ("ready", "fail"),
-                timeout)
+                timeout, since=mark)
             if ans is None:
                 self.log("DEPLOY", f"{p}: no PREPARE reply")
                 ok = False
@@ -447,6 +462,7 @@ class OperatorBot:
             ms["start"] = ov["start"]
         self.log("START", f"run {run} t_start={ms['t_start']} "
                  f"-> {', '.join(parties)}")
+        mark = self.reply_mark()
         for p in parties:
             self._send({"ty": "i", "mt": 1094, "tg": p, "ms": dict(ms)},
                        "START", f"{p} run={run}")
@@ -458,7 +474,7 @@ class OperatorBot:
                 lambda m, p=p: m.get("mt") == 1094 and m.get("sd") == p
                 and (m.get("ms") or {}).get("run") == run
                 and (m.get("ms") or {}).get("a") in ("started", "fail"),
-                secs)
+                secs, since=mark)
             if ans is None:
                 self.log("START", f"{p}: no START reply")
                 ok = False
@@ -475,14 +491,18 @@ class OperatorBot:
         run = st.get("run", "") if not run or run == "-" else run
         parties = sorted(st.get("bind") or {})
         ok = True
+        mark = self.reply_mark()
         for p in parties:
             self._send({"ty": "i", "mt": 1094, "tg": p,
                         "ms": {"a": "abort", "run": run, "why": why}},
                        "ABORT", f"{p} run={run or '-'} {why}".strip())
         for p in parties:
+            # only frames after this send - an "aborted" from an earlier
+            # abort in the ring must not answer this one
             ans = self.wait_reply(
                 lambda m, p=p: m.get("mt") == 1094 and m.get("sd") == p
-                and (m.get("ms") or {}).get("a") == "aborted", timeout)
+                and (m.get("ms") or {}).get("a") == "aborted",
+                timeout, since=mark)
             self.log("ABORTED" if ans else "ABORT",
                      p if ans else f"{p}: no reply")
             ok &= ans is not None
@@ -512,12 +532,16 @@ class OperatorBot:
                     if not r["decided"]}
         for party, rows in pend.items():
             for req, row in rows.items():
+                if (party, req) in self._decided:
+                    continue        # one decision per request, not one per tick
                 kind = row.get("kind")
                 for act in ("approve", "deny"):
                     rule = (self.policy.get(act) or {}).get(kind)
                     if rule is None:
                         continue
                     if now - row["first_seen"] >= float(rule.get("after_s", 0)):
+                        with self._lock:
+                            self._decided.add((party, req))
                         self._submit(self._decide_async(
                             party, req, kind, act, 0))
                         break

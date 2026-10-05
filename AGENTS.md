@@ -197,6 +197,8 @@ and make `ctl.ctrl` refuse it for that server type.
 Minimum before handing back:
 
     python3 -c "import ast,glob;[ast.parse(open(f).read()) for f in glob.glob('engine/*.py')]"
+    python3 engine/test_checks.py                      # assertions, journal reader, bot, ports
+    python3 stubs/test_stubs.py                        # stub sensor models (needs the databus checkout)
     for f in sims/*.yaml; do ./sim show $f; done      # resolution, no side effects
     ./sim run tests/smoke_copters.yaml                 # real server path
     ./sim run tests/fault_link_loss.yaml               # if fake server / ctl faults touched
