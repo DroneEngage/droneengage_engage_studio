@@ -255,7 +255,7 @@ Format (strict - unknown keys fail against
   relative `at`, `modules`, `params`, `config`, `account`. `modules`
   can add catalog entries such as the P5-08 world stubs
   (`stub_ai_box`, `stub_sdr`, `stub_payload`): python databus modules
-  in `stubs/` that read the vehicle pose (SITL serial3 on FC units,
+  in `stubs/` that read the vehicle pose (SITL serial5 on FC units,
   the intermodule 9102 feed on statics), run the world's seeded
   camera/SDR/payload models, and emit the real advert/event contracts
   (1077/1078 AI messages, `sdr.signal`, `payload.released`).
@@ -267,6 +267,14 @@ Format (strict - unknown keys fail against
 - `do:` names either a runner.py step (`arm`, `mode`, `wait`,
   `link_clear`, ...) or an operator action (`deploy`, `start`, `abort`,
   `operator act: approve|deny|confirm|dismiss|fire|<1086>`).
+  `wait_journal` takes `any: true` to finish on the first of its units
+  that journals the line (a line only a runtime-chosen unit writes, e.g.
+  the takeover adopter); `start` takes `expect_fail: [unit, ...]` for
+  units whose START refusal is the expected outcome. `on:` watchers are
+  polled between steps only - a long blocking wait starves them.
+- The operator bot mirrors the WebClient's 1093 resend watch: it keeps
+  every decision of the run and re-sends it unchanged (2..30 s backoff)
+  while the units' roster `wm` digests disagree.
 - `fault:` kinds: `link_cut`, `loss`, `delay`, `gcs_disconnect`,
   `server_down`, `kill`, `restart`, `module_kill`, `battery`, `gps_off`,
   `mode`, `rc_override`, `server_clock`, `no_time_sync` (fake transport
@@ -276,6 +284,8 @@ Format (strict - unknown keys fail against
   `distance_to` (incl. `detected_cls:` against the bot's seen targets),
   `coverage_complete`, `no_sep_violation`, `detection_precision`,
   `signals_in_range`, `stub_deterministic` to the legacy assertion set.
+  `journal_count` takes `total: true` to compare the sum over its units
+  instead of every unit's own count.
   `realtime: true` gates timing asserts - they SKIP with a visible
   reason when SITL speed-up is not ~1.
 

@@ -105,6 +105,21 @@ def _wait_journal(u, rx, timeout, marks):
     return False
 
 
+def _wait_journal_any(units, rx, timeout, marks):
+    """any: true - done as soon as ONE of the units journals rx (a line
+    whose unit is decided at runtime, e.g. which searcher adopts)."""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        for u in units:
+            if simlib.journal_match(u, rx, marks.get(u["name"])):
+                print(f"  {u['name']}: matched {rx!r} after {time.time()-t0:.1f}s", flush=True)
+                return True
+        time.sleep(1)
+    names = ",".join(u["name"] for u in units)
+    print(f"  TIMEOUT: {rx!r} not in any of {names} after {timeout}s", flush=True)
+    return False
+
+
 def run_step(step, t, marks):
     if isinstance(step, str):
         step = {step: True}
@@ -178,6 +193,9 @@ def run_step(step, t, marks):
         time.sleep(float(arg if isinstance(arg, (int, float)) else arg.get("seconds", 0)))
         return True
     if name == "wait_journal":
+        if arg.get("any"):
+            return _wait_journal_any(ctl.resolve(unit), arg["re"],
+                                     float(arg.get("timeout", 60)), marks)
         return all(_wait_journal(u, arg["re"], float(arg.get("timeout", 60)), marks)
                    for u in ctl.resolve(unit))
     if name in ("arm", "land", "reset", "disarm", "journal", "kick",

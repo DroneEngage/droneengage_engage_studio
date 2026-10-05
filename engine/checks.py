@@ -231,6 +231,14 @@ def _journal_count(name, a, ctx):
         good, txt = _cmp(a, n)
         ok &= good
         bits.append(f"{u['name']}: {txt}")
+    if a.get("total"):
+        # total: true - one fleet-wide count (the sum over the units),
+        # for a line exactly one runtime-chosen unit journals
+        good, txt = _cmp(a, sum(vals))
+        return _r(name, "PASS" if good else "FAIL", sum(vals),
+                  f"total {txt} (" + "; ".join(
+                      f"{u['name']}: {n}"
+                      for u, n in zip(_units(a, ctx), vals)) + ")")
     return _r(name, "PASS" if ok else "FAIL",
               sum(vals) / len(vals) if vals else 0, "; ".join(bits))
 
@@ -493,11 +501,18 @@ def _no_sep_violation(name, a, ctx):
         for n2 in units[i + 1:]:
             rows2 = tele.rows(n2)
             for r1 in rows1:
-                if r1.get("lat") is None:
+                # P4B-10: a pre-fix row reports (0,0) - pairing two of
+                # them reads as a 0 m co-location; only a real 3D fix is
+                # a position (fix_type absent = recorder predates GPS)
+                if r1.get("lat") is None or \
+                        (r1.get("fix_type") is not None and
+                         r1["fix_type"] < 3):
                     continue
                 r2 = min(rows2, key=lambda r:
                          abs(r["t_ms"] - r1["t_ms"]), default=None)
                 if r2 is None or r2.get("lat") is None \
+                        or (r2.get("fix_type") is not None and
+                            r2["fix_type"] < 3) \
                         or abs(r2["t_ms"] - r1["t_ms"]) > 2000:
                     continue
                 d = _haversine(r1["lat"], r1["lng"], r2["lat"], r2["lng"])

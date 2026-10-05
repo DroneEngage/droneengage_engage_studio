@@ -195,7 +195,12 @@ def _do(step, scn, ctx):
                 ov["targets"] = [
                     (ctx["units_by_name"].get(str(n)) or {})
                     .get("party_id", str(n)) for n in a["targets"]]
-            return bot.op_start(ov)
+            if isinstance(a.get("expect_fail"), list):
+                ov["expect_fail"] = [
+                    (ctx["units_by_name"].get(str(n)) or {})
+                    .get("party_id", str(n)) for n in a["expect_fail"]]
+            return bot.op_start(
+                ov, float(a["timeout"]) if "timeout" in a else None)
         return runner.run_ctl("start")
     if name == "abort":
         return bot.op_abort(a.get("run"), a.get("why", ""))

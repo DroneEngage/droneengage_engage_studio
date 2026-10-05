@@ -51,10 +51,18 @@ class OperatorBot:
         self._roster = {}             # party -> last 1092 ms (tq, bat, st)
         self._pending = {}            # party -> {req: {kind, first_seen}}
         self._targets = {}            # tid -> {cls, first_seen, decided}
+        self._event_targets = {}      # event name -> wm class (deploy pkgs)
+        self._op_oh = ""              # deploy's operation hash (1090 oh)
         self._awaited = []            # [(deadline, pred, act) pending decisions]
         self._ev_seq = {}             # run -> last seq the bot used (1090)
         self._op_q = 0                # 1093 author sequence
-        self._replies = []            # recent non-roster frames (max 400)
+        # the WebClient's 1093 resend watch (js_worldModel.js): every
+        # decision of a run is kept and re-sent unchanged while the
+        # units' roster "wm" digests disagree - a unit that missed the
+        # one-shot 1093 (lost frame, run started late) only gets it so
+        self._decisions = {}          # run -> [op] (sent as-is again)
+        self._resend = {"next": 0.0, "backoff": 2.0}
+        self._replies = []            # recent non-roster frames (max 5000)
         self._was_connected = True    # start() logs the first connect
 
     # ------------------------------------------------------------- log
@@ -154,7 +162,10 @@ class OperatorBot:
         with self._lock:
             if mt != 1092:               # roster churn is not a reply
                 self._replies.append(msg)
-                del self._replies[:-400]
+                # an 8-unit fleet's 1087/1090 traffic evicted a 400-frame
+                # ring before the sequential deploy/start waits read the
+                # later units' replies (P4B-10 scenario I)
+                del self._replies[:-5000]
             if mt == 1092 and sd:
                 self._roster[sd] = ms
             elif mt == 1087 and sd:
@@ -173,12 +184,27 @@ class OperatorBot:
                     if req not in live:
                         del seen[req]
             elif mt == 1090 and isinstance(ms, dict):
-                tid = ms.get("tgt") or (ms.get("p") or {}).get("tid")
+                p = ms.get("p") or {}
+                name = ms.get("n") or ""
+                det_cls = self._event_targets.get(name)
+                tid = ms.get("tgt") or p.get("tid")
+                if not tid and det_cls:
+                    # P4B-10: a detection envelope carries no tid - the
+                    # world model keys each cluster on its earliest
+                    # member's envelope id (wm_core), which is the first
+                    # detection of the class on the wire. Only that one
+                    # is a confirm candidate; later envelopes of the
+                    # class are cluster members (or new clusters the
+                    # policy already decided - confirming either would
+                    # act on the wrong/world-less tid).
+                    if not any(r.get("cls") == det_cls
+                               for r in self._targets.values()):
+                        tid = ms.get("id")
                 if tid and tid not in self._targets:
-                    p = ms.get("p") or {}
                     self._targets[tid] = {
-                        "cls": p.get("class") or p.get("cls")
+                        "cls": det_cls or p.get("class") or p.get("cls")
                                or (p.get("target") or {}).get("cls"),
+                        "t_fleet": ms.get("t") or 0,
                         # P5-08: the reported position + arrival wall ms -
                         # distance_to(detected_cls:) reads them
                         "pos": p.get("pos") or ms.get("pos"),
@@ -218,9 +244,11 @@ class OperatorBot:
         return n
 
     def _oh(self, party):
-        """short op hash = first 16 hex of the status pkg_hash."""
-        h = (self._status.get(party) or {}).get("pkg_hash") or ""
-        return h.split(":", 1)[-1][:16] or None
+        """the deploy's operation hash - the 1090 validator compares it
+        verbatim to the package op_hash (P4B-10: the status pkg_hash is
+        a different digest - using it drops the decision 'other
+        operation')."""
+        return self._op_oh or None
 
     # ------------------------------------------------------------ actions
 
@@ -321,18 +349,25 @@ class OperatorBot:
         ms = {"v": 1, "run": run if run is not None else (
             self._run_of(tg) if tg not in ("_AGN_", "_GD_") else ""),
               "ops": [op]}
+        if ms["run"]:
+            with self._lock:
+                self._decisions.setdefault(ms["run"], []).append(op)
+                self._resend = {"next": 0.0, "backoff": 2.0}
         return await self._send_async(
             {"ty": "i", "mt": 1093, "tg": tg, "ms": ms},
             "WORLD", f"{state} tid={tid} tg={tg}")
 
     def confirm(self, tid, tg="_AGN_", state="confirmed", run=None):
         """1093 DE_WORLD operator decision (confirm/dismiss a target)."""
-        return self._send({"ty": "i", "mt": 1093, "tg": tg,
-                           "ms": {"v": 1,
-                                  "run": run if run is not None else (
-                                      self._run_of(tg)
-                                      if tg not in ("_AGN_", "_GD_") else ""),
-                                  "ops": [self._next_op(tid, state)]}},
+        ms = {"v": 1,
+              "run": run if run is not None else (
+                  self._run_of(tg) if tg not in ("_AGN_", "_GD_") else ""),
+              "ops": [self._next_op(tid, state)]}
+        if ms["run"]:
+            with self._lock:
+                self._decisions.setdefault(ms["run"], []).extend(ms["ops"])
+                self._resend = {"next": 0.0, "backoff": 2.0}
+        return self._send({"ty": "i", "mt": 1093, "tg": tg, "ms": ms},
                           "WORLD", f"{state} tid={tid} tg={tg}")
 
     def _next_op(self, tid, state):
@@ -346,11 +381,9 @@ class OperatorBot:
         """Latest received frame pred(msg)->True, or None. Polls the
         reply ring from the caller's thread."""
         t0 = time.time()
-        seen = 0
         while time.time() - t0 < timeout:
             with self._lock:
-                frames = self._replies[seen:]
-                seen = len(self._replies)
+                frames = list(self._replies)
             hit = next((m for m in reversed(frames) if pred(m)), None)
             if hit is not None:
                 return hit
@@ -389,12 +422,20 @@ class OperatorBot:
             text = open(os.path.join(base, r["pkg"])).read()
             pkg = json.loads(simlib.strip_comments(text))
             h = "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+            # P4B-10: event name -> wm class map for the detection->tid
+            # bookkeeping in _on_frame (mirrors de_comm's wmIngest)
+            for ev_name, ev_cls in (
+                    (pkg.get("fleet") or {}).get("event_targets")
+                    or {}).items():
+                if isinstance(ev_cls, str):
+                    self._event_targets.setdefault(ev_name, ev_cls)
             ohs.append(pkg.get("op_hash", ""))
             if not op:
                 op = pkg.get("op", "")
             for tok in r.get("units", []):
                 jobs.append((self._party(str(tok)), role, text, h))
         oh = spec.get("oh") or next((h for h in ohs if h), "")
+        self._op_oh = oh              # 1090 decisions must carry it
         bind = {p: role for p, role, _, _ in jobs}
         if not jobs or len(bind) != len(jobs):
             self.log("DEPLOY", "spec binds no units (or a unit twice)")
@@ -464,6 +505,9 @@ class OperatorBot:
                 ok = False
             elif (ans.get("ms") or {}).get("a") == "started":
                 self.log("STARTED", p)
+            elif p in (ov.get("expect_fail") or []):
+                self.log("START", f"{p}: refused as expected "
+                         f"({ans['ms'].get('why','?')})")
             else:
                 self.log("START", f"{p}: FAIL ({ans['ms'].get('why','?')})")
                 ok = False
@@ -500,8 +544,32 @@ class OperatorBot:
             except Exception as e:
                 print(f"  [operator] policy tick error: {e!r}", flush=True)
 
+    def _resend_watch(self, now):
+        """Re-send the run's decisions (unchanged ops - the units dedupe
+        them) while the alive units' "wm" digests differ, with a 2..30 s
+        backoff; idle once they agree."""
+        with self._lock:
+            if not self._decisions:
+                return
+            digests = {str(r.get("wm")) for r in self._roster.values()
+                       if isinstance(r, dict) and r.get("wm")}
+            if len(digests) <= 1:
+                self._resend = {"next": 0.0, "backoff": 2.0}
+                return
+            if now < self._resend["next"]:
+                return
+            self._resend["next"] = now + self._resend["backoff"]
+            self._resend["backoff"] = min(30.0, self._resend["backoff"] * 2)
+            batches = {run: list(ops) for run, ops in self._decisions.items()}
+        for run, ops in batches.items():
+            self._submit(self._send_async(
+                {"ty": "i", "mt": 1093, "tg": "_AGN_",
+                 "ms": {"v": 1, "run": run, "ops": ops}},
+                "WORLD", f"resend {len(ops)} op(s) run={run}"))
+
     def _policy_once(self):
         now = time.monotonic()
+        self._resend_watch(now)
         up = self._client.connected.is_set()
         if up and not self._was_connected:
             self.log("SESSION", f"{self.party} online (reconnect)")
