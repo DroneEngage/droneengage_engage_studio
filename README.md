@@ -265,7 +265,12 @@ Format (strict - unknown keys fail against
   sim.parm as `SIM_WIND_SPD`/`SIM_WIND_DIR`/`SIM_WIND_TURB`, and the
   camera model dims at dusk unless `kind: thermal`), plus a `state`
   field on the truth rows; P5-12 adds `areas:` - named search
-  polygons the coverage asserts grade). Consumed by the `stub_*`
+  polygons the coverage asserts grade; PL-08 adds `cls: pad`
+  precision-landing boards (`yaw_deg`, `size_m`, `tags_min_m`/
+  `tags_max_m` tag ladder, `occlude` world-second windows) and the
+  `sensors.precland` downward tag-camera model (FOV, `min_px_tag`,
+  `max_rmse_px`, `noise_m`, `p_drop`) - `stub_ai_box` never reports a
+  pad as a detection class). Consumed by the `stub_*`
   modules and the truth recorder, which writes
   `run/<sim>/truth.jsonl` at 1 Hz plus per-detection rows),
   `operation`, `verify` (P5-06 CLI, absent = recorded skip),
@@ -313,11 +318,22 @@ Format (strict - unknown keys fail against
   comm_only` or a `blocks/` name), `role`, absolute `home`/`base`,
   relative `at`, `modules`, `params`, `config`, `account`. `modules`
   can add catalog entries such as the P5-08 world stubs
-  (`stub_ai_box`, `stub_sdr`, `stub_payload`): python databus modules
+  (`stub_ai_box`, `stub_sdr`, `stub_payload`, `stub_precland`):
+  python databus modules
   in `stubs/` that read the vehicle pose (SITL serial5 on FC units,
   the intermodule 9102 feed on statics), run the world's seeded
   camera/SDR/payload models, and emit the real advert/event contracts
   (1077/1078 AI messages, `sdr.signal`, `payload.released`).
+  `stub_precland` (PL-08) stands in for the real `de_precland` where
+  there is no AprilTag renderer: it decides pad visibility from the
+  pose + world geometry and publishes the real PRECLAND_TARGET (6537)
+  / PRECLAND_STATUS (6538) wire messages plus the `precision_landing`
+  capability advert (`stubs/precland_advert.json`, byte-identical to
+  `de_precland --print-advert`) and facts (`stubs/precland_events.py`
+  ports CPreclandEventModel, pinned by the module's golden vectors).
+  `blocks/copter_precland` wires it to a copter with the FC `PLND_*`
+  overlay and the de_mavlink `precland` gate open; a scenario whose
+  `world:` is `worlds/pad_field.yaml` gives it a pad to land on.
 - `timeline:` steps are `{t: <s>, do: <step>, ...}` or
   `{t: <s>, fault: <kind>, ...}`; `t` is seconds from scenario start and
   may be negative (runs at once). `{on: {unit, re}}` arms a journal

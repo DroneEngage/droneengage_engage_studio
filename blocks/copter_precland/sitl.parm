@@ -1,0 +1,9 @@
+# PL-08: precision-landing backend for stub_precland's LANDING_TARGET.
+# PLND_TYPE only takes effect at boot - it must ride the --defaults
+# overlay, not a post-boot param set.
+PLND_ENABLED     1
+PLND_TYPE        1     # MAVLink backend (companion-computer LANDING_TARGET)
+PLND_EST_TYPE    0     # RawSensor - the stub already filters
+PLND_STRICT      1     # retry a failed landing
+PLND_RET_MAX     2
+PLND_XY_DIST_MAX 2.5

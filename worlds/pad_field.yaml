@@ -1,0 +1,36 @@
+# pad_field - the PL-08 precision-landing world (de.world/1).
+#
+# Origin is the SITL home (-35.363262, 149.165237). pad_1 sits 4 m
+# north-east (bearing 45) of the nominal PL-09 landing point at the
+# origin - a copter landing at home overflies the pad on final.
+# sensors.precland is the downward tag camera stub_precland models;
+# sensors.camera keeps the stock rgb values so other stubs see the
+# same world unchanged.
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: pad_1, cls: pad, pos: [-35.3632366, 149.1652682],
+     yaw_deg: 0,
+     size_m: 0.8,                    # board edge
+     tags_min_m: 0.02, tags_max_m: 0.68}   # smallest/largest tag edge
+sensors:
+  camera:
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 0.95
+    p_detect_edge: 0.6
+    max_range_m: 120
+    pos_noise_px: 8
+    fps_boxes: 2
+  precland:
+    hfov_deg: 60
+    vfov_deg: 47
+    min_px_tag: 12                   # a tag edge below 12 px is lost
+    max_rmse_px: 2.0                 # RMSE the model reports at the limit
+    noise_m: 0.03                    # gaussian noise on the body pose
+    p_drop: 0.02                     # per-frame seeded drop probability

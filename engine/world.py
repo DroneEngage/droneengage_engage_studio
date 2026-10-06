@@ -31,6 +31,15 @@ epoch, so truth and detections always agree.
                pos_noise_px, fps_boxes, size_m: {person: 0.5, "*": 0.5}}
       sdr:    {freq_hz, path_loss_n, ref_dbm_1m, noise_db, threshold_dbm,
                bin_hz, sweep_s}
+      precland: {hfov_deg, vfov_deg, min_px_tag, max_rmse_px, noise_m,
+                 p_drop}            # stub_precland's downward camera (PL-08)
+
+A `cls: pad` entity is a precision-landing AprilTag pad (PL-08): an
+ordinary entity for position/truth plus the pad keys yaw_deg, size_m
+(board edge), tags_min_m / tags_max_m (smallest/largest tag edge in the
+geometric tag ladder) and occlude [[t0_s, t1_s], ...] (world seconds the
+pad is invisible). world.pads() lists them; stub_ai_box never reports a
+pad as a detection class.
 
 Entity motion (t = seconds since the scenario epoch):
   pos:    static.
@@ -147,6 +156,19 @@ CLUTTER_DEFAULTS = {"cls": "person", "rate_per_km2_min": 0.0,
                     "lifetime_s": 20.0,
                     "anchor": "image"}    # | ground (P5-10 D8)
 
+# stub_precland's downward camera (PL-08): FOV of the tag camera, the
+# minimum projected tag edge the detector resolves, the RMSE the model
+# reports at the resolution limit, pose noise and the per-frame drop
+# probability. img_w/img_h give the tag edge its pixel scale.
+PRECLAND_DEFAULTS = {"hfov_deg": 60.0, "vfov_deg": 47.0,
+                     "min_px_tag": 12.0, "max_rmse_px": 2.0,
+                     "noise_m": 0.03, "p_drop": 0.02,
+                     "img_w": 1280, "img_h": 720}
+
+# geometric ratio between consecutive tag sizes on a pad (tags_min_m ..
+# tags_max_m) - an AprilTag landing target nests tags 4x apart
+PAD_TAG_RATIO = 4.0
+
 DEFAULT_SIZE_M = {"person": 0.5, "car": 4.0, "phone": 0.2, "*": 0.5}
 
 # obstacle defaults (ESTIMATES - see the module docstring)
@@ -201,6 +223,15 @@ class Entity:
         self.freq_hz = float(spec["freq_hz"]) if "freq_hz" in spec else None
         self.alt_m = float(spec.get("alt_m", 0.0))
         self.size_m = (float(spec["size_m"]) if "size_m" in spec else None)
+        # PL-08 pad metadata (meaningful on cls: pad - a landing board's
+        # yaw, its tag-edge ladder and the world-second windows it is
+        # occluded in); unused on every other cls
+        self.yaw_deg = float(spec.get("yaw_deg", 0.0))
+        self.tags_min_m = float(spec["tags_min_m"]) \
+            if "tags_min_m" in spec else None
+        self.tags_max_m = float(spec["tags_max_m"]) \
+            if "tags_max_m" in spec else None
+        self.occlude = _parse_occlude(spec.get("occlude"), path, self.id)
         self.behaviour = _parse_behaviour(spec.get("behaviour"),
                                           path, self.id)
         self._behav = None            # lazily-built seeded track state
@@ -466,14 +497,46 @@ class World:
                 f"{clutter.get('anchor')!r} (image | ground)")
         sdr = dict(SDR_DEFAULTS)
         sdr.update(sensors.get("sdr") or {})
+        # sensors.precland feeds stub_precland's downward tag camera
+        # (PL-08); img_w/img_h default to the rgb camera's frame size
+        precland = dict(PRECLAND_DEFAULTS)
+        precland["img_w"] = cam["img_w"]
+        precland["img_h"] = cam["img_h"]
+        precland.update(sensors.get("precland") or {})
         # sensors.payload is a pass-through for the render feed
         # (P5-13 hello.units[].payload: mass/drag for the P5-16
         # drop model - the engine itself does not read it yet)
-        self.sensors = {"camera": cam, "sdr": sdr,
+        self.sensors = {"camera": cam, "sdr": sdr, "precland": precland,
                         "payload": dict(sensors.get("payload") or {})}
+        for e in self.entities:
+            if e.cls != "pad":
+                continue
+            if e.size_m is None or e.tags_min_m is None \
+                    or e.tags_max_m is None:
+                raise simlib.SimError(
+                    f"{path}: pad {e.id}: needs size_m, tags_min_m and "
+                    "tags_max_m")
+            if not 0.0 < e.tags_min_m <= e.tags_max_m:
+                raise simlib.SimError(
+                    f"{path}: pad {e.id}: needs "
+                    "0 < tags_min_m <= tags_max_m")
 
     def entity(self, tid):
         return self._by_id.get(tid)
+
+    def pads(self):
+        """The cls: pad entities - precision-landing targets (PL-08)."""
+        return [e for e in self.entities if e.cls == "pad"]
+
+    def pad_tag_sizes(self, pad):
+        """The pad's tag-edge ladder, largest first: tags_max_m,
+        tags_max_m/PAD_TAG_RATIO, ... down to >= tags_min_m."""
+        sizes = []
+        s = pad.tags_max_m
+        while s >= pad.tags_min_m - 1e-9:
+            sizes.append(s)
+            s /= PAD_TAG_RATIO
+        return sizes
 
     def classes(self):
         """Distinct entity classes (the 1077 class list order is stable:
@@ -967,6 +1030,23 @@ def _f_light(sun_elev_deg):
 
 # ------------------------------------------------- behaviour parsers
 
+def _parse_occlude(spec, path, eid):
+    """occlude: [[t0_s, t1_s], ...] -> a list of closed world-second
+    intervals the entity is not visible (PL-08 pads)."""
+    out = []
+    for w in (spec or []):
+        label = f"{path}: entity {eid}: occlude"
+        if not isinstance(w, (list, tuple)) or len(w) != 2 or \
+                not all(isinstance(x, (int, float))
+                        and not isinstance(x, bool) for x in w):
+            raise simlib.SimError(
+                f"{label}: windows are [t0_s, t1_s] pairs")
+        if w[1] < w[0]:
+            raise simlib.SimError(f"{label}: window end before start")
+        out.append([float(w[0]), float(w[1])])
+    return out
+
+
 def _parse_behaviour(spec, path, eid):
     """Validate + normalize an entity's behaviour block (None when
     absent)."""
@@ -1217,7 +1297,8 @@ def rng(seed, *parts):
 
 # --------------------------------------------------------- sim wiring
 
-STUB_MODULES = ("stub_ai_box", "stub_sdr", "stub_payload")
+STUB_MODULES = ("stub_ai_box", "stub_sdr", "stub_payload",
+                "stub_precland")
 
 
 def unit_modules(entry):
@@ -1237,6 +1318,7 @@ def prepare_sim(scn, world):
     path the scenario asserts."""
     cam = world.sensors["camera"]
     sdr = world.sensors["sdr"]
+    catalog = simlib.load_catalog()
     geo = {"enabled": True,
            "hfov_deg": cam["hfov_deg"], "vfov_deg": cam["vfov_deg"],
            "mount_pitch_deg": cam["mount_pitch_deg"],
@@ -1261,9 +1343,12 @@ def prepare_sim(scn, world):
         stub = {"world": scn["world"], "seed": scn["seed"],
                 "unit": entry["name"], "sysid": slot if has_fc else 1,
                 # mirrors simlib._expand_unit's `pose` handling: serial5
-                # tcp:5 -> 5765+10k on FC units; statics use the 9102 feed
+                # tcp:5 -> 5765+10k on FC units running a pose-flagged
+                # catalog module; statics use the 9102 feed
                 "pose_port": (5765 + 10 * slot)
-                             if (has_fc and "stub_ai_box" in mods) else 0}
+                             if (has_fc and any(
+                                 catalog.get(m, {}).get("pose")
+                                 for m in mods)) else 0}
         for m in STUB_MODULES:
             if m in mods:
                 cfg[m] = simlib.deep_merge(cfg.get(m) or {}, {"stub": stub})

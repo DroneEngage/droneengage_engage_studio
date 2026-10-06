@@ -165,3 +165,16 @@ stub_payload:
   port_base: 60000
   start_delay: 3
   local: {file: stub_payload.local}
+
+# PL-08: the world-driven precision-landing stub. Same wire surface and
+# precision_landing capability advert as the real de_precland, but the
+# detection is geometric: world `pad` entities + the vehicle pose feed
+# decide what the downward camera sees. No v4l2, no scene files.
+stub_precland:
+  repo: droneengage_simulation_land
+  bin: stubs/stub_precland.py
+  template: stub.json
+  port_base: 55000
+  start_delay: 3
+  pose: true
+  local: {file: stub_precland.local}

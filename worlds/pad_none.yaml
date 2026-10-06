@@ -1,0 +1,26 @@
+# pad_none - pad_field without the pad: the stub_precland "searching
+# forever" world (PL-08). Same origin and sensor models, no entities.
+version: 1
+origin: [-35.363262, 149.165237]
+entities: []
+sensors:
+  camera:
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 0.95
+    p_detect_edge: 0.6
+    max_range_m: 120
+    pos_noise_px: 8
+    fps_boxes: 2
+  precland:
+    hfov_deg: 60
+    vfov_deg: 47
+    min_px_tag: 12
+    max_rmse_px: 2.0
+    noise_m: 0.03
+    p_drop: 0.02

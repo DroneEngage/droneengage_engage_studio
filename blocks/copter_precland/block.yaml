@@ -1,0 +1,10 @@
+description: |
+  Copter with the world-driven precision-landing stub (PL-08):
+  stub_precland sees `pad` entities in the world over the SITL serial5
+  pose feed and emits the real PRECLAND_TARGET/PRECLAND_STATUS wire
+  messages + the precision_landing capability events. sitl.parm turns
+  the FC's PLND backend on at boot and de_mavlink.json opens the
+  LANDING_TARGET gate. Pair it with a scenario `world:` that has a pad
+  (worlds/pad_field.yaml) for a closed-loop precision LAND.
+extends: copter
+add_modules: [stub_precland]

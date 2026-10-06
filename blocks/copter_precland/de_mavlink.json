@@ -1,0 +1,9 @@
+{
+    // PL-08: open the de_mavlink precland gate for stub_precland's 6537.
+    // LAND(12)/RTL(2) and AUTO nav-land legs feed the FC LANDING_TARGET.
+    "precland": {
+        "enabled": true,
+        "allowed_modes": [12, 2],
+        "allow_auto_land": true
+    }
+}

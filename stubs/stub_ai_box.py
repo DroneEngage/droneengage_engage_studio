@@ -135,7 +135,11 @@ class StubAIBox(StubBase):
         self.mount = gp.GeoMountParams(cam["mount_pitch_deg"],
                                      cam["mount_yaw_deg"],
                                      cam["mount_roll_deg"])
-        self.classes = self.world.classes() if self.world else ["object"]
+        # PL-08: a cls "pad" entity is a precision-landing board, not an
+        # AI detection class - it stays out of the 1077 class list and
+        # is never projected as a box
+        self.classes = ([c for c in self.world.classes() if c != "pad"]
+                        if self.world else ["object"])
         self._sel = None                 # 1076 SEARCH index selection
         self._last_frame = -1
         self._clutter = []               # [(die_t_s, u, v)]
@@ -255,6 +259,8 @@ class StubAIBox(StubBase):
         self._clutter = [c for c in self._clutter if c[0] > t_s]
 
         for e in self.world.entities:
+            if e.cls == "pad":
+                continue              # PL-08: not a detection class
             if not self._class_ok(e.cls):
                 continue
             if self.cam.get("detect_cls") and \

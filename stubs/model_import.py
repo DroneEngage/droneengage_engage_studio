@@ -27,9 +27,14 @@ _IDS = {
     "TYPE_AndruavMessage_AI_Recognition_ACTION": 1076,
     "TYPE_AndruavMessage_AI_Recognition_STATUS": 1077,
     "TYPE_AndruavMessage_AI_Recognition_TargetLocation": 1078,
+    "TYPE_AndruavMessage_Sync_EventFire": 1061,
+    "TYPE_AndruavMessage_PRECLAND_ACTION": 6536,
+    "TYPE_AndruavMessage_PRECLAND_TARGET": 6537,
+    "TYPE_AndruavMessage_PRECLAND_STATUS": 6538,
 }
 
-_STUBS = ("stub_base", "stub_ai_box", "stub_sdr", "stub_payload")
+_STUBS = ("stub_base", "stub_ai_box", "stub_sdr", "stub_payload",
+          "stub_precland")
 
 
 def import_stubs():
