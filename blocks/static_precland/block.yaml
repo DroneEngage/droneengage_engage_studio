@@ -1,0 +1,5 @@
+description: |
+  Static unit (no FC) with the real precision-landing module on the
+  test-source scene feed - precision_landing.* events and commands.
+extends: comm_only
+add_modules: [de_precland]

@@ -73,8 +73,8 @@ jobs:
 
       - name: library folders non-empty
         run: |
-          for d in p0 p2 su p4a faults closed_env verify; do
-            n=$(ls scenarios/$d/*.yaml 2>/dev/null | wc -l)
+          for d in p0 p2 su p4a faults closed_env verify precland; do
+            n=$(find scenarios/$d -name '*.yaml' 2>/dev/null | wc -l)
             echo "scenarios/$d: $n yaml"
             [ "$n" -gt 0 ] || exit 1
           done

@@ -16,6 +16,10 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - arm: all
       - start
       - wait_journal: {unit: 2, re: "mission main completed", timeout: 300}
+      - wait_log: {unit: 2, module: de_precland, re: "EVENT_OUT",
+                   timeout: 30}              # the same block over
+                                             # logs/<module>.log (module
+                                             # stdout - never journaled)
       - fire: {event: area.clear, payload: {x: 1}, unit: all}
       - fire: {event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
                                          # re-fire until the unit journals it
@@ -101,7 +105,8 @@ def unit_arg(arg, key="unit", default="all"):
 
 # ------------------------------------------------------------------ steps
 
-_UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_ready", "loss",
+_UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
+               "wait_ready", "loss",
                "delay", "link_cut", "kick", "commline", "link_clear", "kill",
                "restart", "journal", "mode", "disarm", "fire", "fc",
                "write_file"}
@@ -115,6 +120,24 @@ def _wait_journal(u, rx, timeout, marks):
             return True
         time.sleep(1)
     print(f"  TIMEOUT: {rx!r} not in {u['name']} journal after {timeout}s", flush=True)
+    return False
+
+
+def _wait_log(u, proc, rx, timeout, marks):
+    """wait_log: block until the unit's logs/<proc>.log (the module's
+    stdout) has a line matching rx since the test mark. The module-log
+    sibling of _wait_journal - module stdout never reaches the de_comm
+    journal (PL-07: de_precland prints its facts as EVENT_OUT lines)."""
+    rxc = re.compile(rx)
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if simlib.log_match(u, proc, rxc, marks.get(u["name"])):
+            print(f"  {u['name']}.{proc}: matched {rx!r} after "
+                  f"{time.time() - t0:.1f}s", flush=True)
+            return True
+        time.sleep(1)
+    print(f"  TIMEOUT: {rx!r} not in {u['name']} logs/{proc}.log after "
+          f"{timeout}s", flush=True)
     return False
 
 
@@ -210,6 +233,10 @@ def run_step(step, t, marks):
             return _wait_journal_any(ctl.resolve(unit), arg["re"],
                                      float(arg.get("timeout", 60)), marks)
         return all(_wait_journal(u, arg["re"], float(arg.get("timeout", 60)), marks)
+                   for u in ctl.resolve(unit))
+    if name == "wait_log":
+        return all(_wait_log(u, str(arg["module"]), arg["re"],
+                             float(arg.get("timeout", 60)), marks)
                    for u in ctl.resolve(unit))
     if name in ("arm", "land", "reset", "disarm", "journal", "kick",
                 "link_clear", "fc"):

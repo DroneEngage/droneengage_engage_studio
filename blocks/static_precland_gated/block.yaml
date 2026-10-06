@@ -1,0 +1,5 @@
+description: |
+  static_precland with events.enabled false: the module advertises and
+  answers legacy PRECLAND_ACTION, but emits no precision_landing.*
+  facts and ignores event commands (PL-07 gating check).
+extends: static_precland

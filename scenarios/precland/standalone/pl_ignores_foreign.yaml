@@ -1,0 +1,44 @@
+# precland/standalone/pl_ignores_foreign - PL-07: the command filter.
+# Only precision_landing.enable / disable / set_target are commands;
+# everything else is ignored silently:
+#
+#   precision_landing.locked        a fact verb - dropped by the module
+#   gpio.led.on                     foreign namespace - de_comm has no
+#                                   owner for "gpio", dropped upstream
+#   precision_landing.enable.extra  malformed verb - dropped by the
+#                                   module
+#
+# None of the three may produce a state line or an EVENT_OUT; the real
+# enable right after proves the surface itself is alive.
+version: 1
+name: pl_ignores_foreign
+transport: fake
+settle_s: 5
+teardown: none
+fleet:
+  - {id: node, cls: static_precland}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  - {t: 15, do: fire, event: precision_landing.locked, unit: node}
+  - {t: 16, do: fire, event: gpio.led.on, unit: node}
+  - {t: 17, do: fire, event: precision_landing.enable.extra, unit: node}
+  # the real verb still works - proof the drops are the filter, not a
+  # dead forwarding path
+  - {t: 25, do: fire, event: precision_landing.enable, unit: node}
+  - {t: 25, do: wait_log, unit: node, module: de_precland,
+     re: 'EVENT_OUT precision_landing\.enabled .*"src":"event"',
+     timeout: 30}
+assert:
+  # exactly one fact and exactly one transition, both from the real
+  # enable - the three foreign/malformed fires left no trace
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: 'EVENT_OUT precision_landing\.enabled .*"src":"event"',
+      equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "PRECLAND state -> ", equals: 1}

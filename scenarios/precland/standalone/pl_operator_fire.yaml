@@ -1,0 +1,71 @@
+# precland/standalone/pl_operator_fire - PL-07: the real de_precland on
+# a static unit with NO package loaded, driven by the operator console
+# and the scene seam. An operator `fire` is forwarded by de_comm to the
+# module owning the precision_landing.* namespace even with no mission
+# (GE-06), so the enable/disable path works standalone and tags facts
+# with "src":"event". The second disable is an edge no-op.
+#
+# Facts are read where they live: the module's own stdout log carries a
+# "PRECLAND state -> N" line per transition and one
+# "EVENT_OUT precision_landing.<verb> <json>" line per emitted fact -
+# none of it reaches the de_comm journal without a package.
+#
+# The lost on scene empty carries reason "no_target": the empty scene
+# still delivers frames (they just hold no tag), so the gate drops the
+# lock on the first detection-less frame rather than on the 1 s stale
+# timeout.
+version: 1
+name: pl_operator_fire
+transport: fake
+settle_s: 5
+teardown: none
+fleet:
+  - {id: node, cls: static_precland}
+timeline:
+  # every scenario re-run starts from config state: restart the module,
+  # then the scene file lands before the process reads it at boot
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  # by t=15 the module has registered (advert + Sync_EventFire
+  # subscription) so de_comm can forward the fire to it
+  - {t: 15, do: fire, event: precision_landing.enable, unit: node}
+  - {t: 15, do: wait_log, unit: node, module: de_precland,
+     re: 'EVENT_OUT precision_landing\.enabled .*"src":"event"',
+     timeout: 30}
+  - {t: 18, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "target_near"}}
+  - {t: 18, do: wait_log, unit: node, module: de_precland,
+     re: "EVENT_OUT precision_landing\\.locked ", timeout: 30}
+  # stabilized fires once the lock has held events.stabilized_s (2.0 s)
+  - {t: 20, do: wait_log, unit: node, module: de_precland,
+     re: 'EVENT_OUT precision_landing\.stabilized .*"held_s":2\.',
+     timeout: 30}
+  - {t: 24, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 24, do: wait_log, unit: node, module: de_precland,
+     re: 'EVENT_OUT precision_landing\.lost .*"reason":"no_target"',
+     timeout: 30}
+  - {t: 27, do: fire, event: precision_landing.disable, unit: node}
+  - {t: 27, do: wait_log, unit: node, module: de_precland,
+     re: 'EVENT_OUT precision_landing\.disabled .*"src":"event"',
+     timeout: 30}
+  # same edge again - must emit nothing
+  - {t: 30, do: fire, event: precision_landing.disable, unit: node}
+assert:
+  - module_log_count: {unit: node, module: de_precland,
+      re: 'EVENT_OUT precision_landing\.enabled .*"src":"event"',
+      equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.locked ", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.stabilized ", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: 'EVENT_OUT precision_landing\.lost .*"reason":"no_target"',
+      equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.disabled ", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.faulted ", equals: 0}

@@ -1,0 +1,34 @@
+# precland/standalone/pl_restart_silent - PL-07: boot silence.
+#
+# With detection.enabled true (per-unit config) the module comes up
+# already enabled: the "PRECLAND state -> 1" trace line proves it went
+# straight to SEARCHING, but the event observer and the capability
+# advert attach only after the initial state is established, so the
+# boot transition emits NO precision_landing.* fact at all - no
+# enabled, no phantom locked/lost burst. The whole run must show zero
+# EVENT_OUT lines.
+version: 1
+name: pl_restart_silent
+transport: fake
+settle_s: 5
+teardown: none
+fleet:
+  - id: node
+    cls: static_precland
+    config: {de_precland: {detection: {enabled: true}}}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  # the fresh boot's own trace line: state went to SEARCHING (enabled)
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "PRECLAND state -> 1", timeout: 60}
+  # sit in SEARCHING a few seconds - still no facts
+  - {t: 10, do: wait, seconds: 5}
+assert:
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.", equals: 0}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "PRECLAND state -> 1", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "PRECLAND state -> ", equals: 1}

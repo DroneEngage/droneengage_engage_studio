@@ -502,5 +502,124 @@ class T(unittest.TestCase):
             realtime_ok=False)["status"], "SKIP")
 
 
+def _module_log_unit(tmp_root, name="u1"):
+    """A unit whose logs/ dir lives under a patched temp RUN_DIR - real
+    journal_mark offsets over real log files, no sim needed."""
+    u = {"name": name, "party_id": "p1", "fc": None, "sim": "tsim"}
+    os.makedirs(os.path.join(simlib.unit_dir(u), "logs"), exist_ok=True)
+    return u
+
+
+def _append_log(u, proc, lines):
+    path = os.path.join(simlib.unit_dir(u), "logs", proc + ".log")
+    with open(path, "a") as f:
+        f.write("".join(ln + "\n" for ln in lines))
+
+
+def _module_log_ctx(u, marks):
+    return {"manifest": {"name": u["sim"], "units": [u],
+                         "server_procs": []},
+            "marks": {u["name"]: marks}, "file": "/x/s.yaml",
+            "results_dir": None}
+
+
+def run_module_log(a, u, marks):
+    c = _module_log_ctx(u, marks)
+    with mock.patch.object(checks.ctl, "resolve",
+                           lambda tok, m=None: [u]):
+        return checks.check_assertion(a, c)
+
+
+class TModuleLog(unittest.TestCase):
+    """PL-07: module_log_count + wait_log - assertions/steps over a
+    module's own stdout log (logs/<module>.log), not the journal."""
+
+    RE = r"EVENT_OUT precision_landing\.\w+"
+    LINES = ["PRECLAND state -> 0",
+             'EVENT_OUT precision_landing.enabled {"src":"event"}',
+             "PRECLAND state -> 1",
+             "PRECLAND state -> 2",
+             'EVENT_OUT precision_landing.locked {"range_m":1.2}']
+
+    def test_module_log_count_comparisons(self):
+        with tempfile.TemporaryDirectory() as td, \
+                mock.patch.object(simlib, "RUN_DIR", td):
+            u = _module_log_unit(td)
+            _append_log(u, "de_precland", self.LINES)
+            a = {"unit": "u1", "module": "de_precland", "re": self.RE}
+            # {} mark = from the start: 2 of 5 lines match
+            for bound, want, status in (
+                    ({"equals": 2}, 2, "PASS"),
+                    ({"equals": 3}, 3, "FAIL"),
+                    ({"at_least": 2}, None, "PASS"),
+                    ({"at_least": 3}, None, "FAIL"),
+                    ({"at_most": 2}, None, "PASS"),
+                    ({"at_most": 1}, None, "FAIL")):
+                r = run_module_log({"module_log_count": dict(a, **bound)},
+                                   u, {})
+                self.assertEqual(r["status"], status, f"{bound}: {r}")
+            self.assertEqual(r["name"], "module_log_count")
+
+    def test_module_log_count_since_the_mark(self):
+        with tempfile.TemporaryDirectory() as td, \
+                mock.patch.object(simlib, "RUN_DIR", td):
+            u = _module_log_unit(td)
+            _append_log(u, "de_precland", self.LINES)
+            marks = simlib.journal_mark(u)   # snapshot log offsets too
+            _append_log(u, "de_precland",
+                        ['EVENT_OUT precision_landing.disabled '
+                         '{"src":"event"}', "PRECLAND state -> 0"])
+            a = {"unit": "u1", "module": "de_precland", "re": self.RE}
+            r = run_module_log({"module_log_count": dict(a, equals=1)},
+                               u, marks)
+            self.assertEqual(r["status"], "PASS")
+            # pre-mark lines stay excluded: all EVENT_OUT lines = FAIL
+            r = run_module_log({"module_log_count": dict(a, equals=3)},
+                               u, marks)
+            self.assertEqual(r["status"], "FAIL")
+
+    def test_module_log_count_missing_file_is_zero(self):
+        with tempfile.TemporaryDirectory() as td, \
+                mock.patch.object(simlib, "RUN_DIR", td):
+            u = _module_log_unit(td)
+            a = {"unit": "u1", "module": "de_precland", "re": self.RE}
+            r = run_module_log({"module_log_count": dict(a, equals=0)},
+                               u, {})
+            self.assertEqual(r["status"], "PASS")
+
+    def test_wait_log_matches_and_times_out(self):
+        from runner import _wait_log
+        with tempfile.TemporaryDirectory() as td, \
+                mock.patch.object(simlib, "RUN_DIR", td):
+            u = _module_log_unit(td)
+            _append_log(u, "de_precland", self.LINES)
+            marks = {u["name"]: {}}
+            # a line already there returns at once
+            self.assertTrue(_wait_log(u, "de_precland", "EVENT_OUT", 5,
+                                      marks))
+            # an absent pattern burns the timeout and fails the step
+            t0 = __import__("time").time()
+            self.assertFalse(_wait_log(u, "de_precland", "NEVER_EMITTED",
+                                       1.5, marks))
+            self.assertGreaterEqual(__import__("time").time() - t0, 1.5)
+
+    def test_wait_log_only_sees_post_mark_lines(self):
+        from runner import _wait_log
+        with tempfile.TemporaryDirectory() as td, \
+                mock.patch.object(simlib, "RUN_DIR", td):
+            u = _module_log_unit(td)
+            _append_log(u, "de_precland", self.LINES)
+            mark = simlib.journal_mark(u)
+            marks = {u["name"]: mark}
+            # the matching lines are all pre-mark -> timeout
+            self.assertFalse(_wait_log(u, "de_precland", "EVENT_OUT", 1.5,
+                                       marks))
+            # a post-mark append unblocks it
+            _append_log(u, "de_precland",
+                        ["EVENT_OUT precision_landing.lost {}"])
+            self.assertTrue(_wait_log(u, "de_precland", "EVENT_OUT", 3,
+                                      marks))
+
+
 if __name__ == "__main__":
     unittest.main()

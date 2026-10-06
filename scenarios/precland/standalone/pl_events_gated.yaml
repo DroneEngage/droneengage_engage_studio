@@ -1,0 +1,57 @@
+# precland/standalone/pl_events_gated - PL-07: events.enabled false is
+# a hard gate on the precision_landing.* surface in BOTH directions:
+# the module emits no EVENT_OUT facts and drops event commands, while
+# legacy PRECLAND_ACTION (6536) keeps working.
+#
+# Ordering is what makes the counts meaningful: every event command is
+# fired at a moment when, had it been accepted, it would have produced
+# a different final count of "PRECLAND state ->" trace lines. Three
+# fires land; the only two transitions come from the two legacy
+# opmsgs.
+version: 1
+name: pl_events_gated
+transport: fake
+settle_s: 5
+teardown: none
+fleet:
+  - {id: node, cls: static_precland_gated}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  # event enable: de_comm forwards it (the ns is advertised), the
+  # module's gate drops it - no state line
+  - {t: 15, do: fire, event: precision_landing.enable, unit: node}
+  # legacy DISABLE first: had the fire above been accepted, this edge
+  # would show a "state -> 0" line
+  - {t: 20, do: opmsg, unit: node, mt: 6536, ms: {a: 0}, secs: 2}
+  # legacy ENABLE: the one real transition
+  - {t: 25, do: opmsg, unit: node, mt: 6536, ms: {a: 1}, secs: 2}
+  - {t: 25, do: wait_log, unit: node, module: de_precland,
+     re: "PRECLAND state -> 1", timeout: 30}
+  # event disable: dropped - the legacy DISABLE right after is what
+  # prints the "state -> 0"
+  - {t: 30, do: fire, event: precision_landing.disable, unit: node}
+  - {t: 35, do: opmsg, unit: node, mt: 6536, ms: {a: 0}, secs: 2}
+  - {t: 35, do: wait_log, unit: node, module: de_precland,
+     re: "PRECLAND state -> 0", timeout: 30}
+  # event enable once more: dropped - the count stays at two
+  - {t: 40, do: fire, event: precision_landing.enable, unit: node}
+assert:
+  # exactly the two legacy-driven transitions, nothing from the fires
+  - module_log_count: {unit: node, module: de_precland,
+      re: "PRECLAND state -> ", equals: 2}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "PRECLAND state -> 1", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "PRECLAND state -> 0", equals: 1}
+  # gated: zero emitted facts for the whole run
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.", equals: 0}
+  # and nothing precision_landing-shaped was forwarded upstream:
+  # de_comm's own stdout stays silent on the forward
+  - module_log_count: {unit: node, module: de_comm,
+      re: "Sync_EventFire precision_landing", equals: 0}
+  - journal_count: {unit: node, re: "precision_landing", equals: 0}

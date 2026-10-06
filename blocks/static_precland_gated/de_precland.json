@@ -1,0 +1,7 @@
+{
+    // events.enabled false: zero precision_landing.* traffic both ways -
+    // no facts out, event commands ignored (legacy 6536 still works)
+    "events": {
+        "enabled": false
+    }
+}

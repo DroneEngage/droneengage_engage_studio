@@ -1,0 +1,76 @@
+{
+    /*
+        de_precland sim template (PL-07): the repo's
+        de_precland.config.module.json as shipped - detection.enabled
+        false, send_hz 10, stale_timeout_ms 1000, events defaults - with
+        output_video_device blanked (no v4l2loopback card on sim hosts).
+        The catalog wire adds the test_source block (the generated
+        tools/sim_scenes library, 10 fps, scene switched by writing
+        precland_scene.json into the module's run dir), the camera
+        calibration file and an absolute layout_json. The module's own
+        stdout log carries the "PRECLAND state -> N" trace and one
+        EVENT_OUT line per emitted fact - the standalone scenarios
+        assert on those lines via module_log_count / wait_log.
+    */
+    "module_id": "PRECLAND1",
+    "s2s_udp_target_ip": "127.0.0.1",
+    "s2s_udp_target_port": "60000",
+    "s2s_udp_listening_ip": "127.0.0.1",
+    "s2s_udp_listening_port": "60056",
+    "s2s_udp_packet_size": "8192",
+
+    "camera": {
+        // Specific Module Parameters
+        "source_video_device"               : "/dev/video0",
+        // no v4l2loopback card on sim hosts - the overlay feed is off
+        "output_video_device"               : "",
+        //"source_video_device_name"          : "DE-DOWN",
+        //"output_video_device_name"          : "DE-RPI",
+        "width"                             : 640,
+        "height"                            : 480,
+        "fps"                               : 30,
+        "calibration_file"                  : "camera.yaml"   // wired to tools/sim_scenes/camera.yaml
+    },
+
+    "target": {
+        "layout_json"        : "landing-target.json",
+        "opencv_dictionary"  : "DICT_APRILTAG_36h11",
+        "target_num"         : 0
+    },
+
+    "detection": {
+        "enabled"                          : false,
+        "send_hz"                          : 10,
+        "frames_to_skip_between_process"   : 0,
+        "min_tags"                         : 1,
+        "overlay_axis_length_m"            : 0.02,
+        // when true the detection overlay is sent to de_camera to draw it
+        // using its internal overlay library instead of --debug-overlay
+        "de_camera_draw"                   : false
+    },
+
+    // precision_landing.* event surface: facts (locked/lost/stabilized/
+    // degraded/faulted/enabled/disabled/target_changed) and command events
+    "events": {
+        "enabled"         : true,   // facts + commands; false = zero Sync_EventFire traffic both ways
+        "commands"        : true,   // accept precision_landing.enable/disable/set_target command events
+        "stabilized_s"    : 2.0,    // a lock must hold this long before precision_landing.stabilized fires
+        "min_interval_ms" : 2000    // rate limit for precision_landing.degraded
+    },
+
+    "stability": {
+        "max_reproj_rmse_px" : 8.0,   // reject pose when reprojection RMSE exceeds threshold
+        "ema_alpha"          : 0.4,   // EMA smoothing factor in [0,1], higher = more responsive
+        "stale_timeout_ms"   : 1000   // reset tracking state when target unseen beyond timeout
+    },
+
+    "calibration": {
+        "timeout_s"   : 120,    // T1: deadline for the capture phase (seconds)
+        "max_rms_px"  : 1.0     // T2: reject calibration if RMS exceeds this (pixels)
+    },
+
+    "mount": {
+        "mount_rpy_deg"       : [0.0, 0.0, 0.0],
+        "camera_orientation"  : 0        // matches de_tracker semantics (0:0,1:90,2:180,3:270)
+    }
+}

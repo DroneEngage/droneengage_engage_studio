@@ -197,12 +197,14 @@ See the docstring in `engine/runner.py` for every step and assertion. In
 short:
 
 - **steps:** `deploy`, `arm`, `start`, `stop`, `clear`, `fire`, `mode`,
-  `land`, `reset`, `wait`, `wait_journal`, `wait_online`, `wait_ready`,
+  `land`, `reset`, `wait`, `wait_journal`, `wait_log`, `wait_online`,
+  `wait_ready`,
   `kill` / `restart` (also `unit: server`), `reboot` (de_comm under a new
   boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
   (fake server only), `commline`, `send`, `write_file` (`{unit, module,
   path, json}` - a JSON file into `run/<unit>/<module>/`, for module file
-  seams like de_rpi_gpio's `gpio_inputs.json`; `also: [{path, json}]`
+  seams like de_rpi_gpio's `gpio_inputs.json` or de_precland's
+  `precland_scene.json`; `also: [{path, json}]`
   writes extra files inside the same call);
 - **fleet ops (P4A-09):** when `operation:` names a deploy spec (a top-level
   `roles` map - see `packages/p4a05.deploy.json`), `deploy` runs the
@@ -211,8 +213,10 @@ short:
   A fleet package refuses the legacy `start`;
 - **step tokens** (`send`/`opmsg`): `{RUN}`, `{OP_RUN}`, `{PKG:<file>}`,
   `{HASH:<file>}` (paths resolve under `packages/` too), `{WM_TID:<unit>}`;
-- **assertions:** `journal_count`, `journal_order`, `journal_time_delta`,
-  `mission_current`, `clock_spread`;
+- **assertions:** `journal_count`, `module_log_count` (same bounds over
+  `logs/<module>.log` - module stdout, for facts that never reach the
+  journal like de_precland's `EVENT_OUT` lines), `journal_order`,
+  `journal_time_delta`, `mission_current`, `clock_spread`;
 - **teardown:** `land` (default) | `reset` | `none`.
 
 `unit:` takes a unit name, its 1-based position, `block:<name>`, a comma

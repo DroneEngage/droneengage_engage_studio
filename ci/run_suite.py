@@ -5,8 +5,9 @@ library (TASK-P5-09).
     python3 ci/run_suite.py [--roots scenarios] [--seeds 1,2,3] [--keep]
                             [--out results/nightly]
 
-Every *.yaml under each root (top-level and each immediate subdir) runs
-once per seed, serially - a run owns the machine. Verdicts:
+Every *.yaml under each root (top-level and every nested subdir -
+scenarios/precland/standalone is two levels deep) runs once per seed,
+serially - a run owns the machine. Verdicts:
 
   PASS       run_scenario exit 0
   GATE-PASS  exit !=0 AND the file's verify: declares expected findings
@@ -44,13 +45,10 @@ def yaml_files(roots):
     out = []
     for r in roots:
         d = os.path.join(ROOT, r)
-        out += sorted(glob.glob(os.path.join(d, "*.yaml")) +
-                      glob.glob(os.path.join(d, "*.yml")))
-        for sub in sorted(os.listdir(d)):
-            sd = os.path.join(d, sub)
-            if os.path.isdir(sd):
-                out += sorted(glob.glob(os.path.join(sd, "*.yaml")) +
-                              glob.glob(os.path.join(sd, "*.yml")))
+        out += sorted(glob.glob(os.path.join(d, "**", "*.yaml"),
+                                recursive=True) +
+                      glob.glob(os.path.join(d, "**", "*.yml"),
+                                recursive=True))
     return out
 
 

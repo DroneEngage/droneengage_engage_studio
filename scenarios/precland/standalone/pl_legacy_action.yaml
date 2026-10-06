@@ -1,0 +1,44 @@
+# precland/standalone/pl_legacy_action - PL-07: the legacy GCS path.
+# PRECLAND_ACTION (andruav msg 6536) is delivered to the subscribed
+# module without a package: {a:1} enables (PRECLAND_ACTION_ENABLE) with
+# "src":"legacy" and {a:2,b:3} switches target_num to 3
+# (PRECLAND_ACTION_SET_TARGET). Re-selecting the SAME target through
+# the event surface is an edge no-op - no second target_changed.
+version: 1
+name: pl_legacy_action
+transport: fake
+settle_s: 5
+teardown: none
+fleet:
+  - {id: node, cls: static_precland}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  # PRECLAND_ACTION_ENABLE as a raw GCS frame
+  - {t: 15, do: opmsg, unit: node, mt: 6536, ms: {a: 1}, secs: 2}
+  - {t: 15, do: wait_log, unit: node, module: de_precland,
+     re: 'EVENT_OUT precision_landing\.enabled .*"src":"legacy"',
+     timeout: 30}
+  # PRECLAND_ACTION_SET_TARGET with b = target_num 3
+  - {t: 20, do: opmsg, unit: node, mt: 6536, ms: {a: 2, b: 3}, secs: 2}
+  - {t: 20, do: wait_log, unit: node, module: de_precland,
+     re: 'EVENT_OUT precision_landing\.target_changed .*"src":"legacy".*"target":3',
+     timeout: 30}
+  # same target through the event surface: no edge, no second fact
+  - {t: 25, do: fire, event: precision_landing.set_target, unit: node,
+     payload: {target: 3}}
+assert:
+  - module_log_count: {unit: node, module: de_precland,
+      re: 'EVENT_OUT precision_landing\.enabled .*"src":"legacy"',
+      equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.target_changed ", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: 'EVENT_OUT precision_landing\.target_changed .*"src":"legacy".*"target":3',
+      equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: 'EVENT_OUT precision_landing\.enabled .*"src":"event"',
+      equals: 0}

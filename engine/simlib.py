@@ -982,7 +982,17 @@ def gen_unit(u, sim, catalog):
         if m == "de_comm":
             continue
         spec = catalog[m]
-        ctx["module_dir"] = module_dir(spec)
+        # normpath: DE_CODE ends with "/" so $DE_CODE/<repo> renders
+        # "dir//dir"; inside a JSON string de_common's comment stripper
+        # then eats the line from "//" on and the module fails to parse
+        ctx["module_dir"] = os.path.normpath(module_dir(spec))
+        if m == "de_precland":
+            # the generated scene library the wire points test_source +
+            # camera at: DE_PRECLAND_SCENES, else the repo's own
+            # tools/sim_scenes
+            ctx["precland_scenes"] = os.path.normpath(setting(
+                "DE_PRECLAND_SCENES",
+                os.path.join(module_dir(spec), "tools", "sim_scenes")))
         mdir = os.path.join(udir, m)
         mcfg = load_config(module_template(spec))
         mcfg = deep_merge(mcfg, spec.get("set"))
@@ -1401,17 +1411,26 @@ def journal_mark(u):
     return marks
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
 def log_match(u, proc, rx, since=None):
     """Lines of run/<sim>/<unit>/logs/<proc>.log appended since the mark
-    matching the regex. For module ready checks whose signal lives on
-    stdout (de_yolo_ai) instead of the de_comm journal."""
+    matching the regex (a pattern string or a compiled re) - ANSI
+    colour escapes stripped first: de_common prints coloured stdout
+    (de_precland's "PRECLAND state -> <n>" has escapes inside the line,
+    so a bare substring regex would miss). For module ready checks and
+    assertions whose signal lives on stdout (de_yolo_ai, de_precland)
+    instead of the de_comm journal."""
     path = os.path.join(unit_dir(u), "logs", proc + ".log")
     if not os.path.isfile(path):
         return []
     off = since.get(path, 0) if since else 0
+    rxc = re.compile(rx) if isinstance(rx, str) else rx
     with open(path, errors="replace") as fh:
         fh.seek(off)
-        return [ln for ln in fh.read().splitlines() if rx.search(ln)]
+        return [ln for ln in (_ANSI.sub("", l) for l in fh.read().splitlines())
+                if rxc.search(ln)]
 
 
 def _parse_journal_line(ln, f):

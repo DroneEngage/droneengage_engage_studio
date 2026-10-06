@@ -79,6 +79,29 @@ de_yolo_ai:
     output_video_device_name: "{ai_label}"
     model_path: "{module_dir}/yolo11n.onnx"
 
+# PL-07: the real precision-landing module on a generated test-scene
+# feed (no v4l2 needed): test_source replays {precland_scenes}/<scene>/
+# frames at test_source.fps, and `write_file` on precland_scene.json
+# switches scenes mid-run. -b is the binary's --bconfig short option.
+de_precland:
+  repo: droneengage_precision_landing
+  dir_env: DE_PRECLAND_DIR
+  bin: bin/de_precland
+  bin_env: DE_PRECLAND_BIN
+  template: de_precland.sim.json
+  port_base: 56000
+  start_delay: 3
+  local: {arg: "-b", file: de_precland.local}
+  wire:
+    test_source: {images_root: "{precland_scenes}",
+                  scene_file: "precland_scene.json", fps: 10}
+    camera: {calibration_file: "{precland_scenes}/camera.yaml",
+             width: 640, height: 480}
+    # the multi-tag layout the repo ships at its root - wired absolute
+    # like de_yolo_ai's model_path (the module cwd is run/<unit>/)
+    target: {layout_json: "{module_dir}/landing-target.json"}
+  ready_log_re: "TEST SOURCE: scenes from"
+
 de_tracker:
   repo: droneengage_visual_tracker
   dir_env: DE_TRACKER_DIR

@@ -1,0 +1,49 @@
+# precland/standalone/pl_camera_fault - PL-07: the camera fault path
+# and recovery.
+#
+# Scene "none" (or any missing scene directory) makes every frame read
+# fail like an unplugged camera: 50 consecutive read failures at the
+# ~200 ms retry cadence (~10 s) edge the module into ERROR with one
+# faulted {reason:"camera"} fact. Feeding frames again clears the
+# failure counter and the next accepted pose emits locked - recovery
+# is visible through the next fact, no special "recovered" event.
+version: 1
+name: pl_camera_fault
+transport: fake
+settle_s: 5
+teardown: none
+fleet:
+  - {id: node, cls: static_precland}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  - {t: 15, do: fire, event: precision_landing.enable, unit: node}
+  - {t: 15, do: wait_log, unit: node, module: de_precland,
+     re: 'EVENT_OUT precision_landing\.enabled .*"src":"event"',
+     timeout: 30}
+  # reads start failing; ~10 s later the module faults
+  - {t: 20, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "none"}}
+  - {t: 20, do: wait_log, unit: node, module: de_precland,
+     re: 'EVENT_OUT precision_landing\.faulted .*"reason":"camera"',
+     timeout: 15}
+  # frames are back: the failure counter resets and the next lock
+  # emits - recovery shows as a normal locked fact
+  - {t: 40, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "target_near"}}
+  - {t: 40, do: wait_log, unit: node, module: de_precland,
+     re: "EVENT_OUT precision_landing\\.locked ", timeout: 30}
+assert:
+  - module_log_count: {unit: node, module: de_precland,
+      re: 'EVENT_OUT precision_landing\.faulted .*"reason":"camera"',
+      equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.faulted ", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.locked ", at_least: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: 'EVENT_OUT precision_landing\.enabled .*"src":"event"',
+      equals: 1}

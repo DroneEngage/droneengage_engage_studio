@@ -14,6 +14,10 @@ scenario green only when every non-SKIP assertion is PASS.
 Journal assertions keep the runner.py semantics (same helpers, same
 `unit:` resolution). The new ones read:
 
+  - module stdout logs:  module_log_count - run/<unit>/logs/<module>.log
+                         lines since the test mark (PL-07: module-printed
+                         facts like de_precland's EVENT_OUT never reach
+                         the journal)
   - journals:            proc_alive/proc_dead, operator_log_count,
                          no_fc_command_to_static
   - telemetry.jsonl:     distance_to, no_sep_violation, fc_mode,
@@ -62,7 +66,8 @@ FC_LINE_RE = re.compile(
     r"\b(dis)?arm(ed|ing)?\b", re.I)
 
 # assertions that resolve `unit:`; an empty resolution can never pass
-UNIT_ASSERTS = {"journal_count", "journal_consistent", "journal_order", "final_state",
+UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
+                "journal_order", "final_state",
                 "fc_items_unchanged_without_cause", "mission_current",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
@@ -255,6 +260,26 @@ def _journal_count(name, a, ctx):
                   f"total {txt} (" + "; ".join(
                       f"{u['name']}: {n}"
                       for u, n in zip(_units(a, ctx), vals)) + ")")
+    return _r(name, "PASS" if ok else "FAIL",
+              sum(vals) / len(vals) if vals else 0, "; ".join(bits))
+
+
+def _module_log_count(name, a, ctx):
+    """module_log_count {unit, module, re, equals|at_least|at_most}: the
+    journal_count sibling over run/<unit>/logs/<module>.log (the module's
+    stdout), lines appended since the test mark. Facts a module prints
+    itself - de_precland's EVENT_OUT lines - never reach the de_comm
+    journal, so standalone module behaviour is asserted here."""
+    marks = ctx["marks"]
+    rx = re.compile(a["re"])
+    ok, bits, vals = True, [], []
+    for u in _units(a, ctx):
+        n = len(simlib.log_match(u, a["module"], rx,
+                                 marks.get(u["name"])))
+        vals.append(n)
+        good, txt = _cmp(a, n)
+        ok &= good
+        bits.append(f"{u['name']}: {txt}")
     return _r(name, "PASS" if ok else "FAIL",
               sum(vals) / len(vals) if vals else 0, "; ".join(bits))
 
@@ -1423,6 +1448,7 @@ def _detection_precision_render(name, a, ctx):
 
 DISPATCH = {
     "journal_count": _journal_count,
+    "module_log_count": _module_log_count,
     "journal_order": _journal_order,
     "journal_time_delta": _journal_delta,
     "clock_spread": _clock_spread,
