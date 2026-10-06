@@ -1,0 +1,9 @@
+{
+  "op": "sar_forest_static",
+  "roles": {
+    "cam_mast":  { "pkg": "sar_forest_static_cam_mast.pkg.json",
+                   "units": ["camm1"] },
+    "ambulance": { "pkg": "sar_forest_static_ambulance.pkg.json",
+                   "units": ["amb1"] }
+  }
+}

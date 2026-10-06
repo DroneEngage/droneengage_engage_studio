@@ -15,6 +15,7 @@ the multi-SITL harness. Results are recorded in
 | `p4b10_g_no_autolaunch.yaml` | G | `sv_allow_auto_launch: false`: the ambulance refuses the start (journaled), never arms |
 | `p4b10_h_decomm_restart.yaml` | H | s1's de_comm restarted mid-sector: package + dynamic segment restored, run resumes RUNNING, sector completes, no takeover |
 | `p4b10_i_static_sources.yaml` | I | two static SDR masts confirm the phone (`k_sources_within k:2`); a static camera mast sees the person; statics never get sectors, drain on OP_END |
+| `p4b10_j_approval_timeout.yaml` | J | drop approval raised while the GCS is gone: request pends across the outage, dies at `approval_timeout_s` (`APPROVAL_TIMEOUT`), release never dispatched, ambulance falls back to RTL |
 
 Inputs:
 
