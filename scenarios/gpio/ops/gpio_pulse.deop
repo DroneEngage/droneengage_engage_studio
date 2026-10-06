@@ -1,0 +1,37 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_pulse",
+    "comment": "GF-07 pulse_override (GF-04): the pulse mission emits a 2 s gpio.flash.pulse; the went_on edge triggers keep, which emits an explicit gpio.flash.on mid-pulse. The non-pulse write bumps the pulse generation even though the pin is already on, so the pulse end must not restore flash to off - no went_off, state stays 1.",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.flash.pulse":    { "payload": { "ms": "number" } },
+        "gpio.flash.on":       {},
+        "gpio.flash.went_on":  {},
+        "gpio.flash.went_off": {}
+    },
+
+    "missions": {
+        "node": {
+            "pulse": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "p", "emit": "gpio.flash.pulse",
+                      "payload": { "ms": 2000 } }
+                ]
+            },
+            "keep": {
+                "trigger": { "event": "gpio.flash.went_on" },
+                "end": "hold",
+                "steps": [
+                    { "id": "on", "emit": "gpio.flash.on" }
+                ]
+            }
+        }
+    }
+}

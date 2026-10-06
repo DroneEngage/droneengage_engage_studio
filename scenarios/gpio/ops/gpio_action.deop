@@ -1,0 +1,31 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_action",
+    "comment": "GF-07 fact_to_action: the sanctioned cross-unit path - node_a's btn press republishes gpio.btn.went_on on the fleet bus; node_b's remote_lit triggers on it only when it did NOT originate locally (event.src != self.party) and performs the gpio.led capability action. node_a's own copy is filtered out, so its led stays off.",
+
+    "roles": {
+        "node": { "count": 2, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.btn.went_on":  {},
+        "gpio.btn.went_off": {},
+        "gpio.led.went_on":  {},
+        "gpio.led.went_off": {}
+    },
+
+    "missions": {
+        "node": {
+            "remote_lit": {
+                "trigger": { "event": "gpio.btn.went_on",
+                             "when": "${event.src != self.party}" },
+                "end": "hold",
+                "steps": [
+                    { "id": "lit", "do": "gpio.led",
+                      "with": { "on": true }, "timeout": 10 }
+                ]
+            }
+        }
+    }
+}

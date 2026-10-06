@@ -1,0 +1,11 @@
+{
+  "op": "gpio_pulse",
+  "roles": {
+    "node": {
+      "pkg": "gpio_pulse_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

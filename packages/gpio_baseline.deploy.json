@@ -1,0 +1,11 @@
+{
+  "op": "gpio_baseline",
+  "roles": {
+    "node": {
+      "pkg": "gpio_baseline_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

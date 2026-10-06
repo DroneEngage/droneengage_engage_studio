@@ -1,0 +1,12 @@
+{
+  "op": "gpio_isolate",
+  "roles": {
+    "node": {
+      "pkg": "gpio_isolate_node.pkg.json",
+      "units": [
+        "node_a",
+        "node_b"
+      ]
+    }
+  }
+}

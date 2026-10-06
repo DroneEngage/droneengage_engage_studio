@@ -1,0 +1,30 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_isolate",
+    "comment": "GF-07 remote_isolation (GF-01/GF-02): a NON-fleet package - compiled without fleet metadata so emits stay unit-local. Unit A's own emit of gpio.led.on still reaches its module; a raw server-sourced Sync_EventFire (1061, unit-twin or GCS-stamped) must be dropped by de_comm and never reach either module.",
+
+    "roles": {
+        "node": { "count": 2, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.btn.went_on":  {},
+        "gpio.btn.went_off": {},
+        "gpio.led.on":       {},
+        "gpio.led.went_on":  {},
+        "gpio.led.went_off": {}
+    },
+
+    "missions": {
+        "node": {
+            "lit": {
+                "trigger": { "event": "gpio.btn.went_on" },
+                "end": "hold",
+                "steps": [
+                    { "id": "mark", "emit": "gpio.led.on" }
+                ]
+            }
+        }
+    }
+}

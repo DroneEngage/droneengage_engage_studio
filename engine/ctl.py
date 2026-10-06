@@ -45,7 +45,8 @@ Fleet ops (P4A-09, DE_OP_CONTROL 1094):
   write_file <unit> <module> <path> <json> [<path> <json> ...]
                                     write JSON file(s) into
                                     run/<unit>/<module>/ (drives seams like
-                                    de_rpi_gpio's gpio_inputs.json)
+                                    de_rpi_gpio's gpio_inputs.json); a +N
+                                    token sleeps N ms before the next write
 
 Pilot (units with an fc):
   arm <unit>    disarm <unit>    mode <unit> <MODE>    fc <unit>
@@ -665,6 +666,20 @@ def write_module_file(u, module, relpath, doc):
     return p
 
 
+def write_module_files(u, module, writes):
+    """GF-07: run (relpath, doc, delay_ms) triples in order, sleeping
+    delay_ms before each write. Zero-delay writes stay back-to-back
+    inside one file-poll window; a delayed write lands in a later
+    window (a real bounce below a debounce threshold, not a burst
+    collapse)."""
+    out = []
+    for relpath, doc, delay_ms in writes:
+        if delay_ms > 0:
+            time.sleep(delay_ms / 1000.0)
+        out.append(write_module_file(u, module, relpath, doc))
+    return out
+
+
 def journal_download(u, frm=0):
     frames = gcs_collect({"ty": "i", "mt": 1086, "tg": u["party_id"],
                           "ms": {"a": "journal", "from": frm}}, {1088}, 15, True)
@@ -1237,12 +1252,28 @@ def main(argv):
         ctrl("send " + text)
     elif c == "write_file":
         u = resolve(a[0])[0]
-        if len(a) < 4 or (len(a) - 2) % 2:
+        if len(a) < 4:
             sys.exit("write_file <unit> <module> <path> <json> "
-                     "[<path> <json> ...]")
-        for i in range(2, len(a), 2):
-            doc = json.loads(a[i + 1])
-            print(write_module_file(u, a[1], a[i], doc))
+                     "[<path> <json> ...] [+N <path> <json> ...]")
+        # GF-07: a +N token sleeps N ms before the following write -
+        # inside the same ctl process, so the gap is real time, not a
+        # subprocess boundary
+        writes = []
+        delay_ms = 0
+        i = 2
+        while i < len(a):
+            m = re.fullmatch(r"\+(\d+)", a[i])
+            if m:
+                delay_ms = int(m.group(1))
+                i += 1
+                continue
+            if i + 1 >= len(a):
+                sys.exit("write_file: <path> without <json>")
+            writes.append((a[i], json.loads(a[i + 1]), delay_ms))
+            delay_ms = 0
+            i += 2
+        for p in write_module_files(u, a[1], writes):
+            print(p)
     elif c == "journal":
         u = resolve(a[0])[0]
         for ln in journal_download(u, int(a[1]) if len(a) > 1 else 0):

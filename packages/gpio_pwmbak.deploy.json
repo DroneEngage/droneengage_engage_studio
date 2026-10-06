@@ -1,0 +1,11 @@
+{
+  "op": "gpio_pwmbak",
+  "roles": {
+    "node": {
+      "pkg": "gpio_pwmbak_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

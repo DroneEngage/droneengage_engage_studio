@@ -1,0 +1,29 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_pwmbak",
+    "comment": "GF-07 pwm_after_legacy_off (GF-05): a legacy GPIO_ACTION PORT_WRITE {n:servo,v:0,d:0} zeroes the PWM frequency; the went_off edge triggers servo_back, whose do gpio.servo {pwm:102} must fall back to the configured frequency (50 Hz) instead of the dead live one - ok result, went_on, width 102.",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.servo.went_on":  {},
+        "gpio.servo.went_off": {},
+        "gpio.servo.changed":  {}
+    },
+
+    "missions": {
+        "node": {
+            "servo_back": {
+                "trigger": { "event": "gpio.servo.went_off" },
+                "end": "hold",
+                "steps": [
+                    { "id": "back", "do": "gpio.servo",
+                      "with": { "pwm": 102 }, "timeout": 10 }
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,28 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_baseline",
+    "comment": "GF-07 input_baseline (GF-03): btn_low (GPIO 27, active_low, 50 ms debounce) boots with the raw input already released (gpio_inputs.json carries 1 before de_gpio restarts). The first sample seeds the baseline silently; a later real press must be the first edge - one went_on, no went_off.",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.btn_low.went_on":  {},
+        "gpio.btn_low.went_off": {},
+        "baseline.fired":        {}
+    },
+
+    "missions": {
+        "node": {
+            "armed": {
+                "trigger": { "event": "gpio.btn_low.went_on" },
+                "end": "hold",
+                "steps": [
+                    { "id": "mark", "emit": "baseline.fired" }
+                ]
+            }
+        }
+    }
+}

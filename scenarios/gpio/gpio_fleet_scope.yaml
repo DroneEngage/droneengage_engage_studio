@@ -19,11 +19,11 @@ timeline:
   # package loads - a second run must see a real 0->1 edge at press time
   - {t: 0, do: restart, unit: all, proc: de_gpio}
   - {t: 2, do: write_file, unit: node_a, module: de_gpio,
-     path: gpio_inputs.json, json: {"17": 0}}
+     path: gpio_inputs.json, json: {"17": 0, "27": 1}}
   - {t: 10, do: deploy}
   - {t: 15, do: start}
   - {t: 22, do: write_file, unit: node_a, module: de_gpio,
-     path: gpio_inputs.json, json: {"17": 1}}
+     path: gpio_inputs.json, json: {"17": 1, "27": 1}}
   - {t: 25, do: wait_journal, unit: node_a,
      re: "S: own_btn activated", timeout: 30}
   - {t: 26, do: wait_journal, unit: node_b,

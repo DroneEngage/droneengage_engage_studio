@@ -41,8 +41,10 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - wait: 10
       - write_file: {unit: 1, module: de_gpio, path: gpio_inputs.json,
                      json: {"17": 1}}      # JSON into run/<unit>/<module>/;
-                                          # also: [{path, json}, ...] writes
-                                          # more files in the same ctl call
+                                          # also: [{path, json, delay_ms?}, ...]
+                                          # writes more files in the same ctl
+                                          # call; delay_ms sleeps N ms first
+                                          # (a +N marker inside the call)
     assert:
       - journal_count: {unit: all, re: "EVENT_IN area.clear", equals: 1}
       - journal_order: {unit: 1, first: "A re", then: "B re"}
@@ -255,9 +257,17 @@ def run_step(step, t, marks):
         # GE-07: JSON file(s) into run/<unit>/<module>/ - drives module
         # file seams (de_rpi_gpio's gpio_inputs.json). `also` folds extra
         # writes into the SAME ctl call, so a burst lands inside one
-        # 100 ms read window (a bounce collapses into one state).
-        argv = [unit, arg["module"], arg["path"], json.dumps(arg["json"])]
-        for w in arg.get("also", []):
+        # 100 ms read window (a bounce collapses into one state). GF-07:
+        # an entry may carry delay_ms - ctl gets a +N marker and sleeps
+        # inside the same process, so delayed writes stay ordered but
+        # land in a later read window.
+        argv = [unit, arg["module"]]
+        for w in [{"path": arg["path"], "json": arg["json"],
+                   "delay_ms": arg.get("delay_ms")}] + \
+                list(arg.get("also", [])):
+            delay_ms = int(w.get("delay_ms") or 0)
+            if delay_ms > 0:
+                argv.append("+" + str(delay_ms))
             argv += [w["path"], json.dumps(w["json"])]
         return run_ctl("write_file", *argv)
     if name == "server_up":

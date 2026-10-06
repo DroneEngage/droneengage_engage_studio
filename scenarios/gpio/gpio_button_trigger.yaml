@@ -1,12 +1,13 @@
-# gpio/gpio_button_trigger - GE-07 acceptance 4: a debounced INPUT pin
-# (btn, GPIO 17, debounce_ms 50) drives gpio.btn.went_on; the lamp
-# mission activates on it and switches led on.
+# gpio/gpio_button_trigger - GE-07 acceptance 4 + GF-07: a debounced
+# INPUT pin (btn, GPIO 17, debounce_ms 300) drives gpio.btn.went_on;
+# the lamp mission activates on it and switches led on.
 #
-#   t=10  write {"17":1}             -> went_on -> lamp activates
-#   t=20  write {"17":0} + {"17":1}  -> one ctl call: the burst lands
-#          inside a single 100 ms input-poll window (and any single
-#          sample still sits under the 50 ms debounce) - a bounce must
-#          produce neither went_off nor a second went_on
+#   t=20  write {"17":1}                    -> went_on -> lamp activates
+#   t=30  write {"17":0} + 150 ms {"17":1}  -> a real bounce: the dip
+#          holds 150 ms plus up to one 100 ms read-window lag, always
+#          under the 300 ms debounce - no went_off, no second went_on
+#   t=40  write {"17":0}, held 2 s          -> a genuine release:
+#          exactly one went_off
 version: 1
 name: gpio_button_trigger
 transport: fake
@@ -22,21 +23,29 @@ timeline:
   # already pressed and produce no went_on edge
   - {t: 0, do: restart, unit: node, proc: de_gpio}
   - {t: 2, do: write_file, unit: node, module: de_gpio,
-     path: gpio_inputs.json, json: {"17": 0}}
+     path: gpio_inputs.json, json: {"17": 0, "27": 1}}
   - {t: 10, do: deploy}
   - {t: 15, do: start}
   - {t: 20, do: write_file, unit: node, module: de_gpio,
-     path: gpio_inputs.json, json: {"17": 1}}
+     path: gpio_inputs.json, json: {"17": 1, "27": 1}}
   - {t: 22, do: wait_journal, unit: node,
      re: "S: lamp activated", timeout: 30}
   - {t: 23, do: wait_journal, unit: node,
      re: "S: lamp lit ok", timeout: 30}
-  # the bounce: both writes in ONE write_file call (~0 ms apart)
+  # the bounce: 150 ms low inside ONE write_file call - under the 300 ms
+  # debounce even after the <=100 ms seam latency
   - {t: 30, do: write_file, unit: node, module: de_gpio,
-     path: gpio_inputs.json, json: {"17": 0},
-     also: [{path: gpio_inputs.json, json: {"17": 1}}]}
+     path: gpio_inputs.json, json: {"17": 0, "27": 1},
+     also: [{path: gpio_inputs.json, json: {"17": 1, "27": 1},
+             delay_ms: 150}]}
   - {t: 35, do: wait, seconds: 5}
-  - {t: 40, do: stop}
+  # the genuine release: low held well past the debounce
+  - {t: 40, do: write_file, unit: node, module: de_gpio,
+     path: gpio_inputs.json, json: {"17": 0, "27": 1}}
+  - {t: 41, do: wait_journal, unit: node,
+     re: "EVENT_IN event gpio\\.btn\\.went_off latched", timeout: 15}
+  - {t: 42, do: wait, seconds: 2}
+  - {t: 45, do: stop}
 assert:
   - journal_count: {unit: node, re: "S: lamp activated", equals: 1}
   - journal_count: {unit: node, re: "S: lamp lit ok", equals: 1}
@@ -48,7 +57,7 @@ assert:
                     equals: 1}
   - journal_count: {unit: node,
                     re: "EVENT_IN event gpio\\.btn\\.went_off latched",
-                    equals: 0}
+                    equals: 1}
   - journal_count: {unit: node,
                     re: "already active - gpio\\.btn\\.went_on",
                     equals: 0}

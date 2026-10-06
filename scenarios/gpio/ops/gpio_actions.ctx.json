@@ -27,7 +27,7 @@
                       "string",
                       "int"
                     ],
-                    "desc": "pin name (led, power_led, flash, servo, btn) or GPIO number"
+                    "desc": "pin name (led, power_led, flash, servo, btn, btn_low) or GPIO number"
                   },
                   "value": {
                     "type": "int",
@@ -50,7 +50,7 @@
                       "string",
                       "int"
                     ],
-                    "desc": "pin name (led, power_led, flash, servo, btn) or GPIO number"
+                    "desc": "pin name (led, power_led, flash, servo, btn, btn_low) or GPIO number"
                   }
                 }
               },
@@ -243,6 +243,36 @@
                   }
                 }
               },
+              "btn_low.went_on": {
+                "payload": {
+                  "v": {
+                    "type": "int"
+                  },
+                  "src": {
+                    "type": "string"
+                  }
+                }
+              },
+              "btn_low.went_off": {
+                "payload": {
+                  "v": {
+                    "type": "int"
+                  },
+                  "src": {
+                    "type": "string"
+                  }
+                }
+              },
+              "btn_low.changed": {
+                "payload": {
+                  "v": {
+                    "type": "int"
+                  },
+                  "src": {
+                    "type": "string"
+                  }
+                }
+              },
               "power_led.went_on": {
                 "payload": {
                   "v": {
@@ -294,6 +324,10 @@
               "btn": {
                 "type": "int",
                 "desc": "GPIO 17 input level"
+              },
+              "btn_low": {
+                "type": "int",
+                "desc": "GPIO 27 input level"
               }
             }
           }

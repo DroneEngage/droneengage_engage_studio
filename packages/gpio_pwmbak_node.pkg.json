@@ -1,0 +1,59 @@
+{
+  "schema": "de.package/2.2",
+  "op": "gpio_pwmbak",
+  "op_hash": "sha256:04a55cdb942abfb393f499e2c1f9e21ad0a72059e774ada73be282b00a1d4cdd",
+  "role": "node",
+  "vehicle": {
+    "type": "static"
+  },
+  "requires": [
+    "gpio"
+  ],
+  "fc_items": [],
+  "missions": {
+    "servo_back": {
+      "trigger": {
+        "type": "event",
+        "event": "gpio.servo.went_off"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [
+        "gpio"
+      ],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "back",
+          "k": "do",
+          "do": "gpio.servo",
+          "with": {
+            "pwm": 102
+          },
+          "timeout": 10,
+          "on_error": "end"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "gpio.servo.went_off": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "node": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "gpio.servo.went_on": 300,
+      "gpio.servo.went_off": 300,
+      "gpio.servo.changed": 300
+    }
+  },
+  "hash": "sha256:388b07d694659e11d76e8414232537025ad8e9292615068bbaeb64d05e6e2dcb"
+}

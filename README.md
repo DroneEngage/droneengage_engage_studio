@@ -205,8 +205,9 @@ short:
   (fake server only), `commline`, `send`, `write_file` (`{unit, module,
   path, json}` - a JSON file into `run/<unit>/<module>/`, for module file
   seams like de_rpi_gpio's `gpio_inputs.json` or de_precland's
-  `precland_scene.json`; `also: [{path, json}]`
-  writes extra files inside the same call);
+  `precland_scene.json`; `also: [{path, json, delay_ms?}]`
+  writes extra files inside the same call — an entry with `delay_ms`
+  sleeps N ms before its write, keeping the order);
 - **fleet ops (P4A-09):** when `operation:` names a deploy spec (a top-level
   `roles` map - see `packages/p4a05.deploy.json`), `deploy` runs the
   two-phase DE_OP_CONTROL (1094) PREPARE per role, and the run goes up
