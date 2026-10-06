@@ -42,7 +42,7 @@ de_mavlink:
   ready_re: "nav adapter hello"
 
 de_camera:
-  repo: drone_engage_camera_2025
+  repo: droneengage_camera_2025
   dir_env: DE_CAMERA_DIR
   # de_camera ships a prebuilt x86 binary in the repo (WebRTC gn/ninja
   # builds land in compiled_bin/); DE_CAMERA_BIN overrides
@@ -62,7 +62,7 @@ de_camera:
 # which the unit's de_camera streams. model_path is wired absolute so
 # the run/<unit>/<module>/ cwd does not need a copy.
 de_yolo_ai:
-  repo: drone_engage_yolo_ai_generic
+  repo: droneengage_yolo_ai_generic
   dir_env: DE_YOLO_AI_DIR
   bin: bin/de_yolo_generic
   bin_env: DE_YOLO_AI_BIN
@@ -103,7 +103,7 @@ de_precland:
   ready_log_re: "TEST SOURCE: scenes from"
 
 de_tracker:
-  repo: droneengage_visual_tracker
+  repo: droneengage_tracking
   dir_env: DE_TRACKER_DIR
   bin: bin/de_tracker
   template: de_tracker.config.module.json
