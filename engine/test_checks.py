@@ -530,6 +530,66 @@ def run_module_log(a, u, marks):
         return checks.check_assertion(a, c)
 
 
+class TNoSep(unittest.TestCase):
+    """no_sep_violation: an unmeasured separation never passes."""
+
+    def _run(self, rows, **a):
+        class Tele:
+            def rows(self, n):
+                return rows.get(n, [])
+        c, _ = ctx({}, telemetry=Tele())
+        with mock.patch.object(checks, "_units", lambda arg, c: [U1, U2]):
+            return checks._no_sep_violation("no_sep_violation", a, c)
+
+    def fix(self, t, lat, alt=30.0):
+        return {"t_ms": t, "lat": lat, "lng": 31.0, "alt_m": alt, "fix_type": 3}
+
+    def test_no_overlap_fails(self):
+        r = self._run({"u1": [self.fix(0, 30.0)], "u2": [self.fix(60000, 30.001)]})
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_no_recorder_fails(self):
+        c, _ = ctx({}, telemetry=None)
+        with mock.patch.object(checks, "_units", lambda arg, c: [U1, U2]):
+            r = checks._no_sep_violation("no_sep_violation", {}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_one_fc_unit_skips(self):
+        c, _ = ctx({}, telemetry=None)
+        with mock.patch.object(checks, "_units", lambda arg, c: [U1]):
+            r = checks._no_sep_violation("no_sep_violation", {}, c)
+        self.assertEqual(r["status"], "SKIP")
+
+    def test_vertically_separated_only_passes(self):
+        r = self._run({"u1": [self.fix(0, 30.0, 30)], "u2": [self.fix(0, 30.0, 60)]},
+                      h_m=10, v_m=10)
+        self.assertEqual(r["status"], "PASS")
+
+    def test_close_pair_fails_far_pair_passes(self):
+        self.assertEqual(self._run({"u1": [self.fix(0, 30.0)],
+                                    "u2": [self.fix(0, 30.00001)]}, h_m=10)["status"], "FAIL")
+        self.assertEqual(self._run({"u1": [self.fix(0, 30.0)],
+                                    "u2": [self.fix(0, 30.001)]}, h_m=10)["status"], "PASS")
+
+
+class TRunSuiteResults(unittest.TestCase):
+    """ci/run_suite: a run is judged only on results it wrote itself."""
+
+    def test_stale_results_dir_ignored(self):
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), "ci"))
+        import run_suite
+        with tempfile.TemporaryDirectory() as root:
+            old = os.path.join(root, "20260101T000000Z", "scn")
+            os.makedirs(old)
+            os.utime(old, (1000, 1000))
+            with mock.patch.object(run_suite, "RESULTS", root):
+                self.assertIsNone(run_suite.latest_results_dir("scn", 2000))
+                new = os.path.join(root, "20260102T000000Z", "scn")
+                os.makedirs(new)
+                self.assertEqual(run_suite.latest_results_dir("scn", 2000), new)
+
+
 class TModuleLog(unittest.TestCase):
     """PL-07: module_log_count + wait_log - assertions/steps over a
     module's own stdout log (logs/<module>.log), not the journal."""

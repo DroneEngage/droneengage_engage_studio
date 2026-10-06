@@ -66,10 +66,13 @@ def expected_verify(path):
     return spec
 
 
-def latest_results_dir(name):
-    """Newest results/<utc>/<name>/ dir - runs are serial so the last
-    one is this run's."""
-    hits = sorted(glob.glob(os.path.join(RESULTS, "*", name)),
+def latest_results_dir(name, since):
+    """Newest results/<utc>/<name>/ dir written by THIS run (mtime >=
+    `since`) - runs are serial, but a run that died before creating its
+    dir must not be judged on an older run's verify.json (same basename
+    in another folder, or a previous seed)."""
+    hits = sorted((d for d in glob.glob(os.path.join(RESULTS, "*", name))
+                   if os.path.getmtime(d) >= since),
                   key=os.path.getmtime)
     return hits[-1] if hits else None
 
@@ -101,7 +104,7 @@ def run_once(yaml_path, seed, keep):
     t0 = time.time()
     r = subprocess.run(cmd, cwd=ROOT)
     wall = round(time.time() - t0, 1)
-    rd = latest_results_dir(name)
+    rd = latest_results_dir(name, t0 - 1.0)
     if r.returncode == 0:
         return "PASS", wall, rd, ""
     ok, why = gate_check(yaml_path, rd)

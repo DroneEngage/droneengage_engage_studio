@@ -523,18 +523,22 @@ def _signals_in_range(name, a, ctx):
 
 
 def _no_sep_violation(name, a, ctx):
-    tele = ctx.get("telemetry")
-    if not tele:
-        return _r(name, "SKIP", None, "no telemetry recorder")
     units = [u["name"] for u in ctl.with_fc(_units(a, ctx))]
     if len(units) < 2:
         return _r(name, "SKIP", None,
                   "fewer than two FC units - nothing to separate")
+    # a separation that was never measured is not a pass: the runner
+    # always records telemetry, so a missing recorder/overlap is a defect
+    tele = ctx.get("telemetry")
+    if not tele:
+        return _r(name, "FAIL", None,
+                  "no telemetry recorder - separation not measured")
     # h_m (or min_m): required horizontal separation; v_m: a pair too
     # close horizontally still passes when it keeps v_m vertical gap
     h_min = a.get("h_m", a.get("min_m", 10))
     v_min = a.get("v_m")
     worst = (None, None)
+    separated_only = False
     for i, n1 in enumerate(units):
         rows1 = tele.rows(n1)
         if not rows1:
@@ -561,11 +565,17 @@ def _no_sep_violation(name, a, ctx):
                         and r1.get("alt_m") is not None \
                         and r2.get("alt_m") is not None \
                         and abs(r1["alt_m"] - r2["alt_m"]) >= v_min:
+                    separated_only = True
                     continue          # vertically separated - no violation
                 if worst[0] is None or d < worst[0]:
                     worst = (d, f"{n1}<->{n2} @t={r1['t_ms']}")
     if worst[0] is None:
-        return _r(name, "SKIP", None, "no overlapping telemetry")
+        if separated_only:
+            return _r(name, "PASS", None,
+                      "every overlapping pair kept the v_m vertical gap")
+        return _r(name, "FAIL", None,
+                  "no overlapping 3D-fix telemetry between FC units - "
+                  "separation not measured")
     good = worst[0] >= h_min
     return _r(name, "PASS" if good else "FAIL", round(worst[0], 1),
               f"min pairwise distance {worst[0]:.1f} m ({worst[1]}), "
