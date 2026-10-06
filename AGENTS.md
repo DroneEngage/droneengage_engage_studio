@@ -61,6 +61,7 @@ is now the only simulation/testing location.
     ./sim run tests/smoke_copters.yaml        # up if needed -> steps -> asserts -> teardown
     ./sim ctl status                          # live procs + units seen online by the GCS
     ./sim logs copter1 de_comm                # tail a process log
+    ./sim clean --days 7                      # prune run/ + results/ (never a live sim)
     ./sim down
 
 - `./sim up` is additive: it restarts only the same-named sim and refuses

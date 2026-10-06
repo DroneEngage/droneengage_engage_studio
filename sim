@@ -14,6 +14,8 @@
   ./sim run <test.yaml> [--keep]   run a test (owns the machine: downs every
                                    other sim); --keep skips the teardown
   ./sim logs [-s <sim>] <unit|server> [proc]  tail a process log
+  ./sim clean [--days N] [--all] [--dry-run]  prune run/ and results/
+                                   (never a live sim; default keeps 7 days)
 
 Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 (steps + assertions on a sim). See README.md.
@@ -112,6 +114,9 @@ def main(argv):
             files = [os.path.join(d, f) for f in sorted(os.listdir(d))
                      if proc is None or f == proc + ".log"]
             subprocess.call(["tail", "-n", "40"] + files)
+        elif c == "clean":
+            import clean
+            return clean.main(a)
         else:
             print(__doc__)
             return 1

@@ -43,6 +43,7 @@ and SITL's TCP ports listen on all interfaces.
 ./sim run tests/smoke_copters.yaml    # brings the sim up if needed, runs, lands
 ./sim ctl status                      # live processes / online units
 ./sim down
+./sim clean --dry-run                 # what pruning run/ + results/ frees
 ```
 
 `./sim run` reuses a running sim only if it is the **same** sim (hash of the
