@@ -1,0 +1,49 @@
+# precland/plan/pl_copter_no_pad - PL-09 group B 3: the no-pad leg of
+# the same op (pl_copter_land). pad_none has no pad entity, so
+# stub_precland searches forever: the stabilized FACT never arrives,
+# the gate's FC-side delay item runs out its 30 s and the mission
+# continues on_timeout -> nav: land at N. Touchdown must be within
+# 1.5 m of the nominal point N (lz_nominal marker) - no lock, no
+# correction, a dumb landing at the mission point.
+version: 1
+name: pl_copter_no_pad
+transport: fake
+world: ../../../worlds/pad_none.yaml
+operation: ../../../packages/pl_copter_land.deploy.json
+verify: {cli: ../../support/verify_wrap.js}
+settle_s: 15
+fleet:
+  - {id: cam1, cls: copter_precland}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 10, do: wait_ready, unit: cam1, timeout: 240}
+  - {t: 15, do: arm, unit: cam1}
+  - {t: 20, do: start, timeout: 120}
+  - {t: 25, do: wait_journal, unit: cam1, re: "RUN run .* started",
+     timeout: 120}
+  # the 30 s gate delay expires in the hold - "passed" is the
+  # timeout/continue journal, no release line exists
+  - {t: 30, do: wait_journal, unit: cam1,
+     re: "gate pl passed \\(timeout/continue\\)", timeout: 240}
+  - {t: 35, do: wait_journal, unit: cam1, re: "vehicle disarmed",
+     timeout: 300}
+  - {t: 45, do: stop}
+assert:
+  - journal_count: {unit: cam1,
+      re: "gate pl passed \\(timeout/continue\\)", equals: 1}
+  - journal_count: {unit: cam1,
+      re: "gate pl released by precision_landing", equals: 0}
+  # terminal nav: land disarms before "mission main completed" can
+  # journal - vehicle disarmed (asserted via distance_to) is the
+  # completion marker
+  # no lock the whole run: the stub never emitted locked/stabilized
+  - module_log_count: {unit: cam1, module: stub_precland,
+      re: "EVENT_OUT precision_landing\\.locked", equals: 0}
+  - module_log_count: {unit: cam1, module: stub_precland,
+      re: "EVENT_OUT precision_landing\\.stabilized", equals: 0}
+  # the dumb landing lands on N, not somewhere else
+  - distance_to: {unit: cam1, re: "vehicle disarmed",
+      truth: lz_nominal, max_m: 1.5}
+teardown: land

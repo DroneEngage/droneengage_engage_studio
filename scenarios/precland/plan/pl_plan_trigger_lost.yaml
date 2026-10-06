@@ -1,0 +1,50 @@
+# precland/plan/pl_plan_trigger_lost - PL-09 group A 3: the alarm
+# mission is triggered by the precision_landing.lost FACT the real
+# module emits when a lock goes stale. The timeline cycles the scene
+# near -> empty -> near -> empty after an operator-fired enable, so
+# two independent lock/lost cycles happen; end:hold frees the slot
+# after each pass, so the second lost re-activates alarm exactly once.
+version: 1
+name: pl_plan_trigger_lost
+transport: fake
+operation: ../../../packages/pl_trigger_lost.deploy.json
+verify: {cli: ../../support/verify_wrap.js}
+settle_s: 10
+fleet:
+  - {id: node, cls: static_precland,
+     config: {de_precland: {target: {targets: [0, 1]}}}}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  - {t: 5, do: deploy}
+  - {t: 10, do: start}
+  - {t: 15, do: fire, event: precision_landing.enable, unit: node}
+  - {t: 16, do: wait_log, unit: node, module: de_precland,
+     re: "PRECLAND state -> 1", timeout: 30}
+  # first lock -> stale -> lost -> alarm activated
+  - {t: 22, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "target_near"}}
+  - {t: 27, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 30, do: wait_journal, unit: node,
+     re: "S: alarm activated", timeout: 60}
+  # second cycle: >= 3 s of clean frames before the drop
+  - {t: 38, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "target_near"}}
+  - {t: 45, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 50, do: wait_log, unit: node, module: de_precland,
+     re: "PRECLAND state -> 1", timeout: 60}
+assert:
+  - journal_count: {unit: node, re: "S: alarm activated", equals: 2}
+  - journal_count: {unit: node, re: "S: alarm emit pad\\.alarm",
+                    equals: 2}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.lost.*\"reason\":\"no_target\"",
+      equals: 2}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.locked", equals: 2}
+teardown: land

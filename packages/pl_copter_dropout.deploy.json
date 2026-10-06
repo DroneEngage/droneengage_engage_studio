@@ -1,0 +1,11 @@
+{
+  "op": "pl_copter_dropout",
+  "roles": {
+    "lander": {
+      "pkg": "pl_copter_dropout_lander.pkg.json",
+      "units": [
+        "cam1"
+      ]
+    }
+  }
+}

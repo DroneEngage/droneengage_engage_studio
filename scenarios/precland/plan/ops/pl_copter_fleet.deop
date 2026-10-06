@@ -1,0 +1,162 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pl_copter_fleet",
+    "comment": "PL-09 group B fleet scope: two copter_precland units run the same closed loop on their own pads. Each unit's `watch` triggers on precision_landing.stabilized - the declared fact republishes fleet-wide, so the trigger's `when` (event.src == self.party) is what keeps a unit from answering a peer's lock.",
+    "roles": {
+        "land_a": {
+            "count": 1,
+            "vehicle": "copter",
+            "requires": [
+                "precision_landing"
+            ]
+        },
+        "land_b": {
+            "count": 1,
+            "vehicle": "copter",
+            "requires": [
+                "precision_landing"
+            ]
+        }
+    },
+    "events": {
+        "precision_landing.stabilized": {
+            "persist": "run",
+            "payload": {
+                "held_s": "number",
+                "range_m": "number",
+                "rmse_px": "number",
+                "target": "number"
+            }
+        },
+        "scope.own": {}
+    },
+    "missions": {
+        "land_a": {
+            "main": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "takeoff",
+                        "nav": "takeoff",
+                        "alt": 15
+                    },
+                    {
+                        "id": "over",
+                        "nav": "wp",
+                        "pos": [
+                            -35.363262,
+                            149.165237,
+                            20
+                        ],
+                        "actions": [
+                            {
+                                "on": "start",
+                                "do": "precision_landing.enable"
+                            }
+                        ]
+                    },
+                    {
+                        "id": "pl",
+                        "gate": {
+                            "event": "precision_landing.stabilized"
+                        },
+                        "timeout": 30,
+                        "on_timeout": "continue",
+                        "pos": [
+                            -35.363262,
+                            149.165237,
+                            20
+                        ]
+                    },
+                    {
+                        "id": "down",
+                        "nav": "land",
+                        "pos": [
+                            -35.363262,
+                            149.165237
+                        ]
+                    }
+                ]
+            },
+            "watch": {
+                "trigger": {
+                    "event": "precision_landing.stabilized",
+                    "when": "${event.src == self.party}",
+                    "once_per": "run"
+                },
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "a1",
+                        "emit": "scope.own"
+                    }
+                ]
+            }
+        },
+        "land_b": {
+            "main": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "takeoff",
+                        "nav": "takeoff",
+                        "alt": 15
+                    },
+                    {
+                        "id": "over",
+                        "nav": "wp",
+                        "pos": [
+                            -35.363262,
+                            149.165777,
+                            20
+                        ],
+                        "actions": [
+                            {
+                                "on": "start",
+                                "do": "precision_landing.enable"
+                            }
+                        ]
+                    },
+                    {
+                        "id": "pl",
+                        "gate": {
+                            "event": "precision_landing.stabilized"
+                        },
+                        "timeout": 30,
+                        "on_timeout": "continue",
+                        "pos": [
+                            -35.363262,
+                            149.165777,
+                            20
+                        ]
+                    },
+                    {
+                        "id": "down",
+                        "nav": "land",
+                        "pos": [
+                            -35.363262,
+                            149.165777
+                        ]
+                    }
+                ]
+            },
+            "watch": {
+                "trigger": {
+                    "event": "precision_landing.stabilized",
+                    "when": "${event.src == self.party}",
+                    "once_per": "run"
+                },
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "a1",
+                        "emit": "scope.own"
+                    }
+                ]
+            }
+        }
+    }
+}

@@ -1,0 +1,26 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pl_calibrating_reject",
+    "comment": "PL-09 group A (optional): a do precision_landing.enable while the module is calibrating gets no invoke/event result - the module logs 'reject enable: calibrating' and stays silent, so the do step must time out rather than report ok.",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "static",
+                  "requires": ["precision_landing"] }
+    },
+
+    "events": {},
+
+    "missions": {
+        "node": {
+            "check": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "e1", "do": "precision_landing.enable",
+                      "timeout": 6 }
+                ]
+            }
+        }
+    }
+}

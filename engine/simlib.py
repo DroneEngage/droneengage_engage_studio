@@ -913,6 +913,15 @@ def gen_unit(u, sim, catalog):
     udir = unit_dir(u)
     for d in ("journal", "logs"):
         os.makedirs(os.path.join(udir, d), exist_ok=True)
+    # a fresh `sim up` must not inherit the previous execution's op state:
+    # de_comm restores de_run.json (an unfinished run replays RUNNING and
+    # rejects the next deploy with "stop the current run first") and the
+    # prepared package/plan ride along. In-scenario `ctl restart` still
+    # restores - the files only go away at scenario start.
+    for stale in ("de_run.json", "de_package.json", "de_plan.json"):
+        p = os.path.join(udir, stale)
+        if os.path.isfile(p):
+            os.remove(p)
     srv = sim["server"]
 
     # ---- de_comm ----

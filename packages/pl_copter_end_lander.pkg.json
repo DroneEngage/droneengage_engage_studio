@@ -1,0 +1,184 @@
+{
+  "schema": "de.package/2.2",
+  "op": "pl_copter_end",
+  "op_hash": "sha256:a7e73b00dc66c99e5000324dd95c75efcf8d81069f5f850ae42748bb146e5472",
+  "role": "lander",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [
+    "precision_landing"
+  ],
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        15
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.363262,
+        149.165237,
+        20
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        30,
+        0,
+        0,
+        0,
+        -35.363262,
+        149.165237,
+        20
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        300,
+        0,
+        0,
+        0,
+        -35.363262,
+        149.165237,
+        20
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        -35.363262,
+        149.165237,
+        20
+      ]
+    }
+  ],
+  "missions": {
+    "main": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "segment": {
+        "start": 1,
+        "end": 6
+      },
+      "end_state": "land",
+      "end_backstop": {
+        "timeout": 300,
+        "then": "rtl"
+      }
+    }
+  },
+  "manifest": [
+    {
+      "seq": 1,
+      "mission": "main",
+      "step": "takeoff",
+      "kind": "nav.takeoff"
+    },
+    {
+      "seq": 2,
+      "mission": "main",
+      "step": "over",
+      "kind": "nav.wp"
+    },
+    {
+      "at_seq": 2,
+      "on": "start",
+      "mission": "main",
+      "step": "over",
+      "kind": "action",
+      "do": "precision_landing.enable"
+    },
+    {
+      "seq": 3,
+      "mission": "main",
+      "step": "pl",
+      "kind": "gate.hold",
+      "event": "precision_landing.stabilized",
+      "timeout": 30,
+      "on_timeout": "continue",
+      "release": 4
+    },
+    {
+      "seq": 4,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.hold"
+    },
+    {
+      "seq": 5,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.contingency"
+    },
+    {
+      "seq": 6,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.guard"
+    }
+  ],
+  "events": {
+    "precision_landing.stabilized": {
+      "persist": "run",
+      "payload": {
+        "held_s": "number",
+        "range_m": "number",
+        "rmse_px": "number",
+        "target": "number"
+      }
+    }
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "lander": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {},
+    "event_sticky": [
+      "precision_landing.stabilized"
+    ]
+  },
+  "hash": "sha256:82a95bffd54eea98cdb8bd64249019266e56ed1357e0abbcdea1702317e89897"
+}

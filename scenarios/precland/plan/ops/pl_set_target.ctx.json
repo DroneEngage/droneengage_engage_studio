@@ -1,0 +1,214 @@
+{
+  "_note": "PL-09 ctx: the unit bound to role 'node' runs the real de_precland - registries.<unit> is the serialized 1089 caps view (ops/pl.unit.caps.json) so do precision_landing.* actions and the module's facts resolve against the advert.",
+  "binding": {
+    "node": [
+      "node"
+    ]
+  },
+  "registries": {
+    "node": {
+      "caps": {
+        "precision_landing": {
+          "ch": "c1",
+          "module": "de_precland",
+          "ver": "1.3.0.0",
+          "advert": {
+            "actions": {
+              "disable": {
+                "desc": "Disable precision-landing detection",
+                "timeout_s": 10
+              },
+              "enable": {
+                "desc": "Enable precision-landing detection",
+                "timeout_s": 10
+              },
+              "set_target": {
+                "desc": "Select the landing target number",
+                "params": {
+                  "target": {
+                    "type": "enum",
+                    "values": [
+                      0,
+                      1
+                    ]
+                  }
+                },
+                "timeout_s": 10
+              }
+            },
+            "desc": "facts: precision_landing.enabled|disabled|locked|stabilized|lost|degraded|faulted|target_changed; commands (events): precision_landing.enable|disable|set_target{target}",
+            "events": {
+              "degraded": {
+                "desc": "Detecting but gated (RMSE / min_tags)",
+                "payload": {
+                  "reason": {
+                    "type": "enum",
+                    "values": [
+                      "nominal",
+                      "no_target",
+                      "stale",
+                      "min_tags",
+                      "rmse",
+                      "error"
+                    ]
+                  }
+                }
+              },
+              "disabled": {
+                "desc": "Detection disabled",
+                "payload": {
+                  "src": {
+                    "type": "enum",
+                    "values": [
+                      "legacy",
+                      "invoke",
+                      "event",
+                      "config"
+                    ]
+                  }
+                }
+              },
+              "enabled": {
+                "desc": "Detection enabled",
+                "payload": {
+                  "src": {
+                    "type": "enum",
+                    "values": [
+                      "legacy",
+                      "invoke",
+                      "event",
+                      "config"
+                    ]
+                  }
+                }
+              },
+              "faulted": {
+                "desc": "Fatal state entered",
+                "payload": {
+                  "reason": {
+                    "type": "enum",
+                    "values": [
+                      "camera",
+                      "calibration",
+                      "layout",
+                      "selftest"
+                    ]
+                  }
+                }
+              },
+              "locked": {
+                "desc": "Target locked",
+                "payload": {
+                  "range_m": {
+                    "type": "number",
+                    "unit": "m"
+                  },
+                  "rmse_px": {
+                    "type": "number",
+                    "unit": "px"
+                  },
+                  "tags": {
+                    "type": "int"
+                  },
+                  "target": {
+                    "type": "int"
+                  }
+                }
+              },
+              "lost": {
+                "desc": "Target lock lost",
+                "payload": {
+                  "held_s": {
+                    "type": "number",
+                    "unit": "s"
+                  },
+                  "reason": {
+                    "type": "enum",
+                    "values": [
+                      "nominal",
+                      "no_target",
+                      "stale",
+                      "min_tags",
+                      "rmse",
+                      "error"
+                    ]
+                  }
+                }
+              },
+              "stabilized": {
+                "desc": "Lock held past events.stabilized_s",
+                "payload": {
+                  "held_s": {
+                    "type": "number",
+                    "unit": "s"
+                  },
+                  "range_m": {
+                    "type": "number",
+                    "unit": "m"
+                  },
+                  "rmse_px": {
+                    "type": "number",
+                    "unit": "px"
+                  },
+                  "target": {
+                    "type": "int"
+                  }
+                }
+              },
+              "target_changed": {
+                "desc": "Active target number changed",
+                "payload": {
+                  "src": {
+                    "type": "enum",
+                    "values": [
+                      "legacy",
+                      "invoke",
+                      "event",
+                      "config"
+                    ]
+                  },
+                  "target": {
+                    "type": "int"
+                  }
+                }
+              }
+            },
+            "module": "droneengage_precision_landing",
+            "ns": "precision_landing",
+            "schema": "de.cap/1",
+            "state": {
+              "range_m": {
+                "type": "number",
+                "unit": "m"
+              },
+              "reason": {
+                "type": "enum",
+                "values": [
+                  "nominal",
+                  "no_target",
+                  "stale",
+                  "min_tags",
+                  "rmse",
+                  "error"
+                ]
+              },
+              "status": {
+                "type": "enum",
+                "values": [
+                  "disabled",
+                  "searching",
+                  "locked",
+                  "degraded",
+                  "error"
+                ]
+              }
+            },
+            "ver": "1.3.0.0"
+          }
+        }
+      },
+      "state": {},
+      "t": 0
+    }
+  }
+}

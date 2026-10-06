@@ -1,0 +1,77 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pl_copter_land",
+    "comment": "PL-09 group B: closed-loop precision LAND. The wp leg's start action invokes precision_landing.enable on the unit's own stub_precland; the flight-lane gate holds at 20 m until the stabilized FACT arrives, then a nav: land item puts the AUTO mission on MAV_CMD_NAV_LAND so the PL-06 gate opens and LANDING_TARGET reaches the FC. In pad_none the gate times out -> continue and the copter lands dumb at N.",
+    "roles": {
+        "lander": {
+            "count": 1,
+            "vehicle": "copter",
+            "requires": [
+                "precision_landing"
+            ]
+        }
+    },
+    "events": {
+        "precision_landing.stabilized": {
+            "persist": "run",
+            "payload": {
+                "held_s": "number",
+                "range_m": "number",
+                "rmse_px": "number",
+                "target": "number"
+            }
+        }
+    },
+    "missions": {
+        "lander": {
+            "main": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "takeoff",
+                        "nav": "takeoff",
+                        "alt": 15
+                    },
+                    {
+                        "id": "over",
+                        "nav": "wp",
+                        "pos": [
+                            -35.363262,
+                            149.165237,
+                            20
+                        ],
+                        "actions": [
+                            {
+                                "on": "start",
+                                "do": "precision_landing.enable"
+                            }
+                        ]
+                    },
+                    {
+                        "id": "pl",
+                        "gate": {
+                            "event": "precision_landing.stabilized"
+                        },
+                        "timeout": 30,
+                        "on_timeout": "continue",
+                        "pos": [
+                            -35.363262,
+                            149.165237,
+                            20
+                        ]
+                    },
+                    {
+                        "id": "down",
+                        "nav": "land",
+                        "pos": [
+                            -35.363262,
+                            149.165237
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}

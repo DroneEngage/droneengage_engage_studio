@@ -1,0 +1,41 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pl_trigger_lost",
+    "comment": "PL-09 group A: alarm activates on the precision_landing.lost FACT emitted by the real module. end:hold frees the slot after each pass, so the second lock->stale cycle re-activates it - the scenario counts exactly two activations.",
+    "roles": {
+        "node": {
+            "count": 1,
+            "vehicle": "static",
+            "requires": [
+                "precision_landing"
+            ]
+        }
+    },
+    "events": {
+        "precision_landing.lost": {
+            "persist": "run",
+            "payload": {
+                "held_s": "number",
+                "reason": "string"
+            }
+        },
+        "pad.alarm": {}
+    },
+    "missions": {
+        "node": {
+            "alarm": {
+                "trigger": {
+                    "event": "precision_landing.lost"
+                },
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "a1",
+                        "emit": "pad.alarm"
+                    }
+                ]
+            }
+        }
+    }
+}

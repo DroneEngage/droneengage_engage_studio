@@ -1,0 +1,57 @@
+# precland/plan/pl_copter_fleet_scope - PL-09 group B 5: two
+# copter_precland units run the pl_copter_fleet op's closed loop on
+# their own pads (c1 -> pad_1 at target_num 0, c2 -> pad_2 via the
+# unit config target_num 1). Each unit's sensor mission `watch`
+# triggers on the precision_landing.stabilized FACT - declared events
+# republish fleet-wide, so without the trigger's when filter
+# (${event.src == self.party}) both units would answer BOTH locks.
+#
+# Proof: every unit sees its peer's stabilized arrive (EVENT_IN
+# latched) yet activates `watch` exactly once - its own lock only -
+# and each lands on its own pad.
+version: 1
+name: pl_copter_fleet_scope
+transport: fake
+world: ../../../worlds/pad_field.yaml
+operation: ../../../packages/pl_copter_fleet.deploy.json
+verify: {cli: ../../support/verify_wrap.js}
+settle_s: 15
+fleet:
+  - {id: c1, cls: copter_precland, role: land_a}
+  - {id: c2, cls: copter_precland, role: land_b,
+     at: {north_m: 0, east_m: 5},
+     config: {stub_precland: {target: {target_num: 1}}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: all, mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 10, do: wait_ready, unit: all, timeout: 240}
+  - {t: 15, do: arm, unit: "c1,c2"}
+  - {t: 20, do: start, timeout: 120}
+  - {t: 25, do: wait_journal, unit: all, re: "RUN run .* started",
+     timeout: 120}
+  - {t: 30, do: wait_journal, unit: all, re: "S: watch activated",
+     timeout: 300}
+  - {t: 40, do: wait_journal, unit: all, re: "vehicle disarmed",
+     timeout: 300}
+  - {t: 50, do: stop}
+assert:
+  # each unit activated on its own lock exactly once ...
+  - journal_count: {unit: all, re: "S: watch activated", equals: 1}
+  - journal_count: {unit: all, re: "S: watch emit scope\\.own",
+      equals: 1}
+  # ... while the peer's stabilized did arrive on each unit's bus
+  # (the latch journal names the source party) - the filter, not
+  # delivery, is what scoped the trigger
+  - journal_count: {unit: c1,
+      re: "event precision_landing\\.stabilized latched \\(from c2\\)",
+      at_least: 1}
+  - journal_count: {unit: c2,
+      re: "event precision_landing\\.stabilized latched \\(from c1\\)",
+      at_least: 1}
+  # and each landed on its own pad
+  - distance_to: {unit: c1, re: "vehicle disarmed", truth: pad_1,
+      max_m: 0.75}
+  - distance_to: {unit: c2, re: "vehicle disarmed", truth: pad_2,
+      max_m: 0.75}
+teardown: land

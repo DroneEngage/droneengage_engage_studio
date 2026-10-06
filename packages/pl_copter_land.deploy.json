@@ -1,0 +1,11 @@
+{
+  "op": "pl_copter_land",
+  "roles": {
+    "lander": {
+      "pkg": "pl_copter_land_lander.pkg.json",
+      "units": [
+        "cam1"
+      ]
+    }
+  }
+}

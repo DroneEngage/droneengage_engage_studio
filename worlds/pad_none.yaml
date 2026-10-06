@@ -1,8 +1,13 @@
 # pad_none - pad_field without the pad: the stub_precland "searching
-# forever" world (PL-08). Same origin and sensor models, no entities.
+# forever" world (PL-08). Same origin and sensor models, no pads.
+# lz_nominal is an inert truth marker at the nominal landing point N
+# (the origin) - the distance_to anchor for "lands within N" when no
+# pad exists to lock onto. A marker is not a pad: world.pads() stays
+# empty and the stub never detects anything.
 version: 1
 origin: [-35.363262, 149.165237]
-entities: []
+entities:
+  - {id: lz_nominal, cls: marker, pos: [-35.363262, 149.165237]}
 sensors:
   camera:
     hfov_deg: 62.2

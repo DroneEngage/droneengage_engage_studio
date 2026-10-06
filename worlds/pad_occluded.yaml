@@ -1,0 +1,46 @@
+# pad_occluded - pad_field with a mid-descent dropout (de.world/1,
+# PL-09 pl_copter_dropout). pad_1 carries an occlude window in world
+# seconds (t = seconds since the scenario epoch, ~= timeline t): the
+# stub loses the tag while the copter is on the nav:land leg, the
+# precision_landing.lost fact fires, and the FC re-acquires when the
+# window ends (PLND_STRICT retry).
+#
+# The window is measured, not guessed: pl_copter_land_nav's journal
+# puts the land item ~65-75 s after the epoch and touchdown ~90-105 s;
+# occlude [78, 82] drops the tag 3-7 s into the descent, clears well
+# before the last metres, and is wide enough to survive normal timing
+# jitter (see the scenario header for the observed numbers).
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: pad_1, cls: pad, pos: [-35.3632366, 149.1652682],
+     yaw_deg: 0,
+     size_m: 0.8,                    # board edge
+     tags_min_m: 0.02, tags_max_m: 0.68,
+     occlude: [[78, 82]]}
+  - {id: pad_2, cls: pad, pos: [-35.3632366, 149.1658081],
+     yaw_deg: 0,
+     size_m: 0.8,
+     tags_min_m: 0.02, tags_max_m: 0.68}
+  - {id: lz_nominal, cls: marker, pos: [-35.363262, 149.165237]}
+sensors:
+  camera:
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 0.95
+    p_detect_edge: 0.6
+    max_range_m: 120
+    pos_noise_px: 8
+    fps_boxes: 2
+  precland:
+    hfov_deg: 60
+    vfov_deg: 47
+    min_px_tag: 12                   # a tag edge below 12 px is lost
+    max_rmse_px: 2.0                 # RMSE the model reports at the limit
+    noise_m: 0.03                    # gaussian noise on the body pose
+    p_drop: 0.02                     # per-frame seeded drop probability

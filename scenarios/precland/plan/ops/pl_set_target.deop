@@ -1,0 +1,50 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pl_set_target",
+    "comment": "PL-09 group A: do set_target {target: 1} is a valid invoke on a unit whose config lists target.targets: [0,1] - the module switches target and emits the target_changed fact the gate waits on.",
+    "roles": {
+        "node": {
+            "count": 1,
+            "vehicle": "static",
+            "requires": [
+                "precision_landing"
+            ]
+        }
+    },
+    "events": {
+        "precision_landing.target_changed": {
+            "persist": "run",
+            "payload": {
+                "src": "string",
+                "target": "number"
+            }
+        }
+    },
+    "missions": {
+        "node": {
+            "pick": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "st",
+                        "do": "precision_landing.set_target",
+                        "with": {
+                            "target": 1
+                        },
+                        "timeout": 10
+                    },
+                    {
+                        "id": "tc",
+                        "gate": {
+                            "event": "precision_landing.target_changed"
+                        },
+                        "timeout": 5,
+                        "on_timeout": "end"
+                    }
+                ]
+            }
+        }
+    }
+}

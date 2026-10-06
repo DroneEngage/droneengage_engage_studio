@@ -1,0 +1,76 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pl_command_vs_fact",
+    "comment": "PL-09 group A: an emitted COMMAND reaches the module and produces a FACT, but the command itself never releases a fact gate - probe emits precision_landing.enable then waits on locked with the scene empty (times out -> continue -> probe.done); watch's gate on precision_landing.enabled releases because the enable really reached the module.",
+    "roles": {
+        "node": {
+            "count": 1,
+            "vehicle": "static",
+            "requires": [
+                "precision_landing"
+            ]
+        }
+    },
+    "events": {
+        "precision_landing.enable": {},
+        "precision_landing.enabled": {
+            "persist": "run",
+            "payload": {
+                "src": "string"
+            }
+        },
+        "precision_landing.locked": {
+            "persist": "run",
+            "payload": {
+                "range_m": "number",
+                "rmse_px": "number",
+                "tags": "number",
+                "target": "number"
+            }
+        },
+        "probe.done": {}
+    },
+    "missions": {
+        "node": {
+            "probe": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "e1",
+                        "emit": "precision_landing.enable"
+                    },
+                    {
+                        "id": "lk",
+                        "gate": {
+                            "event": "precision_landing.locked"
+                        },
+                        "timeout": 8,
+                        "on_timeout": "continue"
+                    },
+                    {
+                        "id": "dn",
+                        "emit": "probe.done"
+                    }
+                ]
+            },
+            "watch": {
+                "trigger": {
+                    "event": "precision_landing.enabled"
+                },
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "en",
+                        "gate": {
+                            "event": "precision_landing.enabled"
+                        },
+                        "timeout": 15,
+                        "on_timeout": "end"
+                    }
+                ]
+            }
+        }
+    }
+}

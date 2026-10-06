@@ -1,0 +1,11 @@
+{
+  "op": "pl_trigger_lost",
+  "roles": {
+    "node": {
+      "pkg": "pl_trigger_lost_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

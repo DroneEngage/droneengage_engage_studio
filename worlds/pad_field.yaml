@@ -3,6 +3,11 @@
 # Origin is the SITL home (-35.363262, 149.165237). pad_1 sits 4 m
 # north-east (bearing 45) of the nominal PL-09 landing point at the
 # origin - a copter landing at home overflies the pad on final.
+# pad_2 (PL-09 fleet scope) sits the same 4 m NE of the second unit's
+# nominal landing point 4.9 m east of the origin; a unit only ever
+# tracks pads()[target_num], so single-unit scenarios are unchanged.
+# lz_nominal is an inert truth marker AT the origin landing point N -
+# the distance_to anchor for "did NOT land dumb at N" (min_m).
 # sensors.precland is the downward tag camera stub_precland models;
 # sensors.camera keeps the stock rgb values so other stubs see the
 # same world unchanged.
@@ -13,6 +18,11 @@ entities:
      yaw_deg: 0,
      size_m: 0.8,                    # board edge
      tags_min_m: 0.02, tags_max_m: 0.68}   # smallest/largest tag edge
+  - {id: pad_2, cls: pad, pos: [-35.3632366, 149.1658081],
+     yaw_deg: 0,
+     size_m: 0.8,
+     tags_min_m: 0.02, tags_max_m: 0.68}
+  - {id: lz_nominal, cls: marker, pos: [-35.363262, 149.165237]}
 sensors:
   camera:
     hfov_deg: 62.2

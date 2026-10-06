@@ -1,0 +1,73 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pl_gate_stabilized",
+    "comment": "PL-09 group A: the supervisor drives the REAL de_precland through the capability invoke path - do enable -> gate on the stabilized FACT (evidence, not a command echo) -> emit pad.ready -> do disable -> gate on disabled. The scene switches to target_near mid-run so the lock exists only after the write.",
+    "roles": {
+        "node": {
+            "count": 1,
+            "vehicle": "static",
+            "requires": [
+                "precision_landing"
+            ]
+        }
+    },
+    "events": {
+        "precision_landing.stabilized": {
+            "persist": "run",
+            "payload": {
+                "held_s": "number",
+                "range_m": "number",
+                "rmse_px": "number",
+                "target": "number"
+            }
+        },
+        "precision_landing.disabled": {
+            "persist": "run",
+            "payload": {
+                "src": "string"
+            }
+        },
+        "pad.ready": {}
+    },
+    "missions": {
+        "node": {
+            "watch": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "e1",
+                        "do": "precision_landing.enable",
+                        "timeout": 10
+                    },
+                    {
+                        "id": "pl",
+                        "gate": {
+                            "event": "precision_landing.stabilized"
+                        },
+                        "timeout": 30,
+                        "on_timeout": "end"
+                    },
+                    {
+                        "id": "rdy",
+                        "emit": "pad.ready"
+                    },
+                    {
+                        "id": "e2",
+                        "do": "precision_landing.disable",
+                        "timeout": 10
+                    },
+                    {
+                        "id": "off",
+                        "gate": {
+                            "event": "precision_landing.disabled"
+                        },
+                        "timeout": 5,
+                        "on_timeout": "end"
+                    }
+                ]
+            }
+        }
+    }
+}

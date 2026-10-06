@@ -1,0 +1,28 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pl_set_target_bad",
+    "comment": "PL-09 group A negative: target 7 is outside the advertised enum [0,1] (the bound unit's config lists target.targets: [0,1]), so the verifier must block the op with CAP-002 before deploy.",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "static",
+                  "requires": ["precision_landing"] }
+    },
+
+    "events": {
+        "precision_landing.target_changed": {}
+    },
+
+    "missions": {
+        "node": {
+            "pick": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "st", "do": "precision_landing.set_target",
+                      "with": { "target": 7 }, "timeout": 10 }
+                ]
+            }
+        }
+    }
+}

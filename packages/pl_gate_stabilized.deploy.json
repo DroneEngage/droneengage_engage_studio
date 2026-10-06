@@ -1,0 +1,11 @@
+{
+  "op": "pl_gate_stabilized",
+  "roles": {
+    "node": {
+      "pkg": "pl_gate_stabilized_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "schema": "de.package/2.2",
+  "op": "pl_set_target",
+  "op_hash": "sha256:6d2a45727578db82fc8a3eaefe375e9709bb96135f156f18e99575f2799f336f",
+  "role": "node",
+  "vehicle": {
+    "type": "static"
+  },
+  "requires": [
+    "precision_landing"
+  ],
+  "fc_items": [],
+  "missions": {
+    "pick": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [
+        "precision_landing"
+      ],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "st",
+          "k": "do",
+          "do": "precision_landing.set_target",
+          "with": {
+            "target": 1
+          },
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "tc",
+          "k": "gate",
+          "event": "precision_landing.target_changed",
+          "timeout": 5,
+          "on_timeout": "end"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "precision_landing.target_changed": {
+      "persist": "run",
+      "payload": {
+        "src": "string",
+        "target": "number"
+      }
+    }
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "node": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {},
+    "event_sticky": [
+      "precision_landing.target_changed"
+    ]
+  },
+  "hash": "sha256:18797e5da9ac1488492c186388f2fc2e7e708a38c20cbd0ac666195842b1d075"
+}

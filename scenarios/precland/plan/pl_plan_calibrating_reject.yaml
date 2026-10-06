@@ -1,0 +1,41 @@
+# precland/plan/pl_plan_calibrating_reject - PL-09 group A 5 (optional):
+# the calibrating-refusal boundary under a test source. A live-camera
+# calibration session (which would make the mission's do
+# precision_landing.enable fail) cannot exist offline - the module's
+# rule T1 requires SOURCE_LIVE. This scenario proves the honest half of
+# that contract: a legacy PRECLAND_ACTION CALIBRATE (6536 a:4) is
+# refused with "calibration requires a live camera source", and the
+# module still answers the mission's enable invoke afterwards.
+version: 1
+name: pl_plan_calibrating_reject
+transport: fake
+operation: ../../../packages/pl_calibrating_reject.deploy.json
+verify: {cli: ../../support/verify_wrap.js}
+settle_s: 10
+fleet:
+  - {id: node, cls: static_precland,
+     config: {de_precland: {target: {targets: [0, 1]}}}}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  # ask for a 20-view calibration on the test source - T1 refuses
+  - {t: 5, do: opmsg, unit: node, mt: 6536,
+     ms: {a: 4, b: 9, c: 6, d: 0.04, e: 20}, secs: 2}
+  - {t: 10, do: wait_log, unit: node, module: de_precland,
+     re: "calibration requires a live camera source", timeout: 30}
+  - {t: 15, do: deploy}
+  - {t: 20, do: start}
+  - {t: 25, do: wait_journal, unit: node,
+     re: "S: check e1 ok", timeout: 60}
+assert:
+  - module_log_count: {unit: node, module: de_precland,
+      re: "calibrate FAILED.*live camera source", equals: 1}
+  # no calibration session ever opened -> nothing blocked the invoke
+  - journal_count: {unit: node, re: "S: check e1 ok", equals: 1}
+  - journal_count: {unit: node, re: "S: check e1 failed", equals: 0}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "PRECLAND state -> 1", equals: 1}
+teardown: land

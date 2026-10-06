@@ -1,0 +1,11 @@
+{
+  "op": "pl_set_target",
+  "roles": {
+    "node": {
+      "pkg": "pl_set_target_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

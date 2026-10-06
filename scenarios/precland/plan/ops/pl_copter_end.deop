@@ -1,0 +1,69 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pl_copter_end",
+    "comment": "PL-09 group B: same closed loop as pl_copter_land but the mission carries no nav: land - when the gate resolves the mission ends and the supervisor's end:land puts the FC in LAND mode, which opens the precland gate through allowed_modes (LAND|RTL) instead of the PL-06 AUTO land-item path.",
+    "roles": {
+        "lander": {
+            "count": 1,
+            "vehicle": "copter",
+            "requires": [
+                "precision_landing"
+            ]
+        }
+    },
+    "events": {
+        "precision_landing.stabilized": {
+            "persist": "run",
+            "payload": {
+                "held_s": "number",
+                "range_m": "number",
+                "rmse_px": "number",
+                "target": "number"
+            }
+        }
+    },
+    "missions": {
+        "lander": {
+            "main": {
+                "trigger": "op.start",
+                "end": "land",
+                "steps": [
+                    {
+                        "id": "takeoff",
+                        "nav": "takeoff",
+                        "alt": 15
+                    },
+                    {
+                        "id": "over",
+                        "nav": "wp",
+                        "pos": [
+                            -35.363262,
+                            149.165237,
+                            20
+                        ],
+                        "actions": [
+                            {
+                                "on": "start",
+                                "do": "precision_landing.enable"
+                            }
+                        ]
+                    },
+                    {
+                        "id": "pl",
+                        "gate": {
+                            "event": "precision_landing.stabilized"
+                        },
+                        "timeout": 30,
+                        "on_timeout": "continue",
+                        "pos": [
+                            -35.363262,
+                            149.165237,
+                            20
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+}

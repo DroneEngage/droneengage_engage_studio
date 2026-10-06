@@ -109,7 +109,7 @@ class T(unittest.TestCase):
         w = world_mod.load(os.path.join(ROOT, "worlds",
                                         "pad_field.yaml"), 1)
         pads = w.pads()
-        self.assertEqual([p.id for p in pads], ["pad_1"])
+        self.assertEqual([p.id for p in pads], ["pad_1", "pad_2"])
         pad = pads[0]
         # 4 m north-east of the origin (the PL-09 nominal land point)
         lat, lng, _alt = pad.pos_at(0.0, w)
