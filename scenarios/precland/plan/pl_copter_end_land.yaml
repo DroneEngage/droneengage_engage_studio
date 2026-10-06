@@ -4,7 +4,7 @@
 # the FC in NavMode LAND, opening the precland gate through
 # allowed_modes (LAND|RTL) instead of the PL-06 AUTO land-item path.
 # Regression for the mode-based gate (works without PL-06).
-# measured touchdown error (seed 1): TBD - rerun and record
+# measured touchdown error (seed 1): 0.0 m from pad_1 (2026-10-06 run).
 version: 1
 name: pl_copter_end_land
 transport: fake
