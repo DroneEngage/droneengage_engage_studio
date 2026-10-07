@@ -69,6 +69,18 @@ class T(unittest.TestCase):
         self.assertIn("payload", units["cam1"])           # stub_payload
         self.assertNotIn("camera", units["mast1"])
 
+    def test_hello_is_strict_json(self):
+        # the default visibility_m is inf - a browser JSON.parse drops
+        # the whole hello on a bare Infinity token
+        w = world_mod.load(WORLD, 7)
+        hello = world_stream.hello_frame(w, _sim(render={"mode": "viewer"}),
+                                         123456)
+        txt = world_stream.dumps(hello)
+        self.assertNotIn("Infinity", txt)
+        self.assertNotIn("NaN", txt)
+        back = json.loads(txt, parse_constant=lambda c: self.fail(c))
+        self.assertIsNone(back["environment"]["visibility_m"])
+
     def test_tick_positions_equal_pos_at(self):
         w = world_mod.load(WORLD, 7)
         frame = world_stream.tick_frame(w,
@@ -109,6 +121,7 @@ class T(unittest.TestCase):
         cam1 = next(u for u in on["units"] if u["name"] == "cam1")
         self.assertEqual(cam1["fc"]["mav_port"], 16460)
         self.assertEqual(cam1["fc"]["params"]["SR4_POSITION"], 10)
+        self.assertEqual(cam1["fc"]["params"]["MAV4_POSITION"], 10)
         self.assertEqual(cam1["fc"]["params"]["SERIAL4_PROTOCOL"], 2)
         mast = next(u for u in on["units"] if u["name"] == "mast1")
         self.assertIsNone(mast["fc"])                # statics: no fc
@@ -124,6 +137,7 @@ class T(unittest.TestCase):
                 self.assertNotIn("mav_port", u["fc"])
                 for k in u["fc"]["params"]:
                     self.assertFalse(k.startswith("SR4_"), k)
+                    self.assertFalse(k.startswith("MAV4_"), k)
                     self.assertFalse(k.startswith("SERIAL4_"), k)
         # the sim hash is generated from the unit specs only, so a
         # headless sim hashes exactly like a pre-P5-13 one

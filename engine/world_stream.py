@@ -36,6 +36,7 @@ WorldStream when sim.render is set (D1).
 
 import asyncio
 import json
+import math
 import os
 import threading
 import time
@@ -78,6 +79,23 @@ def hello_frame(world, manifest, epoch_ms):
                           "size_m": world.size_m(e)}
                          for e in world.entities],
             "units": units}
+
+
+def _finite(v):
+    """Browsers' JSON.parse rejects Infinity/NaN (e.g. the default
+    environment visibility_m = inf) and then drops the whole frame -
+    send them as null."""
+    if isinstance(v, float) and not math.isfinite(v):
+        return None
+    if isinstance(v, dict):
+        return {k: _finite(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_finite(x) for x in v]
+    return v
+
+
+def dumps(frame):
+    return json.dumps(_finite(frame), allow_nan=False)
 
 
 def tick_frame(world, epoch_ms):
@@ -184,7 +202,7 @@ class WorldStream:
             if self._counts["ticks"] % OVERLAY_EVERY_TICKS == 0:
                 frame["overlay"] = overlay_frame(
                     self.bot, self._states, self._detections)
-            msg = json.dumps(frame)
+            msg = dumps(frame)
             self._counts["ticks"] += 1
             if self._clients:
                 websockets.broadcast(self._clients, msg)
@@ -224,7 +242,7 @@ class WorldStream:
                 self._log("cmd", cmd)
                 if self._clients:
                     websockets.broadcast(self._clients,
-                                         json.dumps(cmd))
+                                         dumps(cmd))
 
     def _observe_row(self, row):
         """truth.jsonl look rows -> overlay state: a stub row with a
@@ -253,7 +271,7 @@ class WorldStream:
         self._clients.add(ws)
         self._log("connect", {"n": len(self._clients)})
         try:
-            await ws.send(json.dumps(
+            await ws.send(dumps(
                 hello_frame(self.world, self.manifest, self.epoch_ms)))
             async for raw in ws:
                 try:

@@ -675,13 +675,18 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                 u["fc"]["params"])
         # P5-13 D4: a render-enabled sim fans MAVLink out to
         # Mavlink3DMap on serial4 (udpclient -> render.mav_port);
-        # attitude/position at 10 Hz, servo outputs for P5-16
+        # attitude/position at 10 Hz, servo outputs for P5-16. Newer
+        # ArduPilot renamed SRn_* to MAVn_* (n = MAVLink channel; serial4
+        # is the 4th MAVLink serial since serial3 is GPS) and ignores the
+        # old names - set both. Rates apply at boot only.
         if sim.get("render"):
             u["fc"]["mav_port"] = sim["render"]["mav_port"]
             u["fc"]["params"] = deep_merge(
                 {"SERIAL4_PROTOCOL": 2,
                  "SR4_POSITION": 10, "SR4_EXTRA1": 10,
-                 "SR4_RC_CHAN": 2, "SR4_EXT_STAT": 2},
+                 "SR4_RC_CHAN": 2, "SR4_EXT_STAT": 2,
+                 "MAV4_POSITION": 10, "MAV4_EXTRA1": 10,
+                 "MAV4_RC_CHAN": 2, "MAV4_EXT_STAT": 2},
                 u["fc"]["params"])
     return u
 
