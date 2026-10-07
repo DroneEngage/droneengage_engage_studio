@@ -1,0 +1,7 @@
+{
+  "op": "p4b11_hold",
+  "roles": {
+    "solo":  { "pkg": "p4b11_hold.json",  "units": ["c1"] },
+    "plane": { "pkg": "p4b11_plane_gate.json", "units": ["p1"] }
+  }
+}

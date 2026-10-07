@@ -1,0 +1,57 @@
+{
+  "schema": "de.package/2",
+  "op": "p4b11_hold",
+  "op_hash": "sha256:9c522ac3bafa1ecff274b0e8fd60ff2ceaa6f1b6553231a665c43af83717b645",
+  "role": "solo",
+  "vehicle": { "type": "copter" },
+  "requires": [],
+  "fc_items": [
+    { "c": 22, "ft": 3, "mv": [0,0,0,0,0,0,80] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.362000,149.166000,80] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.361400,149.166400,80] },
+    { "c": 19, "ft": 3, "mv": [300,0,60,0,-35.361400,149.166400,80] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.361000,149.166000,80] },
+    { "c": 17, "ft": 3, "mv": [0,0,0,0,-35.361000,149.166000,80] },
+    { "c": 20, "ft": 2, "mv": [0,0,0,0,0,0,0] },
+    { "c": 17, "ft": 3, "mv": [0,0,0,0,-35.361000,149.166000,80] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.361600,149.166800,80] },
+    { "c": 19, "ft": 3, "mv": [60,0,60,0,-35.361600,149.166800,80] },
+    { "c": 17, "ft": 3, "mv": [0,0,0,0,-35.361600,149.166800,80] },
+    { "c": 20, "ft": 2, "mv": [0,0,0,0,0,0,0] },
+    { "c": 17, "ft": 3, "mv": [0,0,0,0,-35.361600,149.166800,80] }
+  ],
+  "missions": {
+    "main": {
+      "trigger": { "type": "op.start" },
+      "priority": 0,
+      "segment": { "start": 1, "end": 8 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    },
+    "hop": {
+      "trigger": { "type": "manual" },
+      "priority": 10,
+      "segment": { "start": 9, "end": 13 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    }
+  },
+  "manifest": [
+    { "seq": 1, "mission": "main", "step": "t",  "kind": "nav.takeoff" },
+    { "seq": 2, "mission": "main", "step": "w1", "kind": "nav.wp" },
+    { "seq": 3, "mission": "main", "step": "w2", "kind": "nav.wp" },
+    { "seq": 4, "mission": "main", "step": "lw", "kind": "nav.loiter" },
+    { "seq": 5, "mission": "main", "step": "w3", "kind": "nav.wp" },
+    { "seq": 6, "mission": "main", "step": "end", "kind": "end.hold" },
+    { "seq": 7, "mission": "main", "step": "end", "kind": "end.contingency" },
+    { "seq": 8, "mission": "main", "step": "end", "kind": "end.guard" },
+    { "seq": 9,  "mission": "hop", "step": "hw", "kind": "nav.wp" },
+    { "seq": 10, "mission": "hop", "step": "hl", "kind": "nav.loiter" },
+    { "seq": 11, "mission": "hop", "step": "end", "kind": "end.hold" },
+    { "seq": 12, "mission": "hop", "step": "end", "kind": "end.contingency" },
+    { "seq": 13, "mission": "hop", "step": "end", "kind": "end.guard" }
+  ],
+  "events": {},
+  "handlers": {},
+  "hash": "sha256:0000"
+}
