@@ -1,0 +1,278 @@
+{
+  "schema": "de.package/2.2",
+  "op": "sar_forest",
+  "op_hash": "sha256:208817374f72c2b546b5108e1c615798b1d2160b15891a7d4e642646c91de75b",
+  "role": "sdr_scout",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [
+    "sdr"
+  ],
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        76
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.358411,
+        149.160391,
+        76
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        40,
+        0,
+        -35.358411,
+        149.160391,
+        76
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        120,
+        0,
+        0,
+        0,
+        -35.358411,
+        149.160391,
+        76
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        -35.358411,
+        149.160391,
+        76
+      ]
+    }
+  ],
+  "missions": {
+    "wide_search_rf": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 10,
+      "segment": {
+        "start": 1,
+        "end": 6
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 120,
+        "then": "rtl"
+      }
+    },
+    "rf_watch": {
+      "trigger": {
+        "type": "event",
+        "event": "sys.phase_entered"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "repeat",
+      "repeat_min_s": 30,
+      "claims": [
+        "sdr"
+      ],
+      "on_exit": [
+        {
+          "do": "sdr.stop"
+        }
+      ],
+      "steps": [
+        {
+          "id": "reset",
+          "k": "do",
+          "do": "sdr.stop",
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "scan",
+          "k": "do",
+          "do": "sdr.scan",
+          "with": {
+            "f_start": 800000000,
+            "f_end": 900000000
+          },
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "hear",
+          "k": "gate",
+          "event": "sdr.signal",
+          "timeout": 600,
+          "on_timeout": "end"
+        }
+      ]
+    }
+  },
+  "manifest": [
+    {
+      "seq": 1,
+      "mission": "wide_search_rf",
+      "step": "takeoff",
+      "kind": "nav.takeoff"
+    },
+    {
+      "seq": 2,
+      "mission": "wide_search_rf",
+      "step": "corner",
+      "kind": "nav.wp"
+    },
+    {
+      "seq": 3,
+      "mission": "wide_search_rf",
+      "step": "listen",
+      "kind": "nav.loiter"
+    },
+    {
+      "seq": 4,
+      "mission": "wide_search_rf",
+      "step": "end",
+      "kind": "end.hold"
+    },
+    {
+      "seq": 5,
+      "mission": "wide_search_rf",
+      "step": "end",
+      "kind": "end.contingency"
+    },
+    {
+      "seq": 6,
+      "mission": "wide_search_rf",
+      "step": "end",
+      "kind": "end.guard"
+    }
+  ],
+  "events": {
+    "sdr.signal": {
+      "target": "phone",
+      "payload": {
+        "pos": "geo",
+        "unc_m": "number",
+        "conf": "number"
+      }
+    }
+  },
+  "handlers": {
+    "comm_lost": "continue",
+    "battery_low": "rtl",
+    "peer_lost": "continue",
+    "geofence": "rtl"
+  },
+  "fleet": {
+    "roles": {
+      "cam_scout": {
+        "count": 1
+      },
+      "sdr_scout": {
+        "count": 1
+      },
+      "searcher": {
+        "count": 3
+      },
+      "ambulance": {
+        "count": 1
+      }
+    },
+    "phases": [
+      {
+        "id": "search"
+      },
+      {
+        "id": "localize",
+        "enter_on": "sys.target_new"
+      },
+      {
+        "id": "deliver",
+        "enter_on": "sys.target_state"
+      },
+      {
+        "id": "recover",
+        "enter_on": "payload.dropped"
+      }
+    ],
+    "event_ttl": {
+      "payload.released": 300
+    },
+    "end": {
+      "on": [
+        "payload.dropped"
+      ],
+      "then": {
+        "ambulance": "rtl",
+        "searcher": "rtl",
+        "sdr_scout": "rtl",
+        "cam_scout": "hold"
+      }
+    },
+    "event_targets": {
+      "detect.detected": "person",
+      "sdr.signal": "phone"
+    },
+    "event_serves": {
+      "payload.dropped": "person"
+    },
+    "event_sticky": [
+      "detect.detected",
+      "payload.dropped",
+      "sdr.signal"
+    ]
+  },
+  "confirm": {
+    "phone": {
+      "policy": "k_sources_within",
+      "k": 1,
+      "d_m": 50
+    },
+    "person": {
+      "policy": "operator_confirm"
+    }
+  },
+  "hash": "sha256:a1bca7d0397a757f18ba82d3643f64b3c027d537c955025ae48aeb88d2e080c4"
+}
