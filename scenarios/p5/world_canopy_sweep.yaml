@@ -34,7 +34,7 @@ assert:
   - detection_recall: {truth: person_hut, max: 0}
   # reported, not asserted - the property under study
   - detection_recall: {truth: person_canopy, max: 1}
-  - time_to_detect: {truth: person_open, max_s: 240}
+  - time_to_detect: {truth: person_open, max_s: 120}
   - detection_precision: {cls: person, min: 0.8, unit: cam1}
   - distance_to: {unit: cam1, re: "detect\\.detected",
                   detected_cls: person,

@@ -126,6 +126,33 @@ class T(unittest.TestCase):
         mast = next(u for u in on["units"] if u["name"] == "mast1")
         self.assertIsNone(mast["fc"])                # statics: no fc
 
+    def test_render_stream_rates_follow_the_channel(self):
+        # a MAVLink serial3 makes serial4 channel 5: only MAV5_*/SR5_*
+        # are set - a fixed MAV4_* would raise rates on serial3's link
+        spec = {"version": 1, "name": "ws_chan", "slot_base": 10,
+                "server": {"type": "fake",
+                           "port": simlib.SERVER_PORT + 10},
+                "render": {"mode": "viewer"},
+                "units": [{"block": "copter", "name": "c1",
+                           "fc": {"params": {"SERIAL3_PROTOCOL": 2}}}]}
+        params = simlib.load_sim(spec)["units"][0]["fc"]["params"]
+        self.assertEqual(params["MAV5_POSITION"], 10)
+        self.assertEqual(params["SR5_POSITION"], 10)
+        self.assertFalse([k for k in params
+                          if k.startswith(("MAV4_", "SR4_"))], params)
+
+    def test_read_parm_files_layers(self):
+        d = tempfile.mkdtemp()
+        a, b = os.path.join(d, "a.parm"), os.path.join(d, "b.parm")
+        with open(a, "w") as f:
+            f.write("# c\nSERIAL1_PROTOCOL 2\nSERIAL3_PROTOCOL,5  # gps\n")
+        with open(b, "w") as f:
+            f.write("SERIAL1_PROTOCOL -1\n")
+        got = simlib.read_parm_files([a, b, os.path.join(d, "missing")])
+        self.assertEqual(got, {"SERIAL1_PROTOCOL": "-1",
+                               "SERIAL3_PROTOCOL": "5"})
+        self.assertEqual(simlib.mav_chan_index(got, 4), 3)
+
     def test_absent_render_is_identical(self):
         off = _sim(render=None, slot_base=10)
         self.assertIsNone(off["render"])

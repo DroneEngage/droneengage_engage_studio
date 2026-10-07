@@ -670,6 +670,26 @@ def mav_chan_index(params, serial):
     return n
 
 
+def read_parm_files(paths):
+    """{NAME: value} from ArduPilot .parm files (`NAME VALUE` or
+    `NAME,VALUE`, # comments), later files winning - the same layering
+    SITL's --defaults applies. Missing files are skipped."""
+    out = {}
+    for path in paths:
+        try:
+            with open(path) as f:
+                for ln in f:
+                    ln = ln.split("#", 1)[0].strip()
+                    if not ln:
+                        continue
+                    parts = ln.replace(",", " ").split()
+                    if len(parts) >= 2:
+                        out[parts[0]] = parts[1]
+        except OSError:
+            continue
+    return out
+
+
 def _expand_unit(sim, b, name, entry, at, catalog):
     if not NAME_RX.match(name):
         raise SimError(f"unit name {name!r}: letters, digits, _ only")
@@ -782,20 +802,26 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         # attitude/position at 10 Hz, servo outputs for P5-16. Newer
         # ArduPilot renamed SRn_* to MAVn_* (n = MAVLink channel, which
         # is the n-th MAVLink serial - compute it: a block overriding
-        # SERIAL1-3_PROTOCOL shifts it) and ignores the old names; the
-        # n=4 names stay too (harmless on a channel that is not 4, and
-        # right for the common layout). Rates apply at boot only.
+        # SERIAL1-3_PROTOCOL shifts it) and ignores the old names. Only
+        # that channel's names are set - a fixed MAV4_* would raise the
+        # rates on whatever other link is channel 4. The protocols come
+        # from every layer SITL boots with (ArduPilot defaults, the
+        # template/vehicle/block .parm files, then inline params). Rates
+        # apply at boot only.
         if sim.get("render"):
             u["fc"]["mav_port"] = sim["render"]["mav_port"]
-            eff_params = deep_merge(u["fc"]["params"],
-                                    u["config"].get("sitl"))
+            parm_layers = read_parm_files(
+                [d if os.path.isabs(d) else os.path.join(ARDUPILOT_DIR, d)
+                 for d in u["fc"]["defaults"]]
+                + [os.path.join(TEMPLATES_DIR, "sitl_common.parm")]
+                + [os.path.join(TEMPLATES_DIR, x) for x in kind["extra"]]
+                + u["parm_files"])
+            eff_params = deep_merge(
+                deep_merge(parm_layers, u["fc"]["params"]),
+                u["config"].get("sitl"))
             mav_n = mav_chan_index(eff_params, 4)
             u["fc"]["params"] = deep_merge(
                 {"SERIAL4_PROTOCOL": 2,
-                 "SR4_POSITION": 10, "SR4_EXTRA1": 10,
-                 "SR4_RC_CHAN": 2, "SR4_EXT_STAT": 2,
-                 "MAV4_POSITION": 10, "MAV4_EXTRA1": 10,
-                 "MAV4_RC_CHAN": 2, "MAV4_EXT_STAT": 2,
                  f"SR{mav_n}_POSITION": 10, f"SR{mav_n}_EXTRA1": 10,
                  f"SR{mav_n}_RC_CHAN": 2, f"SR{mav_n}_EXT_STAT": 2,
                  f"MAV{mav_n}_POSITION": 10, f"MAV{mav_n}_EXTRA1": 10,
