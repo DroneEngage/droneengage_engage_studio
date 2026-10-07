@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 try:
     import stub_sdr
     import stub_ai_box
+    import stub_payload
     import stub_base
     HAVE_DATABUS = True
 except ImportError:
@@ -116,6 +117,117 @@ class T(unittest.TestCase):
         self.assertIsNone(f.pose())
         f._loc9102 = {"lat": 1.0, "lng": 2.0, "rel_alt_m": 0, "t_ms": now}
         self.assertEqual(f.pose()["src"], "9102")
+
+    # ------------------------------------------------------ TASK-EV-PAY
+
+    def _payload_log(self, kind):
+        log = os.path.join(self.d, "run", "sim", "stubs", "u1.log")
+        if not os.path.isfile(log):
+            return []
+        with open(log) as f:
+            return [ln for ln in f if f" {kind} " in ln]
+
+    def test_payload_default_is_single_main_bay(self):
+        s = make(stub_payload.StubPayload, "stub_payload", self.d,
+                 {"payload": {"pin": "drop_relay"}})
+        self.assertEqual(list(s.bays), ["main"])
+        self.assertEqual(s.armed_pin, "drop_relay")
+        advert = stub_payload.build_advert(
+            [{"key": k, "pin": b["pin"]} for k, b in s.bays.items()])
+        # the single-bay advert gains only payload.main + optional bay
+        self.assertIn("main", advert["actions"])
+        self.assertEqual(advert["actions"]["release"]["params"]["bay"]
+                         ["values"], ["main"])
+        data, err = s.on_invoke("payload", "release", {})
+        self.assertIsNone(err)
+        self.assertEqual(data["bay"], "main")
+        self.assertTrue(data["released"])
+        ev = self._payload_log("EVENT")
+        self.assertTrue(any("payload.released" in ln for ln in ev))
+        self.assertTrue(any("payload.main.released" in ln for ln in ev))
+
+    def test_payload_bays_release_only_the_selected(self):
+        s = make(stub_payload.StubPayload, "stub_payload", self.d,
+                 {"payload": {"bays": [{"key": "left", "pin": "drop_l"},
+                                       {"key": "right"}]}})
+        self.assertEqual(list(s.bays), ["left", "right"])
+        self.assertEqual(s.bays["right"]["pin"], "stub_right")
+        self.assertEqual(s.armed_pin, "drop_l")
+        set_pose(s, 24.7, 46.6, 30.0)
+
+        data, err = s.on_invoke("payload", "release", {"bay": "right"})
+        self.assertIsNone(err)
+        self.assertEqual(data["bay"], "right")
+        ev = self._payload_log("EVENT")
+        self.assertTrue(any("payload.right.released" in ln
+                            for ln in ev), "right bay fact")
+        self.assertFalse(any("payload.left.released" in ln
+                             for ln in ev), "no left bay fact")
+        rel = self._payload_log("RELEASE")
+        self.assertEqual(len(rel), 1)
+        self.assertIn('"bay": "right"', rel[0])
+
+        # the per-bay action releases its own bay
+        data, err = s.on_invoke("payload", "left", {})
+        self.assertIsNone(err)
+        self.assertEqual(data["bay"], "left")
+        self.assertTrue(any("payload.left.released" in ln
+                            for ln in self._payload_log("EVENT")))
+
+        # unknown bays and actions are errors, never releases
+        data, err = s.on_invoke("payload", "release", {"bay": "middle"})
+        self.assertIsNone(data)
+        self.assertIn("unknown bay", err)
+        data, err = s.on_invoke("payload", "release", {"bay": 3})
+        self.assertIsNone(data)
+        self.assertIn("must be a string", err)
+        data, err = s.on_invoke("payload", "nope", {})
+        self.assertIsNone(data)
+        self.assertIn("unknown action", err)
+        self.assertEqual(len(self._payload_log("RELEASE")), 2,
+                         "errors never released")
+
+        # truth rows carry the bay
+        with open(os.path.join(self.d, "run", "sim", "truth.jsonl")) as f:
+            rows = [json.loads(ln) for ln in f]
+        self.assertEqual(sorted(r["bay"] for r in rows
+                                if r.get("cls") == "payload_drop"),
+                         ["left", "right"])
+
+    def test_payload_command_event_ignored(self):
+        s = make(stub_payload.StubPayload, "stub_payload", self.d,
+                 {"payload": {"bays": [{"key": "left"},
+                                       {"key": "right"}]}})
+        # a package/operator "emit payload.left.release" arrives as a
+        # Sync_EventFire (1061): the namespace has no command events, so
+        # the stub logs it ignored and releases nothing
+        s.on_message(None, 0, {"mt": 1061,
+                               "ms": {"d": "payload.left.release"}})
+        ign = self._payload_log("IGNORED")
+        self.assertEqual(len(ign), 1)
+        self.assertIn("payload.left.release", ign[0])
+        self.assertEqual(self._payload_log("RELEASE"), [])
+
+        # an echoed own fact is not a command event - not logged ignored
+        s.on_message(None, 0, {"mt": 1061,
+                               "ms": {"d": "payload.left.released"}})
+        self.assertEqual(len(self._payload_log("IGNORED")), 1)
+
+    def test_payload_bad_bays_fall_back_to_main(self):
+        s = make(stub_payload.StubPayload, "stub_payload", self.d,
+                 {"payload": {"bays": [{"key": "release"},
+                                       {"key": "Left"},
+                                       {"key": "ok"},
+                                       {"key": "ok"},
+                                       {"nope": 1}]}})
+        self.assertEqual(list(s.bays), ["ok"])
+        cfg_warns = [ln for ln in self._payload_log("CONFIG")
+                     if "payload_bays" in ln]
+        self.assertEqual(len(cfg_warns), 4)
+
+        s2 = make(stub_payload.StubPayload, "stub_payload2", self.d,
+                  {"payload": {"bays": [{"key": "release"}]}})
+        self.assertEqual(list(s2.bays), ["main"])
 
     def test_static_mast_gets_clutter(self):
         s = make(stub_ai_box.StubAIBox, "stub_ai_box", self.d)
