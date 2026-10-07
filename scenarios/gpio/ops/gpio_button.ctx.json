@@ -122,188 +122,6 @@
                 }
               }
             },
-            "events": {
-              "led.went_on": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "led.went_off": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "led.changed": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "flash.went_on": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "flash.went_off": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "flash.changed": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "servo.went_on": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "servo.went_off": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "servo.changed": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "btn.went_on": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "btn.went_off": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "btn.changed": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "btn_low.went_on": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "btn_low.went_off": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "btn_low.changed": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "power_led.went_on": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "power_led.went_off": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              },
-              "power_led.changed": {
-                "payload": {
-                  "v": {
-                    "type": "int"
-                  },
-                  "src": {
-                    "type": "string"
-                  }
-                }
-              }
-            },
             "state": {
               "led": {
                 "type": "int",
@@ -328,6 +146,107 @@
               "btn_low": {
                 "type": "int",
                 "desc": "GPIO 27 input level"
+              }
+            },
+            "resources": {
+              "led": "out",
+              "power_led": "out",
+              "flash": "out",
+              "servo": "pwm",
+              "btn": "in",
+              "btn_low": "in"
+            },
+            "event_patterns": {
+              "*.went_on": {
+                "kind": "fact",
+                "payload": {
+                  "v": {
+                    "type": "int",
+                    "desc": "level for digital/input, width for PWM"
+                  },
+                  "src": {
+                    "type": "string",
+                    "desc": "the PIN_CHANGE cause"
+                  }
+                }
+              },
+              "*.went_off": {
+                "kind": "fact",
+                "payload": {
+                  "v": {
+                    "type": "int",
+                    "desc": "level for digital/input, width for PWM"
+                  },
+                  "src": {
+                    "type": "string",
+                    "desc": "the PIN_CHANGE cause"
+                  }
+                }
+              },
+              "*.changed": {
+                "kind": "fact",
+                "res": [
+                  "pwm"
+                ],
+                "payload": {
+                  "v": {
+                    "type": "int",
+                    "desc": "level for digital/input, width for PWM"
+                  },
+                  "src": {
+                    "type": "string",
+                    "desc": "the PIN_CHANGE cause"
+                  }
+                }
+              },
+              "*.on": {
+                "kind": "command",
+                "res": [
+                  "out",
+                  "pwm"
+                ]
+              },
+              "*.off": {
+                "kind": "command",
+                "res": [
+                  "out",
+                  "pwm"
+                ]
+              },
+              "*.toggle": {
+                "kind": "command",
+                "res": [
+                  "out"
+                ]
+              },
+              "*.pulse": {
+                "kind": "command",
+                "res": [
+                  "out"
+                ],
+                "payload": {
+                  "ms": {
+                    "type": "int",
+                    "optional": true,
+                    "min": 1,
+                    "max": 4000,
+                    "desc": "assert, wait, restore"
+                  }
+                }
+              },
+              "*.set": {
+                "kind": "command",
+                "res": [
+                  "pwm"
+                ],
+                "payload": {
+                  "v": {
+                    "type": "int",
+                    "min": 0,
+                    "max": 1024,
+                    "desc": "PWM width"
+                  }
+                }
               }
             }
           }
