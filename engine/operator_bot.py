@@ -191,6 +191,16 @@ class OperatorBot:
                 p = ms.get("p") or {}
                 name = ms.get("n") or ""
                 det_cls = self._event_targets.get(name)
+                # B4-01: wm_core accepts an envelope for the declared
+                # class only when its `class` is absent or equal (a "car"
+                # envelope is never a "person" candidate). Mirror that
+                # here or a mismatched detection books a candidate tid
+                # the world model never creates - the confirm then lands
+                # on a dead tid and the real target stays undecided.
+                env_cls = p.get("class")
+                if (det_cls and isinstance(env_cls, str)
+                        and env_cls != det_cls):
+                    return
                 # 1078 `b` (or `t`) carries the normalized {x,y,w,h}
                 # detection box - a dict for best-object, a list for
                 # multi-target payloads

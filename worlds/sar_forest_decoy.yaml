@@ -1,0 +1,63 @@
+# sar_forest_decoy - the B4-01 class-filter world (de.world/1).
+#
+# Same ground truth as sar_forest.yaml PLUS car_1, a static car decoy
+# ~120 m south of person_1 on the same lawnmower lane corridor (inside
+# the op's search area), and no
+# detect_cls filter on the camera. Since B4-01 every 1078 box carries
+# class_id/class_name, so:
+#   - a car box projects with class "car" and is dropped by W5 - it can
+#     never fuse into the declared person target (the pre-B4-01 fail-open
+#     this world exists to close);
+#   - the phone entity is camera-visible too: its boxes say class
+#     "phone" and likewise can never inflate the person target;
+#   - sar_forest.yaml keeps detect_cls so the A-I scenarios stay
+#     byte-identical; this world exercises the class filter instead.
+#
+# Negative control: rerun p4b10_k with legacy boxes (a unit config
+# stub_ai_box.legacy_box: true on each camera unit, or
+# sensors.camera.legacy_box here) - class keys disappear, the car reads
+# as a second person target and the scenario's equals-1 person assert
+# fails, demonstrating the fail-open.
+#
+# entities/sensors: same model notes as sar_forest.yaml (sdr gate
+# ~600 m, camera FOV is the effective horizontal gate, clutter off for
+# deterministic acceptance).
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_1, cls: person, pos: [-35.3605671, 149.1679909],
+     size_m: 0.5}
+  - {id: phone_1, cls: phone, attach: person_1, offset_m: [30, 0],
+     tx_dbm: 20, freq_hz: 869000000, size_m: 0.2}
+  # the decoy: a parked car ~120 m south of person_1, inside the same
+  # search sector and on a lane the sector's searcher demonstrably
+  # sweeps (the north-south leg ~29 m west of person_1)
+  - {id: car_1, cls: car, pos: [-35.3616451, 149.1676717], size_m: 4.0}
+clutter: {cls: person, rate_per_km2_min: 0, lifetime_s: 20}
+sensors:
+  camera:
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 4            # static mast camera only (SU-04); FC
+                               # units use rel_alt (the 40-46 m layers)
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 0.95
+    p_detect_edge: 0.6
+    # no detect_cls: the B4-01 class filter, not the sensor, decides what
+    # reaches the world model
+    max_range_m: 100             # slant; covers nadir at the 82 m scout layer
+    pos_noise_px: 8
+    fps_boxes: 2
+    size_m: {person: 0.5, phone: 0.2, car: 4.0}
+  sdr:
+    freq_hz: 869000000
+    path_loss_n: 2.7
+    ref_dbm_1m: -15              # -15+20dBm tx -> ~600 m modelled gate
+    noise_db: 3
+    threshold_dbm: -70           # selftest + the sdr.scan default
+    bin_hz: 25000
+    sweep_s: 2

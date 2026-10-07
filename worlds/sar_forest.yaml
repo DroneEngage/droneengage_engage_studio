@@ -54,9 +54,11 @@ sensors:
     img_h: 720
     p_detect_nadir: 0.95
     p_detect_edge: 0.6
-    detect_cls: [person]        # a phone is RF-only: a 1078 box carries no
-                                # class, so a visible phone would read as a
-                                # second person target
+    detect_cls: [person]        # kept so A-I stay byte-identical (B4-01):
+                                # 1078 boxes now carry class_name, so a visible
+                                # phone can no longer fuse into a person
+                                # target; sar_forest_decoy.yaml drops this
+                                # filter to exercise the class filter
     max_range_m: 100             # slant; covers nadir at the 82 m scout layer
     pos_noise_px: 8
     fps_boxes: 2

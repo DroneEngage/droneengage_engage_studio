@@ -1,0 +1,11 @@
+{
+  "op": "p5_canopy_sweep",
+  "roles": {
+    "cam_scout": {
+      "pkg": "p5_canopy_sweep.json",
+      "units": [
+        "cam1"
+      ]
+    }
+  }
+}

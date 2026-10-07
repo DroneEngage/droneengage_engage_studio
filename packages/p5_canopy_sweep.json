@@ -1,6 +1,7 @@
 {
-  "schema": "de.package/2",
+  "schema": "de.package/2.2",
   "op": "p5_canopy_sweep",
+  "op_hash": "sha256:0b149025c372ca02eda9cde093ea5d10f5fba5758932eab5954fd1eb1ff22c74",
   "role": "cam_scout",
   "vehicle": { "type": "copter" },
   "requires": [],
@@ -35,5 +36,11 @@
   ],
   "events": {},
   "handlers": {},
+  "fleet": {
+    "roles": { "cam_scout": { "count": 1 } },
+    "phases": [ { "id": "search" } ],
+    "event_targets": { "detect.detected": "person" },
+    "event_sticky": [ "detect.detected" ]
+  },
   "hash": "sha256:0000"
 }

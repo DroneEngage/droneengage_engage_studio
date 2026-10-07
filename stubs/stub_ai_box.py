@@ -16,6 +16,12 @@ modelled pixel noise and sends the 1078. `tm` is the monotonic-us stamp
 the de_mavlink pose ring buffer indexes - the real path from box to
 detect.detected runs unchanged.
 
+B4-01: boxes carry the detector's `class_id` (index into the stub's 1077
+class list) and `class_name` (the entity's cls, verbatim). A legacy box
+is restored by `--legacy-box`, a unit `config.stub_ai_box.legacy_box` or
+the world's `sensors.camera.legacy_box` - the negative-control rerun of
+p4b10_k uses it to show the pre-B4-01 W5 fail-open.
+
 Every emitted box also lands a {"type":"detection", tid, cls, ...} row
 in run/<sim>/truth.jsonl (tid "clutter" for the false positives the
 clutter model injects) - detection_precision counts them.
@@ -140,6 +146,11 @@ class StubAIBox(StubBase):
         # is never projected as a box
         self.classes = ([c for c in self.world.classes() if c != "pad"]
                         if self.world else ["object"])
+        # B4-01: class_id/class_name on the 1078 box; any of these turns
+        # them off (the negative-control rerun needs the legacy shape)
+        self.legacy_box = bool("--legacy-box" in argv
+                               or self.cfg.get("legacy_box")
+                               or cam.get("legacy_box"))
         self._sel = None                 # 1076 SEARCH index selection
         self._last_frame = -1
         self._clutter = []               # [(die_t_s, u, v)]
@@ -341,6 +352,9 @@ class StubAIBox(StubBase):
                "y": round(max(0.0, v_n + 0.5 - bh / 2), 4),
                "w": round(bw, 4), "h": round(bh, 4),
                "conf": conf, "tm": self._tm_us()}
+        if not self.legacy_box:
+            box["class_id"] = self.classes.index(cls)
+            box["class_name"] = cls
         self.emit(TYPE_AndruavMessage_AI_Recognition_TargetLocation,
                   {"b": box})
         self.truth.append({"src": "ai", "tid": tid, "cls": cls,
@@ -446,6 +460,11 @@ class StubAIBox(StubBase):
                    "y": round(max(0.0, v + 0.5 - bh / 2), 4),
                    "w": round(bw, 4), "h": round(bh, 4),
                    "conf": conf, "tm": self._tm_us()}
+            if not self.legacy_box:
+                cl_cls = cl["cls"]
+                box["class_id"] = (self.classes.index(cl_cls)
+                                   if cl_cls in self.classes else -1)
+                box["class_name"] = cl_cls
             self.emit(TYPE_AndruavMessage_AI_Recognition_TargetLocation,
                       {"b": box})
             row.update({"u": round(u, 4), "v": round(v, 4),

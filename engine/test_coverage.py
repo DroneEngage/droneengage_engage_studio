@@ -215,6 +215,22 @@ class T(unittest.TestCase):
         r3 = checks.check_assertion({"pod_mean": {"area": "sector_a"}}, c)
         self.assertEqual(r3["status"], "FAIL")
 
+    def test_pod_at_inline_polys_do_not_share_a_grid(self):
+        wld = make_world(entities=[
+            {"id": "p1", "cls": "person", "pos": latlng(11.0, 11.0)},
+            {"id": "p2", "cls": "person", "pos": latlng(51.0, 11.0)}])
+        rows = [tele_row(12.5, 12.5, t_ms=1000),
+                tele_row(52.5, 12.5, t_ms=1500)]
+        c = ctx_for(wld, FakeTele({"cam1": rows}))
+        r1 = checks.check_assertion(
+            {"pod_at": {"truth": "p1", "t_s": 0, "min": 0.8,
+                        "poly": rect(0, 0, 20, 20)}}, c)
+        self.assertEqual(r1["status"], "PASS", r1)
+        r2 = checks.check_assertion(
+            {"pod_at": {"truth": "p2", "t_s": 0, "min": 0.8,
+                        "poly": rect(0, 40, 20, 60)}}, c)
+        self.assertEqual(r2["status"], "PASS", r2)
+
     def test_world_areas_parse(self):
         wld = make_world(areas={"a1": {"poly": rect(0, 0, 10, 10)}})
         self.assertEqual(len(wld.areas["a1"]["poly"]), 4)

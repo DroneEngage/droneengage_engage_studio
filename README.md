@@ -376,7 +376,9 @@ Format (strict - unknown keys fail against
   find, `max_s:`; realtime-sensitive), `signals_in_range`,
   `stub_deterministic` to the legacy assertion set.
   `journal_count` takes `total: true` to compare the sum over its units
-  instead of every unit's own count.
+  instead of every unit's own count; `module_log_count` accepts the same
+  `total:` flag (B4-01 - for a line exactly one runtime-chosen unit
+  prints).
   `realtime: true` gates timing asserts - they SKIP with a visible
   reason when SITL speed-up is not ~1. `telemetry_value` reads the last
   sample by default; `pick: min|max` reads the extreme of the recorded

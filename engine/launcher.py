@@ -7,7 +7,8 @@ processes (SITL, de_comm, modules), and wait until each unit is online
 at the server and every module reports ready. Sims run in parallel -
 up restarts only the same-named sim and refuses ports/names that clash
 with a live one; `sim run` passes exclusive=True so a test still owns
-the machine. down: stop one sim, or every sim.
+the machine (SIM_SHARED=1 keeps a test additive instead, for a machine
+other sessions are using). down: stop one sim, or every sim.
 Fully headless: logs in run/<sim>/<unit>/logs/ and run/<sim>/server/logs/,
 pids in run/<sim>/pids/. Only pids whose command line points into this
 repo are ever signalled.
@@ -142,6 +143,10 @@ def _label(sim_src):
     return os.path.abspath(sim_src) if isinstance(sim_src, str) else "inline"
 
 
+def _shared():
+    return os.environ.get("SIM_SHARED") == "1"
+
+
 def up(sim_src, fresh=False, timeout=180, exclusive=False):
     """sim_src: a sim file path, or an inline sim dict (from a test).
     Restarts only the same-named sim; `exclusive` (test runs) downs every
@@ -150,7 +155,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False):
     name = sim["name"]
     srv = sim["server"]
     simlib.check_binaries(sim)          # before stopping the running sim
-    if exclusive:
+    if exclusive and not _shared():
         down(quiet=True)                # tests own the machine
     else:
         # additive `sim up`: refuse ports/names of a live sim, restart
@@ -263,7 +268,7 @@ def ensure(sim_src, timeout=180):
             need |= {f"{u['name']}.{p}" for p in simlib.procs_of(u)}
         if need <= alive:
             # a test owns the machine on the reuse path too
-            for other in simlib.live_sim_names():
+            for other in ([] if _shared() else simlib.live_sim_names()):
                 if other != sim["name"]:
                     down(other, quiet=True)
             ctl.CTX = sim["name"]

@@ -269,7 +269,9 @@ def _module_log_count(name, a, ctx):
     journal_count sibling over run/<unit>/logs/<module>.log (the module's
     stdout), lines appended since the test mark. Facts a module prints
     itself - de_precland's EVENT_OUT lines - never reach the de_comm
-    journal, so standalone module behaviour is asserted here."""
+    journal, so standalone module behaviour is asserted here. `total:
+    true` (B4-01) sums the count over the units like journal_count's -
+    for a line exactly one runtime-chosen unit prints."""
     marks = ctx["marks"]
     rx = re.compile(a["re"])
     ok, bits, vals = True, [], []
@@ -280,6 +282,12 @@ def _module_log_count(name, a, ctx):
         good, txt = _cmp(a, n)
         ok &= good
         bits.append(f"{u['name']}: {txt}")
+    if a.get("total"):
+        good, txt = _cmp(a, sum(vals))
+        return _r(name, "PASS" if good else "FAIL", sum(vals),
+                  f"total {txt} (" + "; ".join(
+                      f"{u['name']}: {n}"
+                      for u, n in zip(_units(a, ctx), vals)) + ")")
     return _r(name, "PASS" if ok else "FAIL",
               sum(vals) / len(vals) if vals else 0, "; ".join(bits))
 
@@ -586,7 +594,7 @@ def _coverage_grid(name, a, ctx):
     """The shared P5-12 preamble: resolve the area, pick the camera
     units, build or reuse the computed grid. -> (grid, result) where
     result is set (and grid None) on SKIP/FAIL. The grid is cached on
-    ctx["coverage_grids"] keyed by (area, cell_m, units) so sibling
+    ctx["coverage_grids"] keyed by (area, poly, cell_m, units) so sibling
     asserts share it and _collect can write the artefacts."""
     wld = ctx.get("world")
     if wld is None:
@@ -618,7 +626,8 @@ def _coverage_grid(name, a, ctx):
     if not units:
         return None, _r(name, "SKIP", None,
                         "no camera units in this run")
-    key = (area_id, cell_m, tuple(sorted(units)))
+    key = (area_id, tuple(tuple(p) for p in poly), cell_m,
+           tuple(sorted(units)))
     grids = ctx.setdefault("coverage_grids", {})
     if key in grids:
         return grids[key], None

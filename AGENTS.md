@@ -67,7 +67,8 @@ is now the only simulation/testing location.
 - `./sim up` is additive: it restarts only the same-named sim and refuses
   ports/unit names that clash with a live sim. `./sim down <name>` stops
   one sim, `./sim down` all of them. `./sim run` is exclusive - a test
-  downs every other sim first.
+  downs every other sim first. `SIM_SHARED=1 ./sim run ...` keeps it
+  additive (same rules as `up`) when other sessions share the machine.
 - `./sim ctl -s <sim>` pins a command to one sim; without it commands
   that need a single sim use the only live one, and unit lookups search
   live sims first.
