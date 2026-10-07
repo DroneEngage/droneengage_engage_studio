@@ -15,15 +15,18 @@ name: render_canopy_sweep
 seed: 7
 transport: fake
 world: ../../worlds/forest_canopy.yaml
-operation: ../../packages/p5_canopy_sweep.json
+operation: ../../packages/p5_canopy_sweep.deploy.json
 render: {mode: cameras, headless: false}
 verify: {cli: ../support/verify_wrap.js}
 settle_s: 20
 fleet:
   - {id: cam1, cls: copter_cam3d}
 timeline:
-  - {t: 0, do: deploy}
-  - {t: 5, do: start}
+  - {t: 0, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 2, do: deploy, timeout: 120}
+  - {t: 4, do: wait_ready, unit: cam1, timeout: 120}
+  - {t: 6, do: arm, unit: cam1}
+  - {t: 9, do: start}
   - {t: 10, do: wait_journal, unit: cam1,
      re: "mission main completed", timeout: 300}
 assert:
