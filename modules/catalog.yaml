@@ -45,7 +45,11 @@ de_camera:
   repo: droneengage_camera_2025
   dir_env: DE_CAMERA_DIR
   # de_camera ships a prebuilt x86 binary in the repo (WebRTC gn/ninja
-  # builds land in compiled_bin/); DE_CAMERA_BIN overrides
+  # builds land in compiled_bin/); DE_CAMERA_BIN overrides.
+  # TASK-EV-CAM: the checked-in compiled_bin/de_camera (2026-09-12) has no
+  # capability advert at all - the camera.<ch>.* event-surface scenarios
+  # need a HEAD build; point DE_CAMERA_BIN at the WebRTC output or the
+  # repo's compiled_bin_x86_debug/de_camera (rebuilt 2026-10-07).
   bin: compiled_bin/de_camera
   bin_env: DE_CAMERA_BIN
   template: de_camera.config.module.json
@@ -54,6 +58,10 @@ de_camera:
   local: {file: de_camera.config.local}
   set:
     media_folder: "./img"
+  # stdout-only signal - the de_comm journal never sees module init;
+  # the module registers once its camera produces frames, so on a
+  # rendered-camera unit `sim up` also waits on the frame farm
+  ready_log_re: "Communicator Server Found"
 
 # P5-15: the real generic YOLO AI (ONNX runtime) on the rendered feed.
 # It finds its V4L2 devices by card label, like in the field: the render

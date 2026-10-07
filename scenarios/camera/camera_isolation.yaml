@@ -1,0 +1,61 @@
+# camera/camera_isolation - TASK-EV-CAM / GF-01+GF-02 with a FLEET
+# package: unit cam_a's emit of camera.cam_0.record_on rides the 1090
+# fleet envelope, so cam_b's supervisor DOES latch the command event
+# (declared) - but de_comm on cam_b must not forward the remote command
+# to cam_b's de_camera: cam_b's camera never records.
+#
+#   cam_a (role actor):   rec emits camera.cam_0.record_on -> its own
+#                         de_camera records -> went_recording releases g1
+#   cam_b (role watcher): the manual 'idle' mission never activates;
+#                         the latched record_on is awareness only
+#
+# Two rendered cameras -> `sudo tools/setup_v4l2loopback.sh 2` plus the
+# usual MAVLINK3DMAP_DIR/CHROMIUM_BIN/DE_CAMERA_BIN env.
+version: 1
+name: camera_isolation
+transport: fake
+world: ../../worlds/forest_canopy.yaml
+operation: ../../packages/camera_isolate.deploy.json
+render: {mode: cameras, headless: false}
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: cam_a, cls: copter_camera}
+  - {id: cam_b, cls: copter_camera}
+timeline:
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 20, do: wait_journal, unit: cam_a,
+     re: "S: rec gate g1 released by camera\\.cam_0\\.went_recording",
+     timeout: 60}
+  - {t: 25, do: wait_journal, unit: cam_a,
+     re: "S: rec emit camera\\.probe_done", timeout: 30}
+  # settle: give any (erroneous) remote actuation on cam_b room to show
+  - {t: 30, do: wait, seconds: 10}
+  - {t: 45, do: stop}
+assert:
+  # cam_a: its own emit actuated its own camera exactly once
+  - journal_count: {unit: cam_a, re: "S: rec activated", equals: 1}
+  - journal_count: {unit: cam_a,
+                    re: "S: rec emit camera\\.cam_0\\.record_on",
+                    equals: 1}
+  - journal_count: {unit: cam_a,
+                    re: "S: rec gate g1 released by camera\\.cam_0\\.went_recording",
+                    equals: 1}
+  - journal_count: {unit: cam_a,
+                    re: "state camera\\.recording = (true|1)",
+                    at_least: 1}
+  # cam_b: the command event DID arrive in the supervisor (fleet 1090)
+  - journal_count: {unit: cam_b,
+                    re: "EVENT_IN event camera\\.cam_0\\.record_on latched",
+                    equals: 1}
+  # ...but its de_camera never recorded: no went_recording fact, no
+  # recording state line
+  - journal_count: {unit: cam_b,
+                    re: "EVENT_IN event camera\\.cam_0\\.went_recording",
+                    equals: 0}
+  - journal_count: {unit: cam_b,
+                    re: "state camera\\.recording = (true|1)",
+                    equals: 0}
+  - journal_count: {unit: cam_b, re: "S: idle activated", equals: 0}
+teardown: none

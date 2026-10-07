@@ -1,0 +1,48 @@
+# camera/camera_do_channel - TASK-EV-CAM acceptance: capability actions
+# through the supervisor's `do` step and the namespace-owner invoke path.
+#
+#   rec  do camera.record {on:true, channel:"cam_0"}  -> the additive
+#        channel resolver accepts a resource key; went_recording proves
+#        the recorder moved
+#   idle do camera.cam_0 {record:false}               -> the per-channel
+#        action stops it; went_idle proves the edge
+#
+# Same render-farm/de_camera requirements as camera_emit_and_notify.
+version: 1
+name: camera_do_channel
+transport: fake
+world: ../../worlds/forest_canopy.yaml
+operation: ../../packages/camera_actions.deploy.json
+render: {mode: cameras, headless: false}
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: actor, cls: copter_camera}
+timeline:
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 20, do: wait_journal, unit: actor,
+     re: "S: cams rec ok", timeout: 60}
+  - {t: 25, do: wait_journal, unit: actor,
+     re: "S: cams idle ok", timeout: 60}
+  - {t: 30, do: wait_journal, unit: actor,
+     re: "S: cams emit camera\\.probe_done", timeout: 30}
+  - {t: 40, do: stop}
+assert:
+  - journal_count: {unit: actor, re: "S: cams activated", equals: 1}
+  - journal_count: {unit: actor, re: "S: cams rec ok", equals: 1}
+  - journal_count: {unit: actor, re: "S: cams idle ok", equals: 1}
+  - journal_count: {unit: actor,
+                    re: "ACTION_RESULT .* ok \\(camera\\.record\\)",
+                    equals: 1}
+  - journal_count: {unit: actor,
+                    re: "ACTION_RESULT .* ok \\(camera\\.cam_0\\)",
+                    equals: 1}
+  - journal_count: {unit: actor, re: "failed:", equals: 0}
+  - journal_count: {unit: actor,
+                    re: "EVENT_IN event camera\\.cam_0\\.went_recording latched",
+                    at_least: 1}
+  - journal_count: {unit: actor,
+                    re: "EVENT_IN event camera\\.cam_0\\.went_idle latched",
+                    at_least: 1}
+teardown: none

@@ -1,0 +1,11 @@
+{
+  "op": "camera_capture",
+  "roles": {
+    "shooter": {
+      "pkg": "camera_capture_shooter.pkg.json",
+      "units": [
+        "shooter"
+      ]
+    }
+  }
+}

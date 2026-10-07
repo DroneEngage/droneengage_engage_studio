@@ -1,0 +1,11 @@
+{
+  "op": "camera_probe",
+  "roles": {
+    "probe": {
+      "pkg": "camera_probe_probe.pkg.json",
+      "units": [
+        "probe"
+      ]
+    }
+  }
+}

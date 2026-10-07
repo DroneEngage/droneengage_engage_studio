@@ -1,0 +1,38 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "camera_actions",
+    "comment": "TASK-EV-CAM do_channel: capability actions through the supervisor's do step - the generic 'camera.record' with channel:'cam_0' (additive channel resolution) and the per-channel 'camera.cam_0' action {record:bool}. Each do must journal its step result ok, and the went_* edges prove the recorder actually moved.",
+
+    "roles": {
+        "actor": { "count": 1, "vehicle": "copter", "requires": ["camera"] }
+    },
+
+    "events": {
+        "camera.cam_0.went_recording":  {},
+        "camera.cam_0.went_idle":       {},
+        "camera.probe_done":            {}
+    },
+
+    "missions": {
+        "actor": {
+            "cams": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "rec",  "do": "camera.record",
+                      "with": { "on": true, "channel": "cam_0" },
+                      "timeout": 15 },
+                    { "id": "g1", "gate": { "event": "camera.cam_0.went_recording" },
+                      "timeout": 10, "on_timeout": "end" },
+                    { "id": "idle", "do": "camera.cam_0",
+                      "with": { "record": false },
+                      "timeout": 15 },
+                    { "id": "g2", "gate": { "event": "camera.cam_0.went_idle" },
+                      "timeout": 10, "on_timeout": "end" },
+                    { "id": "e1", "emit": "camera.probe_done" }
+                ]
+            }
+        }
+    }
+}

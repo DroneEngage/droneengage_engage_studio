@@ -1,0 +1,68 @@
+{
+  "schema": "de.package/2.2",
+  "op": "camera_capture",
+  "op_hash": "sha256:7712594bc48f124bccf8c38ce4a42f63cbbc5cd588d06d97b6665f5de52406b2",
+  "role": "shooter",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [
+    "camera"
+  ],
+  "fc_items": [],
+  "missions": {
+    "snap": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "e1",
+          "k": "emit",
+          "event": "camera.cam_0.capture",
+          "payload": {
+            "count": 2
+          }
+        },
+        {
+          "id": "g1",
+          "k": "gate",
+          "event": "camera.captured",
+          "timeout": 20,
+          "on_timeout": "end"
+        },
+        {
+          "id": "e2",
+          "k": "emit",
+          "event": "camera.probe_done"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "camera.cam_0.capture": {},
+    "camera.captured": {},
+    "camera.probe_done": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "shooter": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "camera.cam_0.capture": 300,
+      "camera.captured": 300,
+      "camera.probe_done": 300
+    }
+  },
+  "hash": "sha256:f82f9c921000bf11490c076e86702917d2ebbebb23a93fc1df077959f3521edc"
+}

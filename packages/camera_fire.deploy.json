@@ -1,0 +1,11 @@
+{
+  "op": "camera_fire",
+  "roles": {
+    "node": {
+      "pkg": "camera_fire_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

@@ -1,0 +1,43 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "camera_isolate",
+    "comment": "TASK-EV-CAM camera_isolation (GF-01): a FLEET package - unit A's emit of camera.cam_0.record_on rides the 1090 fleet envelope and the watcher unit's supervisor does latch it (declared), but de_comm on the watcher must NOT forward the remote command event to its own de_camera: the watcher camera never records. Only the actor role emits; the watcher's 'idle' mission is manual-triggered and stays un-activated.",
+
+    "roles": {
+        "actor":   { "count": 1, "vehicle": "copter", "requires": ["camera"] },
+        "watcher": { "count": 1, "vehicle": "copter", "requires": ["camera"] }
+    },
+
+    "events": {
+        "camera.cam_0.record_on":       {},
+        "camera.cam_0.went_recording":  {},
+        "camera.cam_0.went_idle":       {},
+        "camera.idle_tick":             {},
+        "camera.probe_done":            {}
+    },
+
+    "missions": {
+        "actor": {
+            "rec": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "e1", "emit": "camera.cam_0.record_on" },
+                    { "id": "g1", "gate": { "event": "camera.cam_0.went_recording" },
+                      "timeout": 15, "on_timeout": "end" },
+                    { "id": "e2", "emit": "camera.probe_done" }
+                ]
+            }
+        },
+        "watcher": {
+            "idle": {
+                "trigger": "manual",
+                "end": "hold",
+                "steps": [
+                    { "id": "tick", "emit": "camera.idle_tick" }
+                ]
+            }
+        }
+    }
+}

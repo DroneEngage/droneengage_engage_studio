@@ -1,0 +1,11 @@
+{
+  "op": "camera_actions",
+  "roles": {
+    "actor": {
+      "pkg": "camera_actions_actor.pkg.json",
+      "units": [
+        "actor"
+      ]
+    }
+  }
+}

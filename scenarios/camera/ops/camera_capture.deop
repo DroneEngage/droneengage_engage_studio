@@ -1,0 +1,32 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "camera_capture",
+    "comment": "TASK-EV-CAM capture_event: a sensor mission emits camera.cam_0.capture {count:2}; de_camera runs the burst and each saved photo arrives as the shared camera.captured event (filtered on ch - the D-CAM-1 decision: no per-channel captured facts). g1 releases on the first; the scenario asserts exactly two EVENT_IN latches.",
+
+    "roles": {
+        "shooter": { "count": 1, "vehicle": "copter", "requires": ["camera"] }
+    },
+
+    "events": {
+        "camera.cam_0.capture": {},
+        "camera.captured":      {},
+        "camera.probe_done":    {}
+    },
+
+    "missions": {
+        "shooter": {
+            "snap": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "e1", "emit": "camera.cam_0.capture",
+                      "payload": { "count": 2 } },
+                    { "id": "g1", "gate": { "event": "camera.captured" },
+                      "timeout": 20, "on_timeout": "end" },
+                    { "id": "e2", "emit": "camera.probe_done" }
+                ]
+            }
+        }
+    }
+}

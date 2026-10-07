@@ -1,0 +1,143 @@
+{
+  "_note": "TASK-EV-CAM: the sim unit's serialized capability view (the 1089 m_Capabilities object a UNIT_CAPABILITIES report carries), used two ways: (1) compile_op.js --caps feeds it to compileOperation as the registry so 'do camera.record' and 'do camera.cam_0' resolve against the advertised actions the Phase-1 stub cannot name; (2) the <op>.ctx.json sidecars embed it under registries.<unit> so verify_wrap.js checks do-params and waited-on module events against the same advert (CAP-001/CAP-002). The advert mirrors cameraBuildAdvert() for the sim's one-camera set (camera_list [{name:CAM, device_name:DE-SRC-k, key:cam_0}] injected by simlib for render-camera units). The wire advert's events map carries only the frozen 'captured' entry - the camera.<ch>.went_* names are dynamic and live in desc; the entries below document that surface so the verifier can prove an op's waited-on events have a producer on this unit. ci/check_library.py parses this file strictly - keep it comment-free.",
+  "caps": {
+    "camera": {
+      "ch": "c1",
+      "module": "de_camera",
+      "ver": "5.13.0",
+      "advert": {
+        "schema": "de.cap/1",
+        "ns": "camera",
+        "module": "droneengage_camera",
+        "ver": "5.13.0",
+        "desc": "events: camera.<ch>.went_recording|went_idle {src,reason,file?}; commands: camera.<ch>.capture{count?,interval_ms?}|record_on|record_off; channels: cam_0",
+        "actions": {
+          "capture": {
+            "desc": "Take a burst of photos",
+            "params": {
+              "count": {
+                "type": "int",
+                "min": 1,
+                "max": 100,
+                "default": 1,
+                "desc": "photos to take"
+              },
+              "interval_ms": {
+                "type": "int",
+                "min": 0,
+                "max": 60000,
+                "default": 0,
+                "unit": "ms"
+              },
+              "channel": {
+                "type": "string",
+                "default": "",
+                "desc": "camera channel: unique_name, resource key or configured name; empty = first"
+              },
+              "gcs_preview": {
+                "type": "bool",
+                "default": false,
+                "desc": "send a small PNG to the GCS"
+              }
+            },
+            "timeout_s": 10
+          },
+          "record": {
+            "desc": "Start or stop video recording",
+            "params": {
+              "on": {
+                "type": "bool"
+              },
+              "channel": {
+                "type": "string",
+                "default": "",
+                "desc": "camera channel: unique_name, resource key or configured name; empty = first"
+              }
+            },
+            "timeout_s": 10
+          },
+          "cam_0": {
+            "desc": "start/stop video recording on camera 'CAM'",
+            "timeout_s": 10,
+            "params": {
+              "record": {
+                "type": "bool",
+                "desc": "true = record, false = idle"
+              }
+            }
+          }
+        },
+        "events": {
+          "captured": {
+            "desc": "A photo was saved",
+            "payload": {
+              "file": {
+                "type": "string"
+              },
+              "pos": {
+                "type": "geo",
+                "optional": true,
+                "desc": "[lat,lng,alt_m] or null when no fresh fix"
+              },
+              "t": {
+                "type": "int",
+                "desc": "unix ms"
+              },
+              "n": {
+                "type": "int",
+                "desc": "index in burst"
+              },
+              "inv": {
+                "type": "string",
+                "optional": true,
+                "desc": "invoke id that started the burst"
+              },
+              "ch": {
+                "type": "string",
+                "optional": true,
+                "desc": "channel resource key"
+              }
+            }
+          },
+          "cam_0.went_recording": {
+            "payload": {
+              "src": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string",
+                "optional": true
+              }
+            }
+          },
+          "cam_0.went_idle": {
+            "payload": {
+              "src": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string",
+                "optional": true
+              }
+            }
+          },
+          "cam_0.capture": {},
+          "cam_0.record_on": {},
+          "cam_0.record_off": {},
+          "ghost.record_on": {},
+          "ghost.went_recording": {}
+        },
+        "state": {
+          "recording": {
+            "type": "bool"
+          }
+        }
+      }
+    }
+  },
+  "state": {},
+  "t": 0
+}

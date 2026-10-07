@@ -600,16 +600,23 @@ def _expand_unit(sim, b, name, entry, at, catalog):
     # (cam_labels - DE-SRC-k/DE-AI-k or the machine's named-VC labels)
     # the module finds by name, and the paired de_camera reads yolo's
     # annotated output device.
-    if "de_yolo_ai" in u["modules"]:
+    # TASK-EV-CAM: a de_camera unit with no de_yolo_ai is also a
+    # rendered camera when the sim runs the frame farm (render.mode
+    # cameras|full) - it reads the sink's DE-SRC-k device directly.
+    if _is_render_camera_unit(u["modules"], sim):
         k = sum(1 for x in sim["units"]
-                if "de_yolo_ai" in x["modules"])
+                if _is_render_camera_unit(x["modules"], sim))
         u["cam_index"] = k
         u["cam_labels"] = cam_labels(k)
         if "de_camera" in u["modules"]:
+            # "key" pins the camera.<key>.* event surface name
+            feed_label = u["cam_labels"][
+                1 if "de_yolo_ai" in u["modules"] else 0]
             u["config"]["de_camera"] = deep_merge(
                 {"camera": {"camera_list":
-                            [{"name": "AI",
-                              "device_name": u["cam_labels"][1]}]}},
+                            [{"name": "CAM",
+                              "device_name": feed_label,
+                              "key": "cam_0"}]}},
                 u["config"].get("de_camera") or {})
     # per-unit account: the drone's own login, like a real vehicle.
     # `{name}` in user expands to the unit name so `count:` fleets get
@@ -1030,7 +1037,11 @@ def gen_unit(u, sim, catalog):
         # is primed by render_sink (black frames until real frames come);
         # de_camera's input is produced by yolo itself. Missing label ->
         # gen_render errors before launch
-        wait_idx = {"de_yolo_ai": 0, "de_camera": 1}
+        # de_camera waits on its configured source: the annotated AI
+        # device when a de_yolo_ai produces it, else the render sink's
+        # own src device (TASK-EV-CAM)
+        wait_idx = {"de_yolo_ai": 0,
+                    "de_camera": 1 if "de_yolo_ai" in u["modules"] else 0}
         if m in wait_idx and u.get("cam_labels"):
             wait_dev = v4l2_label_map().get(u["cam_labels"][wait_idx[m]])
             if wait_dev:
@@ -1222,6 +1233,22 @@ def _render_script(sim, proc, cwd, cmd):
     return path
 
 
+def _is_render_camera_unit(modules, sim):
+    """A unit the P5-15 render sink feeds. de_yolo_ai units always are
+    (they read DE-SRC-k and annotate to DE-AI-k). A de_camera unit with
+    no de_yolo_ai is one only when the sim actually runs the frame farm
+    (render.mode cameras|full, not headless) - then de_camera reads
+    DE-SRC-k directly and the annotated AI device stays unused
+    (TASK-EV-CAM)."""
+    if "de_yolo_ai" in modules:
+        return True
+    if "de_camera" not in modules:
+        return False
+    render = sim.get("render") or {}
+    return (render.get("mode") in ("cameras", "full")
+            and not render.get("headless"))
+
+
 def cam_labels(k):
     """v4l2loopback card labels for rendered-camera unit k: default
     DE-SRC-k / DE-AI-k (what tools/setup_v4l2loopback.sh creates). On a
@@ -1262,10 +1289,9 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
     render_probe per unit reads the strip back off the device for the
     render_latency rows."""
     sink_js = os.path.join(m3d, "backend", "src", "render_sink.js")
-    cam_units = [u for u in sim["units"]
-                 if "de_yolo_ai" in u["modules"]]
+    cam_units = [u for u in sim["units"] if u.get("cam_labels")]
     if not cam_units:
-        # cameras mode on a sim with no de_yolo_ai unit: the viewer
+        # cameras mode on a sim with no rendered-camera unit: the viewer
         # procs still answer (the page renders the world), but there
         # is nothing to feed loopback devices with
         return []
@@ -1274,8 +1300,11 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
     for u in cam_units:
         src_label, ai_label = u.get("cam_labels",
                                     cam_labels(u["cam_index"]))
-        missing = [l for l in (src_label, ai_label)
-                   if l not in labels]
+        # a de_yolo_ai unit needs the src/ai pair; a bare de_camera
+        # unit (TASK-EV-CAM) is fed on src alone
+        needed = ((src_label, ai_label) if "de_yolo_ai" in u["modules"]
+                  else (src_label,))
+        missing = [l for l in needed if l not in labels]
         if missing:
             n = len(cam_units)
             raise SimError(

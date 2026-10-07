@@ -1,0 +1,90 @@
+{
+  "schema": "de.package/2.2",
+  "op": "camera_actions",
+  "op_hash": "sha256:f1a3995ac0118b0e8c6c06839225fdc1b163dd160200d21b01e820270db0e4cd",
+  "role": "actor",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [
+    "camera"
+  ],
+  "fc_items": [],
+  "missions": {
+    "cams": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [
+        "camera"
+      ],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "rec",
+          "k": "do",
+          "do": "camera.record",
+          "with": {
+            "on": true,
+            "channel": "cam_0"
+          },
+          "timeout": 15,
+          "on_error": "end"
+        },
+        {
+          "id": "g1",
+          "k": "gate",
+          "event": "camera.cam_0.went_recording",
+          "timeout": 10,
+          "on_timeout": "end"
+        },
+        {
+          "id": "idle",
+          "k": "do",
+          "do": "camera.cam_0",
+          "with": {
+            "record": false
+          },
+          "timeout": 15,
+          "on_error": "end"
+        },
+        {
+          "id": "g2",
+          "k": "gate",
+          "event": "camera.cam_0.went_idle",
+          "timeout": 10,
+          "on_timeout": "end"
+        },
+        {
+          "id": "e1",
+          "k": "emit",
+          "event": "camera.probe_done"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "camera.cam_0.went_recording": {},
+    "camera.cam_0.went_idle": {},
+    "camera.probe_done": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "actor": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "camera.cam_0.went_recording": 300,
+      "camera.cam_0.went_idle": 300,
+      "camera.probe_done": 300
+    }
+  },
+  "hash": "sha256:4821a74a995cbdb4705f5b109f8aacc6a25f5be80d346d5b441a41acfb1512b7"
+}

@@ -1,0 +1,28 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "camera_fire",
+    "comment": "TASK-EV-CAM operator_fire: the package only declares the camera event names so the unit latches went_* facts that the operator's `fire` commands drive through de_camera. The manual 'idle' mission never activates - operator fires drive the recorder through the module, never through the sensor lane.",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "copter", "requires": ["camera"] }
+    },
+
+    "events": {
+        "camera.cam_0.went_recording":  {},
+        "camera.cam_0.went_idle":       {},
+        "camera.idle_tick":             {}
+    },
+
+    "missions": {
+        "node": {
+            "idle": {
+                "trigger": "manual",
+                "end": "hold",
+                "steps": [
+                    { "id": "tick", "emit": "camera.idle_tick" }
+                ]
+            }
+        }
+    }
+}
