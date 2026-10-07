@@ -523,7 +523,8 @@ def start_proc(owner, proc):
     while time.time() - t0 < 3 and not os.path.isfile(pf):
         time.sleep(0.1)
     pid = open(pf).read().strip() if os.path.isfile(pf) else "?"
-    print(f"{owner}.{proc}: started pid {pid}")
+    print(f"{simlib.col_green(f'{owner}.{proc}')}: "
+          f"started pid {simlib.col_bold(pid)}")
 
 
 def server_procs(arg):
@@ -571,13 +572,15 @@ def wait_ready(units, timeout, marks=None):
             else:
                 hit = simlib.journal_match(u, rx, since)
             if hit:
-                print(f"{u['name']}: {key[1]} ready ({time.time() - t0:.0f}s)")
+                print(simlib.col_green(
+                    f"{u['name']}: {key[1]} ready "
+                    f"({time.time() - t0:.0f}s)"))
                 del pending[key]
         if pending:
             time.sleep(1)
     if pending:
-        print(f"TIMEOUT: not ready after {timeout}s: "
-              + ", ".join(f"{n}.{m}" for n, m in sorted(pending)))
+        print(simlib.col_red(f"TIMEOUT: not ready after {timeout}s: "
+              + ", ".join(f"{n}.{m}" for n, m in sorted(pending))))
         return False
     return True
 
@@ -1104,33 +1107,44 @@ def cmd_status():
     for name, m in mans.items():
         srv = m["server"]
         pids = simlib.read_pids(name)
-        print(f"sim {name} ({m.get('sim_file') or '-'}, {m['sim_hash']})")
+        print(f"sim {simlib.col_bold(name)} ({m.get('sim_file') or '-'}, "
+              f"{m['sim_hash']})")
         if srv["type"] == "external":
-            print(f"  server external {srv['ip']}:{srv['port']}"
-                  + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
-                     if srv["auth"] else "")
-                  + f"  control {srv['control_port']}")
+            conn = f"external {srv['ip']}:{srv['port']}" \
+                   + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
+                      if srv["auth"] else "")
+            print(f"  server {simlib.col_cyan(conn)}"
+                  f"  control {srv['control_port']}")
         else:
             print(f"  server {srv['type']}{' +auth' if srv['auth'] else ''}: "
-                  f"wss {srv['port']}  control {srv['control_port']}"
-                  + (f"  auth {srv['auth_port']}" if srv["auth"] else ""))
+                  + simlib.col_cyan(f"wss {srv['port']}  "
+                                    f"control {srv['control_port']}"
+                                    + (f"  auth {srv['auth_port']}"
+                                       if srv["auth"] else "")))
         for p in m["server_procs"]:
             pid = pids.get(f"server.{p}")
-            print(f"  {'server':10s} {p}={'run' if pid else 'DOWN'}"
-                  + (f"({pid})" if pid else ""))
+            state = simlib.col_green(f"run({pid})") if pid \
+                else simlib.col_red("DOWN")
+            print(f"  {'server':10s} {p}={state}")
         for u in m["units"]:
             bits = []
             for p in simlib.procs_of(u):
                 pid = pids.get(f"{u['name']}.{p}")
-                bits.append(f"{p}={'run' if pid else 'DOWN'}"
-                            + (f"({pid})" if pid else ""))
+                bits.append(f"{p}=" + (simlib.col_green(f"run({pid})")
+                                       if pid else simlib.col_red("DOWN")))
             fc = u["fc"]
-            extra = (f" {fc['vehicle']} sysid:{fc['sysid']} pilot:{fc['pilot_port']}"
+            extra = (f" {simlib.col_yellow(fc['vehicle'])}"
+                     f" sysid:{fc['sysid']}"
+                     f" pilot:{simlib.col_cyan(fc['pilot_port'])}"
                      if fc else " no-fc")
-            print(f"  {u['name']:10s} [{u['block']}]{extra} "
-                  f"udp:{u['ports']['de_comm']}  " + " ".join(bits))
+            print(f"  {simlib.col_green(u['name'])}"
+                  f"{' ' * max(0, 10 - len(u['name']))}"
+                  f"[{u['block']}]{extra} "
+                  f"udp:{simlib.col_cyan(u['ports']['de_comm'])}  "
+                  + " ".join(bits))
+        online = ", ".join(sorted(online_parties(name)))
         print("  online: "
-              + (", ".join(sorted(online_parties(name))) or "-"))
+              + (simlib.col_green(online) if online else "-"))
 
 
 def main(argv):
@@ -1437,11 +1451,13 @@ def main(argv):
                 seen |= online_parties(n)
             got = seen & want
             if got == want:
-                print(f"all {len(want)} units online ({time.time()-t0:.0f}s)")
+                print(simlib.col_green(
+                    f"all {len(want)} units online ({time.time()-t0:.0f}s)"))
                 return
             time.sleep(1)
-        sys.exit(f"TIMEOUT: {len(got)}/{len(want)} units online after "
-                 f"{timeout}s; missing {sorted(want - got)}")
+        sys.exit(simlib.col_red(
+            f"TIMEOUT: {len(got)}/{len(want)} units online after "
+            f"{timeout}s; missing {sorted(want - got)}"))
     elif c == "wait_ready":
         us = resolve(a[0] if a else "all")
         if not wait_ready(us, float(a[1]) if len(a) > 1 else 120):

@@ -49,7 +49,8 @@ and SITL's TCP ports listen on all interfaces.
 `./sim run` reuses a running sim only if it is the **same** sim (hash of the
 resolved units and server) and every process is alive. Otherwise it brings
 the sim up fresh. Several tests can share one sim and run back to back without
-restarting SITL.
+restarting SITL. Handed a bare `sims/*.yaml` file instead of a test, `run`
+(and `view`) just ensure the sim is up - there are no steps to execute.
 
 ## Blocks - reusable unit types
 
@@ -143,6 +144,17 @@ bridge login and needs the GCS permission bit; `server.unit_account`
 is the units' login - a unit-only account is right for it (a unit
 account cannot login as GCS). `up` fails early if the server isn't
 reachable.
+
+The same login and authenticator can come from the command line instead
+of the yaml / `sim.local.env`:
+
+    ./sim up sims/quadcopter.yaml --user me@x.com --password secret --auth-server 203.0.113.9:19408
+
+`--user`/`--password` make the whole sim (units + GCS bridge) log in
+with that account - they override `server.account`, `server.unit_account`,
+per-unit `account:` entries and the `SIM_*_AUTH_*` vars.
+`--auth-server <host[:port]>` overrides `auth_ip`/`auth_port` and
+is only valid on an external server with `auth: true`.
 
 The real servers run from their repos with a config **generated** under
 `run/<sim>/server/`. Their own `server.config(.local)` files are never
@@ -242,6 +254,8 @@ timeline, faults and assertions:
 ./run_scenario.py scenarios/faults/link_cut.yaml --seed 7 # a seed run
 ./run_scenario.py --suite scenarios/faults --seeds 1,2    # suite x seeds
 ./sim run scenarios/faults/kill.yaml                      # same engine via sim
+./sim view scenarios/p5/world_canopy_viewer.yaml          # sim + Mavlink3DMap
+                                                        # viewer, held till Ctrl-C
 ```
 
 Legacy `tests/*.yaml` (`sim:` + `steps:`) keep running unchanged through
@@ -295,6 +309,10 @@ Format (strict - unknown keys fail against
   `run/<sim>/render/` - `./sim up` prints the viewer URL
   `http://127.0.0.1:<web>/?world=ws://127.0.0.1:<stream>`
   and opens no browser. `headless: true` streams without them.
+  The world stream lives inside the runner process: `./sim view
+  <scenario>` (or `./sim run <scenario> --hold`) parks the run after
+  the timeline so the stream and the viewer stay live until Ctrl-C,
+  then assertions and teardown run as usual.
   P5-15: `mode: cameras|full` adds the rendered-camera farm on
   `blocks/copter_cam3d` units (real `de_yolo_ai` + `de_camera`):
   headless Chromium (`$CHROMIUM_BIN`) renders each unit's

@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """run_scenario.py - de.scenario/1 runner (TASK-P5-07).
 
-  ./run_scenario.py <scenario.yaml> [--seed N] [--keep]
+  ./run_scenario.py <scenario.yaml> [--seed N] [--keep] [--hold]
   ./run_scenario.py --suite <dir> --seeds 1,2,3
+
+--hold parks the run after the timeline with the world stream and the
+render procs still live (the interactive Mavlink3DMap session - ./sim
+view is the same thing) until Ctrl-C, then assertions/teardown run as
+usual.
 
 Each run gets its own port block (seed-derived slot_base) and its own
 results/<utc>/<name>/ directory: journals, process logs, telemetry.jsonl

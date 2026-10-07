@@ -11,11 +11,27 @@
   ./sim sims                       generated sims and live process counts
   ./sim status                     = ./sim ctl status
   ./sim ctl [-s <sim>] <cmd> ...   operator console (./sim ctl for help)
-  ./sim run <test.yaml> [--keep]   run a test (owns the machine: downs every
-                                   other sim); --keep skips the teardown
+  ./sim run <test.yaml> [--keep] [--hold|--view]
+                                   run a test (owns the machine: downs every
+                                   other sim); --keep skips the teardown,
+                                   --hold parks after the timeline (world
+                                   stream + Mavlink3DMap viewer live) until
+                                   Ctrl-C. A bare sims/*.yaml just comes
+                                   up (hash-reused, like up)
+  ./sim view <scenario.yaml>       one command for sim + Mavlink3DMap viewer:
+                                   = run --hold (the scenario needs
+                                   render: {mode: viewer})
   ./sim logs [-s <sim>] <unit|server> [proc]  tail a process log
   ./sim clean [--days N] [--all] [--dry-run]  prune run/ and results/
                                    (never a live sim; default keeps 7 days)
+
+Login overrides for show/up/run/view (win over the sim yaml and
+sim.local.env SIM_*_AUTH_*):
+  --user <name> --password <code>    the one account every unit and the
+                                     GCS bridge log in with (overrides
+                                     per-unit account: too)
+  --auth-server <host[:port]>        the authenticator (external server
+                                     with auth: true only)
 
 Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 (steps + assertions on a sim). See README.md.
@@ -23,6 +39,7 @@ Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -30,12 +47,62 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "eng
 import simlib
 
 
+def _print_usage():
+    """__doc__, colorized on a tty: the command in green, its
+    <params>/[flags] in yellow, the description in white."""
+    if not sys.stdout.isatty():
+        print(__doc__)
+        return
+    green, yellow, white, reset = \
+        "\033[32m", "\033[33m", "\033[37m", "\033[0m"
+    param_rx = re.compile(r"<[^>]*>|\[[^\]]*\]|\.\.\.")
+    for line in __doc__.splitlines():
+        # a usage row is "  <cmd><2+ spaces><description>"; a command
+        # filling the column has no description on its own line. Anything
+        # else (headers, wrapped descriptions, blanks) prints plain white
+        m = re.match(r"^(  \S.*?)(?:( {2,})(\S.*))?$", line)
+        if not m:
+            print(white + line + reset if line.strip() else line)
+            continue
+        cmd, pad, desc = m.group(1), m.group(2), m.group(3)
+        cmd = param_rx.sub(yellow + r"\g<0>" + green, cmd)
+        print(green + cmd + reset
+              + (pad + white + desc + reset if desc else ""))
+
+
+def _bad_flags(a, known):
+    """--flags in `a` that are not in `known` (the auth overrides were
+    already stripped). Typos like --view should fail, not be ignored."""
+    return [x for x in a if x.startswith("-") and x not in known]
+
+
+def _auth_flags(argv):
+    """Pull --user/--password/--auth-server <value> out of argv; they set
+    the sim's login and authenticator and may appear anywhere."""
+    rest, kw, i = [], {}, 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--user", "--password", "--auth-server"):
+            if i + 1 >= len(argv):
+                sys.exit(f"{a} needs a value")
+            kw[a[2:].replace("-", "_")] = argv[i + 1]
+            i += 2
+        else:
+            rest.append(a)
+            i += 1
+    return rest, kw
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help", "help"):
-        print(__doc__)
+        _print_usage()
         return 0
     c, a = argv[0], argv[1:]
     try:
+        if c in ("show", "up", "run", "view"):
+            a, auth = _auth_flags(a)
+            if auth:
+                simlib.cli_auth(**auth)
         if c == "blocks":
             for name in simlib.list_blocks():
                 b = simlib.load_block(name)
@@ -49,7 +116,12 @@ def main(argv):
             simlib.validate_block(b, simlib.load_catalog())
             print(json.dumps(b, indent=2))
         elif c == "show":
-            sim = simlib.load_sim(a[0])
+            files = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ())
+            if bad or len(files) != 1:
+                sys.exit("usage: ./sim show <sim.yaml>"
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+            sim = simlib.load_sim(files[0])
             srv = sim["server"]
             print(f"server {srv['type']}{' +auth' if srv['auth'] else ''}: "
                   f"wss {srv['port']} control {srv['control_port']}"
@@ -64,13 +136,19 @@ def main(argv):
                       + f"  @{u['position']['lat']:.6f},{u['position']['lng']:.6f}")
         elif c == "up":
             import launcher
-            files = [x for x in a if not x.startswith("--")]
-            if len(files) != 1:
-                sys.exit("usage: ./sim up <sim.yaml> [--fresh]")
+            files = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ("--fresh",))
+            if bad or len(files) != 1:
+                sys.exit("usage: ./sim up <sim.yaml> [--fresh]"
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
             launcher.up(files[0], fresh="--fresh" in a)
         elif c == "down":
             import launcher
-            names = [x for x in a if not x.startswith("--")]
+            names = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ("--all",))
+            if bad:
+                sys.exit("usage: ./sim down [name|--all]"
+                         + f" - unknown {' '.join(bad)}")
             launcher.down(None if not names or "--all" in a else names[0])
         elif c == "sims":
             names = simlib.sim_names()
@@ -90,11 +168,24 @@ def main(argv):
             ctl.main(a)
         elif c == "run":
             import scenario_runner
-            files = [x for x in a if not x.startswith("--")]
-            if len(files) != 1:
-                sys.exit("usage: ./sim run <test.yaml> [--keep]")
+            files = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ("--keep", "--hold", "--view"))
+            if bad or len(files) != 1:
+                sys.exit("usage: ./sim run <test.yaml> "
+                         "[--keep] [--hold|--view]"
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
             # legacy tests -> runner.py, de.scenario/1 -> the P5-07 engine
-            return scenario_runner.run(files[0], keep="--keep" in a)
+            return scenario_runner.run(files[0], keep="--keep" in a,
+                                       hold=bool({"--hold", "--view"}
+                                                 & set(a)))
+        elif c == "view":
+            import scenario_runner
+            files = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ())
+            if bad or len(files) != 1:
+                sys.exit("usage: ./sim view <scenario.yaml>"
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+            return scenario_runner.run(files[0], hold=True)
         elif c == "logs":
             sim_name = None
             if a and a[0] in ("-s", "--sim"):
@@ -118,10 +209,10 @@ def main(argv):
             import clean
             return clean.main(a)
         else:
-            print(__doc__)
+            _print_usage()
             return 1
     except simlib.SimError as e:
-        sys.exit(f"error: {e}")
+        sys.exit(simlib.col_red("error:") + f" {e}")
     return 0
 
 

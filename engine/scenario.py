@@ -72,6 +72,14 @@ def is_legacy_spec(raw):
         "timeline" not in raw and "fleet" not in raw
 
 
+def is_sim_spec(raw):
+    """A sims/*.yaml fleet file (version + units:, no steps/timeline/
+    fleet): `./sim run|view` on one just ensures the sim is up - there
+    is nothing to execute."""
+    return isinstance(raw, dict) and "units" in raw and \
+        "steps" not in raw and "timeline" not in raw and "fleet" not in raw
+
+
 def _validate(raw, path):
     try:
         import jsonschema

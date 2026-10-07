@@ -59,6 +59,8 @@ is now the only simulation/testing location.
     ./sim blocks                              # what unit types exist
     ./sim show sims/copters3.yaml             # resolved units, ports, positions (no side effects)
     ./sim run tests/smoke_copters.yaml        # up if needed -> steps -> asserts -> teardown
+    ./sim view scenarios/p5/world_canopy_viewer.yaml  # sim + Mavlink3DMap viewer
+                                              # (= run --hold) until Ctrl-C
     ./sim ctl status                          # live procs + units seen online by the GCS
     ./sim logs copter1 de_comm                # tail a process log
     ./sim clean --days 7                      # prune run/ + results/ (never a live sim)
@@ -184,15 +186,21 @@ and make `ctl.ctrl` refuse it for that server type.
   intent is the running fleet.
 - `server: {type: external}` spawns no server - the sim's units and GCS
   bridge join a server stack the user runs. Its `account` (or
-  `SIM_AUTH_USER`/`SIM_AUTH_CODE` in `sim.local.env`) must exist on that
-  authenticator; with `account_storage_type: db` create it in the
-  webadmin first.
+  `SIM_AUTH_USER`/`SIM_AUTH_CODE` in `sim.local.env`, or `./sim --user`/
+  `--password`/`--auth-server` on the command line - they win over both)
+  must exist on that authenticator; with `account_storage_type: db`
+  create it in the webadmin first.
 - `land`: copter LAND, rover HOLD + disarm, plane → `reset` (it cannot land
   in place). Always tear down: an airborne reused fleet drains its battery
   and the next test trips `battery_low`.
 - `ensure` decides reuse by the sim hash. Any change to a block, sim or
   server settings changes the hash and forces a fresh `up`. That is
   intended.
+- The world stream (`de.worldstream/1`) is a thread inside the scenario
+  runner - it dies when the run exits. `./sim view` / `run --hold`
+  parks the run after the timeline so a viewer session survives; the
+  render procs (vite, mav_bridge) are pid-tracked daemons like units,
+  so a leftover viewer is stopped by `sim down`, not by the run ending.
 
 ## Verifying engine changes
 

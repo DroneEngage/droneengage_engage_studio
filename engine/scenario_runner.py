@@ -504,6 +504,27 @@ def run_timeline(scn, ctx):
     return ok
 
 
+def _hold(m, world_stream=False):
+    """--hold: park the run after the timeline with the world stream,
+    truth recorder, operator bot and render procs still live - the
+    interactive Mavlink3DMap session. Ctrl-C releases into the normal
+    assertions/teardown. `world_stream` says a de.worldstream/1 feed is
+    live on render.stream_port - only then does the printed URL carry
+    ?world= (a bare sim has no stream)."""
+    render = m.get("render") or {}
+    print(simlib.col_bold("\n== holding - Ctrl-C to finish the run =="),
+          flush=True)
+    if render:
+        print("render viewer: " + simlib.col("1;36",
+              simlib.render_viewer_url(render, world_stream)),
+              flush=True)
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("hold released\n", flush=True)
+
+
 # ---------------------------------------------------------------- results
 
 def _results_dir(scn):
@@ -597,9 +618,10 @@ def _collect(scn, m, out, results, verify, extra):
 
 # ------------------------------------------------------------------ main
 
-def run_scenario(t_file, seed=None, keep=False):
+def run_scenario(t_file, seed=None, keep=False, hold=False):
     """One de.scenario/1 run -> exit code (0 = every non-SKIP assertion
-    passed and no step failed)."""
+    passed and no step failed). hold parks the run after the timeline
+    (the world stream and the render procs stay live) until Ctrl-C."""
     t_file = os.path.abspath(t_file)
     scn = scenario.load_scenario(t_file, seed=seed)
     if scn["legacy"]:
@@ -629,7 +651,7 @@ def run_scenario(t_file, seed=None, keep=False):
                        "server_procs": []}, out, [], True, [])
         return 1
 
-    m = launcher.ensure(scn["sim"])
+    m = launcher.ensure(scn["sim"], world_stream=(wld is not None))
     ctl.CTX = runner.SIM_NAME = m["name"]
     ctx = {"manifest": m, "sim": m["name"], "scn": scn,
            "server": m["server"], "bot": None,
@@ -686,6 +708,8 @@ def run_scenario(t_file, seed=None, keep=False):
     ok = True
     try:
         ok &= run_timeline(scn, ctx)
+        if hold:
+            _hold(m, world_stream=ctx.get("world_stream") is not None)
     except Exception as e:
         # a runner bug must still reach assertions/teardown/stop(): the
         # bot, telemetry and link threads and the fleet are never leaked
@@ -804,13 +828,25 @@ def run_scenario(t_file, seed=None, keep=False):
     return 0 if ok and n_fail == 0 else 1
 
 
-def run(t_file, keep=False):
+def run(t_file, keep=False, hold=False):
     """`./sim run` dispatcher: legacy tests -> runner.py, scenarios ->
-    the de.scenario/1 engine."""
+    the de.scenario/1 engine. hold is scenario-only (a legacy test has
+    no world stream to keep alive). A bare sims/*.yaml file has no
+    steps - it is just ensured up, like ./sim up but hash-reused."""
     raw = simlib.load_yaml(os.path.abspath(t_file))
+    if scenario.is_sim_spec(raw):
+        print(simlib.col_yellow(
+            f"{t_file} is a sim, not a test - no steps to run; "
+            "bringing the fleet up"), flush=True)
+        m = launcher.ensure(t_file)
+        if hold:
+            _hold(m)
+            print(simlib.col_green("sim is still up")
+                  + " - ./sim down to stop it", flush=True)
+        return 0
     if scenario.is_legacy_spec(raw):
         return runner.run(t_file, keep=keep)
-    return run_scenario(t_file, keep=keep)
+    return run_scenario(t_file, keep=keep, hold=hold)
 
 
 def run_suite(suite_dir, seeds, keep=False):
@@ -837,7 +873,8 @@ def run_suite(suite_dir, seeds, keep=False):
 
 def main(argv):
     keep = "--keep" in argv
-    argv = [a for a in argv if a != "--keep"]
+    hold = "--hold" in argv
+    argv = [a for a in argv if a not in ("--keep", "--hold")]
     seeds = [1]
     suite = None
     t_file = None
@@ -858,9 +895,9 @@ def main(argv):
     if suite:
         return run_suite(os.path.abspath(suite), seeds, keep)
     if not t_file:
-        sys.exit("usage: run_scenario.py <file.yaml> [--seed N] | "
-                 "--suite <dir> [--seeds 1,2,3]")
-    return run_scenario(t_file, seed=seeds[0], keep=keep)
+        sys.exit("usage: run_scenario.py <file.yaml> [--seed N] [--keep] "
+                 "[--hold] | --suite <dir> [--seeds 1,2,3]")
+    return run_scenario(t_file, seed=seeds[0], keep=keep, hold=hold)
 
 
 if __name__ == "__main__":

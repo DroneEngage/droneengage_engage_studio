@@ -110,6 +110,11 @@ SPACING_M = 20.0                    # default: units 20 m apart, northward
 GCS_PARTY = "GCS_FLEET"
 FULL_PERM = 0xFFFFFFFF
 
+# Command-line login overrides (./sim --user/--password/--auth-server):
+# they win over the sim yaml, sim.local.env and the defaults. The `sim`
+# front-end fills this via cli_auth(); load_server applies it.
+CLI_AUTH = {}
+
 DE_COMM_BIN = setting("DE_COMM_BIN", os.path.join(COMM_REPO, "bin", "de_comm"))
 DE_COMM_PORT_BASE = 62000
 
@@ -138,6 +143,20 @@ NAME_RX = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
 class SimError(Exception):
     pass
+
+
+# ANSI colors for the operator-facing output - plain text when stdout is
+# not a tty (piped runs, captured logs)
+def col(code, s):
+    return f"\033[{code}m{s}\033[0m" if sys.stdout.isatty() else str(s)
+
+
+def col_green(s):  return col("32", s)     # ok: online, ready, unit up
+def col_yellow(s): return col("33", s)     # notices / warnings
+def col_red(s):    return col("1;31", s)   # failures
+def col_cyan(s):   return col("36", s)     # hosts, ports, URLs
+def col_bold(s):   return col("1", s)      # key values: names, pids
+def col_dim(s):    return col("2", s)      # progress noise
 
 
 # ---------------------------------------------------------------- json/yaml
@@ -447,7 +466,11 @@ def load_server(srv, slot_base=None):
       expands to the unit name). Fallbacks: sim.local.env
       SIM_AUTH_USER / SIM_AUTH_CODE for the GCS, SIM_UNIT_AUTH_USER /
       SIM_UNIT_AUTH_CODE for units, then `account` for units too - so
-      credentials stay out of git and single-account sims keep working."""
+      credentials stay out of git and single-account sims keep working.
+      ./sim --user/--password (CLI_AUTH) top every layer: `account`,
+      `unit_account` and per-unit `account:` - one login for the whole
+      sim. --auth-server <host[:port]> overrides auth_ip/auth_port on
+      external sims."""
     bad = set(srv) - {"type", "ip", "port", "auth", "account",
                       "unit_account", "seed", "clock_offset_ms", "noclock",
                       "auth_ip", "auth_port", "auth_verify_ssl",
@@ -460,23 +483,40 @@ def load_server(srv, slot_base=None):
     if t == "fake" and srv.get("auth"):
         raise SimError("sim server: auth needs type real")
     acc = srv.get("account") or {}
-    user = acc.get("user") or setting("SIM_AUTH_USER", "sim@sim.droneengage.com")
-    code = str(acc.get("code") or setting("SIM_AUTH_CODE", "sim1234"))
+    user = CLI_AUTH.get("user") or acc.get("user") or \
+        setting("SIM_AUTH_USER", "sim@sim.droneengage.com")
+    code = str(CLI_AUTH.get("code") or acc.get("code") or
+               setting("SIM_AUTH_CODE", "sim1234"))
     check_account(user, code, "server.account")
+    cli_login = bool(CLI_AUTH.get("user") or CLI_AUTH.get("code"))
+    auth_on = bool(srv.get("auth", t == "external"))
+    if cli_login and not auth_on:
+        raise SimError("--user/--password have no effect - server auth "
+                       "is off")
+    if (CLI_AUTH.get("auth_ip") or CLI_AUTH.get("auth_port")) and \
+            (t != "external" or not auth_on):
+        raise SimError("--auth-server needs server: {type: external, "
+                       "auth: true}")
     # the units' own login - on an external server it is usually a
     # different, unit-only account (a unit account cannot login as GCS).
     # unit_account -> SIM_UNIT_AUTH_* -> account (single-account sims keep
     # working). Only external servers use it: a spawned authenticator
-    # knows the single `account` only.
-    unit_acc = srv.get("unit_account") or {}
-    unit_user = unit_acc.get("user") or setting("SIM_UNIT_AUTH_USER")
-    unit_code = str(unit_acc.get("code") or
-                    setting("SIM_UNIT_AUTH_CODE", ""))
-    if unit_user:
-        if not unit_code:
-            raise SimError("server.unit_account: user set but no code "
-                           "(unit_account.code or SIM_UNIT_AUTH_CODE)")
-        check_account(unit_user, unit_code, "server.unit_account")
+    # knows the single `account` only. --user/--password replace it - one
+    # login for the whole sim.
+    if cli_login:
+        unit_login = {"user": user, "code": code}
+    else:
+        unit_acc = srv.get("unit_account") or {}
+        unit_user = unit_acc.get("user") or setting("SIM_UNIT_AUTH_USER")
+        unit_code = str(unit_acc.get("code") or
+                        setting("SIM_UNIT_AUTH_CODE", ""))
+        if unit_user:
+            if not unit_code:
+                raise SimError("server.unit_account: user set but no code "
+                               "(unit_account.code or SIM_UNIT_AUTH_CODE)")
+            check_account(unit_user, unit_code, "server.unit_account")
+        unit_login = {"user": unit_user, "code": unit_code} \
+            if unit_user else None
     if t == "external":
         return {
             "type": t,
@@ -485,12 +525,13 @@ def load_server(srv, slot_base=None):
             "control_port": int(srv.get("control_port") or
                                 62009 + int(slot_base or SLOT_BASE)),
             "auth": bool(srv.get("auth", True)),
-            "auth_ip": srv.get("auth_ip", "127.0.0.1"),
-            "auth_port": int(srv.get("auth_port", 19408)),
+            "auth_ip": CLI_AUTH.get("auth_ip") or srv.get("auth_ip",
+                                                         "127.0.0.1"),
+            "auth_port": int(CLI_AUTH.get("auth_port") or
+                             srv.get("auth_port", 19408)),
             "auth_verify_ssl": bool(srv.get("auth_verify_ssl", False)),
             "account": {"user": user, "code": code},
-            "unit_account": ({"user": unit_user, "code": unit_code}
-                             if unit_user else None),
+            "unit_account": unit_login,
             "gcs_party": srv.get("gcs_party"),
             "seed": 0, "clock_offset_ms": 0, "noclock": [],
         }
@@ -556,6 +597,18 @@ def _render_spec(raw, slot_base):
                                      SINK_PORT_BASE + slot_base))}
 
 
+def render_viewer_url(render, world_stream=True):
+    """The printed Mavlink3DMap URL. `world_stream` is only True when a
+    de.worldstream/1 feed will serve stream_port - i.e. a scenario with
+    a world. The ?world= param selects the DE world scene, whose vehicle
+    frame is gated on the stream's hello: advertising it without the
+    stream pins vehicles at the origin (attitude still works)."""
+    q = (f"world=ws://127.0.0.1:{render['stream_port']}&"
+         if world_stream else "")
+    return (f"http://127.0.0.1:{render['web_port']}/?{q}"
+            f"mavlink=ws://127.0.0.1:{render['mav_ws_port']}")
+
+
 def check_account(user, code, where):
     """droneengage_authenticator rule (hlp_strings.fn_isValidAccountName /
     fn_isAlphanumeric): a bad name is refused as "API endpoint not found"."""
@@ -565,6 +618,31 @@ def check_account(user, code, where):
                        "e-mail with a TLD (the authenticator refuses others)")
     if not re.fullmatch(r"[A-Za-z0-9]+", code):
         raise SimError(f"{where}.code must be alphanumeric")
+
+
+def cli_auth(user=None, password=None, auth_server=None):
+    """Store the ./sim --user/--password/--auth-server overrides.
+    `auth_server` is host[:port] - a bare number is the port, an optional
+    http(s):// scheme is dropped."""
+    if user:
+        CLI_AUTH["user"] = user
+    if password:
+        CLI_AUTH["code"] = password
+    if auth_server:
+        s = str(auth_server).split("://", 1)[-1]
+        if ":" in s:
+            host, _, port = s.rpartition(":")
+        elif s.isdigit():
+            host, port = "", s          # bare number = port only
+        else:
+            host, port = s, ""          # bare hostname, default port
+        if host:
+            CLI_AUTH["auth_ip"] = host
+        if port:
+            try:
+                CLI_AUTH["auth_port"] = int(port)
+            except ValueError:
+                raise SimError(f"--auth-server {auth_server!r}: bad port")
 
 
 def _expand_unit(sim, b, name, entry, at, catalog):
@@ -620,10 +698,11 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                 u["config"].get("de_camera") or {})
     # per-unit account: the drone's own login, like a real vehicle.
     # `{name}` in user expands to the unit name so `count:` fleets get
-    # quad1@.., quad2@.. - None falls back to server.account
+    # quad1@.., quad2@.. - None falls back to server.account.
+    # ./sim --user/--password override it like every other login setting.
     acc = entry.get("account")
     u["account"] = None
-    if acc:
+    if acc and not (CLI_AUTH.get("user") or CLI_AUTH.get("code")):
         user = str(acc.get("user", "")).replace("{name}", name)
         code = str(acc.get("code") or
                    setting("SIM_AUTH_CODE", "sim1234"))

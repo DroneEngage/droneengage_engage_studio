@@ -82,7 +82,8 @@ def down(name=None, quiet=False):
         if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
             os.kill(p, signal.SIGKILL)
     if not quiet:
-        print(f"sim stopped ({len(pids) + len(strays)} processes)")
+        print(simlib.col_yellow(
+            f"sim stopped ({len(pids) + len(strays)} processes)"))
 
 
 def _stray_pids(name=None):
@@ -120,9 +121,9 @@ def wait_port(port, timeout):
     return False
 
 
-def port_busy(port):
+def port_busy(port, host="127.0.0.1", timeout=0.5):
     try:
-        socket.create_connection(("127.0.0.1", port), 0.5).close()
+        socket.create_connection((host, port), timeout).close()
         return True
     except OSError:
         return False
@@ -147,10 +148,13 @@ def _shared():
     return os.environ.get("SIM_SHARED") == "1"
 
 
-def up(sim_src, fresh=False, timeout=180, exclusive=False):
+def up(sim_src, fresh=False, timeout=180, exclusive=False,
+       world_stream=False):
     """sim_src: a sim file path, or an inline sim dict (from a test).
     Restarts only the same-named sim; `exclusive` (test runs) downs every
-    other sim first."""
+    other sim first. `world_stream` says the caller will serve
+    de.worldstream/1 on render.stream_port (a scenario with a world) -
+    the printed viewer URL only advertises ?world= then."""
     sim = simlib.load_sim(sim_src)
     name = sim["name"]
     srv = sim["server"]
@@ -166,34 +170,51 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False):
         # nothing local to bind except this sim's control port; but the
         # user's server must be reachable or no unit ever comes online
         if port_busy(srv["control_port"]):
-            sys.exit(f"control port {srv['control_port']} is in use - set "
-                     "`server: {control_port: ...}` in the sim")
+            sys.exit(simlib.col_red(
+                f"control port {srv['control_port']} is in use - set "
+                "`server: {control_port: ...}` in the sim"))
         host, port = (srv["auth_ip"], srv["auth_port"]) if srv["auth"] \
             else (srv["ip"], srv["port"])
-        if not port_busy(port):
-            sys.exit(f"cannot reach the external server at {host}:{port} - "
-                     "start your servers (servers/sh_start_servers.sh) or "
-                     "fix the sim's server: block")
+        if not port_busy(port, host, timeout=5):
+            sys.exit(simlib.col_red(
+                f"cannot reach the external server at {host}:{port} - "
+                "start your servers (servers/sh_start_servers.sh) or "
+                "fix the sim's server: block"))
     else:
         busy = [p for p in ([srv["port"], srv["control_port"]]
                             + ([srv["auth_port"], srv["auth_s2s_port"]]
                                if srv["auth"] else []))
                 if port_busy(p)]
         if busy:
-            sys.exit(f"ports {busy} are in use by something else - set "
-                     "`server: {port: ...}` in the sim")
+            sys.exit(simlib.col_red(
+                f"ports {busy} are in use by something else - set "
+                "`server: {port: ...}` in the sim"))
     rdir = simlib.run_dir(name)
     if fresh and os.path.isdir(rdir):
         shutil.rmtree(rdir)
     os.makedirs(simlib.pids_dir(name), exist_ok=True)
     m = simlib.generate(sim, _label(sim_src))
-    print(f"sim {name}: {len(m['units'])} unit(s), "
-          + (f"external server {srv['ip']}:{srv['port']}"
-             + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
-                if srv["auth"] else "")
-             if srv["type"] == "external" else
-             f"server {srv['type']}{' +auth' if srv['auth'] else ''} "
-             f"on {srv['port']}"))
+    conn = (f"external server {srv['ip']}:{srv['port']}"
+            + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
+               if srv["auth"] else "")
+            if srv["type"] == "external" else
+            f"server {srv['type']}{' +auth' if srv['auth'] else ''} "
+            f"on {srv['port']}")
+    print(f"sim {simlib.col_bold(name)}: {len(m['units'])} unit(s), "
+          + simlib.col_cyan(conn))
+    # the resolved fleet: unit, vehicle and ports - the initial settings
+    # the run is about to launch with
+    for u in m["units"]:
+        fc = u["fc"]
+        print("  " + simlib.col_green(f"{u['name']:12s}")
+              + (f"{simlib.col_yellow(fc['vehicle'])} "
+                 f"sysid={fc['sysid']} "
+                 f"pilot={simlib.col_cyan(fc['pilot_port'])} "
+                 f"fcb={simlib.col_cyan(fc['fcb_port'])} "
+                 if fc else "no-fc ")
+              + " ".join(f"{mod}:{simlib.col_cyan(p)}"
+                         for mod, p in u["ports"].items())
+              + (f" acc={u['account']['user']}" if u.get("account") else ""))
 
     # ---- server side ----
     ctl.CTX = name
@@ -202,11 +223,16 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False):
     for p in m["server_procs"]:
         ctl.start_proc("server", p)
         if p == "de_auth" and not wait_port(srv["auth_port"], 30):
-            sys.exit(f"authenticator did not open its port - see {rdir}/server/logs/de_auth.log")
+            sys.exit(simlib.col_red(
+                "authenticator did not open its port - see "
+                f"{rdir}/server/logs/de_auth.log"))
         if p in ("de_server", "fake_server") and not wait_port(srv["port"], 30):
-            sys.exit(f"{p} did not open {srv['port']} - see {rdir}/server/logs/{p}.log")
+            sys.exit(simlib.col_red(
+                f"{p} did not open {srv['port']} - "
+                f"see {rdir}/server/logs/{p}.log"))
     if not wait_port(srv["control_port"], 15):
-        sys.exit(f"control port did not open - see {rdir}/server/logs/")
+        sys.exit(simlib.col_red(
+            f"control port did not open - see {rdir}/server/logs/"))
 
     # ---- render viewer (P5-14): Mavlink3DMap bridge + vite dev ----
     render = m.get("render") or {}
@@ -214,23 +240,26 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False):
         ctl.start_proc("render", p)
     if render and m.get("render_procs"):
         if not wait_port(render["mav_ws_port"], 15):
-            sys.exit(f"mav_bridge did not open {render['mav_ws_port']} - "
-                     f"see {rdir}/render/logs/mav_bridge.log")
+            sys.exit(simlib.col_red(
+                f"mav_bridge did not open {render['mav_ws_port']} - "
+                f"see {rdir}/render/logs/mav_bridge.log"))
         # vite cold-starts slowly on a big dep tree; warn, don't fail -
         # the URL still works once it is up
         if not wait_port(render["web_port"], 30):
-            print(f"web viewer slow to open {render['web_port']} - "
-                  f"see {rdir}/render/logs/web.log")
-        print(f"render viewer: http://127.0.0.1:{render['web_port']}"
-              f"/?world=ws://127.0.0.1:{render['stream_port']}"
-              f"&mavlink=ws://127.0.0.1:{render['mav_ws_port']}")
+            print(simlib.col_yellow(
+                f"web viewer slow to open {render['web_port']} - "
+                f"see {rdir}/render/logs/web.log"))
+        print("render viewer: " + simlib.col("1;36",
+              simlib.render_viewer_url(render, world_stream)))
         if render.get("mode") in ("cameras", "full") \
                 and "render_sink" in m.get("render_procs", []):
             if not wait_port(render["sink_port"], 15):
-                sys.exit(f"render_sink did not open {render['sink_port']} "
-                         f"- see {rdir}/render/logs/render_sink.log")
-            print(f"render farm: sink ws://127.0.0.1:{render['sink_port']} "
-                  "+ headless chromium")
+                sys.exit(simlib.col_red(
+                    f"render_sink did not open {render['sink_port']} "
+                    f"- see {rdir}/render/logs/render_sink.log"))
+            print("render farm: "
+                  + simlib.col_cyan(f"ws://127.0.0.1:{render['sink_port']}")
+                  + " + headless chromium")
 
     # ---- units ----
     for u in m["units"]:
@@ -239,25 +268,32 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False):
         for p in simlib.procs_of(u):
             ctl.start_proc(u["name"], p)
 
-    print("waiting for every unit to come online ...", flush=True)
+    print(simlib.col_dim("waiting for every unit to come online ..."),
+          flush=True)
     try:
         ctl.main(["wait_online", str(timeout)])
     except SystemExit as e:
         if e.code:
             print(e.code)
-            sys.exit("sim up FAILED (units offline) - check run/<unit>/logs/de_comm.log")
+            sys.exit(simlib.col_red(
+                "sim up FAILED (units offline) - check "
+                "run/<unit>/logs/de_comm.log"))
     if not ctl.wait_ready(m["units"], timeout):
-        sys.exit("sim up FAILED (modules not ready) - check run/<unit>/logs/")
-    print("sim up. operator console: ./sim ctl status"
-          + ("\nSITL needs ~1-2 min for GPS/EKF before `arm` succeeds."
+        sys.exit(simlib.col_red(
+            "sim up FAILED (modules not ready) - check run/<unit>/logs/"))
+    print(simlib.col_green("sim up.")
+          + " operator console: ./sim ctl status"
+          + (simlib.col_yellow(
+             "\nSITL needs ~1-2 min for GPS/EKF before `arm` succeeds.")
              if any(u["fc"] for u in m["units"]) else ""))
     return m
 
 
-def ensure(sim_src, timeout=180):
+def ensure(sim_src, timeout=180, world_stream=False):
     """Reuse the running sim if it is the same sim (hash) and every
     process is alive; otherwise bring it up fresh. Tests are exclusive:
-    a fresh up downs every other sim."""
+    a fresh up downs every other sim. `world_stream` is passed to `up`
+    for the viewer URL's ?world= param."""
     sim = simlib.load_sim(sim_src)
     m = simlib.load_manifest(sim["name"], required=False)
     if m and m.get("sim_hash") == sim["hash"]:
@@ -272,6 +308,20 @@ def ensure(sim_src, timeout=180):
                 if other != sim["name"]:
                     down(other, quiet=True)
             ctl.CTX = sim["name"]
+            print(simlib.col_dim(
+                f"sim {sim['name']} already up and unchanged - reusing"),
+                flush=True)
             return m
-        print(f"sim incomplete (down: {sorted(need - alive)}) - restarting")
-    return up(sim_src, fresh=True, timeout=timeout, exclusive=True)
+        if alive:
+            print(simlib.col_yellow(
+                f"sim {sim['name']} incomplete "
+                f"(down: {sorted(need - alive)}) - restarting"),
+                flush=True)
+        else:
+            print(simlib.col_dim(f"sim {sim['name']} is down - starting"),
+                  flush=True)
+    elif m:
+        print(simlib.col_yellow(
+            f"sim {sim['name']} spec changed - restarting"), flush=True)
+    return up(sim_src, fresh=True, timeout=timeout, exclusive=True,
+              world_stream=world_stream)
