@@ -133,7 +133,7 @@ class WorldStream:
     """The per-run de.worldstream/1 server. start() spawns a daemon
     thread with its own asyncio loop; stop() shuts it down. Client
     connects/disconnects and event counts append to
-    run/<sim>/worldstream.log (collected into results/)."""
+    var/run/<sim>/worldstream.log (collected into var/results/)."""
 
     def __init__(self, world, manifest, epoch_ms, port, truth_path,
                  log_path, bot=None):

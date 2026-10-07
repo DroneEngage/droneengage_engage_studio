@@ -1,0 +1,145 @@
+# p4b/p4b10_i_static_sources - TASK-P4B-10 acceptance I: the same SAR op
+# with STATIC sensor masts instead of a flying SDR scout; the phone
+# target is confirmed by two independent sources (k_sources_within k:2).
+#
+# Op:    packages/sar_forest_static.deploy.json - fleet roles cam_scout,
+#        sdr_mast x2 (static), cam_mast (static), searcher x3, ambulance;
+#        the phone confirm rule is k_sources_within k:2.
+# Fleet: NO sdr1. sdrm1 + sdrm2 (cls static + stub_sdr) are the two
+#        independent phone sources; camm1 (cls static + stub_ai_box) is
+#        a static PERSON source. k_sources_within counts sources within
+#        ONE target class (B4-01): a camera is never a phone source -
+#        its 1078 boxes carry class "person", which W5 rejects against
+#        the phone target - so the spec's "mast SDR + camera" k:2 pair is
+#        realised as two SDR masts, and the camera mast stands on
+#        person_1 (the 4 m nadir mast's footprint is only a few metres)
+#        to feed the SU-04 projection. Placement is dictated by the world
+#        sensor model, not realism: the sdr gate is ~600 m, so the masts
+#        sit ~10-30 m from phone_1.
+#
+# Proves per spec:
+#   - statics are NEVER allocated: no ALLOC_*/CLAIM/TAKEOVER lines on a
+#     static unit, no FC command ever issued to a static
+#     (no_fc_command_to_static), no NavMode
+#   - static sensor lanes run their whole mission and drain on OP_END:
+#     "S: op ended - N sensor slot(s) ending" then the lane's on_exit
+#     rows journal their stop actions (sdr.stop / camera.record style
+#     id= lines, following tests/su/su_op_end_sensors.yaml)
+#   - the rest of the SAR chain still completes -> OP_END
+version: 1
+name: p4b10_i_static_sources
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/sar_forest_static.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 180
+operator:
+  approve: {launch: {after_s: 2}, action: {after_s: 2}}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0}}
+  - {id: sdrm1, cls: static, role: sdr_mast, modules: [stub_sdr],
+     base: [-35.360220, 149.168120, 584, 0]}
+  - {id: sdrm2, cls: static, role: sdr_mast, modules: [stub_sdr],
+     base: [-35.360040, 149.168120, 584, 0]}
+  # on person_1 (-35.3605671, 149.1679909): the 4 m nadir mast's
+  # footprint is ~2-3 m, so it has to stand on the casualty to box it
+  - {id: camm1, cls: static, role: cam_mast, modules: [stub_ai_box],
+     base: [-35.3605671, 149.1679909, 584, 0]}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  # statics have no FC - mode/arm resolve on with_fc units only
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "scout1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  # both static sensor lanes are up before the chain needs them
+  - {t: 33, do: wait_journal, unit: "sdrm1,sdrm2,camm1", re: "S: .* activated",
+     timeout: 120}
+  # two independent sources must see phone_1 before the WM confirms it
+  - {t: 35, do: wait_journal, unit: "all", re: "WM_NEW .* cls=phone",
+     timeout: 240}
+  - {t: 40, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by k_sources_within", timeout: 120}
+  - {t: 45, do: wait_journal, unit: "s1,s2,s3",
+     re: "CLAIM .* index [0-9]+ of 3", timeout: 120}
+  - {t: 50, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 600}
+  - {t: 55, do: wait_journal, unit: "amb1", re: "emit payload\\.dropped",
+     timeout: 480}
+  - {t: 60, do: wait_journal, unit: "all", re: "OP_END payload\\.dropped",
+     timeout: 240}
+  # let the RTL/LAND mode reach the status the final_state asserts read
+  - {t: 99, do: wait, seconds: 25}
+  # the static sensor lanes drain their on_exit rows on OP_END
+  - {t: 65, do: wait_journal, unit: "sdrm1,sdrm2",
+     re: "S: watch_rf on_exit sdr\\.stop id=", timeout: 120}
+  - {t: 70, do: wait_journal, unit: "camm1",
+     re: "S: watch on_exit camera\\.record id=", timeout: 120}
+assert:
+  # the phone appeared and took TWO sources to confirm - the k_sources
+  # journal line only lands once the second source registered
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=phone", at_least: 1}
+  - journal_count: {unit: "all",
+                    re: "WM_STATE .* confirmed by k_sources_within",
+                    at_least: 1}
+  # the SDR mast saw the phone from its fixed position (signals_in_range
+  # uses the static's manifest position when it has no FC)
+  - signals_in_range: {unit: "sdrm1", re: "EVENT_IN.*sdr\\.signal",
+                       truth: phone_1, max_m: 650, min_count: 1}
+  - signals_in_range: {unit: "sdrm2", re: "EVENT_IN.*sdr\\.signal",
+                       truth: phone_1, max_m: 650, min_count: 1}
+  # the camera mast's detections were of the person (it stands on X)
+  - signals_in_range: {unit: "camm1", re: "EVENT_IN.*detect\\.detected",
+                       truth: person_1, max_m: 10, min_count: 1}
+  # statics were never allocated anything
+  - journal_count: {unit: "sdrm1,sdrm2,camm1", re: "ALLOC|CLAIM|TAKEOVER",
+                    equals: 0}
+  - journal_count: {unit: "sdrm1,sdrm2,camm1", re: "NavMode", equals: 0}
+  - no_fc_command_to_static: {unit: sdrm1}
+  - no_fc_command_to_static: {unit: sdrm2}
+  - no_fc_command_to_static: {unit: camm1}
+  # the flying searchers took the three sectors - the statics did not
+  - journal_count: {unit: "s1,s2,s3", re: "CLAIM .* index [0-9]+ of 3",
+                    equals: 1}
+  # the op ended; on OP_END the static sensor slots end and their
+  # on_exit rows journal the stop actions
+  - journal_count: {unit: "all", re: "OP_END payload\\.dropped", equals: 1}
+  - journal_count: {unit: "amb1", re: "emit payload\\.dropped", equals: 1}
+  # the masts' end rule is "hold" (fleet.end then-map)
+  - journal_count: {unit: "sdrm1,sdrm2,camm1",
+                    re: "OP_END payload\\.dropped -> hold", equals: 1}
+  - journal_count: {unit: "sdrm1,sdrm2,camm1",
+                    re: "S: (op end|run stopped).*sensor slot\\(s\\) ending",
+                    at_least: 1}
+  # the mast on_exit rows dispatch exactly once each
+  - journal_count: {unit: "sdrm1,sdrm2",
+                    re: "S: watch_rf on_exit sdr\\.stop id=", equals: 1}
+  # the camera mast repeats its watch pass, so on_exit has run once per
+  # completed pass plus once when OP_END drains the live lane
+  - journal_count: {unit: "camm1",
+                    re: "S: watch on_exit camera\\.record id=", at_least: 1}
+  - final_state: {unit: "amb1,s1,s2,s3", fc_mode: [RTL, LAND]}
+  - final_state: {unit: "scout1", fc_mode: [AUTO, GUIDED, LOITER, RTL, LAND]}
+  - fc_items_unchanged_without_cause:
+      {unit: "all",
+       cause_re: "MISSION_(WRITE|UPLOAD|ACK)|fc mission|FC mission|mission.*upload|upload"}
+  # statics hold a fixed position by construction - the op's own
+  # separation params are checked over the flying fleet
+  - no_sep_violation: {unit: "scout1,s1,s2,s3,amb1", h_m: 25, v_m: 6}
+  # TODO P4B-10: action-id uniqueness needs a check kind
+teardown: land

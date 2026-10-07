@@ -40,7 +40,7 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - wait_online: 60                  # every unit seen by the GCS
       - wait: 10
       - write_file: {unit: 1, module: de_gpio, path: gpio_inputs.json,
-                     json: {"17": 1}}      # JSON into run/<unit>/<module>/;
+                     json: {"17": 1}}      # JSON into var/run/<unit>/<module>/;
                                           # also: [{path, json, delay_ms?}, ...]
                                           # writes more files in the same ctl
                                           # call; delay_ms sleeps N ms first
@@ -52,7 +52,8 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - mission_current: {unit: 1, seq: 4}
     teardown: land                       # land (default) | reset | none
 
-de.scenario/1 files (scenarios/*.yaml - engine/scenario_runner.py)
+de.scenario/1 files (tests/**/*.yaml, scenarios/**/*.yaml -
+engine/scenario_runner.py)
 add the truth/world assertions of engine/checks.py on top of these:
 distance_to, detection_precision, detection_recall (P5-10: who was
 found, who correctly stayed hidden), time_to_detect (P5-10: seconds
@@ -65,7 +66,7 @@ list or all (`vehicle:` / `v1` / `v2` are accepted as aliases).
 
 A failing step stops the step list; assertions still run and are reported,
 and the test exits non-zero. Journals, logs, the test and the sim manifest
-are saved under results/<timestamp>-<test>/.
+are saved under var/results/<timestamp>-<test>/.
 """
 
 import json
@@ -254,7 +255,7 @@ def run_step(step, t, marks):
     if name in ("kill", "restart"):
         return run_ctl(name, unit, arg.get("proc", "all"))
     if name == "write_file":
-        # GE-07: JSON file(s) into run/<unit>/<module>/ - drives module
+        # GE-07: JSON file(s) into var/run/<unit>/<module>/ - drives module
         # file seams (de_rpi_gpio's gpio_inputs.json). `also` folds extra
         # writes into the SAME ctl call, so a burst lands inside one
         # 100 ms read window (a bounce collapses into one state). GF-07:

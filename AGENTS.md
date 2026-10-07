@@ -35,23 +35,36 @@ is now the only simulation/testing location.
 
 ## Layout
 
-    sim                       single CLI: blocks|block|sims|show|up|down|status|ctl|run|logs
+    sim                       single CLI: blocks|block|sims|show|up|down|status|ctl|
+                              run|suite|view|list|new|validate|logs|clean
+    run_scenario.py           compat shim -> the same engine as ./sim run
     sim.local.env.example     per-machine paths -> copy to sim.local.env (gitignored)
     blocks/<name>/            block.yaml + optional <module>.json / sitl.parm overlays
     sims/*.yaml               fleets of blocks (+ server type)
-    tests/*.yaml              scenarios: sim + steps + assert + teardown
+    tests/**/*.yaml           AUTOMATED cases - what CI/nightly runs: legacy
+                              sim+steps+assert files plus the de.scenario/1
+                              library in area subdirs (p4a/, faults/, verify/ ...)
+    scenarios/**/*.yaml       HUMAN-run scenarios: demos/, examples/, user files
+    docs/SCENARIOS.md         the de.scenario/1 authoring reference (LLM-friendly)
+    templates/scenario.yaml   what ./sim new scaffolds
+    worlds/*.yaml             seeded ground-truth worlds for scenario world:
     packages/*.json           compiled DE packages used by tests
+    tools/                    support CLIs (verify_wrap.js, compile_op.js, ...)
     modules/catalog.yaml      how each DE module is launched + wired
     modules/templates/        base de_comm config, common/copter SITL parms
     engine/simlib.py          settings, block/sim resolution, ports, config gen, journals, pids
     engine/launcher.py        up / down / ensure (reuse-or-restart)
     engine/ctl.py             operator console (./sim ctl)
-    engine/runner.py          test runner (./sim run) - step + assertion reference in its docstring
+    engine/runner.py          legacy test runner + the step set scenarios reuse
+    engine/scenario.py        de.scenario/1 loader (schema: de_scenario.schema.json)
+    engine/scenario_runner.py de.scenario/1 runner (./sim run/view on timeline files)
     engine/gcs_bridge.py      persistent GCS session on the real server, control-port protocol
     engine/fake_fleet_server.py  fault-injection server (copied from Phase-4A, uses simlib)
-    run/<sim>/                generated per sim (gitignored): sim.json, configs,
+    var/run/<sim>/            generated per sim (gitignored): sim.json, configs,
                               launch scripts, logs, journals, pids
-    results/                  per-test captures (gitignored)
+    var/results/              per-test captures (gitignored)
+    var/pycache/              python bytecode cache (PYTHONPYCACHEPREFIX,
+                              set by simlib - no __pycache__ in the tree)
 
 ## How to use
 
@@ -59,11 +72,11 @@ is now the only simulation/testing location.
     ./sim blocks                              # what unit types exist
     ./sim show sims/copters3.yaml             # resolved units, ports, positions (no side effects)
     ./sim run tests/smoke_copters.yaml        # up if needed -> steps -> asserts -> teardown
-    ./sim view scenarios/p5/world_canopy_viewer.yaml  # sim + Mavlink3DMap viewer
+    ./sim view scenarios/demos/world_canopy_viewer.yaml  # sim + Mavlink3DMap viewer
                                               # (= run --hold) until Ctrl-C
     ./sim ctl status                          # live procs + units seen online by the GCS
     ./sim logs copter1 de_comm                # tail a process log
-    ./sim clean --days 7                      # prune run/ + results/ (never a live sim)
+    ./sim clean --days 7                      # prune var/run/ + var/results/ (never a live sim)
     ./sim down
 
 - `./sim up` is additive: it restarts only the same-named sim and refuses
@@ -80,7 +93,7 @@ is now the only simulation/testing location.
 - `./sim run <test> --keep` skips the teardown so you can inspect the fleet
   with `./sim ctl ...`.
 - Exit code 0 = every step and assertion passed. Read the printed
-  PASS/FAIL lines and `results/<ts>-<test>/` (journals + logs), not just the
+  PASS/FAIL lines and `var/results/<ts>-<test>/` (journals + logs), not just the
   exit code.
 - Before claiming a change works, run the relevant test(s) and quote the
   `N/M assertions passed` line.
@@ -137,9 +150,13 @@ accepts it, otherwise `file:` in the cwd), `set`, `wire` (placeholders
 `count` (→ name1..nameN), `at`, `config`, `fc`. Use `extends: other.yaml`
 to reuse a fleet with a different `server:`.
 
-**New scenario → a test (no code)** when existing steps and assertions
-suffice: `sim:`, `operation:`, `steps:`, `assert:`, `teardown:`. Start
-mission tests with `stop`, `clear`, `mode: {unit: all, mode: GUIDED}`.
+**New test/scenario → a file (no code)** when existing steps, faults and
+assertions suffice. Prefer the de.scenario/1 form (`fleet:` + `timeline:`,
+docs/SCENARIOS.md) — `./sim new <name>` scaffolds one, `./sim validate`
+checks it. Automated cases go under `tests/<area>/`, human ones under
+`scenarios/`; every file opens with a `#`-comment "what it proves"
+paragraph (CI enforces it). The legacy `sim:`+`steps:` form still works.
+Start mission cases with `stop`, `clear`, `mode: {unit: all, mode: GUIDED}`.
 
 **New step / assertion / ctl command (code):**
 1. the operator action → `ctl.py` `main()`, also listed in its docstring;
@@ -179,7 +196,7 @@ and make `ctl.ctrl` refuse it for that server type.
   10/min per IP and every unit is 127.0.0.1.
 - Link-fault steps (`loss`, `delay`, `link_cut`, `kick`, `clock`) need
   `server: {type: fake}`. `ctl` refuses them on a real server.
-- **A downed sim keeps its manifest.** `run/<sim>/sim.json` stays for
+- **A downed sim keeps its manifest.** `var/run/<sim>/sim.json` stays for
   post-mortem logs/journals, so a dead sim's units can share names with a
   live one. `simlib.find_unit` and ctl resolution always prefer *live*
   sims (`live_sim_names`); never iterate `all_manifests()` when the

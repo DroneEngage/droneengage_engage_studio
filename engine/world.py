@@ -4,8 +4,8 @@
 A world.yaml describes what is really out there - the people, phones and
 clutter the stub modules turn into the messages the real modules would
 send. The runner loads it once, injects the stub + geo_projection config
-into the fleet, writes run/<sim>/world_epoch.json (scenario t0) and
-records 1 Hz truth rows into run/<sim>/truth.jsonl. Each stub process
+into the fleet, writes var/run/<sim>/world_epoch.json (scenario t0) and
+records 1 Hz truth rows into var/run/<sim>/truth.jsonl. Each stub process
 loads the same file and evaluates entity positions against the shared
 epoch, so truth and detections always agree.
 

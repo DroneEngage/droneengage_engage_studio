@@ -1,0 +1,45 @@
+# gpio/gpio_pulse_override - GF-07 / GF-04: an explicit write during a
+# pulse overrides the pending restore. The pulse mission emits a 2 s
+# gpio.flash.pulse; the went_on edge triggers keep, which emits
+# gpio.flash.on while the pulse is still running. That non-pulse write
+# bumps the pulse generation even though the pin is already on, so the
+# timer's restore must be dropped: no went_off, flash stays 1.
+#
+# Pre-GF-04 only real edges bumped the generation: the no-op write left
+# it alone, the restore ran, and flash went_off at pulse end.
+version: 1
+name: gpio_pulse_override
+transport: fake
+operation: ../../packages/gpio_pulse.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: node, cls: static_gpio}
+timeline:
+  # restart de_gpio first: pin state lives in the module process, so a
+  # repeated run must come back to flash off or the pulse produces no
+  # went_on edge
+  - {t: 0, do: restart, unit: node, proc: de_gpio}
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 17, do: wait_journal, unit: node,
+     re: "S: pulse activated", timeout: 30}
+  # keep fires mid-pulse (went_on arrives ~100-300 ms after the emit)
+  - {t: 20, do: wait_journal, unit: node,
+     re: "S: keep emit gpio\\.flash\\.on", timeout: 30}
+  # the pulse has long ended by now - with the override honoured the pin
+  # stays on and no went_off ever latches
+  - {t: 30, do: wait, seconds: 4}
+  - {t: 35, do: stop}
+assert:
+  - journal_count: {unit: node, re: "S: pulse activated", equals: 1}
+  - journal_count: {unit: node, re: "S: keep activated", equals: 1}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.flash\\.went_on latched",
+                    equals: 1}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.flash\\.went_off latched",
+                    equals: 0}
+  - journal_count: {unit: node, re: "state gpio\\.flash = 1",
+                    at_least: 1}
+teardown: none

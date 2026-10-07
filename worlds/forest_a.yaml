@@ -2,7 +2,7 @@
 #
 # Around the SITL home (-35.363262, 149.165237): person_1 patrols an
 # eastward line (loop = back and forth) that passes ~6 m of the sdr
-# mast position used by scenarios/p5/world_sdr_mast.yaml; phone_1 rides
+# mast position used by tests/p5/world_sdr_mast.yaml; phone_1 rides
 # on person_1 (attached, small NE offset) and is the RF emitter the sdr
 # model gates on; person_2 stands still further out as a second camera
 # target near the frame edge. The copter scenario hovers ~40 m over the

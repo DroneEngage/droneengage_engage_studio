@@ -1,0 +1,19 @@
+# verify/verify_template_outside_area - the deploy gate blocks an op
+# whose dynamic template generates outside op.area: the scan template
+# in ops/template_outside_area.op.json anchors its lanes past the
+# operation polygon, so the sampler's generated points fall outside the
+# declared area. The verifier reports ten DYN-003 errors (one per
+# offending point); the run stops before fleet bring-up - deploy NEVER
+# happens. Expected exit is 1.
+version: 1
+name: verify_template_outside_area
+transport: fake
+operation: ops/template_outside_area.op.json
+verify: {cli: ../../tools/verify_wrap.js, expect_errors: 10,
+         expect_rules: ["DYN-003"]}
+settle_s: 1
+fleet:
+  - {id: s1, cls: static}
+timeline: []
+assert: []
+teardown: none

@@ -8,11 +8,15 @@ Three layers, all data:
                        module. Blocks can `extends:` another block.
   sims/<name>.yaml     a simulation: blocks composed into a fleet
                        (count, names, placement, per-unit overrides).
-  tests/<name>.yaml    a scenario: a sim + steps + assertions (runner.py).
+  tests/**/*.yaml      automated test cases: legacy sim+steps+assertions
+                       (runner.py) and the de.scenario/1 library
+                       (engine/scenario_runner.py) - what CI runs.
+  scenarios/**/*.yaml  human-run scenarios: demos, examples, anything a
+                       user kicks off by hand (same engines).
 
 This module resolves blocks and sims, allocates ports, generates every
-config + launch script under run/<sim name>/, writes the manifest
-(run/<name>/sim.json) and holds the journal / pid helpers used by ctl.py
+config + launch script under var/run/<sim name>/, writes the manifest
+(var/run/<name>/sim.json) and holds the journal / pid helpers used by ctl.py
 and runner.py. Several sims can be up at once: each owns its own run dir
 and pid dir, and `sim up` refuses to start a sim whose ports or unit
 names clash with a live one.
@@ -75,8 +79,18 @@ ENGINE_DIR = os.path.join(SIM_ROOT, "engine")
 BLOCKS_DIR = os.path.join(SIM_ROOT, "blocks")
 MODULES_DIR = os.path.join(SIM_ROOT, "modules")
 TEMPLATES_DIR = os.path.join(MODULES_DIR, "templates")
-RUN_DIR = os.path.abspath(setting("SIM_RUN_DIR", os.path.join(SIM_ROOT, "run")))
-RESULTS_DIR = os.path.abspath(setting("SIM_RESULTS_DIR", os.path.join(SIM_ROOT, "results")))
+VAR_DIR = os.path.abspath(setting("SIM_VAR_DIR", os.path.join(SIM_ROOT, "var")))
+RUN_DIR = os.path.abspath(setting("SIM_RUN_DIR", os.path.join(VAR_DIR, "run")))
+RESULTS_DIR = os.path.abspath(setting("SIM_RESULTS_DIR", os.path.join(VAR_DIR, "results")))
+
+# python bytecode lives under var/pycache, not __pycache__ next to the
+# sources: PYTHONPYCACHEPREFIX covers every child process spawned from
+# here (ctl, launchers, runners), sys.pycache_prefix covers whatever
+# this process imports from now on.
+_pycache = os.path.join(VAR_DIR, "pycache")
+os.environ.setdefault("PYTHONPYCACHEPREFIX", _pycache)
+if hasattr(sys, "pycache_prefix"):
+    sys.pycache_prefix = _pycache
 
 # where the code lives on this machine (sim.local.env)
 DE_CODE = setting("DE_CODE", os.path.expanduser("~/de_code"))
@@ -352,7 +366,7 @@ SERVER_TYPES = ("real", "fake", "external")
 def load_sim(path_or_spec, base_dir=None):
     """Load a sim file (or an inline dict) and expand it into concrete units.
     Returns {name, server{}, home, slot_base, units[], hash}. The name -
-    the sim file's stem or an explicit `name:` - owns run/<name>/."""
+    the sim file's stem or an explicit `name:` - owns var/run/<name>/."""
     spec, src = _sim_spec(path_or_spec, base_dir)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
                            "slot_base", "units", "render"}
@@ -841,7 +855,7 @@ def offset_home(home, pos):
 
 
 # ---------------------------------------------------------------- manifest
-# Every sim owns run/<name>/: sim.json, pids/, server/, <unit>/, and the
+# Every sim owns var/run/<name>/: sim.json, pids/, server/, <unit>/, and the
 # per-sim state files (deployed.json, op_deploy.json). Sims run in
 # parallel: one manifest each, no shared state.
 
@@ -903,7 +917,7 @@ def load_manifest(name=None, required=True):
             name = names[0]
         elif not names:
             if required:
-                sys.exit("no sim manifest under run/ - "
+                sys.exit("no sim manifest under var/run/ - "
                          "run `./sim up <sim.yaml>` first")
             return None
         else:
@@ -1268,7 +1282,7 @@ def _bridge_script(sim):
 
 def gen_server(sim):
     """Write the server side: configs + launch scripts in
-    run/<sim>/server/. Returns the server process names in launch
+    var/run/<sim>/server/. Returns the server process names in launch
     order. An external server spawns nothing but this sim's GCS bridge."""
     srv = sim["server"]
     sdir = server_dir(sim["name"])
@@ -1368,7 +1382,7 @@ def check_binaries(sim):
 
 
 def _render_script(sim, proc, cwd, cmd):
-    """launch.<proc>.sh under run/<sim>/render/ for the synthetic
+    """launch.<proc>.sh under var/run/<sim>/render/ for the synthetic
     'render' owner (pidfiles render.<proc>.pid)."""
     path = os.path.join(render_dir(sim["name"]), f"launch.{proc}.sh")
     write_text(path,
@@ -1506,7 +1520,7 @@ def gen_render(sim):
     render.mav_port serving MAVLink on ws render.mav_ws_port, and a
     vite dev server on render.web_port. cameras|full adds the P5-15
     frame farm (sink + chromium + probes). Scripts and logs live under
-    run/<sim>/render/; the de_sim_marker.cjs preload puts the run dir
+    var/run/<sim>/render/; the de_sim_marker.cjs preload puts the run dir
     in the node cmdline so pid_is_ours/`sim down` treat them like every
     other process."""
     render = sim.get("render") or {}
@@ -1534,7 +1548,7 @@ def gen_render(sim):
     marker = os.path.join(rdir, "de_sim_marker.cjs")
     write_text(marker,
                "// sim pid marker: preloaded via node --require so the "
-               "render\n// procs' cmdline names run/<sim>/ "
+               "render\n// procs' cmdline names var/run/<sim>/ "
                "(simlib.pid_is_ours).\n")
     _render_script(sim, "mav_bridge", os.path.join(m3d, "backend"),
                    "'%s' --require '%s' ./src/udp2websocket.js -p %d -w %d"
@@ -1552,7 +1566,7 @@ def gen_render(sim):
 
 
 def generate(sim, sim_file=None):
-    """Write run/<sim>/<unit>/... for every unit and the sim's manifest."""
+    """Write var/run/<sim>/<unit>/... for every unit and the sim's manifest."""
     catalog = load_catalog()
     check_binaries(sim)
     os.makedirs(run_dir(sim["name"]), exist_ok=True)
@@ -1597,7 +1611,7 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def log_match(u, proc, rx, since=None):
-    """Lines of run/<sim>/<unit>/logs/<proc>.log appended since the mark
+    """Lines of var/run/<sim>/<unit>/logs/<proc>.log appended since the mark
     matching the regex (a pattern string or a compiled re) - ANSI
     colour escapes stripped first: de_common prints coloured stdout
     (de_precland's "PRECLAND state -> <n>" has escapes inside the line,

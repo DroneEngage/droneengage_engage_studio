@@ -23,6 +23,15 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
+
 sys.path.insert(0, HERE)
 sys.path.insert(0, ROOT)
 
@@ -288,7 +297,7 @@ class GroundClutter(unittest.TestCase):
                                "p_detect_nadir": 1.0,
                                "p_detect_edge": 1.0}}},
                           f)
-            mdir = os.path.join(d, "run", "sim", "u1", "stub_ai_box")
+            mdir = os.path.join(d, "var", "run", "sim", "u1", "stub_ai_box")
             os.makedirs(mdir)
             cfg = os.path.join(mdir, "stub_ai_box.config.json")
             with open(cfg, "w") as f:
@@ -304,7 +313,7 @@ class GroundClutter(unittest.TestCase):
                 set_pose(s, ORIGIN[0] + (1.0 * k) / M_PER_DEG_LAT,
                          ORIGIN[1], 40.0)
                 s.tick(k * 0.5, k)
-            with open(os.path.join(d, "run", "sim", "truth.jsonl")) as f:
+            with open(os.path.join(d, "var", "run", "sim", "truth.jsonl")) as f:
                 rows = [json.loads(ln) for ln in f]
             clutter = [r for r in rows if r.get("tid") == "clutter"
                        and r.get("lat") is not None]

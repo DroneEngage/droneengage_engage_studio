@@ -1,0 +1,33 @@
+# TASK-P4A-10 scenario "cond barrier, peer_lost=hold_gates" - same fleet
+# barrier as p4a10_barrier_lost but the package carries
+#   handlers: { peer_lost: "hold_gates" }
+# copter1's link is cut mid-leg: LOST parties stay required, so no unit's
+# all_of barrier can release. The FC-side hold (LOITER_TIME 75 s) expires
+# and every unit falls through to its gate contingency (RTL) - the
+# documented "hold until the FC backstop" path.
+version: 1
+sim: ../../sims/copters3_faults_fastroster.yaml
+operation: ../../packages/p4a10_searcher_hold.deploy.json
+steps:
+  - stop
+  - clear
+  - reset: all
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  - wait: 10
+  - link_cut: {unit: 1, seconds: 300}
+  # gate entered ~35-50 s in; the 75 s loiter then ends -> contingency
+  - wait_journal: {unit: 2, re: "timed out -> rtl", timeout: 240}
+  - wait_journal: {unit: 3, re: "timed out -> rtl", timeout: 60}
+  - wait_journal: {unit: 1, re: "timed out -> rtl", timeout: 90}
+assert:
+  - journal_count: {unit: all, re: "emit staging.ready", equals: 1}
+  # no cond release anywhere - the lost party stayed required
+  - journal_count: {unit: all, re: "gate g released by cond", equals: 0}
+  # all three took the FC backstop into the contingency row
+  - journal_count: {unit: all, re: "timed out -> rtl", equals: 1}
+  # a lost declaration was still journaled (the policy only gates)
+  - journal_count: {unit: 2, re: "ROSTER .* lost", at_least: 1}
+teardown: reset

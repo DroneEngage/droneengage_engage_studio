@@ -1,0 +1,62 @@
+# gpio/gpio_fleet_scope - GE-07 A-7 / megaplan 3.2: a declared module
+# notification republishes to the fleet, so node_a's btn press reaches
+# BOTH supervisors. The unfiltered mission activates on both units;
+# the self-scoped one (when: event.src == self.party) activates only on
+# the pressing unit. The remote event stays on node_b's bus - it never
+# reaches node_b's gpio module, so its led never changes.
+version: 1
+name: gpio_fleet_scope
+transport: fake
+operation: ../../packages/gpio_scope.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: node_a, cls: static_gpio}
+  - {id: node_b, cls: static_gpio}
+timeline:
+  # restart both de_gpio first (pin state lives in the module process)
+  # and normalize node_a's persisted gpio_inputs.json to 0 before the
+  # package loads - a second run must see a real 0->1 edge at press time
+  - {t: 0, do: restart, unit: all, proc: de_gpio}
+  - {t: 2, do: write_file, unit: node_a, module: de_gpio,
+     path: gpio_inputs.json, json: {"17": 0, "27": 1}}
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 22, do: write_file, unit: node_a, module: de_gpio,
+     path: gpio_inputs.json, json: {"17": 1, "27": 1}}
+  - {t: 25, do: wait_journal, unit: node_a,
+     re: "S: own_btn activated", timeout: 30}
+  - {t: 26, do: wait_journal, unit: node_b,
+     re: "S: remote_heard activated", timeout: 30}
+  - {t: 30, do: wait, seconds: 5}
+  - {t: 35, do: stop}
+assert:
+  # node_a: both missions activate - its own press passes the filter
+  - journal_count: {unit: node_a, re: "S: own_btn activated", equals: 1}
+  - journal_count: {unit: node_a, re: "S: remote_heard activated",
+                    equals: 1}
+  - journal_count: {unit: node_a, re: "S: own_btn emit scope\\.own",
+                    equals: 1}
+  - journal_count: {unit: node_a, re: "S: remote_heard emit scope\\.heard",
+                    equals: 1}
+  # node_b: the republished event DID reach its supervisor (remote_heard
+  # activated) but the self filter refuses it (event.src is node_a)
+  - journal_count: {unit: node_b,
+                    re: "EVENT_IN event gpio\\.btn\\.went_on latched",
+                    at_least: 1}
+  - journal_count: {unit: node_b, re: "S: remote_heard activated",
+                    equals: 1}
+  - journal_count: {unit: node_b, re: "S: remote_heard emit scope\\.heard",
+                    equals: 1}
+  - journal_count: {unit: node_b, re: "S: own_btn activated", equals: 0}
+  # scope.own DOES arrive on node_b's bus (emits are fleet-wide: BUS_IN
+  # + a latched copy are expected) - what must not happen is node_b's
+  # own_btn mission running and emitting it
+  - journal_count: {unit: node_b, re: "emit scope\\.own", equals: 0}
+  # node_b's gpio module never saw the remote event: no led event, and
+  # the state notes (one per boot advert) only ever report led = 0
+  - journal_count: {unit: node_b,
+                    re: "EVENT_IN event gpio\\.led",
+                    equals: 0}
+  - journal_count: {unit: node_b, re: "state gpio\\.led = 1", equals: 0}
+teardown: none

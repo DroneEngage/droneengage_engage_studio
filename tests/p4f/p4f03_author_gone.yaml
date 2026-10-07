@@ -1,0 +1,41 @@
+# TASK-P4F-03 scenario 3 "author gone": copter3 is cut while copter1
+# emits the fact, then copter1's de_comm is killed for good. Back online,
+# copter3's coverage diverges from copter2's (the only live holder left),
+# it asks copter2, and copter2 replays copter1's fact with rl=copter2 ->
+# "BUS_RELAY src=copter1 rl=copter2" and the gate releases.
+version: 1
+sim: ../../sims/copters3_faults.yaml
+operation: ../../packages/p4f03.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  - wait: 15
+  - fire: {event: mk.scan, unit: 1, until: "BUS_OUT.*n=scan\\.begin"}
+  - wait_journal: {unit: 3, re: "gate seen waits found\\.it", timeout: 30}
+  - link_cut: {unit: 3, seconds: 75}
+  - wait: 2
+  - fire: {event: mk.fact, unit: 1,
+           payload: {pos: [-35.363, 149.166, 0], conf: 0.9},
+           until: "BUS_OUT.*n=found\\.it"}
+  - wait_journal: {unit: 2, re: "BUS_IN.*n=found\\.it", timeout: 30}
+  - kill: {unit: 1, proc: de_comm}        # the author is gone
+  # copter3's cut expires; its digest differs from copter2's -> req -> relay
+  - wait_journal: {unit: 3, re: "comm line online", timeout: 120}
+  - wait_journal: {unit: 3, re: "BUS_RELAY.*rl=copter2.*src=copter1",
+                   timeout: 120}
+  - wait_journal: {unit: 3, re: "gate seen released", timeout: 60}
+  - wait: 5
+  # bring the author back so teardown can land it cleanly
+  - restart: {unit: 1, proc: de_comm}
+  - wait: 10
+  - opabort
+
+assert:
+  - journal_count: {unit: 3, re: "BUS_RELAY.*rl=copter2.*src=copter1",
+                   at_least: 1}
+  - journal_count: {unit: 2, re: "FACT_SERVE copter3 sent=1", at_least: 1}
+  - journal_count: {unit: 3, re: "gate seen released", at_least: 1}

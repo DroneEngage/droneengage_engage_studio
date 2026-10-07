@@ -1,11 +1,11 @@
-"""sim clean - prune generated artifacts under run/ and results/.
+"""sim clean - prune generated artifacts under var/run/ and var/results/.
 
   clean [--days N] [--all] [--dry-run]
 
-run/<sim>:   deleted only when no pidfile under it is alive and ours -
-             a downed sim keeps its manifest for post-mortem, so age
-             decides, never liveness alone.
-results/*:   deleted by age (legacy <ts>-<test> and <utc>/<name> alike).
+var/run/<sim>:   deleted only when no pidfile under it is alive and ours -
+                 a downed sim keeps its manifest for post-mortem, so age
+                 decides, never liveness alone.
+var/results/*:   deleted by age (legacy <ts>-<test> and <utc>/<name> alike).
 --days N     keep anything touched in the last N days (default 7)
 --all        ignore age; live sims are still never touched
 --dry-run    list what would go, delete nothing
@@ -79,10 +79,10 @@ def main(argv):
         else:
             sys.exit(__doc__)
         i += 1
-    print(f"run/ ({simlib.RUN_DIR})")
+    print(f"var/run/ ({simlib.RUN_DIR})")
     freed = _sweep(simlib.RUN_DIR, days, dry,
                    alive_check=lambda n: bool(simlib.read_pids(n)))
-    print(f"results/ ({simlib.RESULTS_DIR})")
+    print(f"var/results/ ({simlib.RESULTS_DIR})")
     freed += _sweep(simlib.RESULTS_DIR, days, dry)
     print(f"{'would free' if dry else 'freed'} {_mb(freed)}")
     return 0

@@ -1,0 +1,108 @@
+# P4B-10 scenario J (ACCEPTANCE.md open issue 8): hold an approval request
+# pending across a GCS outage until the operation's approval_timeout_s
+# kills it. This is the timeout side of the deny case in
+# p4b10_f_drop_denied - there the party answer arrived; here nobody can
+# answer because the GCS session is down.
+#
+# The scenario uses the sar_forest_static op's cam_mast + ambulance pair
+# (the only package pair that still runs the operator-approved drop
+# lane) bound to two units: a static camera mast parked on the person
+# target so its stub_ai_box detections build and confirm the target in a
+# few seconds (the searcher leg is not under test), and the ambulance.
+# The operator bot confirms the person and approves the launch, so the
+# ambulance flies out to the drop point. A journal watcher drops the
+# GCS session the moment the drop approval is raised
+# (fault gcs_disconnect, 120 s > the package's approval_timeout_s 90):
+# APPROVAL_REQ action pends unanswered, times out as a denial, the
+# payload.release action is never dispatched, and the delivery mission
+# runs its denied tail to the end - RTL home, land, disarm. The launch
+# grant path is already covered by p4b10_a and the reconnect path by
+# p4b10_d.
+#
+# Deviation notes for a rerun: seed 7 differs from p4b10_i's seed 5
+# (different fake-link jitter for the same world), and there are no
+# visual asserts - the static world has no camera imagery behind the
+# stub detection.
+version: 1
+name: p4b10_j_approval_timeout
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/p4b10_j.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 60
+operator:
+  approve: {launch: {after_s: 2}, action: {after_s: 30}}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: camm1, cls: static, role: cam_mast,
+     modules: [stub_ai_box],
+     base: [-35.3605671, 149.1679909, 584, 0]}
+  - {id: amb1, cls: copter, role: ambulance,
+     params: {BATT_CAPACITY: 50000},
+     modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started", timeout: 120}
+  - {t: 33, do: wait_journal, unit: "camm1", re: "S: .* activated", timeout: 120}
+  - {t: 35, do: wait_journal, unit: "amb1", re: "WM_NEW .* cls=person", timeout: 240}
+  - {t: 40, do: wait_journal, unit: "amb1", re: "WM_STATE .* confirmed by operator", timeout: 120}
+  - {t: 45, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ launch", timeout: 120}
+  - {t: 50, do: wait_journal, unit: "amb1", re: "launch: goto fc seq .* in AUTO", timeout: 240}
+  # the drop approval is raised while the GCS is (about to be) gone:
+  # the watcher cuts the operator session within ~0.5 s of this line
+  # and holds it down for 120 s - longer than approval_timeout_s
+  - {on: {unit: "amb1", re: "APPROVAL_REQ action"}, fault: gcs_disconnect, dur_s: 120}
+  - {t: 55, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ action", timeout: 480}
+  - {t: 60, do: wait_journal, unit: "amb1", re: "APPROVAL_TIMEOUT", timeout: 240}
+  - {t: 65, do: wait_journal, unit: "amb1", re: "action .* approval denied - not dispatched", timeout: 60}
+  - {t: 70, do: wait_journal, unit: "amb1", re: "vehicle disarmed - nav lane idle", timeout: 360}
+assert:
+  - journal_count: {unit: "amb1", re: "RUN run .* started", equals: 1}
+  # the mast's detections built the target and the operator confirmed it
+  - journal_count: {unit: "amb1", re: "WM_NEW .* cls=person", at_least: 1}
+  - journal_count: {unit: "amb1", re: "WM_STATE .* confirmed by operator", at_least: 1}
+  - signals_in_range: {unit: "camm1", re: "EVENT_IN.*detect\\.detected",
+                       truth: person_1, max_m: 10, min_count: 1}
+  - journal_count: {unit: "camm1", re: "emit detect\\.detected", at_least: 1}
+  # the launch approval was raised and GRANTED before the outage - this
+  # run isolates the drop/action lane
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ launch", equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_OK .* by", equals: 1}
+  - journal_count: {unit: "amb1", re: "launch: goto fc seq .* in AUTO", equals: 1}
+  # the drop approval was raised and died at the op's deadline - never
+  # granted, never denied by a party
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ action", equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ", equals: 2}
+  - journal_order: {unit: "amb1", first: "APPROVAL_REQ action", then: "APPROVAL_TIMEOUT"}
+  - journal_count: {unit: "amb1", re: "APPROVAL_TIMEOUT", equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_DENIED", equals: 0}
+  # the request really pended for ~approval_timeout_s (90 s): no early
+  # resolution and no second request
+  - journal_time_delta: {u1: "amb1", re1: "APPROVAL_REQ action",
+                         u2: "amb1", re2: "APPROVAL_TIMEOUT",
+                         ordered: true, min_s: 85, max_s: 120}
+  # the GCS session really went down once over the pending window and
+  # reconnected after the deadline
+  - operator_log_count: {re: "FAULT gcs_disconnect", equals: 1}
+  - operator_log_count: {re: "SESSION .* online \\(reconnect\\)", equals: 1}
+  # fallback: the release was never dispatched and the denied tail ran
+  # to the end - RTL home, landed, disarmed
+  - journal_count: {unit: "amb1", re: "action .* approval denied - not dispatched", equals: 1}
+  - journal_count: {unit: "amb1", re: "action payload\\.release approved|emit payload\\.dropped|payload\\.released", equals: 0}
+  - journal_count: {unit: "amb1", re: "NavMode confirmed", at_least: 1}
+  - journal_count: {unit: "amb1", re: "vehicle disarmed - nav lane idle", equals: 1}
+  - journal_count: {unit: "all", re: "OP_END", equals: 0}
+  - journal_count: {unit: "all", re: "WM_STATE .* served", equals: 0}
+  - final_state: {unit: "amb1", fc_mode: [RTL, LAND]}
+  - no_fc_command_to_static: {unit: camm1}
+  - fc_items_unchanged_without_cause:
+      unit: "all"
+      cause_re: "MISSION_(WRITE|UPLOAD|ACK)|fc mission|FC mission|mission.*upload|upload"
+teardown: land

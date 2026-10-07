@@ -1,0 +1,83 @@
+# payload/gpio_payload_pin_guard - TASK-EV-PAY Part A: the
+# payload_release pin 'drop' is reserved - no gpio.drop action, no
+# gpio.drop.* facts, and gpio.drop.* command events never actuate it.
+#
+# The node's de_gpio carries a minimal pin set: one ordinary output (led)
+# plus 'drop' reserved by payload_release. The op was compiled against
+# ops/gpio_guard.stale.caps.json - the pre-reservation view where 'drop'
+# was still an ordinary gpio pin - so the package is exactly what a
+# stale or mis-bound deployment would carry.
+#
+#   t=8   fire gpio.drop.pulse (no package - GE-06 still forwards the
+#         command event to de_gpio; the reserved pin must ignore it)
+#   start -> e1 emit gpio.drop.pulse (declared -> latches; still ignored)
+#         -> d1 do gpio.drop  -> dispatch fails 'not available' on the
+#            unit (no such action in the live advert) -> on_error continue
+#         -> g1 gate gpio.drop.went_on -> MUST time out on continue
+#         -> e2 emit gpio.guard_done -> proves the walk got past g1
+version: 1
+name: gpio_payload_pin_guard
+transport: fake
+operation: ../../packages/gpio_guard.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - id: node
+    cls: static_gpio
+    role: node
+    config:
+      de_gpio:
+        pins:
+          - {gpio: 4, mode: 1, value: 0, name: led}
+          - {gpio: 6, mode: 1, value: 0, name: drop}
+        payload_release:
+          {name: drop, release_value: 1, rest_value: 0, pulse_ms: 300}
+timeline:
+  # restart de_gpio first: pin state lives in the module process - a
+  # repeated run must come back to the config initials (drop at rest)
+  - {t: 0, do: restart, unit: node, proc: de_gpio}
+  - {t: 8, do: fire, event: gpio.drop.pulse, unit: node}
+  - {t: 14, do: deploy}
+  - {t: 20, do: start}
+  - {t: 26, do: fire, event: gpio.drop.pulse, unit: node}
+  - {t: 30, do: wait_journal, unit: node,
+     re: "S: guard emit gpio\\.drop\\.pulse", timeout: 30}
+  - {t: 35, do: wait_journal, unit: node,
+     re: "S: guard d1 failed: .*unavailable.* -> continue", timeout: 30}
+  - {t: 40, do: wait_journal, unit: node,
+     re: "S: guard gate g1 timed out -> continue", timeout: 60}
+  - {t: 45, do: wait_journal, unit: node,
+     re: "S: guard emit gpio\\.guard_done", timeout: 30}
+  - {t: 50, do: stop}
+assert:
+  - journal_count: {unit: node, re: "S: guard activated", equals: 1}
+  # the package was accepted and walked - the emit latched, the fire
+  # arrived; the pin never moved
+  - journal_count: {unit: node,
+                    re: "S: guard emit gpio\\.drop\\.pulse", equals: 1}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.drop\\.pulse latched",
+                    at_least: 1}
+  # the stale do-step could not bind on the live unit
+  - journal_count: {unit: node,
+                    re: "action gpio\\.drop unavailable: action gpio\\.drop not available",
+                    equals: 1}
+  - journal_count: {unit: node,
+                    re: "S: guard d1 failed: unavailable: action gpio\\.drop not available -> continue",
+                    equals: 1}
+  # the went_on gate never saw an edge - nothing actuated 'drop'
+  - journal_count: {unit: node,
+                    re: "S: guard gate g1 timed out -> continue",
+                    equals: 1}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.drop\\.went_on",
+                    equals: 0}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.drop\\.went_off",
+                    equals: 0}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.drop\\.changed",
+                    equals: 0}
+  - journal_count: {unit: node,
+                    re: "S: guard emit gpio\\.guard_done", equals: 1}
+teardown: none

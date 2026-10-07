@@ -1,0 +1,35 @@
+# precland/plan/pl_plan_set_target - PL-09 group A 4: a parametrized
+# invoke. The unit's config lists target.targets: [0,1], so
+# plBuildAdvert exposes set_target.target as an enum; do
+# set_target {target:1} succeeds and the module answers with the
+# target_changed fact the gate waits on.
+version: 1
+name: pl_plan_set_target
+transport: fake
+operation: ../../../packages/pl_set_target.deploy.json
+verify: {cli: ../../../tools/verify_wrap.js}
+settle_s: 10
+fleet:
+  - {id: node, cls: static_precland,
+     config: {de_precland: {target: {targets: [0, 1]}}}}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  - {t: 5, do: deploy}
+  - {t: 10, do: start}
+  - {t: 15, do: wait_journal, unit: node,
+     re: "S: pick gate tc released by (fact )?precision_landing\\.target_changed",
+     timeout: 60}
+assert:
+  - journal_count: {unit: node, re: "S: pick st ok", equals: 1}
+  - journal_count: {unit: node,
+      re: "S: pick gate tc released by (fact )?precision_landing\\.target_changed",
+      equals: 1}
+  - journal_count: {unit: node, re: "failed:", equals: 0}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.target_changed.*\"target\":1",
+      equals: 1}
+teardown: land

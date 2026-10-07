@@ -15,6 +15,15 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
+
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 
@@ -33,8 +42,8 @@ import geo_projection as gp  # noqa: E402
 
 
 def make(mod_cls, module, d, extra=None):
-    """A stub instance on a generated-looking config under d/run/sim/u1/."""
-    mdir = os.path.join(d, "run", "sim", "u1", module)
+    """A stub instance on a generated-looking config under d/var/run/sim/u1/."""
+    mdir = os.path.join(d, "var", "run", "sim", "u1", module)
     os.makedirs(mdir)
     cfg = {"stub": {"world": FOREST, "seed": 7, "unit": "u1"},
            "s2s_udp_target_port": "1"}
@@ -65,7 +74,7 @@ class T(unittest.TestCase):
         s._vt_ms = 0
         for k in range(int(secs / 0.05)):
             s.tick(k * 0.05, k)
-        log = os.path.join(self.d, "run", "sim", "stubs", "u1.log")
+        log = os.path.join(self.d, "var", "run", "sim", "stubs", "u1.log")
         if not os.path.isfile(log):
             return []
         with open(log) as f:
@@ -121,7 +130,7 @@ class T(unittest.TestCase):
     # ------------------------------------------------------ TASK-EV-PAY
 
     def _payload_log(self, kind):
-        log = os.path.join(self.d, "run", "sim", "stubs", "u1.log")
+        log = os.path.join(self.d, "var", "run", "sim", "stubs", "u1.log")
         if not os.path.isfile(log):
             return []
         with open(log) as f:
@@ -188,7 +197,7 @@ class T(unittest.TestCase):
                          "errors never released")
 
         # truth rows carry the bay
-        with open(os.path.join(self.d, "run", "sim", "truth.jsonl")) as f:
+        with open(os.path.join(self.d, "var", "run", "sim", "truth.jsonl")) as f:
             rows = [json.loads(ln) for ln in f]
         self.assertEqual(sorted(r["bay"] for r in rows
                                 if r.get("cls") == "payload_drop"),
@@ -236,7 +245,7 @@ class T(unittest.TestCase):
         s._clutter_tick(12.0, 1, 0.5, gp.GeoAttitude(),
                         gp.GeoPose(rel_alt_m=12.0))
         self.assertTrue(s._clutter, "a 12 m mast camera saw no clutter")
-        with open(os.path.join(self.d, "run", "sim", "truth.jsonl")) as f:
+        with open(os.path.join(self.d, "var", "run", "sim", "truth.jsonl")) as f:
             rows = [json.loads(ln) for ln in f]
         self.assertTrue(all(r["tid"] == "clutter" for r in rows))
         s.reset_run()

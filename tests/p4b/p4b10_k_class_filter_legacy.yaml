@@ -1,0 +1,70 @@
+# p4b/p4b10_k_class_filter_legacy - TASK-B4-01 NEGATIVE CONTROL: the
+# exact class-filter scenario but every camera stub emits the pre-B4-01
+# geometry-only 1078 box (config.stub_ai_box.legacy_box). With no class
+# on the wire the car decoy resolves to the null/selected class, W5
+# fails open and it becomes a SECOND person target at the decoy - the
+# person-count/distance asserts below are expected to FAIL, which is
+# the demonstration that p4b10_k_class_filter's class metadata is what
+# closes the hole.
+#
+# Expected outcome: two WM_NEW cls=person (one at person_1, one at
+# car_1), `WM_NEW .* cls=person equals:1` FAILs, and the person target
+# near the decoy violates the `min_m: 60` distance assert - the rest of
+# the chain may stall or deliver to the decoy, which is fine; the
+# world-model corruption is the point being recorded.
+version: 1
+name: p4b10_k_class_filter_legacy
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest_decoy.yaml
+operation: ../../packages/sar_forest.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 180
+operator:
+  approve: {launch: {after_s: 2}, action: {after_s: 2}}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0},
+     config: {stub_ai_box: {legacy_box: true}}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60},
+     config: {stub_ai_box: {legacy_box: true}}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0},
+     config: {stub_ai_box: {legacy_box: true}}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60},
+     config: {stub_ai_box: {legacy_box: true}}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 35, do: wait_journal, unit: "all", re: "WM_NEW .* cls=phone",
+     timeout: 240}
+  - {t: 40, do: wait_journal, unit: "s1,s2,s3",
+     re: "CLAIM .* index [0-9]+ of 3", timeout: 120}
+  # the fail-open evidence is in the journal by now; do not wait the
+  # whole delivery chain out - give the fleet a fixed window then assert
+  - {t: 45, do: wait, seconds: 120}
+assert:
+  # a stub emitted a car detection (truth row, tid car_1, sent)
+  - detection_recall: {truth: car_1, src: ai, min: 1}
+  # EXPECTED FAIL - the legacy box carries no class, so the decoy fuses
+  # as a second person target: 2 WM_NEW cls=person, not 1
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=person", equals: 1}
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=car", equals: 0}
+  # EXPECTED FAIL - one of the person targets sits ON the decoy
+  - distance_to: {unit: "s1", re: "WM_NEW .* cls=person",
+                  detected_cls: person, truth: [car_1], min_m: 60}
+teardown: land

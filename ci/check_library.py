@@ -18,6 +18,14 @@ import py_compile
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
+
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 os.environ.setdefault("SIM_ROOT", ROOT)
 
@@ -42,7 +50,8 @@ for f in sorted(glob.glob(os.path.join(ROOT, "engine", "*.py")) +
 
 # ---- yaml -----------------------------------------------------------
 yamls = sorted(glob.glob(os.path.join(ROOT, "sims", "*.yaml")) +
-               glob.glob(os.path.join(ROOT, "tests", "*.yaml")) +
+               glob.glob(os.path.join(ROOT, "tests", "**", "*.yaml"),
+                         recursive=True) +
                glob.glob(os.path.join(ROOT, "scenarios", "**", "*.yaml"),
                          recursive=True))
 for f in yamls:
@@ -60,7 +69,7 @@ for f in yamls:
         fail("hdr", f, "missing header comment")
     if scenario.is_legacy_spec(raw):
         continue                    # legacy tests validate via runner
-    if not f.startswith(os.path.join(ROOT, "scenarios") + os.sep):
+    if f.startswith(os.path.join(ROOT, "sims") + os.sep):
         continue                    # sims/*.yaml are fleet specs, not
                                     # de.scenario/1 - resolved by ./sim show
     try:
@@ -72,6 +81,8 @@ for f in yamls:
 
 # ---- package / deploy-spec / op json ---------------------------------
 for f in sorted(glob.glob(os.path.join(ROOT, "packages", "*.json")) +
+                glob.glob(os.path.join(ROOT, "tests", "**", "*.json"),
+                          recursive=True) +
                 glob.glob(os.path.join(ROOT, "scenarios", "**", "*.json"),
                           recursive=True)):
     try:

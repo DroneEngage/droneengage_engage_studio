@@ -1,0 +1,39 @@
+# precland/plan/pl_copter_end_land - PL-09 group B 2: same closed loop
+# as pl_copter_land_nav but the package carries no nav: land item -
+# the mission ends after the gate and the supervisor's end:land puts
+# the FC in NavMode LAND, opening the precland gate through
+# allowed_modes (LAND|RTL) instead of the PL-06 AUTO land-item path.
+# Regression for the mode-based gate (works without PL-06).
+# measured touchdown error (seed 1): 0.0 m from pad_1 (2026-10-06 run).
+version: 1
+name: pl_copter_end_land
+transport: fake
+world: ../../../worlds/pad_field_ref.yaml
+operation: ../../../packages/pl_copter_end.deploy.json
+verify: {cli: ../../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: cam1, cls: copter_precland}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 10, do: wait_ready, unit: cam1, timeout: 240}
+  - {t: 15, do: arm, unit: cam1}
+  - {t: 20, do: start, timeout: 120}
+  - {t: 20, do: wait_journal, unit: cam1,
+     re: "vehicle disarmed", timeout: 300}
+assert:
+  # end:land finishes the mission at gate-release (still at 20 m) - the
+  # disarm line is the touchdown timestamp
+  - distance_to: {unit: cam1, re: "vehicle disarmed",
+                  truth: [pad_1], max_m: 0.5}
+  - journal_count: {unit: cam1,
+      re: "gate pl released by (fact )?precision_landing\\.stabilized",
+      equals: 1}
+  # the mode-gate line, never the PL-06 auto-land line
+  - module_log_count: {unit: cam1, module: de_mavlink,
+      re: "PRECLAND gate open$", at_least: 1}
+  - module_log_count: {unit: cam1, module: de_mavlink,
+      re: "PRECLAND gate open \\(auto land seq", equals: 0}
+teardown: land

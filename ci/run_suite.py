@@ -2,17 +2,17 @@
 """ci/run_suite.py - nightly/CI suite driver for the de.scenario/1
 library (TASK-P5-09).
 
-    python3 ci/run_suite.py [--roots scenarios] [--seeds 1,2,3] [--keep]
-                            [--out results/nightly]
+    python3 ci/run_suite.py [--roots tests] [--seeds 1,2,3] [--keep]
+                            [--out var/results/nightly]
 
 Every *.yaml under each root (top-level and every nested subdir -
-scenarios/precland/standalone is two levels deep) runs once per seed,
+tests/precland/standalone is two levels deep) runs once per seed,
 serially - a run owns the machine. Verdicts:
 
   PASS       run_scenario exit 0
   GATE-PASS  exit !=0 AND the file's verify: declares expected findings
              AND verify.json's recorded rules match them - the deploy
-             gate blocked by design (scenarios/verify/*)
+             gate blocked by design (tests/verify/*)
   FAIL       anything else
   FLAKY      first attempt FAILed, the single permitted rerun produced
              PASS or GATE-PASS - reported with BOTH attempts, never
@@ -35,10 +35,19 @@ import xml.sax.saxutils as sax
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT, "run_scenario.py")
-RESULTS = os.path.join(ROOT, "results")
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
 
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 import simlib          # noqa: E402
+
+RESULTS = simlib.RESULTS_DIR
 
 
 def yaml_files(roots):
@@ -67,7 +76,7 @@ def expected_verify(path):
 
 
 def latest_results_dir(name, since):
-    """Newest results/<utc>/<name>/ dir written by THIS run (mtime >=
+    """Newest var/results/<utc>/<name>/ dir written by THIS run (mtime >=
     `since`) - runs are serial, but a run that died before creating its
     dir must not be judged on an older run's verify.json (same basename
     in another folder, or a previous seed)."""
@@ -115,7 +124,7 @@ def run_once(yaml_path, seed, keep):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--roots", nargs="+", default=["scenarios"])
+    ap.add_argument("--roots", nargs="+", default=["tests"])
     ap.add_argument("--seeds", default="1,2,3")
     ap.add_argument("--out", default=os.path.join(RESULTS, "nightly"))
     ap.add_argument("--keep", action="store_true")

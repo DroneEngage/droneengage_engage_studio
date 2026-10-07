@@ -1,0 +1,27 @@
+# examples/mission_square - the smallest end-to-end flight: one copter
+# on the REAL comm server is deployed the copter_square package over the
+# wire, armed, started, and must journal "mission main completed". This
+# is the green path every bigger scenario builds on: deploy -> start ->
+# completed on the real binaries. Run: ./sim run <file>
+version: 1
+name: ex_mission_square
+transport: real          # exercise the real comm server routing
+operation: ../../packages/copter_square.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  # de_mavlink refuses nav loads in AUTO, so GUIDED first; arm waits
+  # for SITL's GPS/EKF (~1-2 min from a cold boot)
+  - {t: 0,  do: mode, unit: c1, mode: GUIDED}
+  - {t: 2,  do: deploy}
+  - {t: 6,  do: arm, unit: c1}
+  - {t: 9,  do: start}
+  - {t: 12, do: wait_journal, unit: c1, re: "mission main completed",
+     timeout: 300}
+assert:
+  - journal_count: {unit: c1, re: "RUN run .* started", equals: 1}
+  - journal_count: {unit: c1, re: "mission main completed", equals: 1}
+  - journal_count: {unit: c1, re: "comm line offline", equals: 0}
+teardown: land           # always bring the fleet down

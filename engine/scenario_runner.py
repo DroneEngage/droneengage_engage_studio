@@ -7,7 +7,7 @@
 
   verify -> fleet up -> operator bot + telemetry on -> timeline
   (t: scheduled + on: journal-triggered steps, faults included) ->
-  assertions -> teardown -> results/<utc>/<name>/ with journals, logs,
+  assertions -> teardown -> var/results/<utc>/<name>/ with journals, logs,
   telemetry.jsonl (tlog), operator.log, truth.jsonl, verify.json,
   summary.json, junit.xml.
 
@@ -25,7 +25,7 @@ P5-08 world hook: a scenario `world:` file is loaded and injected into
 the fleet spec before `ensure` (stub config blocks, camera/SDR model
 settings on the real modules). Once the fleet is up, `world_epoch.json`
 is written (the stub start gun) and a TruthRecorder writes
-`run/<sim>/truth.jsonl` at 1 Hz; stub detection rows land in the same
+`var/run/<sim>/truth.jsonl` at 1 Hz; stub detection rows land in the same
 file. The recorder and epoch are always torn down with the run.
 """
 
@@ -37,6 +37,14 @@ import subprocess
 import sys
 import threading
 import time
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import simlib
@@ -65,8 +73,7 @@ def run_verify(scn, results_dir):
     # default: the wrapper (hydrates the ctx sidecar and skips compiled
     # packages / deploy specs, which verify-op.js alone fails VER-000);
     # the bare webclient CLI only when the wrapper is absent
-    wrap = os.path.join(simlib.SIM_ROOT, "scenarios", "support",
-                        "verify_wrap.js")
+    wrap = os.path.join(simlib.SIM_ROOT, "tools", "verify_wrap.js")
     cli = spec.get("cli") or (wrap if os.path.isfile(wrap) else
                               os.path.join(simlib.WEBCLIENT_REPO, VERIFY_CLI))
     if spec.get("cli") and not os.path.isabs(cli):
@@ -99,7 +106,7 @@ def run_verify(scn, results_dir):
     # unreadable input. An unparseable report is a verifier failure, never
     # "zero errors".
     # two report shapes: scripts/verify-op.js --json prints a LIST of
-    # findings {sev, rule, ...}; wrapper CLIs (scenarios/support/) print
+    # findings {sev, rule, ...}; wrapper CLIs (tools/) print
     # {error_count, errors:[{rule}]}
     n_err = rules = None
     if isinstance(rep, list):
@@ -579,7 +586,7 @@ def _junit(name, results, wall_s, path):
 
 
 def _collect(scn, m, out, results, verify, extra):
-    """Move the run's artifacts into results/<utc>/<name>/."""
+    """Move the run's artifacts into var/results/<utc>/<name>/."""
     os.makedirs(out, exist_ok=True)
     for u in m["units"]:
         for sub in ("journal", "logs"):
@@ -688,7 +695,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     if wld is not None:
         # scenario t0: the stubs pause while world_epoch.json is absent,
         # so this is also their start gun. Truth rows land in
-        # run/<sim>/truth.jsonl at 1 Hz from now on.
+        # var/run/<sim>/truth.jsonl at 1 Hz from now on.
         world_mod.clear_run_state(m["name"])
         epoch_ms = world_mod.write_epoch(m["name"], scn["world"],
                                          scn["seed"])
@@ -839,7 +846,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     return 0 if ok and n_fail == 0 else 1
 
 
-def run(t_file, keep=False, hold=False):
+def run(t_file, keep=False, hold=False, seed=1):
     """`./sim run` dispatcher: legacy tests -> runner.py, scenarios ->
     the de.scenario/1 engine. hold is scenario-only (a legacy test has
     no world stream to keep alive). A bare sims/*.yaml file has no
@@ -860,7 +867,7 @@ def run(t_file, keep=False, hold=False):
         return 0
     if scenario.is_legacy_spec(raw):
         return runner.run(t_file, keep=keep)
-    return run_scenario(t_file, keep=keep, hold=hold)
+    return run_scenario(t_file, seed=seed, keep=keep, hold=hold)
 
 
 def run_suite(suite_dir, seeds, keep=False):

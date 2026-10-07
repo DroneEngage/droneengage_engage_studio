@@ -23,7 +23,7 @@ the world's `sensors.camera.legacy_box` - the negative-control rerun of
 p4b10_k uses it to show the pre-B4-01 W5 fail-open.
 
 Every emitted box also lands a {"type":"detection", tid, cls, ...} row
-in run/<sim>/truth.jsonl (tid "clutter" for the false positives the
+in var/run/<sim>/truth.jsonl (tid "clutter" for the false positives the
 clutter model injects) - detection_precision counts them.
 
 P5-11: the world environment scales the model - p_detect picks up
@@ -32,7 +32,7 @@ noise grows 1/f_light in the dark (a unit config camera_kind:
 thermal swaps the nadir/edge ramp for flat p_detect_thermal and
 ignores light - the same dusk world can fly both roles).
 
-Live runs read the scenario clock from run/<sim>/world_epoch.json;
+Live runs read the scenario clock from var/run/<sim>/world_epoch.json;
 --selftest <poses.jsonl> replays scripted poses on a virtual clock so
 same-seed stub logs are byte-identical.
 """
@@ -40,6 +40,14 @@ same-seed stub logs are byte-identical.
 import math
 import os
 import sys
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stub_base import (StubBase, ANDRUAV_PROTOCOL_MESSAGE_TYPE,  # noqa: E402

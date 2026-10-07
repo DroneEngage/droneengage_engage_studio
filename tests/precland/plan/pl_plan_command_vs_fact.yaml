@@ -1,0 +1,45 @@
+# precland/plan/pl_plan_command_vs_fact - PL-09 group A 2: emitted
+# commands reach the module but never release a fact gate. probe emits
+# precision_landing.enable (a command routed to the namespace owner),
+# then waits on precision_landing.locked with the scene empty - it
+# times out -> continue and emits probe.done. watch is triggered by the
+# precision_landing.enabled fact the module emits once the enable
+# actually lands; its gate releases on the sticky fact.
+version: 1
+name: pl_plan_command_vs_fact
+transport: fake
+operation: ../../../packages/pl_command_vs_fact.deploy.json
+verify: {cli: ../../../tools/verify_wrap.js}
+settle_s: 10
+fleet:
+  - {id: node, cls: static_precland,
+     config: {de_precland: {target: {targets: [0, 1]}}}}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  - {t: 5, do: deploy}
+  - {t: 10, do: start}
+  - {t: 15, do: wait_journal, unit: node,
+     re: "S: watch activated", timeout: 60}
+  - {t: 20, do: wait_journal, unit: node,
+     re: "S: probe emit probe\\.done", timeout: 30}
+assert:
+  - journal_count: {unit: node, re: "S: probe emit precision_landing\\.enable",
+                    equals: 1}
+  - journal_count: {unit: node,
+      re: "S: probe gate lk timed out -> continue", equals: 1}
+  - journal_count: {unit: node, re: "S: probe emit probe\\.done",
+                    equals: 1}
+  - journal_count: {unit: node, re: "S: watch activated", equals: 1}
+  - journal_count: {unit: node,
+      re: "S: watch gate en released by (fact )?precision_landing\\.enabled",
+      equals: 1}
+  - journal_count: {unit: node, re: "failed:", equals: 0}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.enabled", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.locked", equals: 0}
+teardown: land

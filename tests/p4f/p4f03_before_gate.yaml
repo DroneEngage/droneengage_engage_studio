@@ -1,0 +1,38 @@
+# TASK-P4F-03 scenario 1 "fact before the gate": found.it is published and
+# lands in every unit's fact store BEFORE the watch mission exists - when
+# scan.begin starts it later, the gate releases at once on the stored fact
+# ("released by fact"), and the emit echoes the fact's payload back
+# (payload_from the gate = the payload is read).
+version: 1
+sim: ../../sims/copters3_faults.yaml
+operation: ../../packages/p4f03.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  # rosters (sv_roster_hz 0.2 -> one per 5 s) teach senders their
+  # recipients before the emit
+  - wait: 15
+  - fire: {event: mk.fact, unit: 1,
+           payload: {pos: [-35.363, 149.166, 0], conf: 0.9},
+           until: "BUS_OUT.*n=found\\.it"}
+  - wait: 3
+  # only now do the watch missions start - the fact is already held
+  - fire: {event: mk.scan, unit: 1, until: "BUS_OUT.*n=scan\\.begin"}
+  - wait_journal: {unit: 2, re: "gate seen released by fact", timeout: 60}
+  - wait_journal: {unit: 3, re: "gate seen released by fact", timeout: 60}
+  - wait_journal: {unit: 2, re: "BUS_OUT.*n=ack\\.found", timeout: 30}
+  - opabort
+
+assert:
+  # the sticky emit went out with a fact sequence
+  - journal_count: {unit: 1, re: "FACT_OUT.*n=found\\.it", at_least: 1}
+  # the waiting steps released on the stored fact, not a live event
+  - journal_count: {unit: 2, re: "gate seen released by fact", equals: 1}
+  - journal_count: {unit: 3, re: "gate seen released by fact", equals: 1}
+  # payload read: the emit echoed the fact payload it got from the gate
+  - journal_count: {unit: 2, re: "BUS_OUT.*n=ack\\.found", at_least: 1}
+  - journal_count: {unit: 3, re: "BUS_OUT.*n=ack\\.found", at_least: 1}

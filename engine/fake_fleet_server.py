@@ -64,10 +64,19 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import random
 import ssl
 import sys
 import time
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 import simlib as fleet_lib
@@ -80,7 +89,7 @@ SEED = 1337
 PORT = fleet_lib.SERVER_PORT
 CLOCK_OFFSET_MS = 0                 # P4A-07: deliberate server-clock skew
 NOCLOCK = set()                     # parties whose frames carry no "ts"
-SIM_NAME = None                     # run/<name>/ this server belongs to
+SIM_NAME = None                     # var/run/<name>/ this server belongs to
 
 
 def _single():
@@ -515,7 +524,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=fleet_lib.SERVER_PORT)
     ap.add_argument("--sim", default=None,
-                    help="sim name - its run/<name>/sim.json is the unit list")
+                    help="sim name - its var/run/<name>/sim.json is the unit list")
     ap.add_argument("--cert", default=None)
     ap.add_argument("--key", default=None)
     ap.add_argument("--seed", type=int, default=SEED)

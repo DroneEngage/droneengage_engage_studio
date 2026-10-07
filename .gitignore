@@ -1,5 +1,5 @@
 __pycache__
-/results
-/run
+/var
+/.pytest_cache
 # per-machine paths (copy sim.local.env.example)
 /sim.local.env

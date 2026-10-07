@@ -11,18 +11,28 @@
   ./sim sims                       generated sims and live process counts
   ./sim status                     = ./sim ctl status
   ./sim ctl [-s <sim>] <cmd> ...   operator console (./sim ctl for help)
-  ./sim run <test.yaml> [--keep] [--hold|--view]
-                                   run a test (owns the machine: downs every
-                                   other sim); --keep skips the teardown,
-                                   --hold parks after the timeline (world
-                                   stream + Mavlink3DMap viewer live) until
-                                   Ctrl-C. A bare sims/*.yaml just comes
-                                   up (hash-reused, like up)
+  ./sim run <file.yaml> [--seed N] [--keep] [--hold|--view]
+                                   run a test/scenario (owns the machine:
+                                   downs every other sim); --keep skips the
+                                   teardown, --hold parks after the timeline
+                                   (world stream + Mavlink3DMap viewer live)
+                                   until Ctrl-C. A bare sims/*.yaml just
+                                   comes up (hash-reused, like up)
+  ./sim suite [dir ...] [--seeds 1,2,3] [--keep]
+                                   run every yaml under dir(s) once per seed
+                                   (default dir: tests) - verdicts + junit
+                                   in var/results/nightly/
   ./sim view <scenario.yaml>       one command for sim + Mavlink3DMap viewer:
                                    = run --hold (the scenario needs
                                    render: {mode: viewer})
+  ./sim list [scenarios|tests|sims]        catalog: files + one-line
+                                   descriptions (default: scenarios+tests)
+  ./sim new <name>                 scaffold scenarios/<name>.yaml from
+                                   templates/scenario.yaml
+  ./sim validate <file.yaml>       schema + referenced-file check, starts
+                                   nothing
   ./sim logs [-s <sim>] <unit|server> [proc]  tail a process log
-  ./sim clean [--days N] [--all] [--dry-run]  prune run/ and results/
+  ./sim clean [--days N] [--all] [--dry-run]  prune var/run/ and var/results/
                                    (never a live sim; default keeps 7 days)
 
 Login overrides for show/up/run/view (win over the sim yaml and
@@ -34,14 +44,26 @@ sim.local.env SIM_*_AUTH_*):
                                      with auth: true only)
 
 Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
-(steps + assertions on a sim). See README.md.
+(automated cases) and scenarios/ (human-run demos + examples).
+docs/SCENARIOS.md is the authoring reference. See README.md.
 """
 
+import glob
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+
+signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "var"), "pycache"))
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine"))
 import simlib
@@ -74,6 +96,71 @@ def _bad_flags(a, known):
     """--flags in `a` that are not in `known` (the auth overrides were
     already stripped). Typos like --view should fail, not be ignored."""
     return [x for x in a if x.startswith("-") and x not in known]
+
+
+def _one_liner(path):
+    """First line of a yaml's header comment, '#' stripped - the
+    one-line 'what it proves' the library convention requires."""
+    try:
+        with open(path, errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                return line.lstrip("#").strip() if line.startswith("#") \
+                    else ""
+    except OSError:
+        pass
+    return ""
+
+
+def _validate_file(f):
+    """`sim validate` checks for one yaml file. Prints findings; -> list
+    of problem strings (empty = clean). Starts nothing."""
+    import scenario as scenario_mod
+    problems = []
+    f = os.path.abspath(f)
+    try:
+        head = open(f, errors="replace").read(400)
+    except OSError as e:
+        return [str(e)]
+    if not head.lstrip().startswith("#"):
+        problems.append("no header comment (the first line must be a "
+                        "# 'what it proves' paragraph - CI enforces it)")
+    try:
+        raw = simlib.load_yaml(f)
+    except Exception as e:
+        return problems + [f"yaml: {e}"]
+    if not isinstance(raw, dict):
+        return problems + ["top level is not a mapping"]
+    base = os.path.dirname(f)
+
+    def exists(key, val):
+        if val and not os.path.isfile(os.path.join(base, val)):
+            problems.append(f"{key}: {val} - file not found")
+
+    try:
+        if scenario_mod.is_sim_spec(raw):
+            simlib.load_sim(f)
+        elif scenario_mod.is_legacy_spec(raw):
+            if isinstance(raw.get("sim"), str):
+                exists("sim", raw["sim"])
+            exists("operation", raw.get("operation"))
+            if not isinstance(raw.get("steps"), list):
+                problems.append("steps: must be a list")
+        else:
+            scn = scenario_mod.load_scenario(f, seed=1)
+            exists("operation", raw.get("operation"))
+            exists("world", raw.get("world"))
+            cli = (raw.get("verify") or {}).get("cli")
+            exists("verify.cli", cli)
+            # scenario sim spec resolution: fleet cls -> blocks, ports
+            simlib.load_sim(scn["sim"], base)
+    except simlib.SimError as e:
+        problems.append(str(e))
+    except SystemExit as e:
+        problems.append(f"loader exited {e.code}")
+    return problems
 
 
 def _auth_flags(argv):
@@ -168,16 +255,99 @@ def main(argv):
             ctl.main(a)
         elif c == "run":
             import scenario_runner
+            seed = 1
+            if "--seed" in a:
+                i = a.index("--seed")
+                if i + 1 >= len(a):
+                    sys.exit("--seed needs a value")
+                seed = int(a[i + 1])
+                del a[i:i + 2]
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, ("--keep", "--hold", "--view"))
             if bad or len(files) != 1:
-                sys.exit("usage: ./sim run <test.yaml> "
+                sys.exit("usage: ./sim run <file.yaml> [--seed N] "
                          "[--keep] [--hold|--view]"
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
             # legacy tests -> runner.py, de.scenario/1 -> the P5-07 engine
             return scenario_runner.run(files[0], keep="--keep" in a,
                                        hold=bool({"--hold", "--view"}
-                                                 & set(a)))
+                                                 & set(a)), seed=seed)
+        elif c == "suite":
+            # the full suite driver (verdicts, flaky rerun, junit) lives
+            # in ci/run_suite.py - forward everything after `--seeds`
+            seeds = "1,2,3"
+            if "--seeds" in a:
+                i = a.index("--seeds")
+                if i + 1 >= len(a):
+                    sys.exit("--seeds needs a value")
+                seeds = a[i + 1]
+                del a[i:i + 2]
+            keep = "--keep" in a
+            dirs = [x for x in a if not x.startswith("-")] or ["tests"]
+            bad = _bad_flags(a, ("--keep",))
+            if bad:
+                sys.exit("usage: ./sim suite [dir ...] [--seeds 1,2,3] "
+                         "[--keep]" + f" - unknown {' '.join(bad)}")
+            cmd = [sys.executable,
+                   os.path.join(simlib.SIM_ROOT, "ci", "run_suite.py"),
+                   "--roots"] + dirs + ["--seeds", seeds] \
+                  + (["--keep"] if keep else [])
+            return subprocess.call(cmd, cwd=simlib.SIM_ROOT)
+        elif c == "list":
+            roots = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ())
+            if bad or any(r not in ("scenarios", "tests", "sims")
+                          for r in roots):
+                sys.exit("usage: ./sim list [scenarios|tests|sims] ..."
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+            for root in roots or ["scenarios", "tests"]:
+                d = os.path.join(simlib.SIM_ROOT, root)
+                files = sorted(glob.glob(os.path.join(d, "**", "*.yaml"),
+                                         recursive=True))
+                print(f"{root}/  ({len(files)} files)")
+                for f in files:
+                    rel = os.path.relpath(f, simlib.SIM_ROOT)
+                    one = _one_liner(f)
+                    print(f"  {rel:52s} {one[:80]}")
+        elif c == "new":
+            names = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ())
+            ok_name = len(names) == 1 and \
+                re.fullmatch(r"[\w-]+(/[\w-]+)*", names[0])
+            if bad or not ok_name:
+                sys.exit("usage: ./sim new <name> - word chars"
+                         " (a/b nests under scenarios/)"
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+            dst = os.path.join(simlib.SIM_ROOT, "scenarios",
+                               names[0] + ".yaml")
+            if os.path.exists(dst):
+                sys.exit(f"{dst} already exists")
+            tpl = open(os.path.join(simlib.SIM_ROOT, "templates",
+                                    "scenario.yaml")).read()
+            # @REL@ = repo-root prefix for the file's depth under
+            # scenarios/ (scenarios/x.yaml -> ../, scenarios/a/b.yaml
+            # -> ../../)
+            depth = names[0].count("/") + 1
+            tpl = tpl.replace("@NAME@",
+                              os.path.basename(names[0])) \
+                     .replace("@REL@", "../" * depth)
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            open(dst, "w").write(tpl)
+            rel = os.path.relpath(dst, simlib.SIM_ROOT)
+            print(f"wrote {rel} - edit the header + fleet/timeline, then:")
+            print(f"  ./sim validate {rel} && ./sim run {rel}")
+        elif c == "validate":
+            files = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ())
+            if bad or len(files) != 1:
+                sys.exit("usage: ./sim validate <file.yaml>"
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+            problems = _validate_file(files[0])
+            if problems:
+                for p in problems:
+                    print(simlib.col_red("not ok") + f"  {p}")
+                sys.exit(f"{files[0]}: {len(problems)} problem(s)")
+            print(simlib.col_green("ok") + f"  {files[0]}")
         elif c == "view":
             import scenario_runner
             files = [x for x in a if not x.startswith("-")]

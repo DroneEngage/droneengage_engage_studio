@@ -1,0 +1,55 @@
+# gpio/gpio_pwm_after_legacy_off - GF-07 / GF-05: a PWM pin must stay
+# usable after a legacy write zeroes its frequency. A raw GPIO_ACTION
+# PORT_WRITE {a:2, n:servo, v:0, d:0} (6519) switches servo off - its
+# live frequency becomes 0. The went_off edge triggers servo_back, whose
+# do gpio.servo {pwm:102} falls back to the configured frequency
+# (50 Hz): ok result, went_on, width 102.
+#
+# Pre-GF-05 the command reused the dead live frequency (0): the pin was
+# written off instead, ok but no went_on and width stayed 0.
+version: 1
+name: gpio_pwm_after_legacy_off
+transport: fake
+operation: ../../packages/gpio_pwmbak.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: node, cls: static_gpio}
+timeline:
+  # restart de_gpio first: pin state lives in the module process, so a
+  # repeated run must come back to servo width 51 (on)
+  - {t: 0, do: restart, unit: node, proc: de_gpio}
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 17, do: wait_journal, unit: node, re: "RUN run .* started",
+     timeout: 30}
+  # the legacy write: v:0 zeroes the frequency, d:0 the width
+  - {t: 25, do: send, ty: i, mt: 6519, tg: _AGN_,
+     ms: {a: 2, n: servo, v: 0, d: 0}}
+  - {t: 27, do: wait_journal, unit: node,
+     re: "EVENT_IN event gpio\\.servo\\.went_off latched", timeout: 15}
+  - {t: 30, do: wait_journal, unit: node,
+     re: "S: servo_back activated", timeout: 15}
+  - {t: 32, do: wait_journal, unit: node,
+     re: "ACTION_RESULT .* ok \\(gpio\\.servo\\)", timeout: 15}
+  - {t: 36, do: wait, seconds: 3}
+  - {t: 40, do: stop}
+assert:
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.servo\\.went_off latched",
+                    equals: 1}
+  - journal_count: {unit: node, re: "S: servo_back activated",
+                    equals: 1}
+  - journal_count: {unit: node,
+                    re: "ACTION_RESULT .* ok \\(gpio\\.servo\\)",
+                    equals: 1}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event gpio\\.servo\\.went_on latched",
+                    equals: 1}
+  # the =102 state line can never journal here: the 0->102 pair lands
+  # inside the supervisor's 1 line/s per-key throttle, so assert the
+  # module's own PWM write instead (width 102 at the configured 50 Hz)
+  - module_log_count: {unit: node, module: de_gpio,
+                       re: "PWM set on Pin: 18.*Target Freq: 50 Hz.*Input Width: 102",
+                       at_least: 1}
+teardown: none

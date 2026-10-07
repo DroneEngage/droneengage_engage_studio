@@ -7,9 +7,14 @@ Everything runs headless on one machine against the **real**
 ports. A fake server is available for link-fault tests.
 
 ```
-blocks/   unit types   - what one unit runs (SITL? which modules? config)
-sims/     fleets       - blocks composed: names, counts, placement, server
-tests/    scenarios    - a sim + steps + assertions
+blocks/     unit types   - what one unit runs (SITL? which modules? config)
+sims/       fleets       - blocks composed: names, counts, placement, server
+tests/      test cases   - the automated library CI runs (steps + asserts)
+scenarios/  human runs   - demos + examples a person drives by hand
+worlds/     ground truth - seeded worlds scenarios can load
+packages/   operations   - compiled ops the tests deploy
+templates/  scaffold     - the file ./sim new copies
+docs/       authoring    - SCENARIOS.md: the de.scenario/1 reference
 ```
 
 ## Setup (per machine)
@@ -38,12 +43,23 @@ and SITL's TCP ports listen on all interfaces.
 ## Quick start
 
 ```bash
-./sim blocks                          # list the reusable unit types
-./sim show sims/copters3.yaml         # what a sim expands to (units, ports)
+./sim list                            # every runnable file + one-line summary
 ./sim run tests/smoke_copters.yaml    # brings the sim up if needed, runs, lands
+./sim view scenarios/demos/world_canopy_viewer.yaml   # a demo + 3D viewer
 ./sim ctl status                      # live processes / online units
 ./sim down
-./sim clean --dry-run                 # what pruning run/ + results/ frees
+./sim clean --dry-run                 # what pruning var/run/ + var/results/ frees
+```
+
+More of the catalog:
+
+```bash
+./sim blocks                          # the reusable unit types
+./sim list sims                       # fleet definitions
+./sim show sims/copters3.yaml         # what a sim expands to (units, ports)
+./sim new my_run                      # scaffold scenarios/my_run.yaml
+./sim validate scenarios/my_run.yaml  # schema + refs, starts nothing
+./sim suite tests/faults              # a whole directory x seeds
 ```
 
 `./sim run` reuses a running sim only if it is the **same** sim (hash of the
@@ -157,7 +173,7 @@ per-unit `account:` entries and the `SIM_*_AUTH_*` vars.
 is only valid on an external server with `auth: true`.
 
 The real servers run from their repos with a config **generated** under
-`run/<sim>/server/`. Their own `server.config(.local)` files are never
+`var/run/<sim>/server/`. Their own `server.config(.local)` files are never
 read or changed.
 
 With a real or external server, `engine/gcs_bridge.py` holds one GCS
@@ -169,7 +185,7 @@ same on all of them. Link faults are refused on a real server.
 
 `./sim up` is additive: it only restarts the same-named sim and refuses
 to start one whose ports or unit names collide with a live sim (pick a
-different `slot_base`). `run/<sim>/` holds each sim's manifest, configs,
+different `slot_base`). `var/run/<sim>/` holds each sim's manifest, configs,
 logs and pids, so sims are fully independent:
 
 ```bash
@@ -205,7 +221,13 @@ collide with a developer's own servers. Sims meant to run **in parallel**
 need disjoint `slot_base`s - `up` verifies there is no overlap with a
 live sim before starting anything.
 
-## Tests
+## Tests - the automated library
+
+`tests/` holds everything automation runs: the flat legacy files
+(`sim:` + `steps:`) and the `de.scenario/1` library in its area
+subdirectories (`faults/`, `p4a/`, `verify/`, `world`/p5, ...). The
+nightly suite is `./sim suite tests` (a.k.a. `ci/run_suite.py --roots
+tests`); `ci/check_library.py` validates every file on push.
 
 See the docstring in `engine/runner.py` for every step and assertion. In
 short:
@@ -216,7 +238,7 @@ short:
   `kill` / `restart` (also `unit: server`), `reboot` (de_comm under a new
   boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
   (fake server only), `commline`, `send`, `write_file` (`{unit, module,
-  path, json}` - a JSON file into `run/<unit>/<module>/`, for module file
+  path, json}` - a JSON file into `var/run/<unit>/<module>/`, for module file
   seams like de_rpi_gpio's `gpio_inputs.json` or de_precland's
   `precland_scene.json`; `also: [{path, json, delay_ms?}]`
   writes extra files inside the same call — an entry with `delay_ms`
@@ -241,25 +263,34 @@ list, or `all`.
 HOLD + disarm. A plane cannot land in place, so it gets a `reset`: a power-cycle
 of SITL (fresh, at home), de_comm and its modules.
 
-Results land in `results/<timestamp>-<test>/`: journals, logs, the test file
+Results land in `var/results/<timestamp>-<test>/`: journals, logs, the test file
 and the sim manifest.
 
-## Scenarios (de.scenario/1)
+## Scenarios - human-run
 
-`scenarios/*.yaml` rehearse a whole operation on the desk - one versioned
-file carries the fleet, the operation, the operator policy, a scripted
-timeline, faults and assertions:
+`scenarios/` is the person's side of the library: `demos/` (things to
+watch, like the Mavlink3DMap canopy viewer), `examples/` (small commented
+starters), and wherever you drop your own files. `./sim new <name>`
+scaffolds one; `./sim validate <file>` checks it without starting
+anything. **docs/SCENARIOS.md is the authoring reference** - paste it to
+an LLM and it can write a scenario for you.
+
+## The scenario format (de.scenario/1)
+
+One versioned file rehearses a whole operation on the desk - fleet,
+operation, operator policy, scripted timeline, faults, assertions:
 
 ```
-./run_scenario.py scenarios/faults/link_cut.yaml          # one scenario
-./run_scenario.py scenarios/faults/link_cut.yaml --seed 7 # a seed run
-./run_scenario.py --suite scenarios/faults --seeds 1,2    # suite x seeds
-./sim run scenarios/faults/kill.yaml                      # same engine via sim
-./sim view scenarios/p5/world_canopy_viewer.yaml          # sim + Mavlink3DMap
+./sim run tests/faults/link_cut.yaml                    # one scenario
+./sim run tests/faults/link_cut.yaml --seed 7           # a seed run
+./sim suite tests/faults --seeds 1,2                    # suite x seeds
+./sim view scenarios/demos/world_canopy_viewer.yaml     # sim + Mavlink3DMap
                                                         # viewer, held till Ctrl-C
 ```
 
-Legacy `tests/*.yaml` (`sim:` + `steps:`) keep running unchanged through
+(`run_scenario.py` still works - a shim over the same engine.)
+
+Legacy `sim:` + `steps:` files keep running unchanged through
 `./sim run` - the same dispatcher picks the engine by file shape.
 
 Format (strict - unknown keys fail against
@@ -289,7 +320,7 @@ Format (strict - unknown keys fail against
   `max_rmse_px`, `noise_m`, `p_drop`) - `stub_ai_box` never reports a
   pad as a detection class). Consumed by the `stub_*`
   modules and the truth recorder, which writes
-  `run/<sim>/truth.jsonl` at 1 Hz plus per-detection rows),
+  `var/run/<sim>/truth.jsonl` at 1 Hz plus per-detection rows),
   `operation`, `verify` (P5-06 CLI, absent = recorded skip),
   `operator` (the bot's standing approve/confirm policy), `fleet`,
   `timeline`, `assert`, `teardown`, `settle_s`, `render` (P5-13 opt-in:
@@ -307,7 +338,7 @@ Format (strict - unknown keys fail against
   Mavlink3DMap's `udp2websocket.js` (UDP `16450 + slot_base` ->
   ws `8801 + slot_base`) and a vite dev server on `8070 + slot_base`
   from `$MAVLINK3DMAP_DIR` (sim.local.env), pid-tracked under
-  `run/<sim>/render/` - `./sim up` prints the viewer URL
+  `var/run/<sim>/render/` - `./sim up` prints the viewer URL
   `http://127.0.0.1:<web>/?world=ws://127.0.0.1:<stream>`
   and opens no browser. `headless: true` streams without them.
   The world stream lives inside the runner process: `./sim view
@@ -405,7 +436,7 @@ Format (strict - unknown keys fail against
   series (a sag that recovers by disarm still counts).
 
 Each run gets a seed-derived port block (no cross-seed collisions) and
-`results/<utc>/<name>/`: journals, per-unit and server logs,
+`var/results/<utc>/<name>/`: journals, per-unit and server logs,
 `links.jsonl` (link up/down transitions the monitor saw),
 `telemetry.jsonl` (per-unit FC samples = the tlog), `operator.log` (the
 bot's GCS session journal), `truth.jsonl` when a world supplies it,

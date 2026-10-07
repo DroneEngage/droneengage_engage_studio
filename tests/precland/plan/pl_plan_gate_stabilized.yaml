@@ -1,0 +1,51 @@
+# precland/plan/pl_plan_gate_stabilized - PL-09 group A 1: the supervisor
+# drives the REAL de_precland through a compiled de.operation package.
+# Mission `watch` invokes precision_landing.enable, gates on the
+# stabilized FACT (module evidence, not a command echo), emits pad.ready,
+# invokes disable and gates on disabled. The scene is `empty` until
+# t=20, so the lock - and therefore the gate release - can only exist
+# after the scene write, proving the chain is causal.
+version: 1
+name: pl_plan_gate_stabilized
+transport: fake
+operation: ../../../packages/pl_gate_stabilized.deploy.json
+verify: {cli: ../../../tools/verify_wrap.js}
+settle_s: 10
+fleet:
+  - {id: node, cls: static_precland,
+     config: {de_precland: {target: {targets: [0, 1]}}}}
+timeline:
+  - {t: 0, do: restart, unit: node, proc: de_precland}
+  - {t: 0, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "empty"}}
+  - {t: 1, do: wait_log, unit: node, module: de_precland,
+     re: "TEST SOURCE: scenes from", timeout: 60}
+  - {t: 5, do: deploy}
+  - {t: 10, do: start}
+  - {t: 20, do: write_file, unit: node, module: de_precland,
+     path: precland_scene.json, json: {scene: "target_near"}}
+  - {t: 25, do: wait_journal, unit: node,
+     re: "S: watch gate pl released by (fact )?precision_landing\\.stabilized",
+     timeout: 60}
+  - {t: 30, do: wait_journal, unit: node,
+     re: "S: watch gate off released by (fact )?precision_landing\\.disabled",
+     timeout: 30}
+assert:
+  - journal_count: {unit: node, re: "S: watch activated", equals: 1}
+  - journal_count: {unit: node, re: "S: watch e1 ok", equals: 1}
+  - journal_count: {unit: node, re: "S: watch e2 ok", equals: 1}
+  - journal_count: {unit: node,
+      re: "S: watch gate pl released by (fact )?precision_landing\\.stabilized",
+      equals: 1}
+  - journal_count: {unit: node, re: "S: watch emit pad\\.ready",
+                    equals: 1}
+  - journal_count: {unit: node,
+      re: "S: watch gate off released by (fact )?precision_landing\\.disabled",
+      equals: 1}
+  - journal_count: {unit: node, re: "timed out", equals: 0}
+  - journal_count: {unit: node, re: "failed:", equals: 0}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.stabilized", equals: 1}
+  - module_log_count: {unit: node, module: de_precland,
+      re: "EVENT_OUT precision_landing\\.disabled", at_least: 1}
+teardown: land

@@ -8,11 +8,11 @@ the s2s ports plus a "stub" block:
     "stub": {"world": "<world.yaml>", "seed": 1, "unit": "<unit>",
              "pose_port": 5765+10k}        # SITL serial5 (0 on statics)
 
-From the config path the stub derives run/<sim>/ and reads:
-  run/<sim>/world_epoch.json   {"epoch_unix_ms"} - scenario t0 written
+From the config path the stub derives var/run/<sim>/ and reads:
+  var/run/<sim>/world_epoch.json   {"epoch_unix_ms"} - scenario t0 written
                                by the runner; absent -> the stub idles
-  run/<sim>/truth.jsonl        per-detection rows are appended here
-  run/<sim>/stubs/<unit>.log   one line per sent message:
+  var/run/<sim>/truth.jsonl        per-detection rows are appended here
+  var/run/<sim>/stubs/<unit>.log   one line per sent message:
                                "<unix_ms> <kind> <json>"
 
 Pose: units with a flight controller are read on the SITL pose port
@@ -194,7 +194,7 @@ class PoseFeed:
 
 
 class EpochSource:
-    """run/<sim>/world_epoch.json, mtime-cached per tick. None while the
+    """var/run/<sim>/world_epoch.json, mtime-cached per tick. None while the
     runner has not started a world run (the stub idles - the world is
     scenario-scoped)."""
 
@@ -238,7 +238,7 @@ class StubLog:
 
 
 class TruthAppender:
-    """per-detection rows into run/<sim>/truth.jsonl - {"type":
+    """per-detection rows into var/run/<sim>/truth.jsonl - {"type":
     "detection", src, unit, tid|"clutter", cls, t_ms, ...model fields}.
     One open-append per row; reads alongside the runner's 1 Hz entity
     rows. tid "clutter" marks a false positive for detection_precision."""
@@ -271,7 +271,7 @@ class StubBase:
         self.name = name
         self.cfg, self.cfg_path, self.selftest, self.selftest_dur = \
             load_module_cfg(argv)
-        # run/<sim>/<unit>/<mod>/<mod>.config.json -> run/<sim>
+        # var/run/<sim>/<unit>/<mod>/<mod>.config.json -> var/run/<sim>
         self.run_dir = os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(self.cfg_path))))
         spec = self.cfg.get("stub") or {}

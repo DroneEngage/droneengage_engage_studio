@@ -1,0 +1,51 @@
+# camera/camera_operator_fire - TASK-EV-CAM acceptance: the operator's
+# `fire` reaches the camera namespace owner through the local forward
+# leg - WITH and WITHOUT a loaded package.
+#
+#   t=10  fire camera.cam_0.record_on   NO package has ever been loaded:
+#          the command still forwards to de_camera -> recording starts
+#          (invisible to the journal - no package, nothing latches).
+#          `sim up` already waited on de_camera's Communicator-Server-
+#          Found log line (catalog ready_log_re), so the fire lands on a
+#          registered module
+#   t=30  fire camera.cam_0.record_off  with the package up: went_idle
+#          latches - only possible when the camera WAS recording, i.e.
+#          the no-package fire drove it (record_off on an idle camera is
+#          no edge)
+#   t=40  record_on -> went_recording, t=50 record_off -> went_idle
+version: 1
+name: camera_operator_fire
+transport: fake
+world: ../../worlds/forest_canopy.yaml
+operation: ../../packages/camera_fire.deploy.json
+render: {mode: cameras, headless: false}
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: node, cls: copter_camera}
+timeline:
+  - {t: 10, do: fire, event: camera.cam_0.record_on, unit: node}
+  - {t: 14, do: deploy}
+  - {t: 20, do: start}
+  - {t: 30, do: fire, event: camera.cam_0.record_off, unit: node}
+  - {t: 32, do: wait_journal, unit: node,
+     re: "EVENT_IN event camera\\.cam_0\\.went_idle latched", timeout: 60}
+  - {t: 40, do: fire, event: camera.cam_0.record_on, unit: node}
+  - {t: 42, do: wait_journal, unit: node,
+     re: "EVENT_IN event camera\\.cam_0\\.went_recording latched",
+     timeout: 60}
+  - {t: 50, do: fire, event: camera.cam_0.record_off, unit: node}
+  - {t: 52, do: wait_journal, unit: node,
+     re: "EVENT_IN event camera\\.cam_0\\.went_idle latched", timeout: 60}
+  - {t: 65, do: stop}
+assert:
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event camera\\.cam_0\\.went_recording latched",
+                    equals: 1}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event camera\\.cam_0\\.went_idle latched",
+                    equals: 2}
+  # the manual 'idle' mission stays un-activated: operator fires drive
+  # the recorder through the module, never through the sensor lane
+  - journal_count: {unit: node, re: "S: idle activated", equals: 0}
+teardown: none

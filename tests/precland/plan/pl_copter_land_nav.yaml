@@ -1,0 +1,53 @@
+# precland/plan/pl_copter_land_nav - PL-09 group B 1: full closed loop
+# with a real SITL. The compiled op's wp-leg start action invokes
+# precision_landing.enable on the unit's stub_precland; the
+# flight-lane gate holds at 20 m over the nominal point until the
+# stub's stabilized fact releases it; then nav: land puts the AUTO
+# mission on a MAV_CMD_NAV_LAND item, the PL-06 gate opens
+# nominal nav point N (truth rows at the disarm line). de_mavlink logs
+# "gate open (auto land seq 4)" once per seq per process - a reused
+# sim's second landing stays silent, so the gate is asserted through
+# the LANDING_TARGET stream it unlocks instead.
+# ("auto land seq") and LANDING_TARGET pulls the touchdown onto the
+# pad 4 m away.
+# measured touchdown error (seed 1): 0.0 m from pad_1, 4.0 m from the
+version: 1
+name: pl_copter_land_nav
+transport: fake
+world: ../../../worlds/pad_field_ref.yaml
+operation: ../../../packages/pl_copter_land.deploy.json
+verify: {cli: ../../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: cam1, cls: copter_precland}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 10, do: wait_ready, unit: cam1, timeout: 240}
+  - {t: 15, do: arm, unit: cam1}
+  - {t: 20, do: start, timeout: 120}
+  - {t: 20, do: wait_journal, unit: cam1,
+     re: "vehicle disarmed", timeout: 300}
+assert:
+  - distance_to: {unit: cam1, re: "vehicle disarmed",
+                  truth: [pad_1], max_m: 0.5}
+  - distance_to: {unit: cam1, re: "vehicle disarmed",
+                  truth: [n_point], min_m: 3}
+  - journal_count: {unit: cam1,
+      re: "gate pl released by (fact )?precision_landing\\.stabilized",
+      equals: 1}
+  - journal_count: {unit: cam1,
+      re: "EVENT_IN event precision_landing\\.stabilized latched",
+      at_least: 1}
+  # the auto-land gate opening is asserted via its consequence:
+    # LANDING_TARGET packets only flow while the PL-06 gate is open
+    # ("gate open (auto land seq N)" itself logs once per seq per
+    # de_mavlink process - silent on a reused sim's second run)
+  - module_log_count: {unit: cam1, module: de_mavlink,
+      re: "PRECLAND LANDING_TARGET", at_least: 50}
+  # rejections during the wp/hold legs prove the gate was closed
+  # before the land item became current
+  - module_log_count: {unit: cam1, module: de_mavlink,
+      re: "PRECLAND gate closed", at_least: 1}
+teardown: land

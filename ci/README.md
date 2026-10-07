@@ -14,8 +14,8 @@ that does lives in the nightly layer only.
 
     python3 ci/check_verify_ops.py
 
-Runs `scenarios/support/verify_wrap.js` on every `*.op.json` /
-`*.deop` under `scenarios/`. Ops named by a `verify:` block with
+Runs `tools/verify_wrap.js` on every `*.op.json` /
+`*.deop` under `tests/`. Ops named by a `verify:` block with
 `expect_rules` must be blocked with exactly those rules; everything
 else must verify clean. This is the push-time form of the deploy gate -
 the same scenarios prove the full runner path nightly (GATE-PASS
@@ -23,9 +23,9 @@ verdicts).
 
 ## run_suite.py
 
-    python3 ci/run_suite.py --roots scenarios --seeds 1,2,3
-    python3 ci/run_suite.py --roots scenarios/verify --seeds 1   # fast gate check
-    python3 ci/run_suite.py --roots scenarios/faults --seeds 1,2,3
+    python3 ci/run_suite.py --roots tests --seeds 1,2,3
+    python3 ci/run_suite.py --roots tests/verify --seeds 1   # fast gate check
+    python3 ci/run_suite.py --roots tests/faults --seeds 1,2,3
 
 Serial per-file, per-seed runs of `run_scenario.py`. Verdicts:
 
@@ -38,7 +38,7 @@ Serial per-file, per-seed runs of `run_scenario.py`. Verdicts:
   summary keeps BOTH attempts and junit marks the case `type="flaky"`
   so CI cannot silently green it.
 
-Outputs `results/nightly/summary.md`, `junit.xml`, `runs.json`; exit 1
+Outputs `var/results/nightly/summary.md`, `junit.xml`, `runs.json`; exit 1
 when anything is FAIL or FLAKY.
 
 ## Self-hosted nightly runner prerequisites
@@ -61,11 +61,11 @@ Runner labels: `self-hosted, linux, sitl`.
 ## Local equivalent of the nightly job
 
     ./sim down
-    python3 ci/run_suite.py --roots scenarios --seeds 1,2,3
-    cat results/nightly/summary.md
+    python3 ci/run_suite.py --roots tests --seeds 1,2,3
+    cat var/results/nightly/summary.md
 
 Or a cron on a dedicated machine:
 
     17 2 * * * cd ~/de_code/droneengage_simulation_land && ./sim down && \
-        python3 ci/run_suite.py --roots scenarios --seeds 1,2,3 \
-        >> results/nightly/cron.log 2>&1
+        python3 ci/run_suite.py --roots tests --seeds 1,2,3 \
+        >> var/results/nightly/cron.log 2>&1

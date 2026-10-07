@@ -25,6 +25,15 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
+
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 
@@ -48,10 +57,10 @@ ADVERT_BIN = os.path.join(
 
 
 def make(world_path=PAD_FIELD, d=None, extra=None):
-    """A StubPrecland on a generated-looking config under d/run/sim/u1/."""
+    """A StubPrecland on a generated-looking config under d/var/run/sim/u1/."""
     if d is None:
         d = tempfile.mkdtemp()
-    mdir = os.path.join(d, "run", "sim", "u1", "stub_precland")
+    mdir = os.path.join(d, "var", "run", "sim", "u1", "stub_precland")
     os.makedirs(mdir, exist_ok=True)
     cfg = {"stub": {"world": world_path, "seed": 7, "unit": "u1",
                     "sysid": 1, "pose_port": 0},
@@ -202,7 +211,7 @@ class Model(unittest.TestCase):
         self.tmp.cleanup()
 
     def _events(self, stub, d=None):
-        log = os.path.join(d or self.d, "run", "sim", "stubs", "u1.log")
+        log = os.path.join(d or self.d, "var", "run", "sim", "stubs", "u1.log")
         if not os.path.isfile(log):
             return []
         return [json.loads(ln.split(" ", 2)[2]) for ln in open(log)
@@ -388,7 +397,7 @@ class Model(unittest.TestCase):
 
     def _selftest_log(self):
         """--selftest on the descent file -> stub log bytes."""
-        mdir = os.path.join(self.d, "run", "sim", "u1", "stub_precland")
+        mdir = os.path.join(self.d, "var", "run", "sim", "u1", "stub_precland")
         os.makedirs(mdir, exist_ok=True)
         cfg = {"stub": {"world": PAD_FIELD, "seed": 7, "unit": "u1",
                         "sysid": 1, "pose_port": 0},
@@ -427,7 +436,7 @@ class Model(unittest.TestCase):
             frame += 1
             t_s = frame * 0.05
         s.log.log("END", {"frames": frame}, ms=s.clock_ms())
-        log = os.path.join(self.d, "run", "sim", "stubs", "u1.log")
+        log = os.path.join(self.d, "var", "run", "sim", "stubs", "u1.log")
         return open(log, "rb").read()
 
     def test_selftest_deterministic(self):

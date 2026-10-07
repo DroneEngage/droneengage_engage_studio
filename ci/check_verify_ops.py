@@ -3,12 +3,12 @@
 
 Pure check - node + verify_wrap.js only, no fleet, no servers, no sim:
 
-  - every scenarios/**/*.yaml with a `verify:` block declaring
-    expect_rules / expect_errors names an op under
+  - every tests/**/*.yaml (and scenarios/**/*.yaml) with a `verify:`
+    block declaring expect_rules / expect_errors names an op under
     `operation:` - that op MUST be blocked by the verifier and the
     findings MUST carry exactly the declared rules
-  - every other *.op.json / *.deop found under scenarios/ MUST verify
-    clean (zero error-severity findings)
+  - every other *.op.json / *.deop found under tests/ (and scenarios/)
+    MUST verify clean (zero error-severity findings)
 
 Mirrors what the webclient's scripts/verify-all.js does for its own
 fixture dir. Exit 1 on any violation.
@@ -21,10 +21,18 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
+
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 import simlib          # noqa: E402
 
-WRAP = os.path.join(ROOT, "scenarios", "support", "verify_wrap.js")
+WRAP = os.path.join(ROOT, "tools", "verify_wrap.js")
 
 bad = []
 checked = 0
@@ -58,7 +66,9 @@ def verify_op(op_path):
 
 # expected-block ops: verify yaml -> operation -> declared rules
 expected = {}
-for y in glob.glob(os.path.join(ROOT, "scenarios", "**", "*.yaml"),
+for y in glob.glob(os.path.join(ROOT, "tests", "**", "*.yaml"),
+                   recursive=True) + \
+         glob.glob(os.path.join(ROOT, "scenarios", "**", "*.yaml"),
                    recursive=True):
     raw = simlib.load_yaml(y) or {}
     spec = raw.get("verify")
@@ -71,10 +81,15 @@ for y in glob.glob(os.path.join(ROOT, "scenarios", "**", "*.yaml"),
     expected[os.path.normpath(os.path.join(os.path.dirname(y), op))] = \
         spec["expect_rules"]
 
-ops = sorted(set(glob.glob(os.path.join(ROOT, "scenarios", "**",
-                                        "*.op.json"), recursive=True) +
-                 glob.glob(os.path.join(ROOT, "scenarios", "**", "*.deop"),
-                           recursive=True)))
+ops = sorted(set(
+    glob.glob(os.path.join(ROOT, "tests", "**", "*.op.json"),
+              recursive=True) +
+    glob.glob(os.path.join(ROOT, "tests", "**", "*.deop"),
+              recursive=True) +
+    glob.glob(os.path.join(ROOT, "scenarios", "**", "*.op.json"),
+              recursive=True) +
+    glob.glob(os.path.join(ROOT, "scenarios", "**", "*.deop"),
+              recursive=True)))
 for op in ops:
     checked += 1
     rel = os.path.relpath(op, ROOT)

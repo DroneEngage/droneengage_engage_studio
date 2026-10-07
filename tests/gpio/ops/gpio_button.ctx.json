@@ -1,0 +1,263 @@
+{
+  "_note": "GE-07 ctx: the unit bound to role 'node' runs de_rpi_gpio - registries.<unit> is the serialized 1089 caps view (tests/gpio/ops/gpio.unit.caps.json) so do gpio.* actions and waited-on gpio.*.* events resolve against the advert, not the Phase-1 stub.",
+  "binding": {
+    "node": [
+      "node"
+    ]
+  },
+  "registries": {
+    "node": {
+      "caps": {
+        "gpio": {
+          "ch": "c1",
+          "module": "de_rpi_gpio",
+          "ver": "1.4.1",
+          "advert": {
+            "schema": "de.cap/1",
+            "ns": "gpio",
+            "module": "droneengage_rpi_gpio",
+            "ver": "1.4.1",
+            "desc": "events: gpio.<pin>.went_on|went_off|changed {v,src}; commands: gpio.<pin>.on|off|toggle|pulse{ms}|set{v}",
+            "actions": {
+              "write": {
+                "desc": "set an output pin (value) or a PWM pin (value = frequency, pwm = width 0..1024)",
+                "params": {
+                  "pin": {
+                    "type": [
+                      "string",
+                      "int"
+                    ],
+                    "desc": "pin name (led, power_led, flash, servo, btn, btn_low) or GPIO number"
+                  },
+                  "value": {
+                    "type": "int",
+                    "min": 0
+                  },
+                  "pwm": {
+                    "type": "int",
+                    "optional": true,
+                    "min": 0,
+                    "max": 1024,
+                    "desc": "PWM width, PWM pins only"
+                  }
+                }
+              },
+              "read": {
+                "desc": "read an input pin",
+                "params": {
+                  "pin": {
+                    "type": [
+                      "string",
+                      "int"
+                    ],
+                    "desc": "pin name (led, power_led, flash, servo, btn, btn_low) or GPIO number"
+                  }
+                }
+              },
+              "led": {
+                "desc": "switch 'led' on/off, or pulse it",
+                "timeout_s": 5,
+                "claim": "action",
+                "params": {
+                  "on": {
+                    "type": "bool",
+                    "desc": "logical level (active_low aware)"
+                  },
+                  "pulse_ms": {
+                    "type": "int",
+                    "optional": true,
+                    "min": 1,
+                    "max": 4000,
+                    "desc": "pulse instead: assert, wait, restore"
+                  }
+                }
+              },
+              "power_led": {
+                "desc": "switch 'power_led' on/off, or pulse it",
+                "timeout_s": 5,
+                "claim": "action",
+                "params": {
+                  "on": {
+                    "type": "bool",
+                    "desc": "logical level (active_low aware)"
+                  },
+                  "pulse_ms": {
+                    "type": "int",
+                    "optional": true,
+                    "min": 1,
+                    "max": 4000,
+                    "desc": "pulse instead: assert, wait, restore"
+                  }
+                }
+              },
+              "flash": {
+                "desc": "switch 'flash' on/off, or pulse it",
+                "timeout_s": 5,
+                "claim": "action",
+                "params": {
+                  "on": {
+                    "type": "bool",
+                    "desc": "logical level (active_low aware)"
+                  },
+                  "pulse_ms": {
+                    "type": "int",
+                    "optional": true,
+                    "min": 1,
+                    "max": 4000,
+                    "desc": "pulse instead: assert, wait, restore"
+                  }
+                }
+              },
+              "servo": {
+                "desc": "set PWM width of 'servo' (0 = off)",
+                "claim": "action",
+                "params": {
+                  "pwm": {
+                    "type": "int",
+                    "min": 0,
+                    "max": 1024
+                  },
+                  "value": {
+                    "type": "int",
+                    "optional": true,
+                    "min": 1,
+                    "desc": "frequency; default = configured"
+                  }
+                }
+              }
+            },
+            "state": {
+              "led": {
+                "type": "int",
+                "desc": "GPIO 4 level"
+              },
+              "power_led": {
+                "type": "int",
+                "desc": "GPIO 2 level"
+              },
+              "flash": {
+                "type": "int",
+                "desc": "GPIO 5 level"
+              },
+              "servo": {
+                "type": "int",
+                "desc": "GPIO 18 PWM width"
+              },
+              "btn": {
+                "type": "int",
+                "desc": "GPIO 17 input level"
+              },
+              "btn_low": {
+                "type": "int",
+                "desc": "GPIO 27 input level"
+              }
+            },
+            "resources": {
+              "led": "out",
+              "power_led": "out",
+              "flash": "out",
+              "servo": "pwm",
+              "btn": "in",
+              "btn_low": "in"
+            },
+            "event_patterns": {
+              "*.went_on": {
+                "kind": "fact",
+                "payload": {
+                  "v": {
+                    "type": "int",
+                    "desc": "level for digital/input, width for PWM"
+                  },
+                  "src": {
+                    "type": "string",
+                    "desc": "the PIN_CHANGE cause"
+                  }
+                }
+              },
+              "*.went_off": {
+                "kind": "fact",
+                "payload": {
+                  "v": {
+                    "type": "int",
+                    "desc": "level for digital/input, width for PWM"
+                  },
+                  "src": {
+                    "type": "string",
+                    "desc": "the PIN_CHANGE cause"
+                  }
+                }
+              },
+              "*.changed": {
+                "kind": "fact",
+                "res": [
+                  "pwm"
+                ],
+                "payload": {
+                  "v": {
+                    "type": "int",
+                    "desc": "level for digital/input, width for PWM"
+                  },
+                  "src": {
+                    "type": "string",
+                    "desc": "the PIN_CHANGE cause"
+                  }
+                }
+              },
+              "*.on": {
+                "kind": "command",
+                "res": [
+                  "out",
+                  "pwm"
+                ]
+              },
+              "*.off": {
+                "kind": "command",
+                "res": [
+                  "out",
+                  "pwm"
+                ]
+              },
+              "*.toggle": {
+                "kind": "command",
+                "res": [
+                  "out"
+                ]
+              },
+              "*.pulse": {
+                "kind": "command",
+                "res": [
+                  "out"
+                ],
+                "payload": {
+                  "ms": {
+                    "type": "int",
+                    "optional": true,
+                    "min": 1,
+                    "max": 4000,
+                    "desc": "assert, wait, restore"
+                  }
+                }
+              },
+              "*.set": {
+                "kind": "command",
+                "res": [
+                  "pwm"
+                ],
+                "payload": {
+                  "v": {
+                    "type": "int",
+                    "min": 0,
+                    "max": 1024,
+                    "desc": "PWM width"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "state": {},
+      "t": 0
+    }
+  }
+}

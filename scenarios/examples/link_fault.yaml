@@ -1,0 +1,19 @@
+# examples/link_fault - the smallest useful scenario: one static unit on
+# the fake server gets its link severed for 20 s. The link monitor must
+# see the unit drop offline and come back. No FC, no operation - this is
+# the "hello world" of the fault surface. Run: ./sim run <file>
+version: 1
+name: ex_link_fault
+transport: fake          # link faults need the fake server
+settle_s: 40             # room for the cut + reconnect to be observed
+fleet:
+  - {id: s1, cls: static}        # comm-only ground node, no SITL
+timeline:
+  # t = seconds from scenario start; dur_s auto-restores the link
+  - {t: 3, fault: link_cut, unit: s1, dur_s: 20}
+assert:
+  # the monitor saw s1 offline at least once, for >= 5 s
+  - link_offline: {unit: s1, at_least: 1, min_s: 5}
+  # the de_comm process itself never died - the link, not the unit
+  - proc_alive: {unit: s1, proc: de_comm}
+teardown: none

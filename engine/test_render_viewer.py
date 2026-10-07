@@ -6,7 +6,7 @@
   - the generated launch scripts run the Mavlink3DMap UDP->WS bridge
     on render.mav_port / ws render.mav_ws_port and a vite dev server
     on render.web_port, pid-marked via node --require so sim down sees
-    them, under run/<sim>/render/;
+    them, under var/run/<sim>/render/;
   - gated smoke (skipped without node + MAVLINK3DMAP_DIR): boot both
     procs and check the ws port accepts and the page serves 200.
 """
@@ -20,6 +20,14 @@ import tempfile
 import time
 import unittest
 import urllib.request
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(
@@ -88,7 +96,7 @@ class T(unittest.TestCase):
         self.assertIn("--strictPort", web)
         self.assertIn("render.web.pid", web)
         for s in (bridge, web):
-            # pid_is_ours needs run/<sim>/ in the cmdline - the marker
+            # pid_is_ours needs var/run/<sim>/ in the cmdline - the marker
             # preload provides it
             self.assertIn("--require", s)
             self.assertIn("de_sim_marker.cjs", s)

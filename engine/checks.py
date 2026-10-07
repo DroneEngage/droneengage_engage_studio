@@ -14,7 +14,7 @@ scenario green only when every non-SKIP assertion is PASS.
 Journal assertions keep the runner.py semantics (same helpers, same
 `unit:` resolution). The new ones read:
 
-  - module stdout logs:  module_log_count - run/<unit>/logs/<module>.log
+  - module stdout logs:  module_log_count - var/run/<unit>/logs/<module>.log
                          lines since the test mark (PL-07: module-printed
                          facts like de_precland's EVENT_OUT never reach
                          the journal)
@@ -274,7 +274,7 @@ def _journal_count(name, a, ctx):
 
 def _module_log_count(name, a, ctx):
     """module_log_count {unit, module, re, equals|at_least|at_most}: the
-    journal_count sibling over run/<unit>/logs/<module>.log (the module's
+    journal_count sibling over var/run/<unit>/logs/<module>.log (the module's
     stdout), lines appended since the test mark. Facts a module prints
     itself - de_precland's EVENT_OUT lines - never reach the de_comm
     journal, so standalone module behaviour is asserted here. `total:

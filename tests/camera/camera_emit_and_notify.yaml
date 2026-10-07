@@ -1,0 +1,83 @@
+# camera/camera_emit_and_notify - TASK-EV-CAM acceptance: a sensor
+# mission emits camera.<ch> command events; the namespace owner
+# (de_camera) drives the recorder and its camera.<ch>.went_*
+# notifications come back as events, releasing the mission's gates.
+#
+#   e1 emit camera.cam_0.record_on   -> module starts recording -> g1
+#        releases on went_recording
+#   e2 emit camera.cam_0.record_off  -> recorder stops          -> g2
+#        releases on went_idle (reason:command)
+#   e3 emit camera.ghost.record_on   -> no such channel: g3 MUST time
+#        out on continue (the emit alone never releases a
+#        notification gate)
+#   e4 emit camera.probe_done        -> proves the mission walked past g3
+#
+# The unit is a copter_camera: the P5-15 render farm paints its camera
+# view into the DE-SRC-0 loopback and de_camera reads it directly
+# (no yolo pass). Needs `sudo tools/setup_v4l2loopback.sh 1`,
+# MAVLINK3DMAP_DIR/CHROMIUM_BIN and a HEAD de_camera via DE_CAMERA_BIN
+# (see modules/catalog.yaml).
+version: 1
+name: camera_emit_and_notify
+transport: fake
+world: ../../worlds/forest_canopy.yaml
+operation: ../../packages/camera_probe.deploy.json
+render: {mode: cameras, headless: false}
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: probe, cls: copter_camera}
+timeline:
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 20, do: wait_journal, unit: probe,
+     re: "S: walk gate g1 released by camera\\.cam_0\\.went_recording",
+     timeout: 60}
+  - {t: 25, do: wait_journal, unit: probe,
+     re: "S: walk gate g2 released by camera\\.cam_0\\.went_idle",
+     timeout: 60}
+  - {t: 30, do: wait_journal, unit: probe,
+     re: "S: walk gate g3 timed out -> continue", timeout: 30}
+  - {t: 35, do: wait_journal, unit: probe,
+     re: "S: walk emit camera\\.probe_done", timeout: 30}
+  - {t: 45, do: stop}
+assert:
+  - journal_count: {unit: probe, re: "S: walk activated", equals: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk emit camera\\.cam_0\\.record_on",
+                    at_least: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk gate g1 released by camera\\.cam_0\\.went_recording",
+                    equals: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk emit camera\\.cam_0\\.record_off",
+                    at_least: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk gate g2 released by camera\\.cam_0\\.went_idle",
+                    equals: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk gate g3 timed out -> continue",
+                    equals: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk emit camera\\.probe_done", equals: 1}
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event camera\\.cam_0\\.went_recording latched",
+                    at_least: 1}
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event camera\\.cam_0\\.went_idle latched",
+                    at_least: 1}
+  # recording state was published through the namespace (bool dumps as
+  # true/false)
+  - journal_count: {unit: probe,
+                    re: "state camera\\.recording = (true|1)",
+                    at_least: 1}
+  # camera.ghost.record_on IS emitted and latched (declared) - only the
+  # module's notifications must be absent for a channel that does not
+  # exist (the "gate g3 waits" line is the wait itself)
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event camera\\.ghost\\.went",
+                    equals: 0}
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event camera\\.ghost\\.record_on latched",
+                    equals: 1}
+teardown: none

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """launcher.py - bring a sim up / down (used by ./sim up|down).
 
-up: generate run/<name>/, start the server side (real/fake spawn their
+up: generate var/run/<name>/, start the server side (real/fake spawn their
 own; external only runs this sim's GCS bridge), then every unit's
 processes (SITL, de_comm, modules), and wait until each unit is online
 at the server and every module reports ready. Sims run in parallel -
@@ -9,8 +9,8 @@ up restarts only the same-named sim and refuses ports/names that clash
 with a live one; `sim run` passes exclusive=True so a test still owns
 the machine (SIM_SHARED=1 keeps a test additive instead, for a machine
 other sessions are using). down: stop one sim, or every sim.
-Fully headless: logs in run/<sim>/<unit>/logs/ and run/<sim>/server/logs/,
-pids in run/<sim>/pids/. Only pids whose command line points into this
+Fully headless: logs in var/run/<sim>/<unit>/logs/ and var/run/<sim>/server/logs/,
+pids in var/run/<sim>/pids/. Only pids whose command line points into this
 repo are ever signalled.
 """
 
@@ -29,7 +29,7 @@ import ctl
 
 def _pids_dirs(name=None):
     """Pid dirs to tear down: one sim's, or every sim's plus the legacy
-    flat run/pids/ dir left by the pre-parallel layout."""
+    flat var/run/pids/ dir left by the pre-parallel layout."""
     if name:
         return [simlib.pids_dir(name)]
     dirs = [os.path.join(simlib.RUN_DIR, "pids")]
@@ -87,7 +87,7 @@ def down(name=None, quiet=False):
 
 
 def _stray_pids(name=None):
-    """Live pids whose command line runs under run/<name>/ (or any run/<sim>/
+    """Live pids whose command line runs under var/run/<name>/ (or any var/run/<sim>/
     when name is None) but that no pidfile tracks - e.g. a restart that
     outlived a crashed supervisor.  pid_is_ours still gates every kill."""
     root = os.path.join(simlib.RUN_DIR, name) + "/" if name \
@@ -277,10 +277,10 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
             print(e.code)
             sys.exit(simlib.col_red(
                 "sim up FAILED (units offline) - check "
-                "run/<unit>/logs/de_comm.log"))
+                "var/run/<unit>/logs/de_comm.log"))
     if not ctl.wait_ready(m["units"], timeout):
         sys.exit(simlib.col_red(
-            "sim up FAILED (modules not ready) - check run/<unit>/logs/"))
+            "sim up FAILED (modules not ready) - check var/run/<unit>/logs/"))
     print(simlib.col_green("sim up.")
           + " operator console: ./sim ctl status"
           + (simlib.col_yellow(

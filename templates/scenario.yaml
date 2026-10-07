@@ -1,0 +1,25 @@
+# @NAME@ - <one paragraph: what this scenario rehearses and what a
+# PASS means>. The first comment block is required (CI enforces it) -
+# keep it to the "why", not the mechanics.
+version: 1
+name: @NAME@
+# seed: 42                      # fixed seed = reproducible fault/world rolls
+transport: fake               # fake: seeded link faults, no real server
+                              # real: route through the real comm server
+# world: @REL@worlds/forest_a.yaml     # seeded ground truth (stubs,
+                                      # truth recorder, coverage asserts)
+# operation: @REL@packages/copter_square.json   # what `do: deploy` sends
+# verify: {cli: @REL@tools/verify_wrap.js}      # P5-06 gate before deploy
+settle_s: 10                  # quiet seconds after the last timeline step
+fleet:                        # cls: copter | plane | rover | static |
+                              # comm_only | a blocks/<name>
+  - {id: s1, cls: static}
+  # - {id: c1, cls: copter, at: {north_m: 0, east_m: 40}}
+timeline:                     # {t: <seconds>, do: <step>, ...args}
+  - {t: 0, do: wait_online, unit: s1, timeout: 60}
+  # - {t: 5, fault: link_cut, unit: s1, dur_s: 20}
+  # - {on: {unit: s1, re: "comm line offline"}, do: fire,
+  #    event: my.event, unit: s1, once: true}
+assert:                       # journal_count / proc_alive / link_offline /
+  - proc_alive: {unit: s1, proc: de_comm}   # telemetry_value / ... (see
+teardown: none                # docs/SCENARIOS.md for the full lists)

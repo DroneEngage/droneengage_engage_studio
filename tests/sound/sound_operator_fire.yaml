@@ -1,0 +1,47 @@
+# sound/sound_operator_fire - TASK-EV-SND: an operator `fire` (the same
+# 1086 path the GCS uses) reaches the sound namespace owner through the
+# local forward leg - WITH and WITHOUT a loaded package.
+#
+#   t=10  fire sound.beep.play   NO package has ever been loaded: the
+#          command still reaches de_sound and the clip plays - proof is
+#          on the module's own log (no package, nothing latches). It
+#          fires at t=10, not t=0: the fire has no retransmit and must
+#          land after de_sound registers with de_comm (~4 s after up)
+#   t=30  fire sound.beep.play   with the package up: the module's
+#          started/finished facts latch on the supervisor
+version: 1
+name: sound_operator_fire
+transport: fake
+operation: ../../packages/snd_fire.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: node, cls: static, modules: [de_sound]}
+timeline:
+  - {t: 10, do: fire, event: sound.beep.play, unit: node}
+  - {t: 12, do: wait_log, unit: node, module: de_sound,
+     re: "sound\\.beep\\.finished", timeout: 30}
+  - {t: 14, do: deploy}
+  - {t: 20, do: start}
+  - {t: 30, do: fire, event: sound.beep.play, unit: node}
+  - {t: 32, do: wait_journal, unit: node,
+     re: "EVENT_IN event sound\\.beep\\.finished latched", timeout: 30}
+  - {t: 45, do: stop}
+assert:
+  # two operator plays ran to completion: two started + two finished on
+  # the module's sendJMSG lines
+  - module_log_count: {unit: node, module: de_sound,
+                       re: "sound\\.beep\\.started", equals: 2}
+  - module_log_count: {unit: node, module: de_sound,
+                       re: "sound\\.beep\\.finished", equals: 2}
+  # the second play's facts latched once the package was up
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event sound\\.beep\\.started latched",
+                    at_least: 1}
+  - journal_count: {unit: node,
+                    re: "EVENT_IN event sound\\.beep\\.finished latched",
+                    at_least: 1}
+  # the manual 'idle' mission stays un-activated: operator fires drive
+  # the module directly, never the sensor lane
+  - journal_count: {unit: node, re: "S: idle activated", equals: 0}
+teardown: none

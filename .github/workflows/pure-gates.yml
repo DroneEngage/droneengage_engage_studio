@@ -6,10 +6,10 @@
 #                     every packages/*.json parses
 #   library counts    fails loudly if a library folder is empty so a
 #                     bad checkout can never look green
-#   verify ops        check_verify_ops.py: scenarios/verify ops must be
+#   verify ops        check_verify_ops.py: tests/verify ops must be
 #                     blocked by the webclient verifier with exactly the
 #                     declared expect_rules; every other op under
-#                     scenarios/ must verify clean (needs the webclient
+#                     tests/ must verify clean (needs the webclient
 #                     repo - checked out alongside, same sibling layout
 #                     the runner uses locally)
 #   world model tests engine/test_world_obstacles.py (closed-form
@@ -74,12 +74,12 @@ jobs:
       - name: library folders non-empty
         run: |
           for d in p0 p2 su p4a faults closed_env verify precland; do
-            n=$(find scenarios/$d -name '*.yaml' 2>/dev/null | wc -l)
-            echo "scenarios/$d: $n yaml"
+            n=$(find tests/$d -name '*.yaml' 2>/dev/null | wc -l)
+            echo "tests/$d: $n yaml"
             [ "$n" -gt 0 ] || exit 1
           done
-          [ -f scenarios/p4b/README.md ] || {
-            echo "scenarios/p4b/README.md missing"; exit 1; }
+          [ -f tests/p4b/README.md ] || {
+            echo "tests/p4b/README.md missing"; exit 1; }
 
   verifier-gate:
     runs-on: ubuntu-latest

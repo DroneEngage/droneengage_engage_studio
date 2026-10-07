@@ -9,7 +9,7 @@ the GCS bridge (real droneengage_server) or by the fake server.
 <unit> = a unit name (copter1), its 1-based position in the sim (2),
 block:<block> (every unit of that block), a comma list, or all.
 
-Several sims can be up at once (each owns run/<name>/). Unit names are
+Several sims can be up at once (each owns var/run/<name>/). Unit names are
 unique across sims, so unit commands just work; sim-scoped commands
 (server procs, GCS traffic with no target unit) use `-s <name>` - with a
 single sim up nothing extra is needed:  ./sim ctl -s quadcopter status
@@ -44,7 +44,7 @@ Fleet ops (P4A-09, DE_OP_CONTROL 1094):
   commline <unit> <s>               in-band cut: 6509 {ws:false, wsd:s}
   write_file <unit> <module> <path> <json> [<path> <json> ...]
                                     write JSON file(s) into
-                                    run/<unit>/<module>/ (drives seams like
+                                    var/run/<unit>/<module>/ (drives seams like
                                     de_rpi_gpio's gpio_inputs.json); a +N
                                     token sleeps N ms before the next write
 
@@ -88,6 +88,14 @@ import subprocess
 import sys
 import time
 import uuid
+
+# bytecode under var/pycache from the first import on (simlib sets it
+# too, but only after itself is compiled - that left __pycache__ dirs)
+sys.pycache_prefix = os.environ.setdefault(
+    "PYTHONPYCACHEPREFIX",
+    os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "var"), "pycache"))
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import simlib
@@ -653,7 +661,7 @@ def gcs_collect(first, mts, secs, stop_on_last=False):
 
 
 def write_module_file(u, module, relpath, doc):
-    """GE-07: write one JSON document into run/<unit>/<module>/<relpath>,
+    """GE-07: write one JSON document into var/run/<unit>/<module>/<relpath>,
     atomically (tmp + rename) so a file-polling module never reads a
     half-written file. The path may not escape the module directory."""
     mdir = os.path.realpath(os.path.join(simlib.unit_dir(u), module))

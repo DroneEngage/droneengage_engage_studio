@@ -1,0 +1,68 @@
+# sound/sound_emit_and_notify - TASK-EV-SND: a sensor mission emits
+# sound.<clip>.play command events; the namespace owner (de_sound on the
+# null backend) plays the clip and its sound.<clip>.finished fact comes
+# back as an event, releasing the mission's gate.
+#
+#   e_beep  emit sound.beep.play   -> module plays beep  -> g_beep releases
+#   e_ghost emit sound.ghost.play  -> no such clip: the module ignores it
+#           (logged once) and g_ghost MUST time out on continue - the
+#           emit alone never releases a fact gate
+#   e_done  emit sound.probe_done  -> proves the mission walked past g_ghost
+#
+# horn is events:false in the sim config but is never touched here.
+version: 1
+name: sound_emit_and_notify
+transport: fake
+operation: ../../packages/snd_probe.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: probe, cls: static, modules: [de_sound]}
+timeline:
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 20, do: wait_journal, unit: probe,
+     re: "S: walk gate g_beep released by sound\\.beep\\.finished",
+     timeout: 40}
+  - {t: 25, do: wait_journal, unit: probe,
+     re: "S: walk gate g_ghost timed out -> continue", timeout: 30}
+  - {t: 30, do: wait_journal, unit: probe,
+     re: "S: walk emit sound\\.probe_done", timeout: 30}
+  - {t: 35, do: stop}
+assert:
+  - journal_count: {unit: probe, re: "S: walk activated", equals: 1}
+  - journal_count: {unit: probe, re: "S: walk emit sound\\.beep\\.play",
+                    at_least: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk gate g_beep released by sound\\.beep\\.finished",
+                    equals: 1}
+  - journal_count: {unit: probe, re: "S: walk emit sound\\.ghost\\.play",
+                    at_least: 1}
+  - journal_count: {unit: probe,
+                    re: "S: walk gate g_ghost timed out -> continue",
+                    equals: 1}
+  - journal_count: {unit: probe, re: "S: walk emit sound\\.probe_done",
+                    equals: 1}
+  # the module's own facts latched on the supervisor
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event sound\\.beep\\.started latched",
+                    at_least: 1}
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event sound\\.beep\\.finished latched",
+                    at_least: 1}
+  # ghost: the command was emitted and latched, but the module never
+  # produced a fact for a clip that does not exist
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event sound\\.ghost\\.play latched",
+                    equals: 1}
+  - journal_count: {unit: probe,
+                    re: "EVENT_IN event sound\\.ghost\\.",
+                    equals: 1}   # only the .play latch above
+  # module side: the reject is journaled once, the clip really played
+  - module_log_count: {unit: probe, module: de_sound,
+                       re: "sound event ignored: ghost\\.play", equals: 1}
+  - module_log_count: {unit: probe, module: de_sound,
+                       re: "sound\\.beep\\.started", at_least: 1}
+  - module_log_count: {unit: probe, module: de_sound,
+                       re: "sound\\.beep\\.finished.*done", at_least: 1}
+teardown: none

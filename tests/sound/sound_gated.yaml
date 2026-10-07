@@ -1,0 +1,51 @@
+# sound/sound_gated - TASK-EV-SND per-clip `events:false` gate (horn in
+# the sim config): the clip's event surface is off BOTH ways - the
+# sound.horn.play command is delivered but ignored (journaled once on
+# the module log) and no sound.horn.* fact is ever emitted. The per-clip
+# `do` action is not gated: d_horn still plays the clip through the
+# invoke path and journals ok.
+#
+#   e_horn emit sound.horn.play -> ignored (events:false)
+#   g_horn gate sound.horn.finished -> MUST time out on continue
+#   d_horn do sound.horn        -> invoke ok, clip plays, still no facts
+version: 1
+name: sound_gated
+transport: fake
+operation: ../../packages/snd_gated.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: rig, cls: static, modules: [de_sound]}
+timeline:
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 20, do: wait_journal, unit: rig,
+     re: "S: walk gate g_horn timed out -> continue", timeout: 30}
+  - {t: 25, do: wait_journal, unit: rig, re: "S: walk d_horn ok",
+     timeout: 30}
+  - {t: 28, do: wait_journal, unit: rig,
+     re: "S: walk emit sound\\.probe_done", timeout: 30}
+  - {t: 35, do: stop}
+assert:
+  - journal_count: {unit: rig, re: "S: walk activated", equals: 1}
+  - journal_count: {unit: rig, re: "S: walk emit sound\\.horn\\.play",
+                    equals: 1}
+  - journal_count: {unit: rig,
+                    re: "S: walk gate g_horn timed out -> continue",
+                    equals: 1}
+  # the do step ran the action even though the clip's events are off
+  - journal_count: {unit: rig, re: "S: walk d_horn ok", equals: 1}
+  - journal_count: {unit: rig,
+                    re: "ACTION_RESULT .* ok \\(sound\\.horn\\)", equals: 1}
+  - journal_count: {unit: rig, re: "S: walk emit sound\\.probe_done",
+                    equals: 1}
+  # zero horn facts: emitted command ignored, invoke played but emitted
+  # nothing - on the bus or on the module log
+  - journal_count: {unit: rig,
+                    re: "EVENT_IN event sound\\.horn\\.(started|finished)",
+                    equals: 0}
+  - module_log_count: {unit: rig, module: de_sound,
+                       re: "sound event ignored: horn\\.play", equals: 1}
+  - module_log_count: {unit: rig, module: de_sound,
+                       re: "sound\\.horn\\.(started|finished)", equals: 0}
+teardown: none

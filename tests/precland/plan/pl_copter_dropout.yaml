@@ -1,0 +1,54 @@
+# precland/plan/pl_copter_dropout - PL-09 group B 4: pad_1 carries an
+# occlude window (worlds/pad_occluded.yaml, t_s ~= timeline t) that
+# hides the tag mid-descent on the nav:land leg. The stub drops the
+# lock, precision_landing.lost fires, the sensor mission `watch`
+# activates and emits pad.alarm, and LANDING_TARGET stops flowing;
+# when the window ends the stub re-locks and the FC's PLND_STRICT
+# retry resumes the precision landing - touchdown still within 0.75 m
+# of pad_1.
+#
+# `watch` has once_per: run - the descent's final centimetres can emit
+# a second lost (min_tags: the tag square stops fitting in the frame
+# below ~4 cm), which is physics, not a second dropout.
+version: 1
+name: pl_copter_dropout
+transport: fake
+world: ../../../worlds/pad_occluded.yaml
+operation: ../../../packages/pl_copter_dropout.deploy.json
+verify: {cli: ../../../tools/verify_wrap.js}
+settle_s: 15
+fleet:
+  - {id: cam1, cls: copter_precland}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 10, do: wait_ready, unit: cam1, timeout: 240}
+  - {t: 15, do: arm, unit: cam1}
+  - {t: 20, do: start, timeout: 120}
+  - {t: 25, do: wait_journal, unit: cam1, re: "RUN run .* started",
+     timeout: 120}
+  - {t: 30, do: wait_journal, unit: cam1,
+     re: "gate pl released by precision_landing\\.stabilized",
+     timeout: 240}
+  - {t: 35, do: wait_journal, unit: cam1, re: "S: watch activated",
+     timeout: 300}
+  - {t: 40, do: wait_journal, unit: cam1, re: "vehicle disarmed",
+     timeout: 300}
+  - {t: 50, do: stop}
+assert:
+  # the lost fact reached the supervisor and triggered the watch once
+  - journal_count: {unit: cam1, re: "S: watch activated", equals: 1}
+  - journal_count: {unit: cam1, re: "S: watch emit pad\\.alarm",
+      equals: 1}
+  - journal_count: {unit: cam1,
+      re: "EVENT_IN event precision_landing\\.lost", at_least: 1}
+  # the stub journaled the drop itself and then re-locked afterwards
+  - module_log_count: {unit: cam1, module: stub_precland,
+      re: "EVENT_OUT precision_landing\\.lost", at_least: 1}
+  - module_log_count: {unit: cam1, module: stub_precland,
+      re: "PRECLAND state -> 2", at_least: 2}
+  # touchdown still on the pad after the re-acquire
+  - distance_to: {unit: cam1, re: "vehicle disarmed", truth: pad_1,
+      max_m: 0.75}
+teardown: land

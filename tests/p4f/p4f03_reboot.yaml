@@ -1,0 +1,42 @@
+# TASK-P4F-03 scenario 4 "reboot": copter1 owes copter3 a pending signal
+# (ping) and a pending fact (found.it) while copter3's link is cut.
+# copter1's de_comm then restarts under a NEW boot id (the DE_BOOT_ID_FILE
+# hook): pending TTL signals drop as "UNDELIVERED ... why=reboot" while
+# the fact's pending entry and the fact store survive. When copter3
+# returns, the fact reaches it (resumed retry or peer replay); ping never
+# does.
+version: 1
+sim: ../../sims/copters3_faults.yaml
+operation: ../../packages/p4f03.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  - wait: 15
+  - fire: {event: mk.scan, unit: 1, until: "BUS_OUT.*n=scan\\.begin"}
+  - wait_journal: {unit: 3, re: "gate seen waits found\\.it", timeout: 30}
+  - link_cut: {unit: 3, seconds: 100}
+  - wait: 2
+  - fire: {event: mk.sig, unit: 1, until: "BUS_OUT.*n=ping"}
+  - fire: {event: mk.fact, unit: 1,
+           payload: {pos: [-35.363, 149.166, 0], conf: 0.9},
+           until: "BUS_OUT.*n=found\\.it"}
+  - wait: 5                          # both pend for copter3
+  - reboot: {unit: 1}                # new boot id + de_comm restart
+  - wait_journal: {unit: 1, re: "package restored", timeout: 60}
+  - wait_journal: {unit: 3, re: "comm line online", timeout: 120}
+  # copter3 catches up - the fact only, the signal is gone for good
+  - wait_journal: {unit: 3, re: "gate seen released", timeout: 120}
+  - wait: 10
+  - opabort
+
+assert:
+  # a new boot drops pending TTL signals - journaled at restore
+  - journal_count: {unit: 1, re: "UNDELIVERED.*why=reboot", at_least: 1}
+  # ... while the sticky pending/fact survived: copter3 gets it
+  - journal_count: {unit: 3, re: "BUS_IN.*n=found\\.it", at_least: 1}
+  - journal_count: {unit: 3, re: "gate seen released", equals: 1}
+  - journal_count: {unit: 3, re: "BUS_IN.*n=ping", equals: 0}

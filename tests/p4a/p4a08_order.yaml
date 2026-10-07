@@ -1,0 +1,46 @@
+# TASK-P4A-08 scenario 2: 30% loss on every link while three units
+# detect (retries reorder arrivals differently on every vehicle) -> the
+# tables still converge: one 3-member "fire" target + one far target on
+# every vehicle, and no WM_DIVERGE left standing after the loss stops.
+version: 1
+sim: ../../sims/copters3_faults.yaml
+operation: ../../packages/p4a08.deploy.json
+steps:
+  - stop
+  - clear
+  - mode: {unit: all, mode: GUIDED}
+  - deploy
+  - arm: all
+  - opstart
+  - wait: 15
+  - loss: {unit: all, percent: 30}
+  - fire: {event: det.go, unit: 3,
+           until: {re: "BUS_OUT.*n=target\\.fire", count: 1},
+           payload: {pos: [-35.36013, 149.16500], unc_m: 20, conf: 0.5}}
+  - fire: {event: det.go, unit: 2,
+           until: {re: "BUS_OUT.*n=target\\.fire", count: 1},
+           payload: {pos: [-35.3600, 149.16511], unc_m: 20, conf: 0.6}}
+  - fire: {event: det.go, unit: 1,
+           until: {re: "BUS_OUT.*n=target\\.fire", count: 1},
+           payload: {pos: [-35.3600, 149.16500], unc_m: 20, conf: 0.7}}
+  - wait: 2
+  - fire: {event: det.go, unit: 1,
+           until: {re: "BUS_OUT.*n=target\\.fire", count: 2},
+           payload: {pos: [-35.3650, 149.17000], unc_m: 20, conf: 0.7}}
+  - wait: 60
+  - link_clear: {unit: all}
+  # retries finish + two roster periods for the digests to settle
+  - wait: 30
+
+  - opabort
+
+assert:
+  - journal_count: {unit: all, re: "WM_NEW", at_least: 2}
+  - journal_count: {unit: all, re: "WM_UPDATE .* n=3", at_least: 1}
+  # every WM_DIVERGE raised under loss was cleared again
+  # (compare the two counts per vehicle in the output - must be equal)
+  - journal_count: {unit: all, re: "WM_DIVERGE \\S+$", at_least: 0}
+  - journal_count: {unit: all, re: "WM_DIVERGE \\S+ cleared", at_least: 0}
+  - journal_count: {unit: 1, re: "UNDELIVERED", equals: 0}
+  - journal_count: {unit: 2, re: "UNDELIVERED", equals: 0}
+  - journal_count: {unit: 3, re: "UNDELIVERED", equals: 0}

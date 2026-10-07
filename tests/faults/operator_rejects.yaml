@@ -1,0 +1,38 @@
+# faults/operator_rejects - the operator rejects a confirmation-gated
+# detection: three copters run the p4b08 confirm op where class "fire"
+# has no confirm entry (operator_confirm) - the target can only leave
+# "candidate" on an operator 1093. The bot's standing policy
+# (dismiss: fire) vetoes it, so every unit journals
+# "WM_STATE ... dismissed by operator" and the engage mission's trigger
+# (sys.target_state) never sees a confirmation. The confirmed sibling
+# path is covered by tests/p4b08_confirm.yaml.
+version: 1
+name: f_operator_rejects
+transport: fake
+operation: ../../packages/p4b08.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+operator:
+  dismiss: {fire: {after_s: 3}}
+settle_s: 20
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm}
+  - {t: 9, do: start}
+  - {t: 15, do: wait_journal, unit: all, re: "RUN run .* started",
+     timeout: 90}
+  - {t: 25, do: fire, event: det.fire, unit: copter1,
+     payload: {pos: [-35.3600, 149.16600], unc_m: 20, conf: 0.9}}
+  - {t: 30, do: wait_journal, unit: copter1, re: "WM_NEW", timeout: 30}
+  - {t: 35, do: wait_journal, unit: copter1,
+     re: "WM_STATE .* dismissed by operator", timeout: 60}
+assert:
+  - journal_count: {unit: all, re: "WM_STATE .* dismissed by operator",
+                    equals: 1}
+  - journal_count: {unit: all, re: "WM_STATE .* confirmed", equals: 0}
+  - operator_log_count: {re: "dismissed", at_least: 1}
+teardown: land
