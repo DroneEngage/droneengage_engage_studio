@@ -50,6 +50,7 @@
           "led": {
             "desc": "switch 'led' on/off, or pulse it",
             "timeout_s": 5,
+            "claim": "action",
             "params": {
               "on": {
                 "type": "bool",
@@ -67,6 +68,7 @@
           "power_led": {
             "desc": "switch 'power_led' on/off, or pulse it",
             "timeout_s": 5,
+            "claim": "action",
             "params": {
               "on": {
                 "type": "bool",
@@ -84,6 +86,7 @@
           "flash": {
             "desc": "switch 'flash' on/off, or pulse it",
             "timeout_s": 5,
+            "claim": "action",
             "params": {
               "on": {
                 "type": "bool",
@@ -100,6 +103,7 @@
           },
           "servo": {
             "desc": "set PWM width of 'servo' (0 = off)",
+            "claim": "action",
             "params": {
               "pwm": {
                 "type": "int",

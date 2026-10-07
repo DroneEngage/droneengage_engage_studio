@@ -1,0 +1,52 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_concurrent_pins",
+    "comment": "TASK-PF-01: per-resource claims. On the go.pins fire a_led (gpio.led) and b_flash (gpio.flash) hold different gpio.<pin> claim keys and activate together; c_led wants the same gpio.led key and is refused 'claim_conflict gpio.led held by a_led'. The trailing gate keeps every mission RUNNING so the claims overlap.",
+
+    "roles": {
+        "actor": { "count": 1, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "go.pins":              {},
+        "gpio.led.went_on":   {},
+        "gpio.flash.went_on": {},
+        "gpio.btn.went_on":   {}
+    },
+
+    "missions": {
+        "actor": {
+            "a_led": {
+                "trigger": "go.pins",
+                "end": "hold",
+                "steps": [
+                    { "id": "on",   "do": "gpio.led",
+                      "with": { "on": true }, "timeout": 10 },
+                    { "id": "hold", "gate": { "event": "gpio.btn.went_on" },
+                      "timeout": 60, "on_timeout": "end" }
+                ]
+            },
+            "b_flash": {
+                "trigger": "go.pins",
+                "end": "hold",
+                "steps": [
+                    { "id": "on",   "do": "gpio.flash",
+                      "with": { "on": true }, "timeout": 10 },
+                    { "id": "hold", "gate": { "event": "gpio.btn.went_on" },
+                      "timeout": 60, "on_timeout": "end" }
+                ]
+            },
+            "c_led": {
+                "trigger": "go.pins",
+                "end": "hold",
+                "steps": [
+                    { "id": "on",   "do": "gpio.led",
+                      "with": { "on": true }, "timeout": 10 },
+                    { "id": "hold", "gate": { "event": "gpio.btn.went_on" },
+                      "timeout": 60, "on_timeout": "end" }
+                ]
+            }
+        }
+    }
+}
