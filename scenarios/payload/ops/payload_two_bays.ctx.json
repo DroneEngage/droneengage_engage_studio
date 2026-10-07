@@ -1,0 +1,100 @@
+{
+  "_note": "TASK-EV-PAY ctx: role 'amb' binds amb1, a copter running stub_payload with payload.bays [{key:left},{key:right}] - registries.amb1 is the serialized 1089 caps view (payload.unit.caps.json) so 'do payload.left|right' and the waited-on payload.*.released facts resolve against the two-bay advert.",
+  "binding": {
+    "amb": [
+      "amb1"
+    ]
+  },
+  "registries": {
+    "amb1": {
+      "caps": {
+        "payload": {
+          "ch": "c1",
+          "module": "stub_payload",
+          "ver": "0.1.0",
+          "advert": {
+            "schema": "de.cap/1",
+            "ns": "payload",
+            "module": "stub_payload",
+            "ver": "0.1.0",
+            "desc": "facts: payload.released {t,bay?} and payload.<bay>.released {t,src} once per release; the payload namespace has no command events",
+            "actions": {
+              "release": {
+                "desc": "Release the payload (simulated servo pin)",
+                "timeout_s": 5,
+                "params": {
+                  "bay": {
+                    "type": "enum",
+                    "values": [
+                      "left",
+                      "right"
+                    ],
+                    "optional": true,
+                    "default": "left",
+                    "desc": "bay to release; default 'left'"
+                  }
+                }
+              },
+              "left": {
+                "desc": "release bay 'left' (pin 'drop_left')",
+                "timeout_s": 5
+              },
+              "right": {
+                "desc": "release bay 'right' (pin 'stub_right')",
+                "timeout_s": 5
+              }
+            },
+            "events": {
+              "released": {
+                "desc": "payload released",
+                "payload": {
+                  "t": {
+                    "type": "number",
+                    "desc": "unix time, seconds"
+                  },
+                  "bay": {
+                    "type": "string",
+                    "optional": true,
+                    "desc": "released bay key"
+                  }
+                }
+              },
+              "left.released": {
+                "desc": "bay 'left' released",
+                "payload": {
+                  "t": {
+                    "type": "number",
+                    "desc": "unix time, seconds"
+                  },
+                  "src": {
+                    "type": "string"
+                  }
+                }
+              },
+              "right.released": {
+                "desc": "bay 'right' released",
+                "payload": {
+                  "t": {
+                    "type": "number",
+                    "desc": "unix time, seconds"
+                  },
+                  "src": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "state": {
+              "armed_pin": {
+                "type": "string",
+                "desc": "first bay's release pin name"
+              }
+            }
+          }
+        }
+      },
+      "state": {},
+      "t": 0
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "payload_two_bays",
+    "comment": "TASK-EV-PAY: two-bay drop through the approval gate. 'up' gets the ambulance airborne and holding; the operator manually activates the 'deliver' template (the only generator emitting a drop_hold loiter_time anchor - P4B-04 manual template activation), which preempts the hold. Both gated actions anchor on the same hold, so APPROVAL_REQ action fires twice in raise order: the left release is approved (payload.released + payload.left.released latch), the right release is denied (no right fact, 'not dispatched'). NOTE: the gated rows use the frozen aggregate action 'payload.release' with the new optional 'bay' param - the verifier's template sampling (fn_rolePackage) compiles each_point actions against the Phase-1 stub, which cannot name unit-advertised 'payload.<bay>' actions (DYN-002); the per-bay 'payload.<bay>' actions are exercised by the module unit tests (a sensor mission is not allowed to carry payload.* do steps - the same rule TASK-EV-PAY keeps).",
+
+    "roles": {
+        "amb": { "count": 1, "vehicle": "copter", "requires": ["payload"] }
+    },
+
+    "events": {
+        "payload.released":        {},
+        "payload.left.released":   {},
+        "payload.right.released":  {}
+    },
+
+    "missions": {
+        "amb": {
+            "up": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "takeoff", "nav": "takeoff", "alt": 30 },
+                    { "id": "hold", "nav": "loiter",
+                      "pos": [-35.363262, 149.165237, 30],
+                      "unlim": true }
+                ]
+            },
+            "drop": {
+                "trigger": "manual",
+                "priority": 10,
+                "approval": "operator",
+                "gen": {
+                    "type": "deliver",
+                    "params": {
+                        "to": [-35.363500, 149.165600],
+                        "transit_alt": 40,
+                        "drop_alt": 15,
+                        "hover_s": 150
+                    }
+                },
+                "each_point": {
+                    "actions": [
+                        { "on": "start", "do": "payload.release",
+                          "with": { "bay": "left" },
+                          "approval": "operator" },
+                        { "on": "start", "do": "payload.release",
+                          "with": { "bay": "right" },
+                          "approval": "operator" }
+                    ]
+                },
+                "end": "rtl",
+                "end_backstop": { "timeout": 60, "then": "rtl" }
+            }
+        }
+    }
+}

@@ -1,0 +1,31 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "payload_emit_ignored",
+    "comment": "TASK-EV-PAY: the payload namespace has no command events - a mission that emits payload.left.release releases nothing; the gate on payload.left.released must time out on continue so the walk proves it moved on via probe.emit_done.",
+
+    "roles": {
+        "prob": { "count": 1, "vehicle": "static", "requires": ["payload"] }
+    },
+
+    "events": {
+        "payload.left.release":   {},
+        "payload.left.released":  {},
+        "probe.emit_done":        {}
+    },
+
+    "missions": {
+        "prob": {
+            "walk": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "e1", "emit": "payload.left.release" },
+                    { "id": "g1", "gate": { "event": "payload.left.released" },
+                      "timeout": 10, "on_timeout": "continue" },
+                    { "id": "e2", "emit": "probe.emit_done" }
+                ]
+            }
+        }
+    }
+}

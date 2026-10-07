@@ -1,0 +1,34 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "gpio_guard",
+    "comment": "TASK-EV-PAY Part A guard: 'drop' is the payload_release pin - no gpio.drop action, no gpio.drop.* surface. The op was compiled against the stale pre-reservation caps view (gpio_guard.stale.caps.json) like a package authored before the pin was reserved; on the unit the emit is ignored, the do fails 'not available' (on_error continue) and the went_on gate must time out.",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "static", "requires": ["gpio"] }
+    },
+
+    "events": {
+        "gpio.drop.pulse":    {},
+        "gpio.drop.went_on":  {},
+        "gpio.guard_done":    {}
+    },
+
+    "missions": {
+        "node": {
+            "guard": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "e1", "emit": "gpio.drop.pulse" },
+                    { "id": "d1", "do": "gpio.drop",
+                      "with": { "on": true }, "timeout": 10,
+                      "on_error": "continue" },
+                    { "id": "g1", "gate": { "event": "gpio.drop.went_on" },
+                      "timeout": 8, "on_timeout": "continue" },
+                    { "id": "e2", "emit": "gpio.guard_done" }
+                ]
+            }
+        }
+    }
+}

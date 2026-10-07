@@ -1,0 +1,11 @@
+{
+  "op": "gpio_guard",
+  "roles": {
+    "node": {
+      "pkg": "gpio_guard_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

@@ -1,0 +1,68 @@
+{
+  "_note": "TASK-EV-PAY: the sim unit's serialized capability view (the 1089 m_Capabilities object a UNIT_CAPABILITIES report carries) for a unit whose stub_payload is configured with two bays, payload.bays [{key:left},{key:right}]. Feeds compile_op.js --caps so 'do payload.left|right' resolves against the advertised per-bay actions, and lands in the .ctx.json sidecars so verify_wrap.js checks waited-on facts (payload.left.released & co) against the same advert. The per-bay facts payload.<bay>.released are listed in the events map exactly like the gpio caps' per-pin entries: they are documented namespace facts even though the frozen advert names them in desc. ci/check_library.py parses this file strictly - keep it comment-free.",
+  "caps": {
+    "payload": {
+      "ch": "c1",
+      "module": "stub_payload",
+      "ver": "0.1.0",
+      "advert": {
+        "schema": "de.cap/1",
+        "ns": "payload",
+        "module": "stub_payload",
+        "ver": "0.1.0",
+        "desc": "facts: payload.released {t,bay?} and payload.<bay>.released {t,src} once per release; the payload namespace has no command events",
+        "actions": {
+          "release": {
+            "desc": "Release the payload (simulated servo pin)",
+            "timeout_s": 5,
+            "params": {
+              "bay": {
+                "type": "enum",
+                "values": ["left", "right"],
+                "optional": true,
+                "default": "left",
+                "desc": "bay to release; default 'left'"
+              }
+            }
+          },
+          "left": {
+            "desc": "release bay 'left' (pin 'drop_left')",
+            "timeout_s": 5
+          },
+          "right": {
+            "desc": "release bay 'right' (pin 'stub_right')",
+            "timeout_s": 5
+          }
+        },
+        "events": {
+          "released": {
+            "desc": "payload released",
+            "payload": {
+              "t": {"type": "number", "desc": "unix time, seconds"},
+              "bay": {"type": "string", "optional": true,
+                      "desc": "released bay key"}
+            }
+          },
+          "left.released": {
+            "desc": "bay 'left' released",
+            "payload": {
+              "t": {"type": "number", "desc": "unix time, seconds"},
+              "src": {"type": "string"}
+            }
+          },
+          "right.released": {
+            "desc": "bay 'right' released",
+            "payload": {
+              "t": {"type": "number", "desc": "unix time, seconds"},
+              "src": {"type": "string"}
+            }
+          }
+        },
+        "state": {
+          "armed_pin": {"type": "string",
+                        "desc": "first bay's release pin name"}
+        }
+      }
+    }
+  }
+}
