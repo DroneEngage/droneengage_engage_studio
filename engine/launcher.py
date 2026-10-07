@@ -289,11 +289,15 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
     return m
 
 
-def ensure(sim_src, timeout=180, world_stream=False):
+def ensure(sim_src, timeout=180, world_stream=False, exclusive=True):
     """Reuse the running sim if it is the same sim (hash) and every
-    process is alive; otherwise bring it up fresh. Tests are exclusive:
-    a fresh up downs every other sim. `world_stream` is passed to `up`
-    for the viewer URL's ?world= param."""
+    process is alive; otherwise bring it up fresh. `exclusive` (the
+    default: tests own the machine) downs every other sim on the reuse
+    path and passes through to `up` on the fresh path; additive callers
+    (a bare `run`/`view` of a sims/*.yaml) pass exclusive=False so other
+    live sims stay up - the fresh up then does what `sim up` does
+    (conflict check, same-name restart). `world_stream` is passed to
+    `up` for the viewer URL's ?world= param."""
     sim = simlib.load_sim(sim_src)
     m = simlib.load_manifest(sim["name"], required=False)
     if m and m.get("sim_hash") == sim["hash"]:
@@ -303,14 +307,21 @@ def ensure(sim_src, timeout=180, world_stream=False):
         for u in m["units"]:
             need |= {f"{u['name']}.{p}" for p in simlib.procs_of(u)}
         if need <= alive:
-            # a test owns the machine on the reuse path too
-            for other in ([] if _shared() else simlib.live_sim_names()):
-                if other != sim["name"]:
-                    down(other, quiet=True)
+            if exclusive:
+                # a test owns the machine on the reuse path too
+                for other in ([] if _shared()
+                              else simlib.live_sim_names()):
+                    if other != sim["name"]:
+                        down(other, quiet=True)
             ctl.CTX = sim["name"]
             print(simlib.col_dim(
                 f"sim {sim['name']} already up and unchanged - reusing"),
                 flush=True)
+            render = m.get("render") or {}
+            if render and m.get("render_procs"):
+                print("render viewer: " + simlib.col("1;36",
+                      simlib.render_viewer_url(render, world_stream)),
+                      flush=True)
             return m
         if alive:
             print(simlib.col_yellow(
@@ -323,5 +334,5 @@ def ensure(sim_src, timeout=180, world_stream=False):
     elif m:
         print(simlib.col_yellow(
             f"sim {sim['name']} spec changed - restarting"), flush=True)
-    return up(sim_src, fresh=True, timeout=timeout, exclusive=True,
+    return up(sim_src, fresh=True, timeout=timeout, exclusive=exclusive,
               world_stream=world_stream)

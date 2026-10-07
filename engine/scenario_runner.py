@@ -184,6 +184,10 @@ def _do(step, scn, ctx):
             return bot.op_deploy(op, float(a.get("timeout", 60)))
         return runner.run_ctl("deploy", op)
     if name == "start":
+        # the scenario's own t0: time_to_detect measures from the first
+        # start step, not from the earlier fleet-up world epoch (the
+        # arm/EKF wait in between is not detection latency)
+        ctx.setdefault("start_ms", int(time.time() * 1000))
         st = {}
         try:
             st = json.load(open(simlib.op_state_path(ctx["sim"])))
@@ -709,6 +713,13 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     try:
         ok &= run_timeline(scn, ctx)
         if hold:
+            # --hold parks with the world stream, truth recorder and
+            # telemetry still live for the viewer; rows stamped after
+            # this boundary are hold traffic, not scenario evidence, so
+            # the check readers cap at it (unix ms - the truth/
+            # detection row clock)
+            ctx["hold_ms"] = int(time.time() * 1000)
+            tele.until_ms = ctx["hold_ms"]
             _hold(m, world_stream=ctx.get("world_stream") is not None)
     except Exception as e:
         # a runner bug must still reach assertions/teardown/stop(): the
@@ -832,13 +843,16 @@ def run(t_file, keep=False, hold=False):
     """`./sim run` dispatcher: legacy tests -> runner.py, scenarios ->
     the de.scenario/1 engine. hold is scenario-only (a legacy test has
     no world stream to keep alive). A bare sims/*.yaml file has no
-    steps - it is just ensured up, like ./sim up but hash-reused."""
+    steps - it is just ensured up (additive: like ./sim up but
+    hash-reused, it leaves the other live sims alone)."""
     raw = simlib.load_yaml(os.path.abspath(t_file))
     if scenario.is_sim_spec(raw):
         print(simlib.col_yellow(
             f"{t_file} is a sim, not a test - no steps to run; "
             "bringing the fleet up"), flush=True)
-        m = launcher.ensure(t_file)
+        # additive like `sim up`: a bare sim is nobody's test - it must
+        # not down the other live sims
+        m = launcher.ensure(t_file, exclusive=False)
         if hold:
             _hold(m)
             print(simlib.col_green("sim is still up")

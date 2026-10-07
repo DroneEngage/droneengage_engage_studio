@@ -182,8 +182,9 @@ logs and pids, so sims are fully independent:
 
 `ctl` commands that need one sim (server procs, `reset`, deploy) use the
 `-s` sim, else the only live sim; unit lookups (`arm quad1`, `logs`)
-search live sims first. `sim run` stays exclusive - a test owns the
-machine and downs the other sims.
+search live sims first. `sim run` stays exclusive for tests - a test
+owns the machine and downs the other sims (a bare `sims/*.yaml`
+`run`/`view` is additive, like `up`).
 
 `sims/quadcopter.yaml`, `sims/rover.yaml` and `sims/plane.yaml` are
 ready-made single-box personal sims for an external server, on disjoint
@@ -390,8 +391,9 @@ Format (strict - unknown keys fail against
   that were found - `src: ai|sdr|bot` (bot = the whole product chain),
   `match_m:` for the bot src, `max: 0` is the "must stay hidden"
   negative control, the detail line lists each miss's dominant why),
-  `time_to_detect` (P5-10: seconds from the world epoch to the first
-  find, `max_s:`; realtime-sensitive), `signals_in_range`,
+  `time_to_detect` (P5-10: seconds from the `start` step - the world
+  epoch when none ran - to the first find, `max_s:`;
+  realtime-sensitive), `signals_in_range`,
   `stub_deterministic` to the legacy assertion set.
   `journal_count` takes `total: true` to compare the sum over its units
   instead of every unit's own count; `module_log_count` accepts the same

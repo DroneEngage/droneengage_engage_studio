@@ -474,6 +474,14 @@ class T(unittest.TestCase):
                 world_epoch_ms=1000)
         self.assertEqual((r["status"], r["value"], r["detail"][:3]),
                          ("PASS", 5.0, "pa "))
+        self.assertIn("after the epoch", r["detail"])
+        # a `start` step stamps ctx["start_ms"] and becomes the t0: the
+        # arm/EKF warm-up between epoch and start is not detection time
+        r = run({"time_to_detect": {"truth": "pa", "src": "ai",
+                                     "max_s": 10, "truth_file": f}}, {},
+                world_epoch_ms=1000, start_ms=5000)
+        self.assertEqual((r["status"], r["value"]), ("PASS", 1.0))
+        self.assertIn("after the start step", r["detail"])
         r = run({"time_to_detect": {"truth": "pa", "src": "ai",
                                      "max_s": 3, "truth_file": f}}, {},
                 world_epoch_ms=1000)

@@ -483,6 +483,10 @@ def load_server(srv, slot_base=None):
     if t == "fake" and srv.get("auth"):
         raise SimError("sim server: auth needs type real")
     acc = srv.get("account") or {}
+    # one CLI credential alone silently pairs with the yaml/env
+    # counterpart - a wrong-password login reads as a server failure
+    if bool(CLI_AUTH.get("user")) != bool(CLI_AUTH.get("code")):
+        raise SimError("--user and --password must be passed together")
     user = CLI_AUTH.get("user") or acc.get("user") or \
         setting("SIM_AUTH_USER", "sim@sim.droneengage.com")
     code = str(CLI_AUTH.get("code") or acc.get("code") or
@@ -645,6 +649,27 @@ def cli_auth(user=None, password=None, auth_server=None):
                 raise SimError(f"--auth-server {auth_server!r}: bad port")
 
 
+def mav_chan_index(params, serial):
+    """The n in the MAVn_*/SRn_* stream-rate params a SERIAL<serial>
+    MAVLink stream answers to: ArduPilot binds one MAVLink channel per
+    serial whose protocol is MAVLink (1 or 2), so serial4's n is 1 +
+    the count of lower-numbered MAVLink serials. A block re-purposing
+    SERIAL1-3 (GPS, None, ...) shifts it; params a unit never set take
+    the ArduPilot SITL defaults (AP_SerialManager.cpp: serial0-2
+    MAVLink2, serial3/4 GPS, the rest disabled)."""
+    defaults = {0: 2, 1: 2, 2: 2, 3: 5, 4: 5}
+    n = 1
+    for i in range(serial):
+        try:
+            proto = int(params.get(f"SERIAL{i}_PROTOCOL",
+                                   defaults.get(i, -1)))
+        except (TypeError, ValueError):
+            proto = -1
+        if proto in (1, 2):
+            n += 1
+    return n
+
+
 def _expand_unit(sim, b, name, entry, at, catalog):
     if not NAME_RX.match(name):
         raise SimError(f"unit name {name!r}: letters, digits, _ only")
@@ -755,17 +780,26 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         # P5-13 D4: a render-enabled sim fans MAVLink out to
         # Mavlink3DMap on serial4 (udpclient -> render.mav_port);
         # attitude/position at 10 Hz, servo outputs for P5-16. Newer
-        # ArduPilot renamed SRn_* to MAVn_* (n = MAVLink channel; serial4
-        # is the 4th MAVLink serial since serial3 is GPS) and ignores the
-        # old names - set both. Rates apply at boot only.
+        # ArduPilot renamed SRn_* to MAVn_* (n = MAVLink channel, which
+        # is the n-th MAVLink serial - compute it: a block overriding
+        # SERIAL1-3_PROTOCOL shifts it) and ignores the old names; the
+        # n=4 names stay too (harmless on a channel that is not 4, and
+        # right for the common layout). Rates apply at boot only.
         if sim.get("render"):
             u["fc"]["mav_port"] = sim["render"]["mav_port"]
+            eff_params = deep_merge(u["fc"]["params"],
+                                    u["config"].get("sitl"))
+            mav_n = mav_chan_index(eff_params, 4)
             u["fc"]["params"] = deep_merge(
                 {"SERIAL4_PROTOCOL": 2,
                  "SR4_POSITION": 10, "SR4_EXTRA1": 10,
                  "SR4_RC_CHAN": 2, "SR4_EXT_STAT": 2,
                  "MAV4_POSITION": 10, "MAV4_EXTRA1": 10,
-                 "MAV4_RC_CHAN": 2, "MAV4_EXT_STAT": 2},
+                 "MAV4_RC_CHAN": 2, "MAV4_EXT_STAT": 2,
+                 f"SR{mav_n}_POSITION": 10, f"SR{mav_n}_EXTRA1": 10,
+                 f"SR{mav_n}_RC_CHAN": 2, f"SR{mav_n}_EXT_STAT": 2,
+                 f"MAV{mav_n}_POSITION": 10, f"MAV{mav_n}_EXTRA1": 10,
+                 f"MAV{mav_n}_RC_CHAN": 2, f"MAV{mav_n}_EXT_STAT": 2},
                 u["fc"]["params"])
     return u
 

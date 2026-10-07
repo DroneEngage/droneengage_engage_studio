@@ -48,6 +48,10 @@ class Telemetry:
         self._latest = {}              # unit -> last row (speedup checks)
         self._speeds = {}              # unit -> recent speed-up samples
         self.last_error = {}           # unit -> last connect/collect error
+        # --hold boundary (unix ms): the recorder keeps running for the
+        # parked viewer, but rows stamped after it are hold traffic -
+        # rows()/latest()/age_ms() never return them to the checks
+        self.until_ms = None
 
     def start(self):
         # a stale file from an earlier run would mix its rows into this
@@ -69,6 +73,10 @@ class Telemetry:
     def latest(self, unit_name=None):
         if unit_name is None:
             return {n: dict(r) for n, r in self._latest.items()}
+        if self.until_ms is not None:
+            # --hold: "latest" is the newest row before the boundary
+            rows = self.rows(unit_name)
+            return dict(rows[-1]) if rows else {}
         return dict(self._latest.get(unit_name) or {})
 
     def speedup(self, unit_name):
@@ -80,15 +88,22 @@ class Telemetry:
 
     def age_ms(self, unit_name, now_ms=None):
         """Age of the unit's newest row, or None when it has none - a
-        row from a dead stream must not pass for the current state."""
-        row = self._latest.get(unit_name)
+        row from a dead stream must not pass for the current state.
+        Under --hold the newest row is the last one before the
+        boundary, aged against the boundary: how stale it was when the
+        evidence window closed."""
+        row = self._latest.get(unit_name) if self.until_ms is None \
+            else (self.rows(unit_name) or [None])[-1]
         if not row:
             return None
-        return (int(time.time() * 1000) if now_ms is None else now_ms) \
-            - row["t_ms"]
+        now = int(time.time() * 1000) if now_ms is None else now_ms
+        if self.until_ms is not None:
+            now = min(now, self.until_ms)
+        return now - row["t_ms"]
 
     def rows(self, unit_name=None):
-        """Read the written file back - [(row)] in order."""
+        """Read the written file back - [(row)] in order. Rows stamped
+        after until_ms (the --hold boundary) are dropped."""
         out = []
         try:
             with open(self.path, errors="replace") as f:
@@ -96,6 +111,9 @@ class Telemetry:
                     try:
                         r = json.loads(ln)
                     except ValueError:
+                        continue
+                    if self.until_ms is not None and \
+                            r.get("t_ms", 0) > self.until_ms:
                         continue
                     if unit_name is None or r.get("unit") == unit_name:
                         out.append(r)

@@ -33,8 +33,9 @@ Journal assertions keep the runner.py semantics (same helpers, same
                          P5-10 adds the detection rows' vis / why /
                          blockers (ai) and loss_db (sdr) fields, read by
                          detection_recall (who was found, who correctly
-                         stayed hidden) and time_to_detect (seconds
-                         from the world epoch to the first find)
+                         stayed hidden) and time_to_detect (seconds from
+                         the `start` step - the world epoch when none
+                         ran - to the first find)
   - stub determinism:    stub_deterministic - two same-seed --selftest
                          replays must produce byte-identical stub logs
   - 1087 status (bot):   final_state
@@ -119,6 +120,13 @@ def _truth_rows(ctx, truth_file=None):
             except ValueError:
                 continue
             rows.append(r)
+        # --hold leaves the recorders and the world stream writing for
+        # the parked viewer; only rows up to the hold boundary (unix ms,
+        # the row clock) are scenario evidence - the shared cap is here
+        # so every truth/detection reader gets it
+        hold_ms = ctx.get("hold_ms")
+        if hold_ms is not None:
+            rows = [r for r in rows if _row_t(r) <= hold_ms]
         return rows, p
     return None, None
 
@@ -416,8 +424,7 @@ def _distance_to(name, a, ctx):
         # P5-08: measure the world-model detection the operator bot saw
         # (the detect.detected envelope's pos), not the unit's own pose -
         # "the reported detection is within max_m of the truth"
-        bot = ctx.get("bot")
-        cands = [tg for tg in (bot.targets() if bot else {}).values()
+        cands = [tg for tg in _bot_targets(ctx).values()
                  if tg.get("cls") == a["detected_cls"] and tg.get("pos")]
         if not cands:
             return _r(name, "SKIP", None,
@@ -845,6 +852,21 @@ def _recall_targets(rows, spec):
                                     and r.get("tid")})]
 
 
+def _bot_targets(ctx):
+    """The operator bot's world-model targets, capped at the --hold
+    boundary when one was stamped (targets carry t_ms on the same clock
+    as the truth rows): a detection the parked viewer session produced
+    must not grade the scenario - it would inflate recalls and trip
+    `max: 0` negative controls."""
+    bot = ctx.get("bot")
+    tgs = (bot.targets() if bot else {}) or {}
+    hold_ms = ctx.get("hold_ms")
+    if hold_ms is None:
+        return tgs
+    return {tid: tg for tid, tg in tgs.items()
+            if tg.get("t_ms", 0) <= hold_ms}
+
+
 def _first_find(a, ctx, rows, tid, cls):
     """(found, t_ms of the first find or None) for one truth entity -
     the shared finder of detection_recall and time_to_detect. src ai |
@@ -867,9 +889,8 @@ def _first_find(a, ctx, rows, tid, cls):
             if best is None or t < best:
                 best = t
         return (best is not None, best)
-    bot = ctx.get("bot")
     best = None
-    for tg in (bot.targets() or {}).values():
+    for tg in _bot_targets(ctx).values():
         if tg.get("cls") != cls or not tg.get("pos"):
             continue
         tr = _truth_at(rows, tid, tg.get("t_ms", 0), tol)
@@ -978,11 +999,13 @@ def _detection_recall(name, a, ctx):
 
 
 def _time_to_detect(name, a, ctx):
-    """Seconds from the scenario epoch (world_epoch.json) to the first
-    find of one truth entity (the same found rule as detection_recall;
-    match_m applies to the bot src). FAIL when the entity is never
-    found or the time exceeds max_s; realtime: true scenarios SKIP
-    this when SITL did not hold speed-up ~1."""
+    """Seconds from the scenario's `start` step to the first find of
+    one truth entity (the same found rule as detection_recall;
+    match_m applies to the bot src) - falling back to the world epoch
+    (world_epoch.json) when the timeline never ran a start step.
+    FAIL when the entity is never found or the time exceeds max_s;
+    realtime: true scenarios SKIP this when SITL did not hold
+    speed-up ~1."""
     if a.get("max_s") is None:
         return _r(name, "FAIL", None, "needs max_s")
     common, early = _recall_common(name, a, ctx)
@@ -992,10 +1015,15 @@ def _time_to_detect(name, a, ctx):
     if len(tids) != 1:
         return _r(name, "FAIL", None,
                   f"truth must name exactly one entity, got {a['truth']!r}")
-    epoch = ctx.get("world_epoch_ms")
+    # measuring from the world epoch would charge the arm/EKF warm-up
+    # between fleet-up and `start` against max_s
+    epoch, basis = ctx.get("start_ms"), "the start step"
+    if epoch is None:
+        epoch, basis = ctx.get("world_epoch_ms"), "the epoch"
     if epoch is None:
         return _r(name, "SKIP", None,
-                  "no world epoch - time_to_detect needs a P5-08 world run")
+                  "no start step or world epoch - time_to_detect needs "
+                  "a P5-08 world run")
     tid = tids[0]
     hit, t_ms = _first_find(a, ctx, rows, tid, _entity_cls(rows, tid))
     if not hit:
@@ -1004,7 +1032,7 @@ def _time_to_detect(name, a, ctx):
     dt = (t_ms - epoch) / 1000.0
     good = dt <= float(a["max_s"])
     return _r(name, "PASS" if good else "FAIL", round(dt, 1),
-              f"{tid} found {dt:.1f} s after the epoch "
+              f"{tid} found {dt:.1f} s after {basis} "
               f"(src {a.get('src', 'bot')}, max {a['max_s']})")
 
 
@@ -1204,9 +1232,16 @@ def _link_offline(name, a, ctx):
     events = ctx.get("link_events") or {}
     min_s = float(a.get("min_s", 0))
     now_ms = int(time.time() * 1000)
+    # --hold: transitions after the boundary are viewer traffic; an
+    # interval still open at the boundary closes there
+    hold_ms = ctx.get("hold_ms")
+    if hold_ms is not None:
+        now_ms = min(now_ms, hold_ms)
     ok, bits, total = True, [], 0
     for u in _units(a, ctx):
         ev = events.get(u["party_id"], [])
+        if hold_ms is not None:
+            ev = [(t, on) for t, on in ev if t <= hold_ms]
         n = 0
         t_off = None
         # the sentinel closes an interval still open now: it counts only
@@ -1438,7 +1473,7 @@ def _detection_precision_render(name, a, ctx):
     if not vis:
         return _r(name, "SKIP", None,
                   "no render_vis box rows - the ID pass ran nowhere")
-    targets = [tg for tg in (bot.targets() or {}).values()
+    targets = [tg for tg in _bot_targets(ctx).values()
                if isinstance(tg.get("box"), dict)]
     if a.get("unit") is not None:
         targets = [tg for tg in targets if tg.get("src") == a["unit"]]
