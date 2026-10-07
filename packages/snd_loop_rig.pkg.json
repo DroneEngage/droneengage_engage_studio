@@ -1,0 +1,109 @@
+{
+  "schema": "de.package/2.2",
+  "op": "snd_loop",
+  "op_hash": "sha256:c1a7c9c0cefa29e34b2973e9720763d9006c30ddb2f01a466d31e043cf9cefdc",
+  "role": "rig",
+  "vehicle": {
+    "type": "static"
+  },
+  "requires": [
+    "sound"
+  ],
+  "fc_items": [],
+  "missions": {
+    "walk": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "e_loop",
+          "k": "emit",
+          "event": "sound.siren.play",
+          "payload": {
+            "loop": true
+          }
+        },
+        {
+          "id": "g_start",
+          "k": "gate",
+          "event": "sound.siren.started",
+          "timeout": 15,
+          "on_timeout": "end"
+        },
+        {
+          "id": "e_stop",
+          "k": "emit",
+          "event": "sound.siren.stop"
+        },
+        {
+          "id": "g_stop",
+          "k": "gate",
+          "event": "sound.siren.finished",
+          "timeout": 15,
+          "on_timeout": "end"
+        },
+        {
+          "id": "e_loop2",
+          "k": "emit",
+          "event": "sound.siren.play",
+          "payload": {
+            "loop": true
+          }
+        },
+        {
+          "id": "g_limit",
+          "k": "gate",
+          "cond": {
+            "all_of": [
+              {
+                "event": "sound.siren.finished"
+              }
+            ]
+          },
+          "timeout": 30,
+          "on_timeout": "end"
+        },
+        {
+          "id": "e_done",
+          "k": "emit",
+          "event": "sound.probe_done"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "sound.siren.play": {
+      "payload": {
+        "loop": "boolean"
+      }
+    },
+    "sound.siren.started": {},
+    "sound.siren.stop": {},
+    "sound.siren.finished": {},
+    "sound.probe_done": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "rig": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "sound.siren.play": 300,
+      "sound.siren.stop": 300,
+      "sound.siren.started": 300,
+      "sound.siren.finished": 300,
+      "sound.probe_done": 300
+    }
+  },
+  "hash": "sha256:7e108b9ffc04b3d812ad95b80d61ec4c2b1db80117287cdfdfb9eae50954ed57"
+}

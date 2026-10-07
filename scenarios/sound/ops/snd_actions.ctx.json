@@ -1,0 +1,251 @@
+{
+  "_note": "TASK-EV-SND ctx: each registry entry is the serialized 1089 caps view (snd.unit.caps.json) so sound.* actions/events resolve against the advert.",
+  "binding": {
+    "node": [
+      "ok",
+      "mute"
+    ]
+  },
+  "registries": {
+    "ok": {
+      "caps": {
+        "sound": {
+          "ch": "c1",
+          "module": "de_sound",
+          "ver": "0.10.0",
+          "advert": {
+            "schema": "de.cap/1",
+            "ns": "sound",
+            "module": "droneengage_sound_module",
+            "ver": "0.10.0",
+            "desc": "events: sound.<clip>.started|finished {src,loop|reason}; commands: sound.<clip>.play{loop}|stop",
+            "actions": {
+              "say": {
+                "desc": "Speak a text (espeak-ng)",
+                "params": {
+                  "text": {
+                    "type": "string",
+                    "desc": "text to speak"
+                  },
+                  "lang": {
+                    "type": "enum",
+                    "values": [
+                      "ar",
+                      "en",
+                      "es",
+                      "ja",
+                      "ru"
+                    ],
+                    "optional": true,
+                    "desc": "language code"
+                  },
+                  "language": {
+                    "type": "enum",
+                    "values": [
+                      "ar",
+                      "en",
+                      "es",
+                      "ja",
+                      "ru"
+                    ],
+                    "optional": true,
+                    "desc": "same as lang (Phase-2 name)"
+                  },
+                  "pitch": {
+                    "type": "int",
+                    "min": 0,
+                    "max": 99,
+                    "optional": true
+                  },
+                  "volume": {
+                    "type": "int",
+                    "min": 0,
+                    "max": 100,
+                    "optional": true
+                  }
+                }
+              },
+              "stop": {
+                "desc": "Stop the sound playing now and drop queued ones"
+              },
+              "play": {
+                "desc": "Play a sound from the configured library",
+                "params": {
+                  "file": {
+                    "type": "enum",
+                    "values": [
+                      "Beep",
+                      "Siren",
+                      "Horn"
+                    ]
+                  }
+                }
+              },
+              "beep": {
+                "desc": "play 'Beep' (enqueues; completion is sound.beep.finished)",
+                "timeout_s": 5,
+                "params": {
+                  "loop": {
+                    "type": "bool",
+                    "optional": true,
+                    "desc": "repeat until stopped, preempted or loop_max_s (default false)"
+                  }
+                }
+              },
+              "siren": {
+                "desc": "play 'Siren' (enqueues; completion is sound.siren.finished)",
+                "timeout_s": 5,
+                "params": {
+                  "loop": {
+                    "type": "bool",
+                    "optional": true,
+                    "desc": "repeat until stopped, preempted or loop_max_s (default false)"
+                  }
+                }
+              },
+              "horn": {
+                "desc": "play 'Horn' (enqueues; completion is sound.horn.finished)",
+                "timeout_s": 5,
+                "params": {
+                  "loop": {
+                    "type": "bool",
+                    "optional": true,
+                    "desc": "repeat until stopped, preempted or loop_max_s (default false)"
+                  }
+                }
+              }
+            },
+            "state": {
+              "playing": {
+                "type": "bool",
+                "desc": "a sound or speech is playing"
+              }
+            }
+          }
+        }
+      },
+      "state": {},
+      "t": 0
+    },
+    "mute": {
+      "caps": {
+        "sound": {
+          "ch": "c1",
+          "module": "de_sound",
+          "ver": "0.10.0",
+          "advert": {
+            "schema": "de.cap/1",
+            "ns": "sound",
+            "module": "droneengage_sound_module",
+            "ver": "0.10.0",
+            "desc": "events: sound.<clip>.started|finished {src,loop|reason}; commands: sound.<clip>.play{loop}|stop",
+            "actions": {
+              "say": {
+                "desc": "Speak a text (espeak-ng)",
+                "params": {
+                  "text": {
+                    "type": "string",
+                    "desc": "text to speak"
+                  },
+                  "lang": {
+                    "type": "enum",
+                    "values": [
+                      "ar",
+                      "en",
+                      "es",
+                      "ja",
+                      "ru"
+                    ],
+                    "optional": true,
+                    "desc": "language code"
+                  },
+                  "language": {
+                    "type": "enum",
+                    "values": [
+                      "ar",
+                      "en",
+                      "es",
+                      "ja",
+                      "ru"
+                    ],
+                    "optional": true,
+                    "desc": "same as lang (Phase-2 name)"
+                  },
+                  "pitch": {
+                    "type": "int",
+                    "min": 0,
+                    "max": 99,
+                    "optional": true
+                  },
+                  "volume": {
+                    "type": "int",
+                    "min": 0,
+                    "max": 100,
+                    "optional": true
+                  }
+                }
+              },
+              "stop": {
+                "desc": "Stop the sound playing now and drop queued ones"
+              },
+              "play": {
+                "desc": "Play a sound from the configured library",
+                "params": {
+                  "file": {
+                    "type": "enum",
+                    "values": [
+                      "Beep",
+                      "Siren",
+                      "Horn"
+                    ]
+                  }
+                }
+              },
+              "beep": {
+                "desc": "play 'Beep' (enqueues; completion is sound.beep.finished)",
+                "timeout_s": 5,
+                "params": {
+                  "loop": {
+                    "type": "bool",
+                    "optional": true,
+                    "desc": "repeat until stopped, preempted or loop_max_s (default false)"
+                  }
+                }
+              },
+              "siren": {
+                "desc": "play 'Siren' (enqueues; completion is sound.siren.finished)",
+                "timeout_s": 5,
+                "params": {
+                  "loop": {
+                    "type": "bool",
+                    "optional": true,
+                    "desc": "repeat until stopped, preempted or loop_max_s (default false)"
+                  }
+                }
+              },
+              "horn": {
+                "desc": "play 'Horn' (enqueues; completion is sound.horn.finished)",
+                "timeout_s": 5,
+                "params": {
+                  "loop": {
+                    "type": "bool",
+                    "optional": true,
+                    "desc": "repeat until stopped, preempted or loop_max_s (default false)"
+                  }
+                }
+              }
+            },
+            "state": {
+              "playing": {
+                "type": "bool",
+                "desc": "a sound or speech is playing"
+              }
+            }
+          }
+        }
+      },
+      "state": {},
+      "t": 0
+    }
+  }
+}

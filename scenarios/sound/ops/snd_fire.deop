@@ -1,0 +1,29 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "snd_fire",
+    "comment": "TASK-EV-SND sound_operator_fire: the sound.* events are declared so operator fires republish and latch once the package is loaded; the single manual mission never activates - it only keeps the package a valid sensor op (same shape as gpio_fire).",
+
+    "roles": {
+        "node": { "count": 1, "vehicle": "static", "requires": ["sound"] }
+    },
+
+    "events": {
+        "sound.beep.play":      {},
+        "sound.beep.started":   {},
+        "sound.beep.finished":  {},
+        "sound.idle_tick":      {}
+    },
+
+    "missions": {
+        "node": {
+            "idle": {
+                "trigger": "manual",
+                "end": "hold",
+                "steps": [
+                    { "id": "tick", "emit": "sound.idle_tick" }
+                ]
+            }
+        }
+    }
+}

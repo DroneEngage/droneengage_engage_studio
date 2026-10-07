@@ -1,0 +1,11 @@
+{
+  "op": "snd_fire",
+  "roles": {
+    "node": {
+      "pkg": "snd_fire_node.pkg.json",
+      "units": [
+        "node"
+      ]
+    }
+  }
+}

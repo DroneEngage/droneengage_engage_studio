@@ -1,0 +1,119 @@
+{
+  "_note": "TASK-EV-SND: the sim unit's serialized capability view (the 1089 m_Capabilities object a UNIT_CAPABILITIES report carries), used two ways like ops/gpio.unit.caps.json: (1) compile_op.js --caps feeds it to compileOperation as the registry so 'do sound.beep|siren|horn|say' resolves against the advertised per-clip actions the Phase-1 stub cannot name; (2) the <op>.ctx.json sidecars embed it under registries.<unit> so verify_wrap.js checks do-params against the same advert. The advert mirrors build_sound_advert() for the sim clip set (modules/templates/de_snd.sim.json): beep + siren + horn; horn is events:false so it keeps its 'do' action but emits no facts. ci/check_library.py parses this file strictly - keep it comment-free.",
+  "caps": {
+    "sound": {
+      "ch": "c1",
+      "module": "de_sound",
+      "ver": "0.10.0",
+      "advert": {
+        "schema": "de.cap/1",
+        "ns": "sound",
+        "module": "droneengage_sound_module",
+        "ver": "0.10.0",
+        "desc": "events: sound.<clip>.started|finished {src,loop|reason}; commands: sound.<clip>.play{loop}|stop",
+        "actions": {
+          "say": {
+            "desc": "Speak a text (espeak-ng)",
+            "params": {
+              "text": {
+                "type": "string",
+                "desc": "text to speak"
+              },
+              "lang": {
+                "type": "enum",
+                "values": [
+                  "ar",
+                  "en",
+                  "es",
+                  "ja",
+                  "ru"
+                ],
+                "optional": true,
+                "desc": "language code"
+              },
+              "language": {
+                "type": "enum",
+                "values": [
+                  "ar",
+                  "en",
+                  "es",
+                  "ja",
+                  "ru"
+                ],
+                "optional": true,
+                "desc": "same as lang (Phase-2 name)"
+              },
+              "pitch": {
+                "type": "int",
+                "min": 0,
+                "max": 99,
+                "optional": true
+              },
+              "volume": {
+                "type": "int",
+                "min": 0,
+                "max": 100,
+                "optional": true
+              }
+            }
+          },
+          "stop": {
+            "desc": "Stop the sound playing now and drop queued ones"
+          },
+          "play": {
+            "desc": "Play a sound from the configured library",
+            "params": {
+              "file": {
+                "type": "enum",
+                "values": [
+                  "Beep",
+                  "Siren",
+                  "Horn"
+                ]
+              }
+            }
+          },
+          "beep": {
+            "desc": "play 'Beep' (enqueues; completion is sound.beep.finished)",
+            "timeout_s": 5,
+            "params": {
+              "loop": {
+                "type": "bool",
+                "optional": true,
+                "desc": "repeat until stopped, preempted or loop_max_s (default false)"
+              }
+            }
+          },
+          "siren": {
+            "desc": "play 'Siren' (enqueues; completion is sound.siren.finished)",
+            "timeout_s": 5,
+            "params": {
+              "loop": {
+                "type": "bool",
+                "optional": true,
+                "desc": "repeat until stopped, preempted or loop_max_s (default false)"
+              }
+            }
+          },
+          "horn": {
+            "desc": "play 'Horn' (enqueues; completion is sound.horn.finished)",
+            "timeout_s": 5,
+            "params": {
+              "loop": {
+                "type": "bool",
+                "optional": true,
+                "desc": "repeat until stopped, preempted or loop_max_s (default false)"
+              }
+            }
+          }
+        },
+        "state": {
+          "playing": {
+            "type": "bool",
+            "desc": "a sound or speech is playing"
+          }
+        }
+      }
+    }
+  }
+}

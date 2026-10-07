@@ -178,3 +178,24 @@ stub_precland:
   start_delay: 3
   pose: true
   local: {file: stub_precland.local}
+
+# TASK-EV-SND: the Python sound module (sound.<clip>.* event surface).
+# de_sound_module.py ships no shebang, so the repo: points at this repo
+# and `bin` is the modules/bin/de_sound.sh wrapper (execs python3 on
+# $DE_SOUND_DIR/de_sound_module.py, the sibling checkout by default).
+# The null backend plays no audio - a clip "plays" for its nominal
+# length, so started/finished facts stay deterministic on a host
+# without a sound card; loop_max_s 5 keeps the loop-limit check fast.
+de_sound:
+  repo: droneengage_simulation_land
+  bin: modules/bin/de_sound.sh
+  template: de_snd.sim.json
+  port_base: 54000
+  start_delay: 3
+  set:
+    # quoted: catalog deep_merge drops YAML-null values, the module's
+    # null-backend check wants the string "null" (or JSON null)
+    sound_backend: "null"
+    loop_max_s: 5
+  # stdout-only signal - the de_comm journal never sees module init
+  ready_log_re: "Communicator Server Found"

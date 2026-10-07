@@ -1,0 +1,31 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "snd_actions",
+    "comment": "TASK-EV-SND sound_do_action: per-clip capability actions through the supervisor's `do` step and the namespace-owner invoke path (src:'invoke'). Two units run the same mission: `ok` is unmuted (beep plays, started/finished facts fire), `mute` has de_sound muted:true - the invoke answers {queued:false, muted:true}, the step still journals ok (the action succeeded - it was muted, not failed) and zero facts are emitted. sound.say is the frozen Phase-3 action - unchanged.",
+
+    "roles": {
+        "node": { "count": 2, "vehicle": "static", "requires": ["sound"] }
+    },
+
+    "events": {
+        "sound.beep.started":   {},
+        "sound.beep.finished":  {},
+        "sound.probe_done":     {}
+    },
+
+    "missions": {
+        "node": {
+            "act": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "beep", "do": "sound.beep", "timeout": 10 },
+                    { "id": "say", "do": "sound.say",
+                      "with": { "text": "sim check" }, "timeout": 10 },
+                    { "id": "e_done", "emit": "sound.probe_done" }
+                ]
+            }
+        }
+    }
+}

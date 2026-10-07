@@ -1,0 +1,37 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "snd_probe",
+    "comment": "TASK-EV-SND sound_emit_and_notify: a sensor mission emits sound.<clip>.play command events; the namespace owner (de_sound, null backend) plays the clip and its sound.<clip>.finished fact releases the gate. sound.ghost.play names no configured clip - the emit is delivered and journaled, but no fact ever comes back, so g_ghost must time out on continue.",
+
+    "roles": {
+        "probe": { "count": 1, "vehicle": "static", "requires": ["sound"] }
+    },
+
+    "events": {
+        "sound.beep.play":      {},
+        "sound.beep.started":   {},
+        "sound.beep.finished":  {},
+        "sound.ghost.play":     {},
+        "sound.ghost.finished": {},
+        "sound.probe_done":     {}
+    },
+
+    "missions": {
+        "probe": {
+            "walk": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "e_beep", "emit": "sound.beep.play" },
+                    { "id": "g_beep", "gate": { "event": "sound.beep.finished" },
+                      "timeout": 30, "on_timeout": "end" },
+                    { "id": "e_ghost", "emit": "sound.ghost.play" },
+                    { "id": "g_ghost", "gate": { "event": "sound.ghost.finished" },
+                      "timeout": 10, "on_timeout": "continue" },
+                    { "id": "e_done", "emit": "sound.probe_done" }
+                ]
+            }
+        }
+    }
+}

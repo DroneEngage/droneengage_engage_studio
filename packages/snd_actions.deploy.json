@@ -1,0 +1,12 @@
+{
+  "op": "snd_actions",
+  "roles": {
+    "node": {
+      "pkg": "snd_actions_node.pkg.json",
+      "units": [
+        "ok",
+        "mute"
+      ]
+    }
+  }
+}

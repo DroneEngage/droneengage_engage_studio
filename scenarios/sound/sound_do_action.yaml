@@ -1,0 +1,61 @@
+# sound/sound_do_action - TASK-EV-SND: per-clip capability actions
+# through the supervisor's `do` step -> namespace-owner invoke
+# (src:"invoke"). Two units run the same `act` mission:
+#
+#   ok    beep plays on the null backend -> started/finished facts
+#   mute  de_sound muted:true            -> invoke answers
+#          {queued:false, muted:true} (ok:true - muted is not an error)
+#          and ZERO sound.<clip>.* facts leave its module
+#
+# `do: sound.say {text}` is the frozen Phase-3 action - unchanged.
+version: 1
+name: sound_do_action
+transport: fake
+operation: ../../packages/snd_actions.deploy.json
+verify: {cli: ../support/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: ok, cls: static, modules: [de_sound]}
+  - {id: mute, cls: static, modules: [de_sound],
+     config: {de_sound: {muted: true}}}
+timeline:
+  - {t: 10, do: deploy}
+  - {t: 15, do: start}
+  - {t: 20, do: wait_journal, unit: ok, re: "S: act beep ok", timeout: 30}
+  - {t: 20, do: wait_journal, unit: mute, re: "S: act beep ok",
+     timeout: 30}
+  - {t: 25, do: wait_journal, unit: ok, re: "S: act emit sound\\.probe_done",
+     timeout: 30}
+  - {t: 25, do: wait_journal, unit: mute,
+     re: "S: act emit sound\\.probe_done", timeout: 30}
+  - {t: 35, do: stop}
+assert:
+  # both units walked the mission; the muted invoke still journals ok
+  - journal_count: {unit: ok, re: "S: act beep ok", equals: 1}
+  - journal_count: {unit: ok, re: "S: act say ok", equals: 1}
+  - journal_count: {unit: ok,
+                    re: "ACTION_RESULT .* ok \\(sound\\.beep\\)", equals: 1}
+  - journal_count: {unit: ok,
+                    re: "ACTION_RESULT .* ok \\(sound\\.say\\)", equals: 1}
+  - journal_count: {unit: mute, re: "S: act beep ok", equals: 1}
+  - journal_count: {unit: mute, re: "S: act say ok", equals: 1}
+  - journal_count: {unit: ok, re: "failed:", equals: 0}
+  - journal_count: {unit: mute, re: "failed:", equals: 0}
+  # ok: the clip really played (facts on the module's own sendJMSG lines)
+  - module_log_count: {unit: ok, module: de_sound,
+                       re: "sound\\.beep\\.started", at_least: 1}
+  - module_log_count: {unit: ok, module: de_sound,
+                       re: "sound\\.beep\\.finished.*\"src\": \"invoke\"",
+                       at_least: 1}
+  - journal_count: {unit: ok,
+                    re: "EVENT_IN event sound\\.beep\\.finished latched",
+                    at_least: 1}
+  # mute: both invokes answered queued:false/muted:true and no facts left
+  - module_log_count: {unit: mute, module: de_sound,
+                       re: "\"muted\": true", at_least: 2}
+  - module_log_count: {unit: mute, module: de_sound,
+                       re: "sound\\.\\w+\\.(started|finished)", equals: 0}
+  - journal_count: {unit: mute,
+                    re: "EVENT_IN event sound\\.\\w+\\.(started|finished)",
+                    equals: 0}
+teardown: none

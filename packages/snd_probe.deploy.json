@@ -1,0 +1,11 @@
+{
+  "op": "snd_probe",
+  "roles": {
+    "probe": {
+      "pkg": "snd_probe_probe.pkg.json",
+      "units": [
+        "probe"
+      ]
+    }
+  }
+}

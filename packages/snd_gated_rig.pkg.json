@@ -1,0 +1,75 @@
+{
+  "schema": "de.package/2.2",
+  "op": "snd_gated",
+  "op_hash": "sha256:3c6fadcbf9f6fcb5d94ad8ad8bb80351e1eb39075b40933867df346d289f892b",
+  "role": "rig",
+  "vehicle": {
+    "type": "static"
+  },
+  "requires": [
+    "sound"
+  ],
+  "fc_items": [],
+  "missions": {
+    "walk": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [
+        "sound"
+      ],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "e_horn",
+          "k": "emit",
+          "event": "sound.horn.play"
+        },
+        {
+          "id": "g_horn",
+          "k": "gate",
+          "event": "sound.horn.finished",
+          "timeout": 10,
+          "on_timeout": "continue"
+        },
+        {
+          "id": "d_horn",
+          "k": "do",
+          "do": "sound.horn",
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "e_done",
+          "k": "emit",
+          "event": "sound.probe_done"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "sound.horn.play": {},
+    "sound.horn.finished": {},
+    "sound.probe_done": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "rig": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "sound.horn.play": 300,
+      "sound.horn.started": 300,
+      "sound.horn.finished": 300,
+      "sound.probe_done": 300
+    }
+  },
+  "hash": "sha256:7389cf3e36520696038597e764b80869c430360c0da62d5c84ea5d0242781161"
+}

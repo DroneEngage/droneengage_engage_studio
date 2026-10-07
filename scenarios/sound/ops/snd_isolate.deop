@@ -1,0 +1,43 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "snd_isolate",
+    "comment": "TASK-EV-SND sound_isolation (GF-01/GF-02): node_a's mission emits the sound.beep.play command, which republishes to the fleet - node_b's supervisor latches it and its 'heard' mission marks scope.heard, proving the event crossed the bus. What must NOT happen: node_b's de_sound module actuating on the remote frame - its module log stays silent (no sound.beep.* traffic, no 'event ignored' note).",
+
+    "roles": {
+        "speaker":  { "count": 1, "vehicle": "static", "requires": ["sound"] },
+        "listener": { "count": 1, "vehicle": "static", "requires": ["sound"] }
+    },
+
+    "events": {
+        "sound.beep.play":      {},
+        "sound.beep.started":   {},
+        "sound.beep.finished":  {},
+        "sound.spk_done":       {},
+        "scope.heard":          {}
+    },
+
+    "missions": {
+        "speaker": {
+            "talk": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "e", "emit": "sound.beep.play" },
+                    { "id": "g", "gate": { "event": "sound.beep.finished" },
+                      "timeout": 30, "on_timeout": "end" },
+                    { "id": "d", "emit": "sound.spk_done" }
+                ]
+            }
+        },
+        "listener": {
+            "heard": {
+                "trigger": { "event": "sound.beep.play" },
+                "end": "hold",
+                "steps": [
+                    { "id": "mark", "emit": "scope.heard" }
+                ]
+            }
+        }
+    }
+}

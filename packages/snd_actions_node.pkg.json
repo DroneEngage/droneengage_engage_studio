@@ -1,0 +1,70 @@
+{
+  "schema": "de.package/2.2",
+  "op": "snd_actions",
+  "op_hash": "sha256:7e8d4edf3e6b0c84732919652c64a657c0cfe818c428f61080cdf2d36dbee04a",
+  "role": "node",
+  "vehicle": {
+    "type": "static"
+  },
+  "requires": [
+    "sound"
+  ],
+  "fc_items": [],
+  "missions": {
+    "act": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [
+        "sound"
+      ],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "beep",
+          "k": "do",
+          "do": "sound.beep",
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "say",
+          "k": "do",
+          "do": "sound.say",
+          "with": {
+            "text": "sim check"
+          },
+          "timeout": 10,
+          "on_error": "end"
+        },
+        {
+          "id": "e_done",
+          "k": "emit",
+          "event": "sound.probe_done"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "sound.probe_done": {}
+  },
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "node": {
+        "count": 2
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "sound.beep.started": 300,
+      "sound.beep.finished": 300,
+      "sound.probe_done": 300
+    }
+  },
+  "hash": "sha256:f44d4e8fb293aade6929c59faa609653bf072529469e95a507cb41c043df62c0"
+}

@@ -1,0 +1,26 @@
+{
+    /*
+        Sim config for de_sound (TASK-EV-SND). The catalog `set` pins
+        sound_backend:null + loop_max_s:5 - the null backend plays no
+        audio, clips "play" for their nominal length (wav duration when
+        the file is readable, else null_clip_ms), so started/finished
+        facts stay deterministic on a host without a sound card.
+
+        Event keys are slugs of the display names: beep, siren, horn.
+        "horn" is events:false - its surface is gated both ways (commands
+        ignored, no facts) but `do: sound.horn` still works.
+    */
+    "module_id": "SND",
+    "s2s_udp_packet_size": "8192",
+
+    "default_volume": 100,
+    "default_pitch": 50,
+    "default_language": "en",
+    "muted": false,
+
+    "sound_files": [
+        { "name": "Beep",  "file": "sound_box/beep.wav" },
+        { "name": "Siren", "file": "sound_box/siren.mp3" },
+        { "name": "Horn",  "file": "sound_box/horn.wav", "events": false }
+    ]
+}
