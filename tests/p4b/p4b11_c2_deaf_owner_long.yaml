@@ -1,0 +1,120 @@
+# p4b/p4b11_c2_deaf_owner_long - TASK-P4B-12 acceptance C2: the deaf
+# owner variant of p4b10_c_searcher_lost. s2's link is cut for 950 s -
+# long enough that its last in-flight progress report is far older than
+# the fact TTL (~300 s) when the link returns, so only the fresh
+# PROGRESS_DIGEST can deliver its progress (replay of the original facts
+# expires at ingest). On the 2026-10-08 timings s2 finishes its own
+# sector while deaf (~+600 s into the cut) and returns ~+950 s, mid-way
+# through the adopter's duplicate pass - the digest says done 6/6, every
+# remaining lane is in the report, and the adopter stands down
+# (TAKEOVER_MOOT) instead of finishing the double cover.
+#
+# Timing basis (run 2026-10-08T12-49-48Z/p4b10_c_searcher_lost):
+#   cut +0 -> ORPHAN +19 -> TAKEOVER +516 -> s2 self-complete +598
+#   -> online +690 -> MOOT +2 (adopter tko: ran ~176 s of duplicate cover)
+# With dur 950 the return lands while the ~600 s takeover is still
+# flying; a longer cut would let the adopter finish first and there is
+# nothing left for the digest to moot.
+#
+# confirm.person.after_s is raised to 1500 s so the drop/OP_END chain
+# stays parked until the return + digest + moot have all played out.
+version: 1
+name: p4b11_c2_deaf_owner_long
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/sar_forest.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 180
+operator:
+  approve: {launch: {after_s: 2}, action: {after_s: 2}}
+  # late on purpose: the survivors need to finish their own (large)
+  # sectors and start the orphan's lanes BEFORE the drop ends the op -
+  # and here the op must also still be alive at s2's ~+950 s return
+  confirm: {person: {after_s: 1500}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true,
+                        sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 35, do: wait_journal, unit: "all", re: "WM_NEW .* cls=phone",
+     timeout: 240}
+  - {t: 40, do: wait_journal, unit: "s1,s2,s3",
+     re: "CLAIM .* index [0-9]+ of 3", timeout: 120}
+  # 950 s cut: s2 is still LOST when the takeover starts, flies its whole
+  # sector deaf, and returns while the adopter is mid-duplicate-pass
+  - {t: 50, fault: link_cut, unit: "s2", dur_s: 950}
+  - {t: 55, do: wait_journal, unit: "s1,s3",
+     re: "ORPHAN .* owner .* lost", timeout: 90}
+  - {t: 60, do: wait_journal, unit: "s1,s3", any: true,
+     re: "TAKEOVER .* lanes", timeout: 900}
+  # the moot's forced final emit is the adopter's .:1 complete line -
+  # it lands at s2's return (~+950 s), not when the lanes finish
+  - {t: 62, do: wait_journal, unit: "s1,s3", any: true,
+     re: "TAKEOVER_MOOT", timeout: 1200}
+  - {t: 65, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 1500}
+  - {t: 70, do: wait_journal, unit: "amb1", re: "emit payload\\.dropped",
+     timeout: 480}
+  - {t: 75, do: wait_journal, unit: "all", re: "OP_END payload\\.dropped",
+     timeout: 240}
+  - {t: 99, do: wait, seconds: 25}
+assert:
+  - link_offline: {unit: "s2", at_least: 1, min_s: 30}
+  - journal_count: {unit: "s1,s3", re: "ORPHAN .* owner .* lost",
+                    at_least: 1}
+  - journal_count: {unit: "s1,s3", re: "TAKEOVER .* lanes", equals: 1,
+                    total: true}
+  - journal_count: {unit: "s1,s3", re: "CLAIM .*:1 part remaining",
+                    equals: 1, total: true}
+  # the digest did the standing down: one moot fleet-wide naming s2, and
+  # the moot's forced .:1 complete emit on the same adopter
+  - journal_count: {unit: "s1,s3", re: "TAKEOVER_MOOT .*:1 by s2",
+                    equals: 1, total: true}
+  - journal_count: {unit: "s2", re: "PROGRESS_DIGEST .*:1",
+                    at_least: 1}
+  # the adopter's tko: mission ended within 30 s of s2's comm line
+  # coming back (any: the adopter is runtime rank-decided)
+  - journal_time_delta: {u1: "s2", re1: "comm line online",
+                         u2: "s1,s3",
+                         re2: "mission sector_scan\\|tko:.* withdrawn",
+                         any: true, ordered: true, max_s: 30}
+  - journal_count: {unit: "s1,s3", re: "PROGRESS .*:1 complete",
+                    equals: 1, total: true}
+  - journal_count: {unit: "s1,s3", re: "PROGRESS .* complete", equals: 3,
+                    total: true}
+  # the op still ran to its end
+  - journal_count: {unit: "all", re: "OP_END payload\\.dropped", equals: 1}
+  - journal_count: {unit: "amb1", re: "emit payload\\.dropped", equals: 1}
+  - final_state: {unit: "amb1,s1,s2,s3,sdr1", fc_mode: [RTL, LAND]}
+  - final_state: {unit: "scout1", fc_mode: [AUTO, GUIDED, LOITER, RTL, LAND]}
+  - proc_alive: {unit: "s2", proc: de_comm}
+  - fc_items_unchanged_without_cause:
+      {unit: "all",
+       cause_re: "MISSION_(WRITE|UPLOAD|ACK)|fc mission|FC mission|mission.*upload|upload"}
+  - no_sep_violation: {unit: "all", h_m: 10, v_m: 5}
+teardown: land

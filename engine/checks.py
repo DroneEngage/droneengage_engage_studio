@@ -368,8 +368,24 @@ def _journal_order(name, a, ctx):
 
 def _journal_delta(name, a, ctx, ms=False):
     marks = ctx["marks"]
-    u1 = ctl.resolve(str(a.get("u1", a.get("v1"))), ctx["manifest"])[0]
-    u2 = ctl.resolve(str(a.get("u2", a.get("v2"))), ctx["manifest"])[0]
+    u1s = ctl.resolve(str(a.get("u1", a.get("v1"))), ctx["manifest"])
+    u2s = ctl.resolve(str(a.get("u2", a.get("v2"))), ctx["manifest"])
+    # any: true -> pass when ANY (u1,u2) pair satisfies the delta; the
+    # pair lists are comma names for runtime-decided actors (e.g. the
+    # takeover adopter is whichever survivor frees its posture first)
+    if a.get("any") and (len(u1s) > 1 or len(u2s) > 1):
+        bits = []
+        for c1 in u1s:
+            for c2 in u2s:
+                r = _journal_delta_pair(name, a, ctx, c1, c2, marks, ms)
+                bits.append(r["detail"])
+                if r["status"] == "PASS":
+                    return r
+        return _r(name, "FAIL", None, "; ".join(bits))
+    return _journal_delta_pair(name, a, ctx, u1s[0], u2s[0], marks, ms)
+
+
+def _journal_delta_pair(name, a, ctx, u1, u2, marks, ms=False):
     # RAW (unparsed) journal lines carry ts 0 - never a time reference
     h1 = [h for h in simlib.journal_match(u1, a["re1"],
                                           marks.get(u1["name"])) if h[0]]

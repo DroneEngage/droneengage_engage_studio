@@ -25,10 +25,11 @@
 # all already in that report - stands down with TAKEOVER_MOOT instead of
 # flying them a second time. The moot's forced final emit is the
 # PROGRESS .*:1 complete line, so that assert stays.
-# DEVIATION: spec step 6 also names p4b11_c2_deaf_owner_long.yaml and
-# p4b11_c3_owner_back_midsector.yaml; neither file exists in tests/p4b.
-# The asserts below are applied here (the only real scenario of the
-# three); the c2/c3 variants were never authored - see the task file.
+# The c2/c3 variants of this run live in their own files:
+# p4b11_c2_deaf_owner_long.yaml (950 s cut - the stale-report digest
+# proves the whole sector and moots the adopter) and
+# p4b11_c3_owner_back_midsector.yaml (~560 s cut - partial overlap, no
+# moot, returning owner stands down).
 version: 1
 name: p4b10_c_searcher_lost
 seed: 7
