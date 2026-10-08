@@ -10,19 +10,16 @@
 #          emits sar.person when the person confirms); cam_scout gains
 #          sar.person in event_sticky so it holds and can serve it.
 # Sequence: amb1's link is cut before the confirm, so it misses the
-#          original BUS broadcast; s1 emits sar.person; s1's de_comm is
-#          killed and s2/s3 (the other fact holders) are cut, leaving
-#          scout1 the only live holder. amb1 returns, its fact digest
-#          diverges, scout1 replays (rl=scout1 -> role cam_scout not in
-#          sources) -> LAUNCH_REFUSED deliver trigger relay role
-#          cam_scout -> live request nobody answers.
-#
-# FIXME(unrun): the relay only proves the rl provenance when the
-#          fact really reaches amb1 via scout1's replay. If amb1's
-#          catch-up digest converges before the request/relay cycle
-#          resolves, or if the run delivers the fact through a path
-#          that stamps no rl, the refusal does not fire; the timeouts
-#          are sized generously but may need a rerun pass.
+#          original BUS broadcast; each searcher emits its own sar.person
+#          on the confirm; then de_comm is KILLED on s1/s2/s3/sdr1 - a
+#          kill (not a timed link_cut) keeps every other holder off the
+#          bus until the refusal window is over, so scout1 is the only
+#          live unit that can serve amb1 the facts. amb1 returns, its
+#          fact digest diverges, scout1 replays (rl=scout1 -> role
+#          cam_scout not in sources) -> LAUNCH_REFUSED deliver trigger
+#          relay role cam_scout -> live request nobody answers.
+#          (2026-10-08 fix: the timed s2/s3 cut left sdr1 connected -
+#          it served the fact as an ALLOWED relay and amb1 launched.)
 version: 1
 name: p4f05_forged_relay
 seed: 7
@@ -69,10 +66,10 @@ timeline:
   - {t: 45, do: wait_journal, unit: "s1", re: "BUS_OUT .* n=sar\\.person",
      timeout: 480}
   - {t: 50, do: wait, seconds: 5}
-  # kill the author for good and cut the other holders - scout1 is the
-  # only live source amb1 can pull the fact from
-  - {t: 55, do: kill, unit: "s1", proc: de_comm}
-  - {t: 58, fault: link_cut, unit: "s2,s3", dur_s: 700}
+  # kill the author AND every other live holder for the whole window -
+  # scout1 is the only unit that can serve amb1 the fact. A kill has no
+  # expiry, so no holder can return early and beat the refusal.
+  - {t: 55, do: kill, unit: "s1,s2,s3,sdr1", proc: de_comm}
   # amb1's cut expires ~t595; its digest diverges from scout1's and the
   # replay lands with rl=scout1
   - {t: 620, do: wait_journal, unit: "amb1", re: "comm line online",
@@ -86,21 +83,24 @@ timeline:
      timeout: 180}
   - {t: 640, do: wait_journal, unit: "amb1", re: "APPROVAL_TIMEOUT",
      timeout: 300}
-  # bring the author back so teardown can land it cleanly
-  - {t: 660, do: restart, unit: "s1", proc: de_comm}
-  - {t: 690, do: wait, seconds: 20}
+  # bring the fleet back so teardown can land it cleanly; the copies
+  # they serve are already latched on amb1, so nothing re-triggers
+  - {t: 700, do: restart, unit: "s1,s2,s3,sdr1", proc: de_comm}
+  - {t: 705, do: wait, seconds: 60}
 assert:
   # the relayed copy arrived stamped with the cam_scout relayer
   - journal_count: {unit: "amb1",
                     re: "BUS_RELAY.*rl=scout1", at_least: 1}
-  # provenance: src searcher is allowed, rl cam_scout is not
+  # provenance: src searcher is allowed, rl cam_scout is not. Each
+  # searcher authors its own sar.person (s1/s2/s3 copies), so the
+  # refusal can journal once per copy - at_least, not equals
   - journal_count: {unit: "amb1",
                     re: "LAUNCH_REFUSED deliver trigger relay role cam_scout",
-                    equals: 1}
+                    at_least: 1}
   - journal_order: {unit: "amb1", first: "LAUNCH_REFUSED",
                     then: "APPROVAL_REQ launch"}
-  - journal_count: {unit: "amb1", re: "APPROVAL_REQ launch", equals: 1}
-  - journal_count: {unit: "amb1", re: "APPROVAL_TIMEOUT", equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ launch", at_least: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_TIMEOUT", at_least: 1}
   - no_journal: {unit: "amb1", re: "launch: uploading|LAUNCH_GO|takeoff"}
   - status_field: {unit: "amb1", path: "launch.grant", equals: valid}
   - status_field: {unit: "amb1", path: "launch.last_refusal",

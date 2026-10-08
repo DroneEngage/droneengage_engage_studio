@@ -73,10 +73,13 @@ assert:
                     then: "LAUNCH_AUTH"}
   - status_field: {unit: "amb1", path: "launch.ready", equals: false}
   - status_field: {unit: "amb1", path: "launch.reasons", re: "gps"}
-  # the stepper aborted at preflight: uploaded segment, preflight, fail
+  # the stepper aborted at preflight: uploaded segment, preflight, fail.
+  # anchored on "activation of mission" - the error line ("error: launch
+  # aborted: launch preflight failed") carries the same substring
   - journal_order: {unit: "amb1", first: "launch: uploading segment",
                     then: "launch preflight failed"}
-  - journal_count: {unit: "amb1", re: "launch preflight failed",
+  - journal_count: {unit: "amb1",
+                    re: "activation of mission .* aborted: launch preflight failed",
                     equals: 1}
   - no_journal: {unit: "amb1", re: "LAUNCH_GO|launch: armed|takeoff"}
   # the use was never consumed: grant still valid, uses_left still 1

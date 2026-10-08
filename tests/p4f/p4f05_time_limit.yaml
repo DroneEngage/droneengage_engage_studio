@@ -7,12 +7,12 @@
 #          estimate at the 5 m/s envelope speed) and deliver gen
 #          hover_s = 400 (the drop approval is never answered, so the
 #          mission runs its denied tail out of the hover).
-# Speed:   amb1 carries WPNAV_SPEED: 80 (0.8 m/s) - the envelope's
+# Speed:   amb1 carries WP_SPD: 0.8 (m/s) - the envelope's
 #          estimate still passes at speed_mps 5, while the actual legs
-#          are ~6x slower so the arm-time deadline lands mid-return.
-#          FIXME(unrun): the est-vs-wall margin is a first estimate -
-#          if a run shows the vehicle landing before 860 s, drop
-#          max_flight_s or WPNAV_SPEED further.
+#          are ~6x slower so the arm-time deadline lands mid-flight.
+#          (WP_SPD is the current name; WPNAV_SPEED is legacy and a
+#          sim.parm line for it is ignored.) RTL_SPEED_MS: 10 keeps the
+#          post-limit return fast.
 # Evidence: LAUNCH_GO use=1/1 -> LAUNCH_TIME_LIMIT -> RTL -> LAUNCH_DONE.
 version: 1
 name: p4f05_time_limit
@@ -36,7 +36,7 @@ fleet:
      at: {north_m: -80, east_m: 0}}
   - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
      at: {north_m: -80, east_m: 60}}
-  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000, WPNAV_SPEED: 80},
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000, WP_SPD: 0.8, RTL_SPEED_MS: 10},
      role: ambulance, modules: [stub_payload],
      at: {north_m: -130, east_m: 0},
      config: {de_comm: {sv_allow_auto_launch: true}}}

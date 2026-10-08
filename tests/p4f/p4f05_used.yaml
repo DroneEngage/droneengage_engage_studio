@@ -10,15 +10,17 @@
 #           person's confirm raises a plain APPROVAL_REQ launch (the
 #           grant is used - the fallback rides the live path).
 #
-# FIXME(unrun): the proof needs person_2's confirm to land after the
-#          first delivery mission has ended - a deliver trigger
-#          evaluated while the mission is ACTIVE is suppressed on
-#          priority (its once_per key survives, but only a later
-#          sys.target_state for person_2 would re-fire it). person_2's
-#          NE-corner placement biases its coverage late; if a run
-#          confirms it mid-delivery, assert "APPROVAL_REQ launch" needs
-#          a position tweak or a second-person detection that genuinely
-#          trails the first delivery.
+# The proof needs person_2's confirm to land AFTER the first delivery
+#          has ended - a deliver trigger evaluated while the mission is
+#          ACTIVE is suppressed on priority and its once_per key is
+#          spent. The three sector claims complete ~3 min into the run
+#          while the delivery lands ~10+ min in, and person_2's NE-corner
+#          spot sits outside every covered swath, so no organic detection
+#          can trail the first delivery. The scenario therefore injects
+#          person_2's detection as an s1-authored detect.detected fact
+#          right after LAUNCH_DONE - it still runs the real fact ->
+#          WM_NEW -> operator confirm -> sys.target_state -> trigger path,
+#          and the trigger meets a USED grant (max_launches 1 spent).
 version: 1
 name: p4f05_used
 seed: 7
@@ -68,7 +70,20 @@ timeline:
   # home; person_2's confirm then hits the used grant
   - {t: 60, do: wait_journal, unit: "amb1", re: "LAUNCH_DONE",
      timeout: 600}
-  - {t: 65, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ launch",
+  # inject person_2's detection once the first delivery is done: the
+  # step's own keys become the 1090 envelope (sd preserved => it looks
+  # like an s1 broadcast); the bot books a second person target and the
+  # operator confirm then drives the real WM/trigger path on amb1.
+  - {t: 65, do: send, ty: i, mt: 1090, tg: _AGN_, sd: s1,
+     ms: {v: 1, op: sar_forest,
+          oh: "sha256:208817374f72c2b546b5108e1c615798b1d2160b15891a7d4e642646c91de75b",
+          run: "{OP_RUN}", id: "p4f05-used-det-p2-0001",
+          tgt: "p4f05-used-det-p2-0001", src: s1, role: searcher,
+          seq: 900, t: 0, age: 0, ttl: 86400, st: 1, fq: 1,
+          n: detect.detected,
+          p: {pos: [-35.3586, 149.1700, 0], conf: 0.9, unc_m: 3,
+              range_m: 80, src: ai, class: person}}}
+  - {t: 70, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ launch",
      timeout: 600}
 assert:
   - journal_count: {unit: "amb1", re: "LAUNCH_GO grant=.* use=1/1",
