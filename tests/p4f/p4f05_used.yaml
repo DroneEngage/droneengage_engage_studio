@@ -74,7 +74,10 @@ timeline:
   # step's own keys become the 1090 envelope (sd preserved => it looks
   # like an s1 broadcast); the bot books a second person target and the
   # operator confirm then drives the real WM/trigger path on amb1.
-  - {t: 65, do: send, ty: i, mt: 1090, tg: _AGN_, sd: s1,
+  # _GD_, not _AGN_: organic detections ride _GD_ so the GCS (and the
+  # operator bot) sees them - _AGN_ reaches units only and the bot
+  # would never book the tid to confirm.
+  - {t: 65, do: send, ty: i, mt: 1090, tg: _GD_, sd: s1,
      ms: {v: 1, op: sar_forest,
           oh: "sha256:208817374f72c2b546b5108e1c615798b1d2160b15891a7d4e642646c91de75b",
           run: "{OP_RUN}", id: "p4f05-used-det-p2-0001",
