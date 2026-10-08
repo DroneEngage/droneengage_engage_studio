@@ -48,6 +48,18 @@ def _sim(render):
     return simlib.load_sim(spec)
 
 
+def _fake_m3d():
+    """A fake Mavlink3DMap tree: gen_render validates file existence
+    only - the scripts themselves carry the real paths."""
+    fake = tempfile.mkdtemp()
+    for rel in ("backend/src/udp2websocket.js",
+                "node_modules/vite/bin/vite.js"):
+        p = os.path.join(fake, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, "w").close()
+    return fake
+
+
 class T(unittest.TestCase):
 
     def test_no_render_no_procs(self):
@@ -63,22 +75,19 @@ class T(unittest.TestCase):
         # P5-15: mode cameras without a de_yolo_ai unit has nothing to
         # feed loopbacks with - the viewer procs still launch (the page
         # renders the world), the farm does not
-        sim = _sim({"mode": "cameras"})
-        self.assertEqual(sorted(simlib.gen_render(sim)),
-                         ["mav_bridge", "web"])
-
-    def test_viewer_scripts(self):
-        # a fake Mavlink3DMap tree: gen_render validates file existence
-        # only - the scripts themselves carry the real paths
-        fake = tempfile.mkdtemp()
-        for rel in ("backend/src/udp2websocket.js",
-                    "node_modules/vite/bin/vite.js"):
-            p = os.path.join(fake, rel)
-            os.makedirs(os.path.dirname(p), exist_ok=True)
-            open(p, "w").close()
         saved = simlib.MAVLINK3DMAP_DIR
         try:
-            simlib.MAVLINK3DMAP_DIR = fake
+            simlib.MAVLINK3DMAP_DIR = _fake_m3d()
+            sim = _sim({"mode": "cameras"})
+            self.assertEqual(sorted(simlib.gen_render(sim)),
+                             ["mav_bridge", "web"])
+        finally:
+            simlib.MAVLINK3DMAP_DIR = saved
+
+    def test_viewer_scripts(self):
+        saved = simlib.MAVLINK3DMAP_DIR
+        try:
+            simlib.MAVLINK3DMAP_DIR = _fake_m3d()
             sim = _sim({"mode": "viewer", "headless": False})
             procs = simlib.gen_render(sim)
         finally:

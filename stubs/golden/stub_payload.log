@@ -1,7 +1,9 @@
-5000 EVENT {"d": "payload.released", "ed": {"t": 5.0}}
-5000 RELEASE {"t": 5.0, "lat": -35.36285, "lng": 149.16605}
-5000 INVOKE {"act": "release", "data": {"released": true, "t": 5.0}, "err": null}
-15000 EVENT {"d": "payload.released", "ed": {"t": 15.0}}
-15000 RELEASE {"t": 15.0, "lat": -35.36285, "lng": 149.16605}
-15000 INVOKE {"act": "release", "data": {"released": true, "t": 15.0}, "err": null}
+5000 EVENT {"d": "payload.released", "ed": {"t": 5.0, "bay": "main"}}
+5000 EVENT {"d": "payload.main.released", "ed": {"t": 5.0, "src": "invoke"}}
+5000 RELEASE {"t": 5.0, "bay": "main", "lat": -35.36285, "lng": 149.16605}
+5000 INVOKE {"act": "release", "params": {}, "data": {"released": true, "t": 5.0, "bay": "main"}, "err": null}
+15000 EVENT {"d": "payload.released", "ed": {"t": 15.0, "bay": "main"}}
+15000 EVENT {"d": "payload.main.released", "ed": {"t": 15.0, "src": "invoke"}}
+15000 RELEASE {"t": 15.0, "bay": "main", "lat": -35.36285, "lng": 149.16605}
+15000 INVOKE {"act": "release", "params": {}, "data": {"released": true, "t": 15.0, "bay": "main"}, "err": null}
 20000 END {"frames": 0}
