@@ -82,8 +82,11 @@ class GCSClient:
             t_end = time.time() + 15
             got_ack = False
             while time.time() < t_end and not got_ack:
-                msg = json.loads(await asyncio.wait_for(
-                    ws.recv(), max(0.1, t_end - time.time())))
+                raw = await asyncio.wait_for(
+                    ws.recv(), max(0.1, t_end - time.time()))
+                if not isinstance(raw, str):
+                    continue        # binary intermodule frame (e.g. mt 6502)
+                msg = json.loads(raw)
                 mt = msg.get("mt")
                 if mt == 9007 and isinstance(msg.get("ms"), dict) \
                         and msg["ms"].get("ts"):

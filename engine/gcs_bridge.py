@@ -120,8 +120,11 @@ async def session(srv):
                 # the ack - skip frames until de_auth_ack
                 t_end = time.time() + 10
                 while True:
-                    ack = json.loads(await asyncio.wait_for(
-                        ws.recv(), max(0.1, t_end - time.time())))
+                    raw = await asyncio.wait_for(
+                        ws.recv(), max(0.1, t_end - time.time()))
+                    if not isinstance(raw, str):
+                        continue    # binary intermodule frame (e.g. mt 6502)
+                    ack = json.loads(raw)
                     if ack.get("mt") == "de_auth_ack":
                         break
                 if ack.get("r") != "ok":

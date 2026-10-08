@@ -639,16 +639,22 @@ async def _fake_ws_collect(first, mts, secs, stop_on_last):
                                   "s": "gcs_sim_ctl", "at": "g"}))
         t0 = time.time()
         while time.time() - t0 < 10:
-            if json.loads(await asyncio.wait_for(ws.recv(), 10)).get("mt") == "de_auth_ack":
+            raw = await asyncio.wait_for(ws.recv(), 10)
+            if not isinstance(raw, str):
+                continue            # binary intermodule frame (e.g. mt 6502)
+            if json.loads(raw).get("mt") == "de_auth_ack":
                 break
         if first:
             await ws.send(json.dumps(first))
         t0 = time.time()
         while time.time() - t0 < secs:
             try:
-                msg = json.loads(await asyncio.wait_for(ws.recv(), secs - (time.time() - t0)))
+                raw = await asyncio.wait_for(ws.recv(), secs - (time.time() - t0))
             except asyncio.TimeoutError:
                 break
+            if not isinstance(raw, str):
+                continue            # binary intermodule frame (e.g. mt 6502)
+            msg = json.loads(raw)
             if msg.get("mt") in mts:
                 out.append(msg)
                 if stop_on_last and not msg.get("ms", {}).get("more"):
@@ -803,10 +809,13 @@ async def _fake_gcs_roundtrip(build, secs):
             if got_ack and (fleet[0] is not None or time.time() - t0 > 3):
                 break
             try:
-                msg = json.loads(await asyncio.wait_for(
-                    ws.recv(), 10 - (time.time() - t0)))
+                raw = await asyncio.wait_for(
+                    ws.recv(), 10 - (time.time() - t0))
             except asyncio.TimeoutError:
                 break
+            if not isinstance(raw, str):
+                continue            # binary intermodule frame (e.g. mt 6502)
+            msg = json.loads(raw)
             if msg.get("mt") == "de_auth_ack":
                 got_ack = True
             elif msg.get("mt") == 9007 and isinstance(msg.get("ms"), dict):
@@ -821,10 +830,13 @@ async def _fake_gcs_roundtrip(build, secs):
         t0 = time.time()
         while time.time() - t0 < secs:
             try:
-                msg = json.loads(await asyncio.wait_for(
-                    ws.recv(), secs - (time.time() - t0)))
+                raw = await asyncio.wait_for(
+                    ws.recv(), secs - (time.time() - t0))
             except asyncio.TimeoutError:
                 break
+            if not isinstance(raw, str):
+                continue            # binary intermodule frame (e.g. mt 6502)
+            msg = json.loads(raw)
             if msg.get("mt") == 1092:
                 continue        # roster churn - not a reply
             replies.setdefault(msg.get("sd", "?"), []).append(msg)
