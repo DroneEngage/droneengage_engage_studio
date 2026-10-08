@@ -19,6 +19,16 @@
 # the waits use any: true and the asserts count fleet-wide (total: true).
 # Note: the takeover needs a FREE survivor (posture idle), so it starts
 # only once s1 or s3 has finished its own sector.
+#
+# P4B-12 (deaf-owner report): when s2's link returns it re-publishes its
+# progress (PROGRESS_DIGEST), and the adopter - whose remaining lanes are
+# all already in that report - stands down with TAKEOVER_MOOT instead of
+# flying them a second time. The moot's forced final emit is the
+# PROGRESS .*:1 complete line, so that assert stays.
+# DEVIATION: spec step 6 also names p4b11_c2_deaf_owner_long.yaml and
+# p4b11_c3_owner_back_midsector.yaml; neither file exists in tests/p4b.
+# The asserts below are applied here (the only real scenario of the
+# three); the c2/c3 variants were never authored - see the task file.
 version: 1
 name: p4b10_c_searcher_lost
 seed: 7
@@ -108,6 +118,12 @@ assert:
                     total: true}
   - journal_count: {unit: "s1,s3", re: "PROGRESS .*:1 complete",
                     equals: 1, total: true}
+  # P4B-12: the returning owner's digest stands the adopter down - one
+  # moot fleet-wide on whichever of s1/s3 adopted
+  - journal_count: {unit: "s1,s3", re: "TAKEOVER_MOOT .*:1 by ",
+                    equals: 1, total: true}
+  - journal_count: {unit: "s2", re: "PROGRESS_DIGEST .*:1",
+                    at_least: 1}
   # the op still ran to its end
   - journal_count: {unit: "all", re: "OP_END payload\\.dropped", equals: 1}
   - journal_count: {unit: "amb1", re: "emit payload\\.dropped", equals: 1}
