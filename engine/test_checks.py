@@ -327,6 +327,164 @@ class T(unittest.TestCase):
             bot._policy_once()
         self.assertEqual(len(sent), 1)
 
+    def test_policy_launch_none_never_answers(self):
+        """P4F-07: approve.launch: none is the 'no operator' posture -
+        the request pends forever, other kinds still get their rules."""
+        import operator_bot
+        bot = operator_bot.OperatorBot(
+            {"name": "t", "units": [], "server": {"type": "fake"}},
+            policy={"approve": {"launch": "none",
+                                "action": {"after_s": 0}}})
+        sent = []
+        bot._submit = lambda coro: (sent.append(1), coro.close())
+        bot._on_frame({"mt": 1087, "sd": "u1", "ms": {"approvals": [
+            {"req": "r1", "kind": "launch"},
+            {"req": "r2", "kind": "action"}]}})
+        for _ in range(5):
+            bot._policy_once()
+        # only the action request was decided - the launch one pends
+        self.assertEqual(len(sent), 1)
+        self.assertEqual(sorted(bot.approvals()["u1"]),
+                         ["r1", "r2"])
+
+    def test_no_journal(self):
+        j = {"u1": [line(1, "A", "LAUNCH_GO")], "u2": []}
+        r = run({"no_journal": {"unit": "all",
+                                "re": "APPROVAL_REQ launch"}}, j)
+        self.assertEqual((r["status"], r["value"]), ("PASS", 0))
+        j["u2"].append(line(2, "A", "APPROVAL_REQ launch x"))
+        r = run({"no_journal": {"unit": "all",
+                                "re": "APPROVAL_REQ launch"}}, j)
+        self.assertEqual(r["status"], "FAIL")
+        self.assertIn("u2: 1", r["detail"])
+        # no units resolved can never pass (UNIT_ASSERTS gate)
+        c, _ = ctx({})
+        c["manifest"]["units"] = []
+        with mock.patch.object(checks.ctl, "resolve",
+                               lambda tok, m=None: []):
+            self.assertEqual(checks.check_assertion(
+                {"no_journal": {"unit": "all", "re": "x"}}, c)["status"],
+                "FAIL")
+
+    def test_status_field(self):
+        class Bot:
+            def status_of(self, p):
+                return {"st": "RUNNING",
+                        "launch": {"grant": "valid", "id": "abcd1234",
+                                   "uses_left": 1, "left_s": 13000.0,
+                                   "ready": True,
+                                   "last_refusal": "battery 40"}}
+        j = {}
+        a = {"status_field": {"unit": "u1", "path": "launch.grant",
+                              "equals": "valid"}}
+        self.assertEqual(run(a, j, bot=Bot())["status"], "PASS")
+        a["status_field"]["equals"] = "used"
+        self.assertEqual(run(a, j, bot=Bot())["status"], "FAIL")
+        # numeric bounds + re on the same dotted path
+        a = {"status_field": {"unit": "u1", "path": "launch.left_s",
+                              "lt": 14400}}
+        self.assertEqual(run(a, j, bot=Bot())["status"], "PASS")
+        a = {"status_field": {"unit": "u1", "path": "launch.id",
+                              "re": "^[0-9a-f]{8}$"}}
+        self.assertEqual(run(a, j, bot=Bot())["status"], "PASS")
+        a = {"status_field": {"unit": "u1", "path": "launch.last_refusal",
+                              "re": "battery"}}
+        self.assertEqual(run(a, j, bot=Bot())["status"], "PASS")
+        # a path that does not exist is a FAIL, never a crash or pass
+        a = {"status_field": {"unit": "u1", "path": "launch.missing",
+                              "equals": 1}}
+        self.assertEqual(run(a, j, bot=Bot())["status"], "FAIL")
+        # no operator session -> SKIP
+        self.assertEqual(run({"status_field": {"unit": "u1",
+                                               "path": "launch.grant",
+                                               "equals": "valid"}},
+                             j)["status"], "SKIP")
+
+    def test_op_authorize_builds_and_sends_grant(self):
+        """P4F-07: op_authorize mints the fn_buildGrant shape from the
+        deploy's stored launch meta and tracks the unit's answer."""
+        import operator_bot
+        bot = operator_bot.OperatorBot(
+            {"name": "t", "units": [], "server": {"type": "fake"}})
+        bot._launch_meta["p1"] = {
+            "role": "ambulance", "run": "r1",
+            "envelope": {"valid_for_s": 14400, "max_launches": 1},
+            "envelope_hash": "sha256:aa", "grant": ""}
+        sent = []
+
+        def fake_send(msg, kind, text):
+            sent.append(msg)
+            g = msg["ms"]["grant"]
+            bot._on_frame({"mt": 1094, "sd": "p1",
+                           "ms": {"a": "grant", "grant": g["id"],
+                                  "st": "valid"}})
+            return True
+        bot._send = fake_send
+        self.assertTrue(bot.op_authorize("p1", {"valid_for_s": 120}))
+        g = sent[0]["ms"]["grant"]
+        self.assertEqual(sent[0]["ms"]["a"], "authorize")
+        self.assertEqual(
+            (g["role"], g["party"], g["envelope_hash"],
+             g["valid_for_s"], g["max_launches"]),
+            ("ambulance", "p1", "sha256:aa", 120, 1))
+        self.assertTrue(g["id"])
+        self.assertEqual(bot._launch_meta["p1"]["grant"], g["id"])
+        # bounds > the envelope are refused before anything is sent
+        self.assertFalse(bot.op_authorize(
+            "p1", {"valid_for_s": 99999}))
+        self.assertEqual(len(sent), 1)
+        # a rejected grant is a False outcome, not a crash
+        def reject_send(msg, kind, text):
+            sent.append(msg)
+            bot._on_frame({"mt": 1094, "sd": "p1",
+                           "ms": {"a": "grant", "grant": "",
+                                  "st": "rejected", "why": "site_config"}})
+            return True
+        bot._send = reject_send
+        self.assertFalse(bot.op_authorize("p1", {}))
+        # no envelope at all -> nothing on the wire
+        bot._launch_meta["p2"] = {"role": "searcher", "run": "r1",
+                                  "envelope": {}, "envelope_hash": "",
+                                  "grant": ""}
+        self.assertFalse(bot.op_authorize("p2", {}))
+        self.assertEqual(len(sent), 2)
+
+    def test_op_revoke_launch_ids(self):
+        """P4F-07: revoke names the grant the bot sent, falling back to
+        the 1087 launch.id prefix."""
+        import operator_bot
+        bot = operator_bot.OperatorBot(
+            {"name": "t", "units": [], "server": {"type": "fake"}})
+        bot._launch_meta["p1"] = {"role": "ambulance", "run": "r1",
+                                  "envelope": {}, "envelope_hash": "h",
+                                  "grant": "uuid-1234"}
+        sent = []
+
+        def fake_send(msg, kind, text):
+            sent.append(msg)
+            bot._on_frame({"mt": 1094, "sd": "p1",
+                           "ms": {"a": "grant", "grant": "uuid-1234",
+                                  "st": "void", "why": "revoked"}})
+            return True
+        bot._send = fake_send
+        self.assertTrue(bot.op_revoke_launch("p1"))
+        self.assertEqual(sent[0]["ms"],
+                         {"a": "revoke_launch", "run": "r1",
+                          "grant": "uuid-1234"})
+        # no recorded grant but the status block still carries the id8
+        bot._launch_meta["p1"]["grant"] = ""
+        bot._on_frame({"mt": 1087, "sd": "p1",
+                       "ms": {"launch": {"grant": "valid",
+                                         "id": "abcd1234"}}})
+        self.assertTrue(bot.op_revoke_launch("p1"))
+        self.assertEqual(sent[1]["ms"]["grant"], "abcd1234")
+        # nothing known -> refused locally
+        bot._launch_meta["p2"] = {"role": "x", "run": "r1",
+                                  "envelope": {}, "envelope_hash": "",
+                                  "grant": ""}
+        self.assertFalse(bot.op_revoke_launch("p2"))
+        self.assertEqual(len(sent), 2)
+
     def test_seed_slot_base_fits_camera_fleets(self):
         import scenario
         units = [{"block": "copter_camera"}, {"block": "copter_camera"}]

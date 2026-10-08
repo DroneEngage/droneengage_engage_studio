@@ -188,7 +188,16 @@ def _do(step, scn, ctx):
             os.path.dirname(scn["file"]), op)
         if ctl._is_deploy_spec(op):
             bot.log("DEPLOY", f"spec {os.path.basename(op)}")
-            return bot.op_deploy(op, float(a.get("timeout", 60)))
+            # P4F-07: `authorize: {unit: {valid_for_s, max_launches}}` on
+            # the deploy step - a launch grant per unit after its READY
+            authorize = None
+            if isinstance(a.get("authorize"), dict):
+                authorize = {
+                    (ctx["units_by_name"].get(str(n)) or {})
+                    .get("party_id", str(n)): (v or {})
+                    for n, v in a["authorize"].items()}
+            return bot.op_deploy(op, float(a.get("timeout", 60)),
+                                 authorize=authorize)
         return runner.run_ctl("deploy", op)
     if name == "start":
         # the scenario's own t0: time_to_detect measures from the first
@@ -218,6 +227,16 @@ def _do(step, scn, ctx):
         return runner.run_ctl("start")
     if name == "abort":
         return bot.op_abort(a.get("run"), a.get("why", ""))
+    if name in ("authorize", "revoke_launch"):
+        # P4F-07: mid-run launch-grant verbs through the bot's session
+        party = (ctx["units_by_name"].get(str(a.get("unit"))) or {}) \
+            .get("party_id", a.get("unit"))
+        if name == "authorize":
+            choice = {k: a[k] for k in ("valid_for_s", "max_launches")
+                      if k in a}
+            return bot.op_authorize(party, choice,
+                                    float(a.get("timeout", 10)))
+        return bot.op_revoke_launch(party, float(a.get("timeout", 10)))
     if name == "operator":
         return _operator_act(a, bot)
     # every other name: the runner.py step, unchanged semantics

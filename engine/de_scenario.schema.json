@@ -95,17 +95,26 @@
       "description": "the operator bot's standing policy; keys are approval kinds (launch/action/activate) or target classes",
       "properties": {
         "approve": {"type": "object", "additionalProperties":
-          {"type": "object", "additionalProperties": false,
-           "properties": {"after_s": {"type": "number", "minimum": 0}}}},
+          {"oneOf": [
+            {"type": "object", "additionalProperties": false,
+             "properties": {"after_s": {"type": "number", "minimum": 0}}},
+            {"const": "none",
+             "description": "never answer this kind - the request stays pending (P4F-07)"}]}},
         "deny": {"type": "object", "additionalProperties":
-          {"type": "object", "additionalProperties": false,
-           "properties": {"after_s": {"type": "number", "minimum": 0}}}},
+          {"oneOf": [
+            {"type": "object", "additionalProperties": false,
+             "properties": {"after_s": {"type": "number", "minimum": 0}}},
+            {"const": "none"}]}},
         "confirm": {"type": "object", "additionalProperties":
-          {"type": "object", "additionalProperties": false,
-           "properties": {"after_s": {"type": "number", "minimum": 0}}}},
+          {"oneOf": [
+            {"type": "object", "additionalProperties": false,
+             "properties": {"after_s": {"type": "number", "minimum": 0}}},
+            {"const": "none"}]}},
         "dismiss": {"type": "object", "additionalProperties":
-          {"type": "object", "additionalProperties": false,
-           "properties": {"after_s": {"type": "number", "minimum": 0}}}}
+          {"oneOf": [
+            {"type": "object", "additionalProperties": false,
+             "properties": {"after_s": {"type": "number", "minimum": 0}}},
+            {"const": "none"}]}}
       }
     },
     "timeline": {

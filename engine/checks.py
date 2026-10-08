@@ -68,11 +68,11 @@ FC_LINE_RE = re.compile(
 
 # assertions that resolve `unit:`; an empty resolution can never pass
 UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
-                "journal_order", "final_state",
+                "journal_order", "no_journal", "final_state",
                 "fc_items_unchanged_without_cause", "mission_current",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
-                "detection_recall"}
+                "detection_recall", "status_field"}
 
 DEFAULT_TRUTH_TOL_MS = 10000      # truth row must be this close in time
 
@@ -298,6 +298,56 @@ def _module_log_count(name, a, ctx):
                       for u, n in zip(_units(a, ctx), vals)) + ")")
     return _r(name, "PASS" if ok else "FAIL",
               sum(vals) / len(vals) if vals else 0, "; ".join(bits))
+
+
+def _no_journal(name, a, ctx):
+    """no_journal {unit, re}: the negative sibling of journal_count -
+    PASS only when the pattern has zero hits since the test mark (P4F-07:
+    'the request was never raised' proofs like no APPROVAL_REQ launch)."""
+    marks = ctx["marks"]
+    rx = re.compile(a["re"])
+    ok, bits, total = True, [], 0
+    for u in _units(a, ctx):
+        hits = simlib.journal_match(u, rx, marks.get(u["name"]))
+        total += len(hits)
+        ok &= not hits
+        first = f" (first: {hits[0][4]} {hits[0][5][:60]})" if hits else ""
+        bits.append(f"{u['name']}: {len(hits)}{first}")
+    return _r(name, "PASS" if ok else "FAIL", total, "; ".join(bits))
+
+
+def _status_field(name, a, ctx):
+    """status_field {unit, path, equals|re|bounds}: one field of the
+    unit's latest 1087 status as the operator bot records it (P4F-07:
+    `launch.grant`, `launch.uses_left`, `launch.ready`, `launch.why`,
+    `launch.last_refusal`, ...). `path` is dotted into nested objects;
+    `equals`/`re` compare the resolved value, the numeric bounds apply
+    _cmp."""
+    bot = ctx.get("bot")
+    if not bot:
+        return _r(name, "SKIP", None, "no operator session")
+    path = str(a.get("path", ""))
+    ok, bits = True, []
+    for u in _units(a, ctx):
+        node = bot.status_of(u["party_id"])
+        for part in path.split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+        if node is None:
+            ok = False
+            bits.append(f"{u['name']}: no status path {path!r}")
+            continue
+        good, txt = True, []
+        if any(k in a for k, _s, _op in _CMP_OPS):
+            good, cmp_txt = _cmp(a, node)
+            txt.append(cmp_txt)
+        if a.get("re"):
+            good &= bool(re.search(a["re"], str(node)))
+            txt.append(f"{node!r} ~ /{a['re']}/")
+        if not txt:
+            txt.append(f"present: {node!r}")
+        ok &= good
+        bits.append(f"{u['name']}: {path}={node!r} ({'; '.join(txt)})")
+    return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
 
 
 def _journal_order(name, a, ctx):
@@ -1503,6 +1553,7 @@ def _detection_precision_render(name, a, ctx):
 DISPATCH = {
     "journal_count": _journal_count,
     "module_log_count": _module_log_count,
+    "no_journal": _no_journal,
     "journal_order": _journal_order,
     "journal_time_delta": _journal_delta,
     "clock_spread": _clock_spread,
@@ -1532,6 +1583,7 @@ DISPATCH = {
     "roster_value": _roster_value,
     "telemetry_value": _telemetry_value,
     "fc_mode": _fc_mode,
+    "status_field": _status_field,
 }
 
 

@@ -62,6 +62,9 @@ class OperatorBot:
         # one-shot 1093 (lost frame, run started late) only gets it so
         self._decisions = {}          # run -> [op] (sent as-is again)
         self._resend = {"next": 0.0, "backoff": 2.0}
+        # P4F-07: bound party -> {role, run, envelope, envelope_hash,
+        # grant} - the deploy keeps what a launch grant binds to
+        self._launch_meta = {}
         self._replies = []            # recent non-roster frames (max 5000)
         self._n_replies = 0           # frames ever appended (ring index base)
         self._decided = set()         # (party, req) the policy already sent
@@ -444,10 +447,13 @@ class OperatorBot:
         except (OSError, ValueError):
             return {}
 
-    def op_deploy(self, spec_path, timeout=60.0):
+    def op_deploy(self, spec_path, timeout=60.0, authorize=None):
         """Two-phase deploy (P4A-09): one PREPARE per bound unit through
         the bot's own GCS session (the units see GCS_OPERATOR as the
-        deployer - the same party their approval requests go back to)."""
+        deployer - the same party their approval requests go back to).
+        `authorize` maps bound parties to grant choices {valid_for_s,
+        max_launches} - each is sent a 1094 authorize after READY
+        (P4F-07)."""
         spec_path = os.path.abspath(spec_path)
         spec = simlib.load_config(spec_path)
         if not isinstance(spec.get("roles"), dict):
@@ -471,8 +477,17 @@ class OperatorBot:
             ohs.append(pkg.get("op_hash", ""))
             if not op:
                 op = pkg.get("op", "")
+            launch = pkg.get("launch") or {}
             for tok in r.get("units", []):
-                jobs.append((self._party(str(tok)), role, text, h))
+                p = self._party(str(tok))
+                jobs.append((p, role, text, h))
+                # P4F-07: what op_authorize binds a grant to (empty
+                # envelope_hash = the role carries no launch envelope)
+                self._launch_meta[p] = {
+                    "role": role, "run": run,
+                    "envelope": launch.get("envelope") or {},
+                    "envelope_hash": launch.get("envelope_hash") or "",
+                    "grant": ""}
         oh = spec.get("oh") or next((h for h in ohs if h), "")
         self._op_oh = oh              # 1090 decisions must carry it
         bind = {p: role for p, role, _, _ in jobs}
@@ -507,6 +522,10 @@ class OperatorBot:
                 ok = False
         json.dump({"run": run, "op": op, "bind": bind},
                   open(self._op_state_file(), "w"), indent=1)
+        for p in sorted(authorize or {}):
+            # a rejected grant is the scenario's evidence, not a deploy
+            # failure - the answer lands in operator.log + 1087 launch
+            self.op_authorize(p, authorize[p])
         return ok
 
     def op_start(self, ov=None, timeout=None):
@@ -577,6 +596,89 @@ class OperatorBot:
             ok &= ans is not None
         return ok
 
+    # -------------------------------------------------- launch grant (P4F)
+
+    def _grant_reply(self, party, timeout, since):
+        """Latest {a:"grant"} answer from `party` after `since` - every
+        grant state change (accept/void/use) and every reject broadcasts
+        one to all GCS parties."""
+        return self.wait_reply(
+            lambda m: m.get("mt") == 1094 and m.get("sd") == party
+            and (m.get("ms") or {}).get("a") == "grant",
+            timeout, since=since)
+
+    def op_authorize(self, unit, choice=None, timeout=10.0):
+        """1094 {a:"authorize"} - a launch grant minted like the
+        WebClient's fn_buildGrant: fresh uuid, the bound package's
+        envelope_hash, bounds within the envelope's, by/gcs = the bot."""
+        party = self._party_of(unit)
+        meta = self._launch_meta.get(party) or {}
+        env = meta.get("envelope") or {}
+        if not meta.get("envelope_hash"):
+            self.log("AUTHORIZE", f"{party}: no launch envelope in its "
+                     "package - cannot authorize")
+            return False
+        choice = choice or {}
+        valid_for_s = int(choice.get("valid_for_s",
+                                     env.get("valid_for_s", 0)))
+        max_launches = int(choice.get("max_launches",
+                                      env.get("max_launches", 0)))
+        if valid_for_s > env.get("valid_for_s", 0) or \
+                max_launches > env.get("max_launches", 0):
+            # fn_buildGrant's bounds rule - the unit would reject
+            # "bounds" anyway, so the grant is never minted
+            self.log("AUTHORIZE", f"{party}: choice exceeds the "
+                     f"envelope ({valid_for_s}/{max_launches} vs "
+                     f"{env.get('valid_for_s')}/{env.get('max_launches')})")
+            return False
+        grant = {"id": str(uuid.uuid4()), "role": meta["role"],
+                 "party": party, "envelope_hash": meta["envelope_hash"],
+                 "valid_for_s": valid_for_s, "max_launches": max_launches,
+                 "by": self.party, "gcs": self.party}
+        mark = self.reply_mark()
+        self._send({"ty": "i", "mt": 1094, "tg": party,
+                    "ms": {"a": "authorize", "run": meta["run"],
+                           "grant": grant}},
+                   "AUTHORIZE", f"{party} grant={grant['id'][:8]} "
+                   f"valid={valid_for_s} uses={max_launches}")
+        ans = self._grant_reply(party, timeout, mark)
+        if ans is None:
+            self.log("GRANT", f"{party}: no grant answer")
+            return False
+        ms = ans.get("ms") or {}
+        st, why = ms.get("st", "?"), ms.get("why", "")
+        self.log("GRANT", f"{party} st={st}"
+                 + (f" why={why}" if why else ""))
+        if st == "valid":
+            meta["grant"] = grant["id"]
+        return st != "rejected"
+
+    def op_revoke_launch(self, unit, timeout=10.0):
+        """1094 {a:"revoke_launch"} - voids the unit's current grant.
+        The id comes from the grant the bot sent; the status block's
+        `launch.id` (the broadcast id8 prefix the unit also accepts) is
+        the fallback after a bot-side restart."""
+        party = self._party_of(unit)
+        meta = self._launch_meta.get(party) or {}
+        grant_id = meta.get("grant") or \
+            ((self.status_of(party).get("launch") or {}).get("id") or "")
+        if not grant_id:
+            self.log("REVOKE", f"{party}: no known grant")
+            return False
+        mark = self.reply_mark()
+        self._send({"ty": "i", "mt": 1094, "tg": party,
+                    "ms": {"a": "revoke_launch", "run": meta.get("run", ""),
+                           "grant": grant_id}},
+                   "REVOKE", f"{party} grant={grant_id[:8]}")
+        ans = self._grant_reply(party, timeout, mark)
+        if ans is None:
+            self.log("GRANT", f"{party}: no grant answer")
+            return False
+        ms = ans.get("ms") or {}
+        self.log("GRANT", f"{party} st={ms.get('st', '?')}"
+                 + (f" why={ms['why']}" if ms.get("why") else ""))
+        return ms.get("st") != "rejected"
+
     # -------------------------------------------------------------- tick
 
     async def _tick(self):
@@ -630,7 +732,10 @@ class OperatorBot:
                 kind = row.get("kind")
                 for act in ("approve", "deny"):
                     rule = (self.policy.get(act) or {}).get(kind)
-                    if rule is None:
+                    # P4F-07: `launch: none` (and any non-rule value) is
+                    # the explicit "the operator never answers" posture -
+                    # the request stays pending and times out live
+                    if not isinstance(rule, dict):
                         continue
                     if now - row["first_seen"] >= float(rule.get("after_s", 0)):
                         with self._lock:
@@ -643,7 +748,7 @@ class OperatorBot:
             for act in ("confirm", "dismiss"):
                 rules = self.policy.get(act) or {}
                 rule = rules.get(cls, rules.get("*"))
-                if rule is None:
+                if not isinstance(rule, dict):
                     continue
                 if now - row["first_seen"] >= float(rule.get("after_s", 0)):
                     state = "confirmed" if act == "confirm" else "dismissed"

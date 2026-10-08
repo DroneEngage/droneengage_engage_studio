@@ -107,9 +107,11 @@ consistent operator):
 
 | `do:` | args | meaning |
 |---|---|---|
-| `deploy` / `prepare` | `operation`, `timeout` | deploy the operation (1094 two-phase for specs) |
+| `deploy` / `prepare` | `operation`, `timeout`, `authorize: {unit: {valid_for_s, max_launches}}` | deploy the operation (1094 two-phase for specs); `authorize` sends each listed unit its launch grant after READY (P4F-07) |
 | `start` | `run`, `in_ms`, `start: {role: mission}`, `targets: []`, `expect_fail: []` | START the deployed run |
 | `abort` | `run`, `why` | ABORT the run |
+| `authorize` | `unit`, `valid_for_s`, `max_launches`, `timeout` | send/replace a launch grant mid-run (1094) |
+| `revoke_launch` | `unit`, `timeout` | void the unit's launch grant (1094) |
 | `operator` | `act` | act as the operator (below) |
 
 `operator` acts: `approve`/`deny` (`unit`, optional `req`, `kind`),
@@ -166,6 +168,8 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | assertion | args | checks |
 |---|---|---|
 | `journal_count` | `unit`, `re`, `equals`/`at_least`/`at_most`, `total` | journal line count |
+| `no_journal` | `unit`, `re` | the pattern never appears |
+| `status_field` | `unit`, `path`, `equals`/`re`/bounds | a field of the latest 1087 (e.g. `launch.grant`) |
 | `module_log_count` | same + `module` | a module's stdout log |
 | `journal_order` | `unit`, `first`, `then` | ordering |
 | `journal_time_delta` | `u1`, `re1`, `u2`, `re2`, `max_s` | timing between lines |
@@ -194,7 +198,9 @@ operator:
 
 The bot auto-approves/-confirms matching requests after the delay, and
 re-sends its decisions (2–30 s backoff) while roster `wm` digests
-disagree — like the WebClient's 1093 resend.
+disagree — like the WebClient's 1093 resend. A rule value of `none`
+(`approve: {launch: none}`) is the explicit "the operator never
+answers" posture: the request stays pending and times out live.
 
 ## `verify:` — the deploy gate (optional)
 
