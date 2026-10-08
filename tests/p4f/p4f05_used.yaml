@@ -1,0 +1,86 @@
+# p4f/p4f05_used - TASK-P4F-07 acceptance "used": two confirmed persons
+# against a max_launches: 1 grant - the first delivery consumes the one
+# use under the grant, the second person's trigger hits the USED grant
+# and falls back to a live approval (NO_GRANT used).
+#
+# Op:      packages/p4f05.deploy.json.
+# World:   worlds/sar_forest_two_person.yaml - person_2 added at the NE
+#          corner of the op area.
+# Evidence: one LAUNCH_GO use=1/1 for the first delivery; the second
+#           person's confirm raises a plain APPROVAL_REQ launch (the
+#           grant is used - the fallback rides the live path).
+#
+# FIXME(unrun): the proof needs person_2's confirm to land after the
+#          first delivery mission has ended - a deliver trigger
+#          evaluated while the mission is ACTIVE is suppressed on
+#          priority (its once_per key survives, but only a later
+#          sys.target_state for person_2 would re-fire it). person_2's
+#          NE-corner placement biases its coverage late; if a run
+#          confirms it mid-delivery, assert "APPROVAL_REQ launch" needs
+#          a position tweak or a second-person detection that genuinely
+#          trails the first delivery.
+version: 1
+name: p4f05_used
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest_two_person.yaml
+operation: ../../packages/p4f05.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 180
+operator:
+  approve: {launch: none, action: none}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300,
+     authorize: {amb1: {max_launches: 1}}}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 35, do: wait_journal, unit: "amb1", re: "LAUNCH_GRANT .* valid=",
+     timeout: 60}
+  - {t: 40, do: wait_journal, unit: "all", re: "WM_NEW .* cls=phone",
+     timeout: 240}
+  - {t: 45, do: wait_journal, unit: "s1,s2,s3",
+     re: "CLAIM .* index [0-9]+ of 3", timeout: 120}
+  - {t: 50, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 480}
+  - {t: 55, do: wait_journal, unit: "amb1", re: "LAUNCH_GO",
+     timeout: 300}
+  # the first delivery runs its denied tail (drop approval unanswered)
+  # home; person_2's confirm then hits the used grant
+  - {t: 60, do: wait_journal, unit: "amb1", re: "LAUNCH_DONE",
+     timeout: 600}
+  - {t: 65, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ launch",
+     timeout: 600}
+assert:
+  - journal_count: {unit: "amb1", re: "LAUNCH_GO grant=.* use=1/1",
+                    equals: 1}
+  - journal_count: {unit: "amb1", re: "LAUNCH_DONE", equals: 1}
+  # the second confirmed person raised a live launch request - the
+  # grant could not cover it (used)
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ launch", equals: 1}
+  - no_journal: {unit: "amb1", re: "LAUNCH_GO.*use=2"}
+  # both persons really appeared in the world model
+  - journal_count: {unit: "amb1", re: "WM_NEW .* cls=person",
+                    at_least: 2}
+  - status_field: {unit: "amb1", path: "launch.grant", equals: used}
+  - final_state: {unit: "amb1", fc_mode: [RTL, LAND]}
+teardown: land

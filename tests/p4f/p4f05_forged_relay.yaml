@@ -1,0 +1,109 @@
+# p4f/p4f05_forged_relay - TASK-P4F-07 acceptance "forged relay": a
+# bound unit whose role is NOT in the envelope's sources replays a
+# searcher-authored fact - the relay rule refuses the grant path even
+# though the original source is allow-listed.
+#
+# Op:      packages/p4f05_relay.deploy.json - ambulance package whose
+#          deliver triggers on the sticky fact `sar.person` and whose
+#          sources drop cam_scout (["gcs","searcher","sdr_scout"]);
+#          searcher package gains relay_person (a sensor mission that
+#          emits sar.person when the person confirms); cam_scout gains
+#          sar.person in event_sticky so it holds and can serve it.
+# Sequence: amb1's link is cut before the confirm, so it misses the
+#          original BUS broadcast; s1 emits sar.person; s1's de_comm is
+#          killed and s2/s3 (the other fact holders) are cut, leaving
+#          scout1 the only live holder. amb1 returns, its fact digest
+#          diverges, scout1 replays (rl=scout1 -> role cam_scout not in
+#          sources) -> LAUNCH_REFUSED deliver trigger relay role
+#          cam_scout -> live request nobody answers.
+#
+# FIXME(unrun): the relay only proves the rl provenance when the
+#          fact really reaches amb1 via scout1's replay. If amb1's
+#          catch-up digest converges before the request/relay cycle
+#          resolves, or if the run delivers the fact through a path
+#          that stamps no rl, the refusal does not fire; the timeouts
+#          are sized generously but may need a rerun pass.
+version: 1
+name: p4f05_forged_relay
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/p4f05_relay.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 180
+operator:
+  approve: {launch: none, action: {after_s: 2}}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300, authorize: {amb1: {}}}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 32, do: wait_journal, unit: "amb1", re: "LAUNCH_GRANT .* valid=",
+     timeout: 60}
+  # amb1 goes dark before the person confirms - it misses the sar.person
+  # broadcast and must be served the fact by a relay
+  - {t: 35, fault: link_cut, unit: "amb1", dur_s: 560}
+  - {t: 40, do: wait_journal, unit: "scout1",
+     re: "WM_STATE .* confirmed by operator", timeout: 480}
+  # the searcher's relay_person lane emits the sticky fact while amb1
+  # is still off the bus
+  - {t: 45, do: wait_journal, unit: "s1", re: "BUS_OUT .* n=sar\\.person",
+     timeout: 480}
+  - {t: 50, do: wait, seconds: 5}
+  # kill the author for good and cut the other holders - scout1 is the
+  # only live source amb1 can pull the fact from
+  - {t: 55, do: kill, unit: "s1", proc: de_comm}
+  - {t: 58, fault: link_cut, unit: "s2,s3", dur_s: 700}
+  # amb1's cut expires ~t595; its digest diverges from scout1's and the
+  # replay lands with rl=scout1
+  - {t: 620, do: wait_journal, unit: "amb1", re: "comm line online",
+     timeout: 180}
+  - {t: 625, do: wait_journal, unit: "amb1",
+     re: "BUS_RELAY.*n=sar\\.person.*rl=scout1|BUS_RELAY.*rl=scout1.*n=sar\\.person",
+     timeout: 300}
+  - {t: 630, do: wait_journal, unit: "amb1", re: "LAUNCH_REFUSED",
+     timeout: 300}
+  - {t: 635, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ launch",
+     timeout: 180}
+  - {t: 640, do: wait_journal, unit: "amb1", re: "APPROVAL_TIMEOUT",
+     timeout: 300}
+  # bring the author back so teardown can land it cleanly
+  - {t: 660, do: restart, unit: "s1", proc: de_comm}
+  - {t: 690, do: wait, seconds: 20}
+assert:
+  # the relayed copy arrived stamped with the cam_scout relayer
+  - journal_count: {unit: "amb1",
+                    re: "BUS_RELAY.*rl=scout1", at_least: 1}
+  # provenance: src searcher is allowed, rl cam_scout is not
+  - journal_count: {unit: "amb1",
+                    re: "LAUNCH_REFUSED deliver trigger relay role cam_scout",
+                    equals: 1}
+  - journal_order: {unit: "amb1", first: "LAUNCH_REFUSED",
+                    then: "APPROVAL_REQ launch"}
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ launch", equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_TIMEOUT", equals: 1}
+  - no_journal: {unit: "amb1", re: "launch: uploading|LAUNCH_GO|takeoff"}
+  - status_field: {unit: "amb1", path: "launch.grant", equals: valid}
+  - status_field: {unit: "amb1", path: "launch.last_refusal",
+                   re: "trigger relay role cam_scout"}
+  - final_state: {unit: "amb1", fc_mode: [STABILIZE, GUIDED, LAND]}
+teardown: land

@@ -1,0 +1,334 @@
+{
+  "schema": "de.package/2.3",
+  "op": "sar_forest",
+  "op_hash": "sha256:208817374f72c2b546b5108e1c615798b1d2160b15891a7d4e642646c91de75b",
+  "role": "ambulance",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [
+    "payload"
+  ],
+  "fc_items": [],
+  "missions": {
+    "report_drop": {
+      "trigger": {
+        "type": "event",
+        "event": "sys.target_state",
+        "when": "${target.st == 'confirmed' && target.cls == 'person'}",
+        "once_per": "target"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "claims": [],
+      "on_exit": [],
+      "steps": [
+        {
+          "id": "wait_release",
+          "k": "gate",
+          "event": "payload.released",
+          "timeout": 600,
+          "on_timeout": "end"
+        },
+        {
+          "id": "report",
+          "k": "emit",
+          "event": "payload.dropped",
+          "payload_from": "trigger"
+        }
+      ]
+    }
+  },
+  "manifest": [],
+  "events": {
+    "payload.released": {},
+    "payload.dropped": {
+      "serves": "person",
+      "payload": {
+        "tid": "string"
+      }
+    },
+    "sar.person": {}
+  },
+  "handlers": {
+    "comm_lost": "continue",
+    "battery_low": "rtl",
+    "peer_lost": "continue",
+    "geofence": "rtl"
+  },
+  "fleet": {
+    "roles": {
+      "cam_scout": {
+        "count": 1
+      },
+      "sdr_scout": {
+        "count": 1
+      },
+      "searcher": {
+        "count": 3
+      },
+      "ambulance": {
+        "count": 1
+      }
+    },
+    "phases": [
+      {
+        "id": "search"
+      },
+      {
+        "id": "localize",
+        "enter_on": "sys.target_new"
+      },
+      {
+        "id": "deliver",
+        "enter_on": "sys.target_state"
+      },
+      {
+        "id": "recover",
+        "enter_on": "payload.dropped"
+      }
+    ],
+    "event_ttl": {
+      "payload.released": 300
+    },
+    "end": {
+      "on": [
+        "payload.dropped"
+      ],
+      "then": {
+        "ambulance": "rtl",
+        "searcher": "rtl",
+        "sdr_scout": "rtl",
+        "cam_scout": "hold"
+      }
+    },
+    "event_targets": {
+      "detect.detected": "person",
+      "sdr.signal": "phone"
+    },
+    "event_serves": {
+      "payload.dropped": "person"
+    },
+    "event_sticky": [
+      "detect.detected",
+      "payload.dropped",
+      "sdr.signal",
+      "sar.person"
+    ]
+  },
+  "confirm": {
+    "phone": {
+      "policy": "k_sources_within",
+      "k": 1,
+      "d_m": 50
+    },
+    "person": {
+      "policy": "operator_confirm"
+    }
+  },
+  "templates": {
+    "deliver": {
+      "trigger": {
+        "type": "event",
+        "event": "sar.person",
+        "once_per": "target"
+      },
+      "priority": 10,
+      "precheck": [
+        "${self.bat >= op.params.launch_min_bat}"
+      ],
+      "approval": "operator",
+      "transit": false,
+      "gen": {
+        "type": "deliver",
+        "params": {
+          "to": "${target.pos}",
+          "transit_alt": 40,
+          "drop_alt": 15,
+          "hover_s": 150
+        }
+      },
+      "each_point": {
+        "actions": [
+          {
+            "on": "start",
+            "do": "payload.release",
+            "approval": "operator"
+          }
+        ]
+      },
+      "post_items": [
+        {
+          "c": 19,
+          "ft": 3,
+          "mv": [
+            60,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "c": 20,
+          "ft": 2,
+          "mv": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "c": 20,
+          "ft": 2,
+          "mv": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "post_rows": [
+        {
+          "seq": 1,
+          "mission": "deliver",
+          "step": "end",
+          "kind": "end.hold"
+        },
+        {
+          "seq": 2,
+          "mission": "deliver",
+          "step": "end",
+          "kind": "end.contingency"
+        },
+        {
+          "seq": 3,
+          "mission": "deliver",
+          "step": "end",
+          "kind": "end.guard"
+        }
+      ],
+      "end_state": "rtl",
+      "end_backstop": {
+        "timeout": 60,
+        "then": "rtl"
+      }
+    }
+  },
+  "area": [
+    [
+      -35.357872,
+      149.15973
+    ],
+    [
+      -35.357872,
+      149.170744
+    ],
+    [
+      -35.368652,
+      149.170744
+    ],
+    [
+      -35.368652,
+      149.15973
+    ]
+  ],
+  "alt_layers": {
+    "base": 40,
+    "step": 6,
+    "count": 8
+  },
+  "params": {
+    "min_hsep_m": 25,
+    "min_vsep_m": 6,
+    "sep_policy": "block_new",
+    "approval_timeout_s": 90,
+    "launch_min_bat": 70,
+    "inspect_alt": 82
+  },
+  "role_start": "ground",
+  "auto_launch": true,
+  "role_layer": 0,
+  "launch": {
+    "envelope": {
+      "sources": [
+        "gcs",
+        "searcher",
+        "sdr_scout"
+      ],
+      "missions": [
+        "deliver"
+      ],
+      "area": [
+        [
+          -35.357872,
+          149.15973
+        ],
+        [
+          -35.357872,
+          149.170744
+        ],
+        [
+          -35.368652,
+          149.170744
+        ],
+        [
+          -35.368652,
+          149.15973
+        ]
+      ],
+      "max_alt_m": 80,
+      "max_range_m": 3000,
+      "max_flight_s": 900,
+      "min_bat": 70,
+      "valid_for_s": 14400,
+      "max_launches": 1,
+      "speed_mps": 5
+    },
+    "envelope_hash": "sha256:99827b88a7c32025bd7e4812a069906061cfa9b12b1740447cd312a600916613"
+  },
+  "reserved_layers": [
+    0,
+    1,
+    6,
+    7
+  ],
+  "fences": [
+    {
+      "0": {
+        "a": -35.357872,
+        "g": 149.15973
+      },
+      "1": {
+        "a": -35.357872,
+        "g": 149.170744
+      },
+      "2": {
+        "a": -35.368652,
+        "g": 149.170744
+      },
+      "3": {
+        "a": -35.368652,
+        "g": 149.15973
+      },
+      "n": "launch.ambulance",
+      "a": 1,
+      "o": 0,
+      "r": 0,
+      "t": 2,
+      "c": 4
+    }
+  ],
+  "hash": "sha256:5fa4dafb7e5077314cebe36759b5c51f168cc00e6393f19df1aaed32a54c0072"
+}

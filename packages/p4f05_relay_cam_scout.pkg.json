@@ -1,0 +1,1324 @@
+{
+  "schema": "de.package/2.3",
+  "op": "sar_forest",
+  "op_hash": "sha256:208817374f72c2b546b5108e1c615798b1d2160b15891a7d4e642646c91de75b",
+  "role": "cam_scout",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [
+    "camera",
+    "visual_tracker"
+  ],
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1599436,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1599436,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1603847,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1603847,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1608259,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1608259,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.161267,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.161267,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1617081,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1617081,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1621492,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1621492,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1625903,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1625903,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1630314,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1630314,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1634725,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1634725,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1639137,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1639137,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1643548,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1643548,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1647959,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1647959,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.165237,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.165237,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1656781,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1656781,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1661192,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1661192,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1665603,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1665603,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1670015,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1670015,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1674426,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1674426,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1678837,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1678837,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1683248,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1683248,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1687659,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1687659,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.169207,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.169207,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1696481,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1696481,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1700893,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1700893,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.368652,
+        149.1705304,
+        82
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.357872,
+        149.1705304,
+        82
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        300,
+        0,
+        0,
+        0,
+        -35.357872,
+        149.1705304,
+        82
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        -35.357872,
+        149.1705304,
+        82
+      ]
+    }
+  ],
+  "missions": {
+    "wide_search": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "segment": {
+        "start": 1,
+        "end": 54
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 300,
+        "then": "rtl"
+      }
+    }
+  },
+  "manifest": [
+    {
+      "seq": 1,
+      "mission": "wide_search",
+      "step": "takeoff",
+      "kind": "nav.takeoff"
+    },
+    {
+      "seq": 2,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane24_a"
+    },
+    {
+      "seq": 3,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane24_b"
+    },
+    {
+      "seq": 4,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane23_b"
+    },
+    {
+      "seq": 5,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane23_a"
+    },
+    {
+      "seq": 6,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane22_a"
+    },
+    {
+      "seq": 7,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane22_b"
+    },
+    {
+      "seq": 8,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane21_b"
+    },
+    {
+      "seq": 9,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane21_a"
+    },
+    {
+      "seq": 10,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane20_a"
+    },
+    {
+      "seq": 11,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane20_b"
+    },
+    {
+      "seq": 12,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane19_b"
+    },
+    {
+      "seq": 13,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane19_a"
+    },
+    {
+      "seq": 14,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane18_a"
+    },
+    {
+      "seq": 15,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane18_b"
+    },
+    {
+      "seq": 16,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane17_b"
+    },
+    {
+      "seq": 17,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane17_a"
+    },
+    {
+      "seq": 18,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane16_a"
+    },
+    {
+      "seq": 19,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane16_b"
+    },
+    {
+      "seq": 20,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane15_b"
+    },
+    {
+      "seq": 21,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane15_a"
+    },
+    {
+      "seq": 22,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane14_a"
+    },
+    {
+      "seq": 23,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane14_b"
+    },
+    {
+      "seq": 24,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane13_b"
+    },
+    {
+      "seq": 25,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane13_a"
+    },
+    {
+      "seq": 26,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane12_a"
+    },
+    {
+      "seq": 27,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane12_b"
+    },
+    {
+      "seq": 28,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane11_b"
+    },
+    {
+      "seq": 29,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane11_a"
+    },
+    {
+      "seq": 30,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane10_a"
+    },
+    {
+      "seq": 31,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane10_b"
+    },
+    {
+      "seq": 32,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane9_b"
+    },
+    {
+      "seq": 33,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane9_a"
+    },
+    {
+      "seq": 34,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane8_a"
+    },
+    {
+      "seq": 35,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane8_b"
+    },
+    {
+      "seq": 36,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane7_b"
+    },
+    {
+      "seq": 37,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane7_a"
+    },
+    {
+      "seq": 38,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane6_a"
+    },
+    {
+      "seq": 39,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane6_b"
+    },
+    {
+      "seq": 40,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane5_b"
+    },
+    {
+      "seq": 41,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane5_a"
+    },
+    {
+      "seq": 42,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane4_a"
+    },
+    {
+      "seq": 43,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane4_b"
+    },
+    {
+      "seq": 44,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane3_b"
+    },
+    {
+      "seq": 45,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane3_a"
+    },
+    {
+      "seq": 46,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane2_a"
+    },
+    {
+      "seq": 47,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane2_b"
+    },
+    {
+      "seq": 48,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane1_b"
+    },
+    {
+      "seq": 49,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane1_a"
+    },
+    {
+      "seq": 50,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane0_a"
+    },
+    {
+      "seq": 51,
+      "mission": "wide_search",
+      "step": "survey",
+      "kind": "nav.wp",
+      "sub": "lane0_b"
+    },
+    {
+      "seq": 52,
+      "mission": "wide_search",
+      "step": "end",
+      "kind": "end.hold"
+    },
+    {
+      "seq": 53,
+      "mission": "wide_search",
+      "step": "end",
+      "kind": "end.contingency"
+    },
+    {
+      "seq": 54,
+      "mission": "wide_search",
+      "step": "end",
+      "kind": "end.guard"
+    }
+  ],
+  "events": {
+    "sar.person": {}
+  },
+  "handlers": {
+    "comm_lost": "continue",
+    "battery_low": "rtl",
+    "peer_lost": "continue",
+    "geofence": "rtl"
+  },
+  "fleet": {
+    "roles": {
+      "cam_scout": {
+        "count": 1
+      },
+      "sdr_scout": {
+        "count": 1
+      },
+      "searcher": {
+        "count": 3
+      },
+      "ambulance": {
+        "count": 1
+      }
+    },
+    "phases": [
+      {
+        "id": "search"
+      },
+      {
+        "id": "localize",
+        "enter_on": "sys.target_new"
+      },
+      {
+        "id": "deliver",
+        "enter_on": "sys.target_state"
+      },
+      {
+        "id": "recover",
+        "enter_on": "payload.dropped"
+      }
+    ],
+    "event_ttl": {
+      "payload.released": 300
+    },
+    "end": {
+      "on": [
+        "payload.dropped"
+      ],
+      "then": {
+        "ambulance": "rtl",
+        "searcher": "rtl",
+        "sdr_scout": "rtl",
+        "cam_scout": "hold"
+      }
+    },
+    "event_targets": {
+      "detect.detected": "person",
+      "sdr.signal": "phone"
+    },
+    "event_serves": {
+      "payload.dropped": "person"
+    },
+    "event_sticky": [
+      "detect.detected",
+      "payload.dropped",
+      "sdr.signal",
+      "sar.person"
+    ]
+  },
+  "confirm": {
+    "phone": {
+      "policy": "k_sources_within",
+      "k": 1,
+      "d_m": 50
+    },
+    "person": {
+      "policy": "operator_confirm"
+    }
+  },
+  "templates": {
+    "orbit_track": {
+      "trigger": {
+        "type": "event",
+        "event": "sys.target_new",
+        "when": "${target.cls == 'person'}",
+        "once_per": "target"
+      },
+      "priority": 20,
+      "precheck": [
+        "${self.bat >= 35}"
+      ],
+      "approval": "auto",
+      "transit": false,
+      "gen": {
+        "type": "orbit",
+        "params": {
+          "center": "${target.pos}",
+          "r": 150,
+          "turns": 8,
+          "alt": "${op.params.inspect_alt}"
+        }
+      },
+      "each_point": {
+        "actions": []
+      },
+      "post_items": [
+        {
+          "c": 19,
+          "ft": 3,
+          "mv": [
+            90,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "c": 20,
+          "ft": 2,
+          "mv": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "c": 17,
+          "ft": 3,
+          "mv": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "post_rows": [
+        {
+          "seq": 1,
+          "mission": "orbit_track",
+          "step": "end",
+          "kind": "end.hold"
+        },
+        {
+          "seq": 2,
+          "mission": "orbit_track",
+          "step": "end",
+          "kind": "end.contingency"
+        },
+        {
+          "seq": 3,
+          "mission": "orbit_track",
+          "step": "end",
+          "kind": "end.guard"
+        }
+      ],
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 90,
+        "then": "rtl"
+      }
+    }
+  },
+  "area": [
+    [
+      -35.357872,
+      149.15973
+    ],
+    [
+      -35.357872,
+      149.170744
+    ],
+    [
+      -35.368652,
+      149.170744
+    ],
+    [
+      -35.368652,
+      149.15973
+    ]
+  ],
+  "alt_layers": {
+    "base": 40,
+    "step": 6,
+    "count": 8
+  },
+  "params": {
+    "min_hsep_m": 25,
+    "min_vsep_m": 6,
+    "sep_policy": "block_new",
+    "approval_timeout_s": 90,
+    "launch_min_bat": 70,
+    "inspect_alt": 82
+  },
+  "role_start": "air",
+  "auto_launch": false,
+  "role_layer": 7,
+  "reserved_layers": [
+    0,
+    1,
+    6,
+    7
+  ],
+  "hash": "sha256:b03ddaed86998d92fbd8c40659dba9a647a9df094b3f36c97eb2406c28545e31"
+}

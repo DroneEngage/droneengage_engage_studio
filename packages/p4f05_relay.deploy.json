@@ -1,0 +1,31 @@
+{
+  "op": "sar_forest",
+  "roles": {
+    "cam_scout": {
+      "pkg": "p4f05_relay_cam_scout.pkg.json",
+      "units": [
+        "scout1"
+      ]
+    },
+    "sdr_scout": {
+      "pkg": "sar_forest_grant_sdr_scout.pkg.json",
+      "units": [
+        "sdr1"
+      ]
+    },
+    "searcher": {
+      "pkg": "p4f05_relay_searcher.pkg.json",
+      "units": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    },
+    "ambulance": {
+      "pkg": "p4f05_relay_ambulance.pkg.json",
+      "units": [
+        "amb1"
+      ]
+    }
+  }
+}

@@ -1,0 +1,354 @@
+{
+  "schema": "de.package/2.3",
+  "op": "sar_forest",
+  "op_hash": "sha256:208817374f72c2b546b5108e1c615798b1d2160b15891a7d4e642646c91de75b",
+  "role": "searcher",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [
+    "camera"
+  ],
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        46
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        7200,
+        0,
+        0,
+        0,
+        0,
+        0,
+        46
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        46
+      ]
+    }
+  ],
+  "missions": {
+    "hold_home": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "segment": {
+        "start": 1,
+        "end": 4
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 7200,
+        "then": "rtl"
+      }
+    },
+    "relay_person": {
+      "trigger": {
+        "type": "event",
+        "event": "sys.target_state",
+        "when": "${target.st == 'confirmed' && target.cls == 'person'}",
+        "once_per": "target"
+      },
+      "priority": 0,
+      "sensor": true,
+      "end_state": "hold",
+      "steps": [
+        {
+          "id": "relay",
+          "k": "emit",
+          "event": "sar.person",
+          "payload_from": "trigger"
+        }
+      ]
+    }
+  },
+  "manifest": [
+    {
+      "seq": 1,
+      "mission": "hold_home",
+      "step": "takeoff",
+      "kind": "nav.takeoff"
+    },
+    {
+      "seq": 2,
+      "mission": "hold_home",
+      "step": "end",
+      "kind": "end.hold"
+    },
+    {
+      "seq": 3,
+      "mission": "hold_home",
+      "step": "end",
+      "kind": "end.contingency"
+    },
+    {
+      "seq": 4,
+      "mission": "hold_home",
+      "step": "end",
+      "kind": "end.guard"
+    }
+  ],
+  "events": {
+    "sar.person": {}
+  },
+  "handlers": {
+    "comm_lost": "continue",
+    "battery_low": "rtl",
+    "peer_lost": "continue",
+    "geofence": "rtl"
+  },
+  "fleet": {
+    "roles": {
+      "cam_scout": {
+        "count": 1
+      },
+      "sdr_scout": {
+        "count": 1
+      },
+      "searcher": {
+        "count": 3
+      },
+      "ambulance": {
+        "count": 1
+      }
+    },
+    "phases": [
+      {
+        "id": "search"
+      },
+      {
+        "id": "localize",
+        "enter_on": "sys.target_new"
+      },
+      {
+        "id": "deliver",
+        "enter_on": "sys.target_state"
+      },
+      {
+        "id": "recover",
+        "enter_on": "payload.dropped"
+      }
+    ],
+    "event_ttl": {
+      "payload.released": 300
+    },
+    "end": {
+      "on": [
+        "payload.dropped"
+      ],
+      "then": {
+        "ambulance": "rtl",
+        "searcher": "rtl",
+        "sdr_scout": "rtl",
+        "cam_scout": "hold"
+      }
+    },
+    "event_targets": {
+      "detect.detected": "person",
+      "sdr.signal": "phone"
+    },
+    "event_serves": {
+      "payload.dropped": "person"
+    },
+    "event_sticky": [
+      "detect.detected",
+      "payload.dropped",
+      "sdr.signal",
+      "sar.person"
+    ]
+  },
+  "confirm": {
+    "phone": {
+      "policy": "k_sources_within",
+      "k": 1,
+      "d_m": 50
+    },
+    "person": {
+      "policy": "operator_confirm"
+    }
+  },
+  "templates": {
+    "sector_scan": {
+      "trigger": {
+        "type": "event",
+        "event": "sys.target_new",
+        "when": "${target.cls == 'phone'}",
+        "once_per": "target"
+      },
+      "priority": 30,
+      "precheck": [
+        "${self.bat >= 40}"
+      ],
+      "approval": "auto",
+      "allocate": {
+        "policy": "partition",
+        "split": "strips",
+        "region": "${square_around(target.pos, max(300, 3 * target.unc_m))}",
+        "clip": "op.area",
+        "max_n": 3,
+        "bid_window_s": 5
+      },
+      "transit": true,
+      "gen": {
+        "type": "lawnmower",
+        "params": {
+          "area": "${alloc.sector}",
+          "spacing": "${footprint_spacing(alloc.layer_alt, 62.2, 0.3)}",
+          "alt": "${alloc.layer_alt}"
+        }
+      },
+      "each_point": {
+        "actions": [
+          {
+            "on": "reached",
+            "do": "camera.capture"
+          }
+        ]
+      },
+      "post_items": [
+        {
+          "c": 19,
+          "ft": 3,
+          "mv": [
+            120,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "c": 20,
+          "ft": 2,
+          "mv": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "c": 17,
+          "ft": 3,
+          "mv": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "post_rows": [
+        {
+          "seq": 1,
+          "mission": "sector_scan",
+          "step": "end",
+          "kind": "end.hold"
+        },
+        {
+          "seq": 2,
+          "mission": "sector_scan",
+          "step": "end",
+          "kind": "end.contingency"
+        },
+        {
+          "seq": 3,
+          "mission": "sector_scan",
+          "step": "end",
+          "kind": "end.guard"
+        }
+      ],
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 120,
+        "then": "rtl"
+      }
+    }
+  },
+  "area": [
+    [
+      -35.357872,
+      149.15973
+    ],
+    [
+      -35.357872,
+      149.170744
+    ],
+    [
+      -35.368652,
+      149.170744
+    ],
+    [
+      -35.368652,
+      149.15973
+    ]
+  ],
+  "alt_layers": {
+    "base": 40,
+    "step": 6,
+    "count": 8
+  },
+  "params": {
+    "min_hsep_m": 25,
+    "min_vsep_m": 6,
+    "sep_policy": "block_new",
+    "approval_timeout_s": 90,
+    "launch_min_bat": 70,
+    "inspect_alt": 82
+  },
+  "role_start": "air",
+  "auto_launch": false,
+  "role_layer": 1,
+  "reserved_layers": [
+    0,
+    1,
+    6,
+    7
+  ],
+  "hash": "sha256:8496c6684bde2ab7428fc6f99135a0a03b6ee4b0768e67f388255ac378e456cf"
+}

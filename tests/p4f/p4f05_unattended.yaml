@@ -1,0 +1,99 @@
+# p4f/p4f05_unattended - TASK-P4F-07 acceptance "unattended": the SAR
+# grant op runs its person-found delivery with NO operator answering
+# launch approvals, because the deploy authorized a launch grant.
+#
+# Op:      packages/p4f05.deploy.json - the sar_forest_grant roles with
+#          p4f05_ambulance.pkg.json (the stock grant package whose
+#          deliver end.guard is bounded RTL - a LOITER_UNLIM guard can
+#          never pass the P4F-05 route check).
+# Grant:   authorize: {amb1: {}} on the deploy step - the harness sends
+#          the 1094 authorize after READY with the envelope defaults
+#          (valid 14400 s, 1 launch).
+# Chain proven here: LAUNCH_GRANT -> person confirmed (operator decision,
+# gcs provenance, allowed by sources) -> LAUNCH_AUTH -> LAUNCH_ROUTE_OK
+# -> upload/preflight/arm -> LAUNCH_GO use=1/1 -> goto in AUTO. No
+# APPROVAL_REQ launch is ever raised. The drop approval is deliberately
+# unanswered so the mission ends through its denied tail (RTL/disarm):
+# the run stays live, which keeps launch.grant == "used" readable in the
+# final 1087 (a completed op would void it as run_end).
+version: 1
+name: p4f05_unattended
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/p4f05.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+operator:
+  approve: {launch: none, action: none}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300, authorize: {amb1: {}}}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  # arm the flyers only - amb1 is start:"ground" auto_launch; the op
+  # owns its arm through the grant + launch stepper
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 35, do: wait_journal, unit: "amb1", re: "LAUNCH_GRANT .* valid=",
+     timeout: 60}
+  - {t: 40, do: wait_journal, unit: "all", re: "WM_NEW .* cls=phone",
+     timeout: 240}
+  - {t: 45, do: wait_journal, unit: "s1,s2,s3",
+     re: "CLAIM .* index [0-9]+ of 3", timeout: 120}
+  - {t: 50, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 480}
+  - {t: 55, do: wait_journal, unit: "amb1", re: "LAUNCH_AUTH",
+     timeout: 120}
+  - {t: 60, do: wait_journal, unit: "amb1", re: "LAUNCH_ROUTE_OK",
+     timeout: 120}
+  - {t: 65, do: wait_journal, unit: "amb1",
+     re: "launch: goto fc seq .* in AUTO", timeout: 240}
+  # the drop approval pends unanswered (action: none) and dies at the
+  # op's approval_timeout_s -> denied tail -> RTL, land, disarm
+  - {t: 70, do: wait_journal, unit: "amb1", re: "LAUNCH_DONE",
+     timeout: 600}
+assert:
+  - journal_order: {unit: "amb1", first: "LAUNCH_GRANT ",
+                    then: "LAUNCH_AUTH"}
+  - journal_order: {unit: "amb1", first: "LAUNCH_AUTH",
+                    then: "LAUNCH_ROUTE_OK"}
+  - journal_order: {unit: "amb1", first: "LAUNCH_ROUTE_OK",
+                    then: "launch: uploading segment"}
+  - journal_order: {unit: "amb1", first: "launch: uploading segment",
+                    then: "LAUNCH_GO"}
+  - journal_count: {unit: "amb1", re: "LAUNCH_GO grant=.* use=1/1",
+                    equals: 1}
+  - journal_count: {unit: "amb1", re: "launch: goto fc seq .* in AUTO",
+                    equals: 1}
+  # the grant covered the launch: no live launch request ever raised
+  - no_journal: {unit: "amb1", re: "APPROVAL_REQ launch"}
+  # the drop approval was still raised live (only `launch` is
+  # suppressed) and timed out under action: none
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ action", equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_TIMEOUT", at_least: 1}
+  # the denied tail brought it home; the grant reads `used` while the
+  # run is still live
+  - journal_count: {unit: "amb1", re: "LAUNCH_DONE", equals: 1}
+  - status_field: {unit: "amb1", path: "launch.grant", equals: used}
+  - journal_count: {unit: "amb1", re: "vehicle disarmed - nav lane idle",
+                    at_least: 1}
+  - final_state: {unit: "amb1", fc_mode: [RTL, LAND]}
+teardown: land

@@ -1,0 +1,69 @@
+# p4f/p4f05_expiry - TASK-P4F-07 acceptance "expiry": the grant's
+# valid_for_s lapses before the person confirms - the grant voids as
+# expired and the delivery falls back to a live approval nobody
+# answers.
+#
+# Op:      packages/p4f05.deploy.json; the deploy authorizes amb1 with
+#          valid_for_s: 60 (the search chain takes minutes, so the
+#          grant is long dead by the confirm).
+# Evidence: LAUNCH_GRANT -> LAUNCH_GRANT_VOID expired -> APPROVAL_REQ
+#           launch -> APPROVAL_TIMEOUT -> stays on the ground.
+version: 1
+name: p4f05_expiry
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/p4f05.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+operator:
+  approve: {launch: none, action: {after_s: 2}}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300,
+     authorize: {amb1: {valid_for_s: 60}}}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 32, do: wait_journal, unit: "amb1", re: "LAUNCH_GRANT .* valid=60",
+     timeout: 60}
+  # the tick voids the grant at accept+60 s - well before the person
+  # can be found and confirmed
+  - {t: 35, do: wait_journal, unit: "amb1",
+     re: "LAUNCH_GRANT_VOID expired", timeout: 120}
+  - {t: 45, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 600}
+  - {t: 50, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ launch",
+     timeout: 180}
+  - {t: 55, do: wait_journal, unit: "amb1", re: "APPROVAL_TIMEOUT",
+     timeout: 300}
+assert:
+  - journal_order: {unit: "amb1", first: "LAUNCH_GRANT ",
+                    then: "LAUNCH_GRANT_VOID expired"}
+  - journal_count: {unit: "amb1", re: "LAUNCH_GRANT_VOID expired",
+                    equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ launch", equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_TIMEOUT", equals: 1}
+  - no_journal: {unit: "amb1", re: "LAUNCH_REFUSED|LAUNCH_GO|takeoff"}
+  - status_field: {unit: "amb1", path: "launch.grant", equals: void}
+  - status_field: {unit: "amb1", path: "launch.why", equals: expired}
+  - final_state: {unit: "amb1", fc_mode: [STABILIZE, GUIDED, LAND]}
+teardown: land

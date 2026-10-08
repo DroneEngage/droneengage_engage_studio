@@ -1,0 +1,62 @@
+# p4f/p4f05_reprepare - TASK-P4F-07 acceptance "reprepare": a second
+# PREPARE on the same unit voids the previous run's grant (re_prepare)
+# and the second deploy's authorize mints a fresh one.
+#
+# Op:      packages/p4f05.deploy.json (deployed twice back to back -
+#          each deploy is a new run with its own authorize).
+# Evidence: LAUNCH_GRANT -> LAUNCH_GRANT_VOID re_prepare -> LAUNCH_GRANT
+#           (the second run's grant) -> status launch.grant valid.
+version: 1
+name: p4f05_reprepare
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/p4f05.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 60
+operator:
+  approve: {launch: none, action: {after_s: 2}}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300, authorize: {amb1: {}}}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: wait_journal, unit: "amb1", re: "LAUNCH_GRANT .* valid=",
+     timeout: 60}
+  # re-PREPARE the fleet while still READY - amb1's existing grant
+  # voids as re_prepare; the deploy's own authorize grants the new run
+  - {t: 25, do: deploy, timeout: 300, authorize: {amb1: {}}}
+  - {t: 35, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 40, do: wait_journal, unit: "amb1",
+     re: "LAUNCH_GRANT_VOID re_prepare", timeout: 60}
+  - {t: 45, do: wait_journal, unit: "amb1", re: "LAUNCH_GRANT .* valid=",
+     timeout: 60}
+  - {t: 50, do: wait, seconds: 10}
+assert:
+  - journal_order: {unit: "amb1", first: "LAUNCH_GRANT ",
+                    then: "LAUNCH_GRANT_VOID re_prepare"}
+  - journal_count: {unit: "amb1", re: "LAUNCH_GRANT_VOID re_prepare",
+                    equals: 1}
+  # one accept per run: the second deploy's authorize minted a fresh
+  # grant for the new run
+  - journal_count: {unit: "amb1", re: "LAUNCH_GRANT .* valid=",
+                    equals: 2}
+  - status_field: {unit: "amb1", path: "launch.grant", equals: valid}
+  - no_journal: {unit: "amb1", re: "LAUNCH_GO|takeoff"}
+  - final_state: {unit: "amb1", fc_mode: [STABILIZE, GUIDED, LAND]}
+teardown: land
