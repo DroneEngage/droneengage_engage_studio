@@ -9,7 +9,12 @@
                                    run in parallel)
   ./sim down [name|--all]          stop one sim, or every sim
   ./sim sims                       generated sims and live process counts
-  ./sim status                     = ./sim ctl status
+  ./sim status [live|all]          = ./sim ctl status (live sims only;
+                                     `all` also lists downed ones)
+  ./sim web [name] [--print] [--planning]
+                                   webclient deep links for a sim: opens the
+                                   browser (planner with --planning);
+                                   --print only shows the URLs
   ./sim ctl [-s <sim>] <cmd> ...   operator console (./sim ctl for help)
   ./sim run <file.yaml> [--seed N] [--keep] [--hold|--view]
                                    run a test/scenario (owns the machine:
@@ -249,7 +254,10 @@ def main(argv):
                       f"{len(simlib.read_pids(n))} proc(s) alive")
         elif c == "status":
             import ctl
-            ctl.main(["status"])
+            ctl.main(["status"] + a)
+        elif c == "web":
+            import ctl
+            ctl.main(["web"] + a)
         elif c == "ctl":
             import ctl
             ctl.main(a)

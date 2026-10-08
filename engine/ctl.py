@@ -71,7 +71,11 @@ Processes:
       proc = sitl | de_comm | de_mavlink | <module> ; unit "server" with
       proc = de_server | de_auth | gcs_bridge | fake_server | all
   server_up                          relaunch every server process
-  status                             units, ports, live pids
+  status [live|all]                  units, ports, live pids, webclient
+                                     links; `all` also lists downed sims
+  web [name] [--print] [--planning]  the sim's webclient deep links -
+                                     opens the browser (planner page with
+                                     --planning) unless --print
   wait <s> | wait_online <timeout> | wait_ready <unit> <timeout>
   wait_journal <unit> <regex> <timeout>   (lines since the last `sim up`)
 """
@@ -1107,16 +1111,58 @@ def deployed_units():
     return [u for u in manifest()["units"] if "de_mavlink" in u["modules"]]
 
 
-def cmd_status():
+def cmd_web(name=None, open_browser=True, planning=False):
+    """Print the sim's webclient deep links (main view + planner) and
+    xdg-open the requested one unless --print or no opener exists. The
+    URLs carry the sim's auth endpoint (or a direct comm-server target
+    when no login exists) plus its GCS account - see simlib.webclient_url.
+    Each page gets its own GCS senderID: same-party connections kick each
+    other off the comm server."""
+    name = name or _ctx_name()
+    m = simlib.load_manifest(name)
+    srv = m["server"]
+    if srv["type"] != "external":
+        ws_proc = "fake_server" if srv["type"] == "fake" else "de_server"
+        if not simlib.read_pids(name).get(f"server.{ws_proc}"):
+            print(simlib.col_red(f"{name}: server is down") +
+                  " - the links below would open a dead page")
+    web = simlib.webclient_url(m)
+    plan = simlib.webclient_url(m, "/planning", "GCSPLN_" + name)
+    print("webclient: " + simlib.col_cyan(web))
+    print("planning:  " + simlib.col_cyan(plan))
+    if open_browser:
+        try:
+            subprocess.Popen(["xdg-open", plan if planning else web],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except OSError as e:
+            print(f"xdg-open failed: {e} - open the URL above by hand")
+
+
+def cmd_status(scope="live"):
     mans = manifests()
     if not mans:
         print("no sim generated - ./sim up <sim.yaml>")
         return
+    dead = set(mans) - set(simlib.live_sim_names())
+    if scope != "all":
+        mans = {n: m for n, m in mans.items() if n not in dead}
+    if not mans:
+        print(f"no live sim ({len(dead)} downed - `status all` shows them)")
+        return
     for name, m in mans.items():
         srv = m["server"]
         pids = simlib.read_pids(name)
-        print(f"sim {simlib.col_bold(name)} ({m.get('sim_file') or '-'}, "
-              f"{m['sim_hash']})")
+        # `online`/the webclient links only mean something while THIS
+        # sim's server proc is alive - its ports may already serve a
+        # different sim reusing the same spec. External sims own no local
+        # server process; the remote one is taken as up.
+        ws_proc = "fake_server" if srv["type"] == "fake" else "de_server"
+        srv_up = srv["type"] == "external" \
+            or bool(pids.get(f"server.{ws_proc}"))
+        print(f"sim {simlib.col_bold(name)}"
+              + ("" if pids else " " + simlib.col_red("(down)"))
+              + f" ({m.get('sim_file') or '-'}, {m['sim_hash']})")
         if srv["type"] == "external":
             conn = f"external {srv['ip']}:{srv['port']}" \
                    + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
@@ -1150,9 +1196,20 @@ def cmd_status():
                   f"[{u['block']}]{extra} "
                   f"udp:{simlib.col_cyan(u['ports']['de_comm'])}  "
                   + " ".join(bits))
-        online = ", ".join(sorted(online_parties(name)))
-        print("  online: "
-              + (simlib.col_green(online) if online else "-"))
+        if srv_up:
+            online = ", ".join(sorted(online_parties(name)))
+            print("  online: "
+                  + (simlib.col_green(online) if online else "-"))
+            print("  webclient: "
+                  + simlib.col_cyan(simlib.webclient_url(m)))
+            # a second GCS needs its own senderID - same-party
+            # connections kick each other off the comm server
+            print("  planning:  "
+                  + simlib.col_cyan(simlib.webclient_url(
+                      m, "/planning", "GCSPLN_" + name)))
+        else:
+            print("  (server down - `sim down` frees nothing here; "
+                  "`sim clean` removes the leftover run dir)")
 
 
 def main(argv):
@@ -1166,7 +1223,14 @@ def main(argv):
     c, a = argv[0], argv[1:]
 
     if c == "status":
-        cmd_status()
+        scope = a[0] if a else "live"
+        if scope not in ("live", "all") or len(a) > 1:
+            sys.exit("usage: status [live|all]")
+        cmd_status(scope)
+    elif c == "web":
+        names = [x for x in a if not x.startswith("-")]
+        cmd_web(names[0] if names else None, "--print" not in a,
+                "--planning" in a)
     elif c == "deploy":
         f = os.path.abspath(a[0])
         if _is_deploy_spec(f):

@@ -19,6 +19,10 @@ The server stamps `sd` with the authenticated party id (F6: the wire sender
 is the connection's identity, not a self-declared field) and `p` with full
 permissions, like the real server stamps the account permission bitmask.
 
+Binary ws frames ("json header" \0 payload - packed MAVLink telemetry:
+GPS/NavInfo/IMU) are routed on the header's tg/ty with sd+p stamped and
+the payload carried verbatim - same as js_chat_routing.js does.
+
 Per-link fault injection (the replacement for tc/netem, no root needed).
 Each party id owns a link state {loss %, delay ms, cut until} and one seeded
 RNG per direction. Faults apply in BOTH directions and to EVERY frame,
@@ -217,13 +221,20 @@ def targets_for(msg, src):
     return [c for c in conns.values() if c is not src]
 
 
-async def route(msg, src):
+async def route(msg, src, wire=None):
     # sd is server-stamped from the connection identity (F6); control-port
     # injections may carry an explicit sd to simulate any sender (e.g.
     # `event` fires as OTHER_UNIT_1).
     msg["sd"] = src.party if src else msg.get("sd") or GCS_SENDER
     msg["p"] = FULL_PERM
-    raw = json.dumps(msg)
+    if wire is None:
+        raw = json.dumps(msg)
+    else:
+        # binary frame ("json header" \0 payload): rebuild the stamped
+        # header, keep the payload verbatim (same as the real server,
+        # js_chat_routing.js fn_parseMessage)
+        sep = wire.find(b"\0")
+        raw = json.dumps(msg).encode() + (wire[sep:] if sep >= 0 else b"")
     tgts = targets_for(msg, src)
     if PRETTY:
         mt, tg = msg.get("mt"), msg.get("tg", "")
@@ -287,8 +298,20 @@ async def handler(ws):
     conn = None
     try:
         async for raw in ws:
+            # binary frames (sendMavlinkData_Packed & co: packed MAVLink
+            # telemetry - GPS/NavInfo/IMU) arrive as bytes: "json header"
+            # \0 payload. Route on the header like the real server does;
+            # before this, every binary frame died in json.loads and a
+            # GCS saw IDs/missions but never a position -> no drones on
+            # the webclient map.
+            binary = isinstance(raw, (bytes, bytearray))
             try:
-                msg = json.loads(raw)
+                if binary:
+                    raw = bytes(raw)
+                    sep = raw.find(b"\0")
+                    msg = json.loads(raw[:sep] if sep >= 0 else raw)
+                else:
+                    msg = json.loads(raw)
             except Exception:
                 continue
             if msg.get("ty") == "s" and msg.get("mt") == "de_auth":
@@ -332,7 +355,8 @@ async def handler(ws):
             # sender-side link: a cut/lossy link cannot send either
             if not link_for(conn.party).admit("rx", f"<- {conn.party}"):
                 continue
-            if msg.get("mt") == 9005:        # ping - pong back through the link
+            if msg.get("mt") == 9005 and not binary:
+                # ping - pong back through the link
                 # CLOCK.md T2.2: echo tm/b and stamp ts (like the real
                 # server's "s:OK:pong" + "ts:Date.now()")
                 ms = msg.get("ms")
@@ -350,13 +374,14 @@ async def handler(ws):
                         else raw.decode(errors="ignore")))
                 continue
             if PRETTY:
-                pretty_rx(msg.get("mt"), msg.get("ms", {}), conn.party,
-                          msg.get("tg", ""))
+                pretty_rx(msg.get("mt"), msg.get("ms")
+                          if isinstance(msg.get("ms"), dict) else {},
+                          conn.party, msg.get("tg", ""))
             else:
                 print(f"[server] rx sd={conn.party} mt={msg.get('mt')} "
                       f"tg={msg.get('tg', '')} ms={json.dumps(msg.get('ms', {}))[:600]}",
                       flush=True)
-            await route(msg, conn)
+            await route(msg, conn, raw if binary else None)
     finally:
         if conn is not None:
             conns.pop(conn.ws, None)

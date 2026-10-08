@@ -37,6 +37,7 @@ import json
 import os
 import re
 import sys
+import urllib.parse
 
 import yaml
 
@@ -123,6 +124,16 @@ SPACING_M = 20.0                    # default: units 20 m apart, northward
 
 GCS_PARTY = "GCS_FLEET"
 FULL_PERM = 0xFFFFFFFF
+
+# where a webclient is served on this machine (npm start default) - the
+# base of the deep link printed by `sim status` / opened by `./sim web`
+WEBCLIENT_URL = setting("SIM_WEBCLIENT_URL", "https://localhost:3000").rstrip("/")
+# hostname the deep links use for the sim's own 127.0.0.1 server ports.
+# Set to "airgap.local" (with a /etc/hosts entry + the ssl_airgap
+# root.crt trusted once) to silence every self-signed-cert dialog; the
+# ssl_airgap cert's SAN covers airgap.local only, not 127.0.0.1.
+# Only local targets are rewritten - external sims keep their own host.
+SIM_URL_HOST = setting("SIM_URL_HOST", "127.0.0.1")
 
 # Command-line login overrides (./sim --user/--password/--auth-server):
 # they win over the sim yaml, sim.local.env and the defaults. The `sim`
@@ -661,6 +672,36 @@ def cli_auth(user=None, password=None, auth_server=None):
                 CLI_AUTH["auth_port"] = int(port)
             except ValueError:
                 raise SimError(f"--auth-server {auth_server!r}: bad port")
+
+
+def webclient_url(sim, page="/", gcs_party=None):
+    """Click-to-login webclient deep link for a sim (manifest or resolved
+    sim dict - both carry ["name"] and ["server"]).
+
+    page     -> webclient route: "/" for the main view, "/planning" for
+                the planner. Same deep link, different page.
+    auth on  -> ?email&accesscode&authserver=host:port: the webclient does
+                the normal /w/wl login against that authenticator.
+    auth off -> ?server=host:port: no login exists (fake server / real
+                server in local_server_enabled) - the webclient connects
+                straight to the comm server's wss with a bare de_auth.
+    The GCS party defaults to GCSWEB_<sim>: deliberately NOT the bridge's
+    gcs_party and NOT shared between pages - the comm server kicks a
+    connection whose senderID is already online."""
+    srv = sim["server"]
+    # SIM_URL_HOST rewrites loopback targets (ports bound on this
+    # machine - spawned servers, and external stacks that happen to be
+    # local); a real remote address is left alone
+    def _h(h):
+        return SIM_URL_HOST if h in ("127.0.0.1", "localhost", "::1") else h
+    q = {"unitName": gcs_party or ("GCSWEB_" + sim["name"]), "connect": "1"}
+    if srv["auth"]:
+        q["email"] = srv["account"]["user"]
+        q["accesscode"] = srv["account"]["code"]
+        q["authserver"] = f"{_h(srv['auth_ip'])}:{srv['auth_port']}"
+    else:
+        q["server"] = f"{_h(srv['ip'])}:{srv['port']}"
+    return WEBCLIENT_URL + page + "?" + urllib.parse.urlencode(q, safe=":@")
 
 
 def mav_chan_index(params, serial):

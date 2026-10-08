@@ -6,6 +6,9 @@ Everything runs headless on one machine against the **real**
 `droneengage_server` (optionally with `droneengage_authenticator`) on its own
 ports. A fake server is available for link-fault tests.
 
+New here? The [User Guide](wiki/USER_GUIDE.md) is the plain-English start;
+this README is the technical reference.
+
 ```
 blocks/     unit types   - what one unit runs (SITL? which modules? config)
 sims/       fleets       - blocks composed: names, counts, placement, server
@@ -15,6 +18,7 @@ worlds/     ground truth - seeded worlds scenarios can load
 packages/   operations   - compiled ops the tests deploy
 templates/  scaffold     - the file ./sim new copies
 docs/       authoring    - SCENARIOS.md: the de.scenario/1 reference
+wiki/       user docs    - USER_GUIDE.md: the plain-English guide
 ```
 
 ## Setup (per machine)
@@ -46,7 +50,9 @@ and SITL's TCP ports listen on all interfaces.
 ./sim list                            # every runnable file + one-line summary
 ./sim run tests/smoke_copters.yaml    # brings the sim up if needed, runs, lands
 ./sim view scenarios/demos/world_canopy_viewer.yaml   # a demo + 3D viewer
-./sim ctl status                      # live processes / online units
+./sim ctl status                      # live processes / online units /
+                                      # the webclient deep link
+./sim web                             # open the webclient logged into this sim
 ./sim down
 ./sim clean --dry-run                 # what pruning var/run/ + var/results/ frees
 ```
