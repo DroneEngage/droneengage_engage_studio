@@ -52,9 +52,13 @@ Global flags for show/up/run/view/suite/validate:
   --shared                         run/view/suite stay additive next to
                                    live sims instead of downing them
                                    (= SIM_SHARED=1)
-  --slot-base <N>                  the slot every port derives from (wins
+  --slot-base <N|any>              the slot every port derives from (wins
                                    over the sim yaml's slot_base: and
-                                   SIM_SLOT_BASE)
+                                   SIM_SLOT_BASE); `any` picks the lowest
+                                   base whose ports are all free - a
+                                   shifted pick changes the sim hash, so
+                                   `run` does a fresh up instead of
+                                   reusing (pin a number when iterating)
 
 Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 (automated cases) and scenarios/ (human-run demos + examples).
@@ -212,16 +216,17 @@ def main(argv):
                 # suite subprocess inherits it the same way
                 os.environ["SIM_SHARED"] = "1"
             if flags.get("slot_base") is not None:
-                try:
-                    int(flags["slot_base"])
-                except ValueError:
-                    sys.exit("--slot-base needs an integer, got "
-                             f"{flags['slot_base']!r}")
+                sb = str(flags["slot_base"])
+                if sb != "any":
+                    try:
+                        int(sb)
+                    except ValueError:
+                        sys.exit("--slot-base needs an integer or "
+                                 f"'any', got {flags['slot_base']!r}")
                 # a real override (tops the sim yaml's slot_base:) that
                 # load_sim reads through setting() - env propagation
                 # covers the suite's per-test subprocesses too
-                os.environ["SIM_SLOT_BASE_OVERRIDE"] = \
-                    flags["slot_base"]
+                os.environ["SIM_SLOT_BASE_OVERRIDE"] = sb
             auth = {k: v for k, v in flags.items()
                     if k in ("user", "password", "auth_server")}
             if auth and c in ("suite", "validate"):
@@ -250,7 +255,8 @@ def main(argv):
             srv = sim["server"]
             print(f"server {srv['type']}{' +auth' if srv['auth'] else ''}: "
                   f"wss {srv['port']} control {srv['control_port']}"
-                  + (f" auth {srv['auth_port']}" if srv["auth"] else ""))
+                  + (f" auth {srv['auth_port']}" if srv["auth"] else "")
+                  + f" slot {sim['slot_base']}")
             for u in sim["units"]:
                 fc = u["fc"]
                 print(f"  {u['name']:12s} block={u['block']:16s} "

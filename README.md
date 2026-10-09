@@ -209,10 +209,16 @@ owns the machine and downs the other sims (a bare `sims/*.yaml`
 `run`/`view` is additive, like `up`). `--shared` applies the additive
 rules to a `run`/`view`/`suite` instead, and `--slot-base <N>` overrides
 the slot every port derives from for that invocation (wins over the
-sim's `slot_base:` and `SIM_SLOT_BASE`):
+sim's `slot_base:` and `SIM_SLOT_BASE`); `--slot-base any` picks the
+lowest base whose ports are all free - both against live sims and ports
+already bound on the host. Note the reuse caveat: the slot feeds the sim
+hash, so when `any` picks a different slot than last time the run does a
+fresh `up` (~1-2 min SITL warm-up) rather than reusing - pin a number
+when iterating, use `any` when you don't care.
 
 ```bash
 ./sim run tests/smoke_copters.yaml --shared --slot-base 90   # next to a live sim
+./sim run tests/smoke_copters.yaml --shared --slot-base any  # picks one itself
 ```
 
 `sims/quadcopter.yaml`, `sims/rover.yaml` and `sims/plane.yaml` are

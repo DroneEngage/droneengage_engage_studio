@@ -201,7 +201,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
             f"server {srv['type']}{' +auth' if srv['auth'] else ''} "
             f"on {srv['port']}")
     print(f"sim {simlib.col_bold(name)}: {len(m['units'])} unit(s), "
-          + simlib.col_cyan(conn))
+          f"slot {sim['slot_base']}, " + simlib.col_cyan(conn))
     # the resolved fleet: unit, vehicle and ports - the initial settings
     # the run is about to launch with
     for u in m["units"]:

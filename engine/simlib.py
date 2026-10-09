@@ -394,9 +394,12 @@ def load_sim(path_or_spec, base_dir=None):
     if len(home) == 3:
         home = home + (HOME[3],)
     # ./sim --slot-base <N> (SIM_SLOT_BASE_OVERRIDE) tops the file's
-    # slot_base: and the SIM_SLOT_BASE fallback
-    slot_base = int(setting("SIM_SLOT_BASE_OVERRIDE", "")
-                  or spec.get("slot_base", SLOT_BASE))
+    # slot_base: and the SIM_SLOT_BASE fallback; "any" resolves to the
+    # lowest fully-free base (below)
+    ov = str(setting("SIM_SLOT_BASE_OVERRIDE", ""))
+    if ov == "any":
+        return _load_sim_free_slot(dict(spec, name=name), base_dir)
+    slot_base = int(ov or spec.get("slot_base", SLOT_BASE))
     sim = {
         "name": name,
         "description": spec.get("description", "").strip(),
@@ -451,6 +454,52 @@ def load_sim(path_or_spec, base_dir=None):
         [sim["server"], sim["home"], sim["units"]],
         sort_keys=True).encode()).hexdigest()[:16]
     return sim
+
+
+def _load_sim_free_slot(spec, base_dir):
+    """SIM_SLOT_BASE_OVERRIDE=any: resolve the sim once per candidate
+    base, lowest first; the first whose whole port set is free wins.
+    "Free" means no clash with a live sim's manifest AND nothing already
+    bound on the host - ports_held catches the dev server or stray SITL
+    that is not a sim. A same-named live sim's ports are its own (`up`
+    restarts it); a unit-name clash is slot-independent, so fatal.
+    Candidates start at SLOT_BASE (the configured floor) and stop when a
+    port would pass 65535. A shifted pick changes the sim hash - `ensure`
+    then does a fresh up instead of reusing."""
+    live = live_sim_names()
+    prev = os.environ.get("SIM_SLOT_BASE_OVERRIDE")
+    try:
+        for cand in range(SLOT_BASE, SLOT_BASE + 200):
+            os.environ["SIM_SLOT_BASE_OVERRIDE"] = str(cand)
+            sim = load_sim(spec, base_dir)
+            ports = used_ports(sim)
+            if ports and max(ports) > 65535:
+                break                       # every port grows with it
+            names = {u["name"] for u in sim["units"]}
+            clash, own = False, set()
+            for other in live:
+                m = load_manifest(other)
+                if other == sim["name"]:
+                    own = used_ports(m)
+                    continue
+                if names & {u["name"] for u in m["units"]}:
+                    raise SimError(
+                        f"--slot-base any: unit names clash with live "
+                        f"sim {other!r} - no base fixes that; rename the "
+                        "units or down the sim first")
+                if ports & used_ports(m):
+                    clash = True
+                    break
+            if clash or ports_held(ports - own):
+                continue
+            return sim
+    finally:
+        if prev is None:
+            os.environ.pop("SIM_SLOT_BASE_OVERRIDE", None)
+        else:
+            os.environ["SIM_SLOT_BASE_OVERRIDE"] = prev
+    raise SimError("no free slot_base - every candidate base has a "
+                   "conflicting or already-bound port")
 
 
 def _sim_spec(path_or_spec, base_dir=None, _chain=()):
