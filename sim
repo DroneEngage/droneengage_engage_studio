@@ -48,6 +48,14 @@ sim.local.env SIM_*_AUTH_*):
   --auth-server <host[:port]>        the authenticator (external server
                                      with auth: true only)
 
+Global flags for show/up/run/view/suite/validate:
+  --shared                         run/view/suite stay additive next to
+                                   live sims instead of downing them
+                                   (= SIM_SHARED=1)
+  --slot-base <N>                  the slot every port derives from (wins
+                                   over the sim yaml's slot_base: and
+                                   SIM_SLOT_BASE)
+
 Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 (automated cases) and scenarios/ (human-run demos + examples).
 docs/SCENARIOS.md is the authoring reference. See README.md.
@@ -168,17 +176,23 @@ def _validate_file(f):
     return problems
 
 
-def _auth_flags(argv):
-    """Pull --user/--password/--auth-server <value> out of argv; they set
-    the sim's login and authenticator and may appear anywhere."""
+def _cli_flags(argv):
+    """Pull the global flags out of argv - they may appear anywhere on
+    the command line. --user/--password/--auth-server are the sim's login
+    overrides (show/up/run/view only); --shared keeps run/view/suite
+    additive next to live sims (the SIM_SHARED=1 semantics) and
+    --slot-base overrides the slot every port derives from."""
     rest, kw, i = [], {}, 0
     while i < len(argv):
         a = argv[i]
-        if a in ("--user", "--password", "--auth-server"):
+        if a in ("--user", "--password", "--auth-server", "--slot-base"):
             if i + 1 >= len(argv):
                 sys.exit(f"{a} needs a value")
             kw[a[2:].replace("-", "_")] = argv[i + 1]
             i += 2
+        elif a == "--shared":
+            kw["shared"] = True
+            i += 1
         else:
             rest.append(a)
             i += 1
@@ -191,8 +205,27 @@ def main(argv):
         return 0
     c, a = argv[0], argv[1:]
     try:
-        if c in ("show", "up", "run", "view"):
-            a, auth = _auth_flags(a)
+        if c in ("show", "up", "run", "view", "suite", "validate"):
+            a, flags = _cli_flags(a)
+            if flags.get("shared"):
+                # launcher._shared() reads os.environ at call time; the
+                # suite subprocess inherits it the same way
+                os.environ["SIM_SHARED"] = "1"
+            if flags.get("slot_base") is not None:
+                try:
+                    int(flags["slot_base"])
+                except ValueError:
+                    sys.exit("--slot-base needs an integer, got "
+                             f"{flags['slot_base']!r}")
+                # a real override (tops the sim yaml's slot_base:) that
+                # load_sim reads through setting() - env propagation
+                # covers the suite's per-test subprocesses too
+                os.environ["SIM_SLOT_BASE_OVERRIDE"] = \
+                    flags["slot_base"]
+            auth = {k: v for k, v in flags.items()
+                    if k in ("user", "password", "auth_server")}
+            if auth and c in ("suite", "validate"):
+                sys.exit(f"{c} takes no login overrides")
             if auth:
                 simlib.cli_auth(**auth)
         if c == "blocks":

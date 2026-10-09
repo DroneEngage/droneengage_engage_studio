@@ -393,7 +393,10 @@ def load_sim(path_or_spec, base_dir=None):
     home = tuple(spec.get("home", HOME))
     if len(home) == 3:
         home = home + (HOME[3],)
-    slot_base = int(spec.get("slot_base", SLOT_BASE))
+    # ./sim --slot-base <N> (SIM_SLOT_BASE_OVERRIDE) tops the file's
+    # slot_base: and the SIM_SLOT_BASE fallback
+    slot_base = int(setting("SIM_SLOT_BASE_OVERRIDE", "")
+                  or spec.get("slot_base", SLOT_BASE))
     sim = {
         "name": name,
         "description": spec.get("description", "").strip(),

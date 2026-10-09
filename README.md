@@ -206,7 +206,14 @@ logs and pids, so sims are fully independent:
 `-s` sim, else the only live sim; unit lookups (`arm quad1`, `logs`)
 search live sims first. `sim run` stays exclusive for tests - a test
 owns the machine and downs the other sims (a bare `sims/*.yaml`
-`run`/`view` is additive, like `up`).
+`run`/`view` is additive, like `up`). `--shared` applies the additive
+rules to a `run`/`view`/`suite` instead, and `--slot-base <N>` overrides
+the slot every port derives from for that invocation (wins over the
+sim's `slot_base:` and `SIM_SLOT_BASE`):
+
+```bash
+./sim run tests/smoke_copters.yaml --shared --slot-base 90   # next to a live sim
+```
 
 `sims/quadcopter.yaml`, `sims/rover.yaml` and `sims/plane.yaml` are
 ready-made single-box personal sims for an external server, on disjoint
