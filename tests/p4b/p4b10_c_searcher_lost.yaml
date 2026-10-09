@@ -33,6 +33,7 @@
 version: 1
 name: p4b10_c_searcher_lost
 seed: 7
+realtime: true
 transport: fake
 world: ../../worlds/sar_forest.yaml
 operation: ../../packages/sar_forest.deploy.json
