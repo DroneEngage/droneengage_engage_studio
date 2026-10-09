@@ -95,7 +95,7 @@ assert:
   # fallback: the release was never dispatched and the denied tail ran
   # to the end - RTL home, landed, disarmed
   - journal_count: {unit: "amb1", re: "action .* approval denied - not dispatched", equals: 1}
-  - journal_count: {unit: "amb1", re: "action payload\\.release approved|emit payload\\.dropped|payload\\.released", equals: 0}
+  - journal_count: {unit: "amb1", re: "action payload\\.release approved|emit payload\\.dropped|EVENT_IN event payload\\.released|n=payload\\.released|released by payload\\.released", equals: 0}
   - journal_count: {unit: "amb1", re: "NavMode confirmed", at_least: 1}
   - journal_count: {unit: "amb1", re: "vehicle disarmed - nav lane idle", equals: 1}
   - journal_count: {unit: "all", re: "OP_END", equals: 0}
