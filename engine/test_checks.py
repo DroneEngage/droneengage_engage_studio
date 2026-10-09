@@ -533,6 +533,31 @@ class T(unittest.TestCase):
         self.assertEqual(scenario._seed_slot_base(7, [{"block": "copter"}]),
                          10 + 7 * 25)
 
+    def test_slot_block_skips_host_held_port(self):
+        import socket
+        import scenario
+        import simlib
+        held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        held.bind(("0.0.0.0", 0))
+        port = held.getsockname()[1]
+        orig = (simlib.load_sim, simlib.used_ports, simlib.live_sim_names)
+        try:
+            simlib.load_sim = lambda spec: spec
+            simlib.used_ports = lambda sim: sim["ports"]
+            simlib.live_sim_names = lambda: []
+
+            def sim_at(sb):
+                return {"slot_base": sb,
+                        "ports": {port} if sb == 10 else set()}
+            self.assertEqual(
+                scenario._host_free_sim(sim_at, [10, 35])["slot_base"], 35)
+            self.assertEqual(
+                scenario._host_free_sim(sim_at, [10])["slot_base"], 10)
+        finally:
+            simlib.load_sim, simlib.used_ports, simlib.live_sim_names = orig
+            held.close()
+        self.assertEqual(simlib.ports_held({port}), [])
+
     # -------------------------------------- P5-10 recall / time to find
 
     def _truth_file(self, rows):

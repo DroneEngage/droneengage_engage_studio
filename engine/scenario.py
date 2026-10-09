@@ -253,17 +253,40 @@ def load_scenario(path, seed=None):
     # one port block per run: the scenario may pin slot_base, else it is
     # derived from the seed so --seeds runs never share ports (a parallel
     # `sim up` would still refuse a clash)
-    slot_base = int(raw.get("slot_base") or _seed_slot_base(seed, units))
-    scn["sim"] = {
-        "version": 1,
-        "name": re.sub(r"[^\w-]", "_", scn["name"]),
-        "server": _server_spec(scn, slot_base),
-        "home": list(home),
-        "slot_base": slot_base,
-        "units": units,
-        "render": raw.get("render"),
-    }
+    def sim_at(sb):
+        return {
+            "version": 1,
+            "name": re.sub(r"[^\w-]", "_", scn["name"]),
+            "server": _server_spec(scn, sb),
+            "home": list(home),
+            "slot_base": sb,
+            "units": units,
+            "render": raw.get("render"),
+        }
+
+    if raw.get("slot_base"):
+        scn["sim"] = sim_at(int(raw["slot_base"]))
+    else:
+        scn["sim"] = _host_free_sim(sim_at, _seed_slot_bases(seed, units))
     return scn
+
+
+def _host_free_sim(sim_at, bases):
+    """The first seed-ordered slot block whose ports no foreign process
+    holds (live sims' own ports don't count - the run downs or refuses
+    them). Falls back to the seed's block when every one is held."""
+    live = set()
+    for n in simlib.live_sim_names():
+        live |= simlib.used_ports(simlib.load_manifest(n))
+    for sb in bases:
+        spec = sim_at(sb)
+        held = simlib.ports_held(
+            simlib.used_ports(simlib.load_sim(spec)) - live)
+        if not held:
+            return spec
+        print(f"slot_base {sb}: port(s) {held} held by another process "
+              "on this host - trying the next block", flush=True)
+    return sim_at(bases[0])
 
 
 def _seed_slot_base(seed, units):
@@ -296,3 +319,20 @@ def _seed_slot_base(seed, units):
             f"{len(units)} units with module ports up to {top} fit no "
             "slot block - pin a lower slot_base or split the fleet")
     return ok[seed % len(ok)]
+
+
+def _seed_slot_bases(seed, units):
+    """Every fitting slot block, the seed's own first - the fallbacks
+    when a host process holds a port of the seed's block."""
+    first = _seed_slot_base(seed, units)
+    cands = [10 + 25 * i for i in range(9)]
+    i = cands.index(first)
+    rest = cands[i + 1:] + cands[:i]
+    out = [first]
+    for c in rest:
+        try:
+            if _seed_slot_base(cands.index(c), units) == c:
+                out.append(c)
+        except simlib.SimError:
+            pass
+    return out

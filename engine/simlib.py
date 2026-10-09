@@ -36,6 +36,7 @@ import hashlib
 import json
 import os
 import re
+import socket
 import sys
 import urllib.parse
 
@@ -1037,6 +1038,29 @@ def used_ports(sim):
             if u["fc"].get("pose_port"):
                 ports.add(u["fc"]["pose_port"])
     return ports
+
+
+def ports_held(ports):
+    """The ports some other process already binds on this host (TCP or
+    UDP, any address). The stub/module blocks (54000-60999) sit inside
+    Linux's ephemeral range, so a long-lived OS socket (wsdd, a browser)
+    can own one - the module then dies on bind and the run fails far
+    from the cause. Ports of live sims are the caller's business
+    (check_conflicts / the exclusive down)."""
+    held = []
+    for p in sorted(ports):
+        for kind in (socket.SOCK_STREAM, socket.SOCK_DGRAM):
+            s = socket.socket(socket.AF_INET, kind)
+            try:
+                if kind == socket.SOCK_STREAM:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind(("0.0.0.0", p))
+            except OSError:
+                held.append(p)
+                break
+            finally:
+                s.close()
+    return held
 
 
 def check_conflicts(sim):
