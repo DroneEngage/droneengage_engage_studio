@@ -85,6 +85,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import ssl
@@ -902,11 +903,13 @@ def _is_deploy_spec(path):
 
 def cmd_opdeploy(spec_path, timeout=60.0):
     """Two-phase deploy (P4A-09). The spec file holds
-      {"op": name, "run"?: id,
+      {"op": name, "run"?: id, "oh"?: op_hash, "opgraph"?: "<file>",
        "roles": {"<role>": {"pkg": "<file>", "units": ["copter1", ...]}}}
     - one package per role, one PREPARE per bound unit carrying the full
     bind map and the shared run id. Every bound unit must answer `ready`
-    or the deploy fails."""
+    or the deploy fails. A spec "opgraph" (SG-04, compile_op.js's
+    <prefix>.opgraph.json) is copied next to the op state so a debrief
+    finds the static graph without a GCS cloud save."""
     spec_path = os.path.abspath(spec_path)
     spec = simlib.load_config(spec_path)
     if not isinstance(spec.get("roles"), dict):
@@ -934,6 +937,26 @@ def cmd_opdeploy(spec_path, timeout=60.0):
         sys.exit("opdeploy: no op hash - set 'oh' or use 2.2 packages")
     if any(h not in ("", oh) for h in ohs):
         sys.exit("opdeploy: the role packages disagree on op_hash")
+    # SG-04: a spec's "opgraph" names the de.opgraph/1 sidecar relative to
+    # the spec (the same base the role pkgs resolve on); it must carry the
+    # deploy's op hash and is copied into the run dir for debriefs
+    opgraph = spec.get("opgraph")
+    if opgraph:
+        og_src = os.path.join(base, opgraph)
+        if not os.path.isfile(og_src):
+            sys.exit(f"opdeploy: spec 'opgraph' {opgraph!r} not found "
+                     f"next to {os.path.basename(spec_path)}")
+        try:
+            og = json.loads(simlib.strip_comments(open(og_src).read()))
+        except ValueError as e:
+            sys.exit(f"opdeploy: {opgraph} is not plain JSON ({e})")
+        if og.get("op_hash") not in (None, oh):
+            sys.exit("opdeploy: the opgraph op_hash disagrees with the "
+                     "deploy's op hash")
+        opgraph = os.path.join(simlib.run_dir(_ctx_name()),
+                               os.path.basename(og_src))
+        os.makedirs(os.path.dirname(opgraph), exist_ok=True)
+        shutil.copyfile(og_src, opgraph)
     bind = {u["party_id"]: role for u, role, _, _ in jobs}
     if len(bind) != len(jobs):
         sys.exit("opdeploy: a unit is bound twice")
@@ -961,9 +984,12 @@ def cmd_opdeploy(spec_path, timeout=60.0):
             print(f"{u['name']}: FAIL ({ans.get('why', '?')})")
             ok = False
     # even a partial deploy leaves state on the units - record it so
-    # opstart/opabort/opstatus can reach it
-    json.dump({"run": run, "op": op, "bind": bind},
-              open(_op_state_file(), "w"), indent=1)
+    # opstart/opabort/opstatus can reach it; "opgraph" is the run-dir copy
+    # of the static graph (SG-04) for harness-run debriefs
+    st = {"run": run, "op": op, "bind": bind}
+    if opgraph:
+        st["opgraph"] = opgraph
+    json.dump(st, open(_op_state_file(), "w"), indent=1)
     if not ok:
         sys.exit(1)
     print(f"op run {run}: all {len(jobs)} bound units READY")

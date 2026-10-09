@@ -25,8 +25,17 @@
  * compiler (core/mission/compile.ts compileOperation) with binding
  * {role, vehicle: role.vehicle ?? "copter"} and writes
  * <pkg-prefix>_<role>.pkg.json next to <pkg-prefix>.deploy.json -
- * the ctl deploy-spec shape ("op" + roles.{pkg,units}; pkg paths are
- * resolved relative to the spec file by engine/ctl.py cmd_opdeploy).
+ * the ctl deploy-spec shape ("op" + "oh" + "opgraph" + roles.{pkg,units};
+ * pkg paths are resolved relative to the spec file by engine/ctl.py
+ * cmd_opdeploy).
+ *
+ * SG-04: <pkg-prefix>.opgraph.json is written too - fn_opGraph
+ * (core/mission/graph/opGraph.ts) over the op plus the compiled per-role
+ * packages, the same de.opgraph/1 the GCS archives at deploy, so
+ * harness-run debriefs have the static graph without a cloud save. The
+ * deploy spec references it ("opgraph") and pins "oh" to the shared
+ * op_hash; the file is fn_opGraphJson canonical JSON, byte-stable for a
+ * given op + binding like the .pkg.json files.
  *
  * Unit ids: --binding names them explicitly. A role with no binding
  * gets <role>1..<role>N where N is role.count (the int, or count.max
@@ -195,6 +204,8 @@ if (roles === null || typeof roles !== 'object' ||
 
 const { compileOperation } = require(
     path.join(WC, 'src', 'js', 'core', 'mission', 'compile.ts'));
+const { fn_opGraph, fn_opGraphJson } = require(
+    path.join(WC, 'src', 'js', 'core', 'mission', 'graph', 'opGraph.ts'));
 
 /* GE-07: --caps builds the compile-time capability registry from a
    serialized unit view (fn_registryFromUnitCaps); without it the
@@ -240,7 +251,8 @@ function roleVehicle(name) {
 fs.mkdirSync(args.outDir, { recursive: true });
 
 let failed = false;
-const deploy = { op: op.op || pkgPrefix, roles: {} };
+const deploy = { op: op.op || pkgPrefix, oh: '', opgraph: '', roles: {} };
+const packages = {};
 for (const roleName of Object.keys(roles)) {
     const binding = { role: roleName, vehicle: roleVehicle(roleName) };
     const opts = {};
@@ -261,6 +273,7 @@ for (const roleName of Object.keys(roles)) {
     const pkgFile = `${pkgPrefix}_${roleName}.pkg.json`;
     fs.writeFileSync(path.join(args.outDir, pkgFile),
         `${JSON.stringify(res.package, null, 2)}\n`);
+    packages[roleName] = res.package;
     deploy.roles[roleName] = { pkg: pkgFile, units: roleUnits(roleName) };
     console.log(`${roleName}: ${pkgFile}` +
         ` (${res.package.schema}, ${res.package.fc_items.length} fc_items)` +
@@ -269,8 +282,22 @@ for (const roleName of Object.keys(roles)) {
 if (failed) {
     process.exit(1);
 }
+let graph;
+try {
+    graph = fn_opGraph(op, packages);
+} catch (e) {
+    console.error(`compile_op: fn_opGraph failed: ${e.message}`);
+    process.exit(1);
+}
+const opgraphFile = `${pkgPrefix}.opgraph.json`;
+fs.writeFileSync(path.join(args.outDir, opgraphFile),
+    `${fn_opGraphJson(graph)}\n`);
+deploy.oh = graph.op_hash;
+deploy.opgraph = opgraphFile;
 const deployFile = `${pkgPrefix}.deploy.json`;
 fs.writeFileSync(path.join(args.outDir, deployFile),
     `${JSON.stringify(deploy, null, 2)}\n`);
 console.log(`deploy spec: ${deployFile}`);
+console.log(`opgraph: ${opgraphFile} (${graph.schema}, ` +
+    `${graph.nodes.length} nodes, ${graph.edges.length} edges)`);
 process.exit(0);
