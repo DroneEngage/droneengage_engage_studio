@@ -39,7 +39,9 @@ Journal assertions keep the runner.py semantics (same helpers, same
   - stub determinism:    stub_deterministic - two same-seed --selftest
                          replays must produce byte-identical stub logs
   - 1087 status (bot):   final_state
-  - MAVLink mission:     fc_items_unchanged_without_cause
+  - MAVLink mission:     fc_items_unchanged_without_cause, mission_items
+                         (count on the FC), mission_pull (the GCS 1027
+                         chunk read-back the WebClient draws)
 """
 
 import hashlib
@@ -70,6 +72,7 @@ FC_LINE_RE = re.compile(
 UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
                 "journal_order", "no_journal", "final_state",
                 "fc_items_unchanged_without_cause", "mission_current",
+                "mission_items", "mission_pull",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
                 "detection_recall", "status_field"}
@@ -189,10 +192,10 @@ def _unit_pos_at(ctx, unit_name, t_ms):
 
 # ------------------------------------------------------ mission baseline
 
-def mission_signature(u, timeout=15):
-    """sha256 over the FC's mission items (seq,cmd,x,y,z), or None when
-    the download fails. The baseline is taken at scenario start;
-    fc_items_unchanged_without_cause compares at assert time."""
+def mission_download(u, timeout=15):
+    """The FC's mission item list [(seq, cmd, x, y, z)] or None when the
+    download fails - the serial0 read-back that proves a plan actually
+    landed. mission_signature hashes it; mission_items counts it."""
     m = ctl.mav(u, timeout=15)
     try:
         m.mav.mission_request_list_send(m.target_system,
@@ -211,11 +214,21 @@ def mission_signature(u, timeout=15):
                 return None
             items.append([it.seq, it.command, round(float(it.x), 4),
                           round(float(it.y), 4), round(float(it.z), 2)])
-        return hashlib.sha256(json.dumps(items).encode()).hexdigest()
+        return items
     except Exception:
         return None
     finally:
         m.close()
+
+
+def mission_signature(u, timeout=15):
+    """sha256 over the FC's mission items (seq,cmd,x,y,z), or None when
+    the download fails. The baseline is taken at scenario start;
+    fc_items_unchanged_without_cause compares at assert time."""
+    items = mission_download(u, timeout)
+    if items is None:
+        return None
+    return hashlib.sha256(json.dumps(items).encode()).hexdigest()
 
 
 def capture_baseline(ctx):
@@ -1238,6 +1251,75 @@ def _fc_items_unchanged(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
 
 
+def _mission_items(name, a, ctx):
+    """mission_items {unit, equals|at_least|at_most}: the FC's mission
+    item count from a full MAVLink read-back over serial0 - the "did the
+    plan actually land on the FC" number the capacity tests
+    (tests/capacity/) measure."""
+    ok, bits, vals, any_fc = True, [], [], False
+    for u in _units(a, ctx):
+        if not u["fc"]:
+            bits.append(f"{u['name']}: no fc - skipped")
+            continue
+        any_fc = True
+        items = mission_download(u)
+        if items is None:
+            ok = False
+            bits.append(f"{u['name']}: mission unreadable")
+            continue
+        vals.append(len(items))
+        good, txt = _cmp(a, len(items))
+        ok &= good
+        bits.append(f"{u['name']}: {txt}")
+    if ok and not any_fc:
+        return _r(name, "SKIP", None, "; ".join(bits))
+    return _r(name, "PASS" if ok else "FAIL",
+              sum(vals) / len(vals) if vals else None, "; ".join(bits))
+
+
+def _mission_pull(name, a, ctx):
+    """mission_pull {unit, secs, equals|at_least|at_most}: the plan
+    read-back the WebClient mission display uses - a RemoteExecute
+    {C:501} reload makes de_mavlink stream the FC mission as mt 1027
+    WPS chunks (ms.n items each, the last chunk carries ms.i=999
+    WAYPOINT_LAST_CHUNK). Counts the items a GCS would draw and
+    requires the terminating chunk, so a truncated stream fails the
+    bound AND the marker. 501 is ignored while is_gcs_blocked or a
+    waypoint transfer is in flight - give secs room after a big
+    upload."""
+    secs = float(a.get("secs", 90))
+    ok, bits, vals, any_fc = True, [], [], False
+    for u in _units(a, ctx):
+        if not u["fc"]:
+            bits.append(f"{u['name']}: no fc - skipped")
+            continue
+        any_fc = True
+        party = u["party_id"]
+        frame = {"ty": "i", "mt": 1005, "tg": party, "ms": {"C": 501}}
+        if ctl.server()["type"] == "fake":
+            got = ctl.gcs_roundtrip(
+                lambda _f, fr=frame: [(party, dict(fr))], secs)
+            chunks = [m for m in got.get(party, [])
+                      if m.get("mt") == 1027]
+        else:
+            chunks = ctl.ctrl_stream(
+                "reqm %g 1027 %s" % (secs, json.dumps([frame])), secs)
+        n = sum(int((m.get("ms") or {}).get("n", 0)) for m in chunks)
+        # an empty mission answers one bare {"n": 0} with no "i" at all
+        last = bool(chunks) and \
+            ((chunks[-1].get("ms") or {}).get("i") == 999 or
+             (len(chunks) == 1 and n == 0))
+        vals.append(n)
+        good, txt = _cmp(a, n)
+        ok &= good and last
+        bits.append(f"{u['name']}: {txt}; {len(chunks)} chunk(s), "
+                    f"last marker {'999' if last else 'MISSING'}")
+    if ok and not any_fc:
+        return _r(name, "SKIP", None, "; ".join(bits))
+    return _r(name, "PASS" if ok else "FAIL",
+              sum(vals) / len(vals) if vals else None, "; ".join(bits))
+
+
 def _no_fc_command_to_static(name, a, ctx):
     ok, bits, n_all = True, [], 0
     for u in _units(a, ctx):
@@ -1596,6 +1678,8 @@ DISPATCH = {
     "journal_consistent": _journal_consistent,
     "final_state": _final_state,
     "fc_items_unchanged_without_cause": _fc_items_unchanged,
+    "mission_items": _mission_items,
+    "mission_pull": _mission_pull,
     "no_fc_command_to_static": _no_fc_command_to_static,
     "max_latency": lambda n, a, c: _journal_delta(n, a, c, ms=True),
     "proc_alive": lambda n, a, c: _proc_state(n, a, c, True),

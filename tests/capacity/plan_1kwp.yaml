@@ -1,0 +1,43 @@
+# capacity/plan_1kwp - one 1000-item survey plan end to end, at size not
+# area. packages/plan_survey_1000.json (tools/gen_bigplan.py) packs a
+# takeoff, 998 NAV_WAYPOINTs on a single ~100 m line and an RTL into a
+# ~197 KB de.package/2. The scenario pushes it as ONE 1085 wire frame
+# through the real comm server to a plane whose BRD_SD_MISSION=32 raises
+# SITL mission storage to ~2184 items (the 16 kB default holds ~655 -
+# the overflow twin measures that boundary). What is measured: the wire
+# frame arriving intact (package upload accepted), de_comm's parse +
+# de_mavlink's FC write (mission_items reads the whole mission back over
+# serial0), the write duration (journal_time_delta prints upload ->
+# READY seconds), and the GCS plan pull (mission_pull sends the same
+# RemoteExecute 501 the WebClient mission panel uses and counts the
+# chunked 1027 WPS items a client draws; the last chunk must carry
+# i=999). PASS = no overflow anywhere in the path. For the visual leg -
+# WebClient mission list and Mavlink3DMap polyline - add
+# `render: {mode: viewer, headless: false}` and `./sim view` this file;
+# what those draw is exactly the 1027 stream mission_pull verifies.
+version: 1
+name: plan_1kwp
+transport: real
+settle_s: 10
+teardown: land
+fleet:
+  - {id: p1, cls: plane, params: {BRD_SD_MISSION: 32}}
+timeline:
+  - {t: 0, do: wait_online, unit: p1, timeout: 240}
+  # the package goes out as one raw 1085 frame instead of `do: deploy`:
+  # the deploy command's READY wait is capped at 30 s, while a capacity
+  # probe wants the true write time measured (journal_time_delta below)
+  - {t: 5, do: send, ty: i, mt: 1085, tg: p1,
+     ms: {pkg: "{PKG:plan_survey_1000.json}",
+          hash: "{HASH:plan_survey_1000.json}"}}
+  - {t: 10, do: wait_journal, unit: p1,
+     re: "package READY|nav load failed", timeout: 600}
+assert:
+  - journal_count: {unit: p1, re: "package upload accepted", at_least: 1}
+  - journal_count: {unit: p1, re: "package READY", at_least: 1}
+  - no_journal: {unit: p1, re: "nav load failed"}
+  - journal_time_delta: {u1: p1, u2: p1, ordered: true,
+                         re1: "package upload accepted",
+                         re2: "package READY", max_s: 600}
+  - mission_items: {unit: p1, equals: 1000}
+  - mission_pull: {unit: p1, equals: 1000, secs: 120}

@@ -1,0 +1,35 @@
+# capacity/plan_1kwp_overflow - the same 1000-item package to a plane on
+# DEFAULT SITL mission storage (16 kB flash layout, ~655 items). The FC
+# answers the 1000-item MISSION_COUNT with MAV_MISSION_NO_SPACE (ack:4);
+# de_comm retries the start mission's segment paged - still 1000 items -
+# and is rejected again. Expected: the wire frame + package parse still
+# succeed (the packet itself never overflowed), the capacity boundary is
+# hit and journaled once per attempt, and the unit reports the rejection
+# to the GCS instead of silently keeping a truncated plan. PASS =
+# graceful, visible refusal; a partial upload claimed READY or a hang
+# would FAIL. Note: if the FC's storage grows (e.g. BRD_SD_MISSION set),
+# this scenario correctly fails - the plan then FITS and its premise is
+# gone; regenerate a bigger fixture with tools/gen_bigplan.py --count.
+version: 1
+name: plan_1kwp_overflow
+transport: real
+settle_s: 10
+teardown: land
+fleet:
+  - {id: p1, cls: plane}
+timeline:
+  - {t: 0, do: wait_online, unit: p1, timeout: 240}
+  - {t: 5, do: send, ty: i, mt: 1085, tg: p1,
+     ms: {pkg: "{PKG:plan_survey_1000.json}",
+          hash: "{HASH:plan_survey_1000.json}"}}
+  - {t: 10, do: wait_journal, unit: p1,
+     re: "nav load failed|package READY", timeout: 600}
+assert:
+  - journal_count: {unit: p1, re: "package upload accepted", at_least: 1}
+  - journal_count: {unit: p1, re: "full layout rejected \\(ack:4\\)",
+                    equals: 1}
+  - journal_count: {unit: p1, re: "nav load failed", at_least: 1}
+  - no_journal: {unit: p1, re: "package READY"}
+  - journal_time_delta: {u1: p1, u2: p1, ordered: true,
+                         re1: "package upload accepted",
+                         re2: "nav load failed", max_s: 600}

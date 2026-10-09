@@ -177,6 +177,8 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `link_offline` | `unit`, `at_least`, `min_s` | monitor saw it drop |
 | `telemetry_value` | `unit`, `field`, bounds, `pick: min\|max` | tlog sample(s) |
 | `fc_mode` | `unit`, `mode` | last FC mode |
+| `mission_items` | `unit`, `equals`/`at_least`/`at_most` | FC mission count, serial0 read-back |
+| `mission_pull` | `unit`, `secs`, bounds | the GCS 501→1027 plan read-back a WebClient draws; last chunk `i=999` required |
 | `roster_value` | `unit`, `key`, `equals`/`…` | roster field |
 | `operator_log_count` | `re`, bounds | the bot's decisions |
 | `distance_to` | `unit`, `re`, `truth`, `min_m`/`max_m` | world truth geometry |

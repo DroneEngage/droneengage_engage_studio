@@ -31,6 +31,7 @@ introduced them:
 | `closed_env/` | sealed-environment clock semantics |
 | `verify/` | deploy-time verifier gate (deadlocks, bad ops) |
 | `precland/` | precision landing (stub and real de_precland) |
+| `capacity/` | oversized plans: wire/package/FC/GCS capacity and the no-space boundary |
 | `camera/`, `gpio/`, `sound/`, `payload/` | per-module capability events and actions |
 
 Every file opens with a one-paragraph `#` header saying what it proves;
