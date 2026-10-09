@@ -327,6 +327,44 @@ class T(unittest.TestCase):
             bot._policy_once()
         self.assertEqual(len(sent), 1)
 
+    def test_decision_resent_while_request_pends(self):
+        """js_approvalQueue.js parity: a lost 1090 is resent every
+        APPROVAL_RESEND_S (fresh envelope) until the request leaves the
+        unit's 1087."""
+        import asyncio
+        import operator_bot
+        bot = operator_bot.OperatorBot(
+            {"name": "t", "units": [], "server": {"type": "fake"}})
+        wire = []
+
+        class Client:
+            async def send(self, msg):
+                wire.append(msg)
+
+            def fleet_ms(self):
+                return 0
+        bot._client = Client()
+        bot._submit = lambda coro: asyncio.run(coro)
+        bot._on_frame({"mt": 1087, "sd": "u1", "ms": {"run": "R",
+                       "approvals": [{"req": "r1", "kind": "action"}]}})
+        asyncio.run(bot._decide_async("u1", "r1", "action", "approve", 0))
+        self.assertEqual(len(wire), 1)
+        t0 = bot._answers[("u1", "r1")]["last"]
+        bot._resend_answers(t0 + 1.0)
+        self.assertEqual(len(wire), 1)
+        bot._resend_answers(t0 + bot.APPROVAL_RESEND_S)
+        self.assertEqual(len(wire), 2)
+        a, b = wire[0]["ms"], wire[1]["ms"]
+        self.assertEqual(b["p"], a["p"])
+        self.assertNotEqual(b["id"], a["id"])
+        self.assertGreater(b["seq"], a["seq"])
+        # the vehicle consumed it - no more resends
+        bot._on_frame({"mt": 1087, "sd": "u1",
+                       "ms": {"run": "R", "approvals": []}})
+        bot._resend_answers(t0 + 100)
+        self.assertEqual(len(wire), 2)
+        self.assertNotIn(("u1", "r1"), bot._answers)
+
     def test_policy_launch_none_never_answers(self):
         """P4F-07: approve.launch: none is the 'no operator' posture -
         the request pends forever, other kinds still get their rules."""

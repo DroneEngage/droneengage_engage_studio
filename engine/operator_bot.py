@@ -34,6 +34,8 @@ import gcs_client
 
 
 class OperatorBot:
+    APPROVAL_RESEND_S = 3.0           # js_approvalQueue.js C_RESEND_MS
+
     def __init__(self, manifest, policy=None, log_path=None,
                  party="GCS_OPERATOR"):
         self.m = manifest
@@ -68,6 +70,11 @@ class OperatorBot:
         self._replies = []            # recent non-roster frames (max 5000)
         self._n_replies = 0           # frames ever appended (ring index base)
         self._decided = set()         # (party, req) the policy already sent
+        # js_approvalQueue.js: a sent decision is resent every
+        # C_RESEND_MS while the request stays in the unit's 1087 - the
+        # status broadcast is the only ack, a lost 1090 must not let the
+        # request time out
+        self._answers = {}            # (party, req) -> {kind, decision, last}
         self._was_connected = True    # start() logs the first connect
 
     # ------------------------------------------------------------- log
@@ -190,6 +197,7 @@ class OperatorBot:
                     if req not in live:
                         del seen[req]
                         self._decided.discard((sd, req))
+                        self._answers.pop((sd, req), None)
             elif mt == 1090 and isinstance(ms, dict):
                 p = ms.get("p") or {}
                 name = ms.get("n") or ""
@@ -353,9 +361,32 @@ class OperatorBot:
                 return False
             await asyncio.sleep(0.4)
         env = self._approval_envelope(party, pick, decision, kind)
-        return await self._send_async(
+        ok = await self._send_async(
             {"ty": "i", "mt": 1090, "tg": party, "ms": env},
             "APPROVAL", f"{decision} {party} req={pick} kind={kind}")
+        with self._lock:
+            self._answers[(party, pick)] = {"kind": kind,
+                                            "decision": decision,
+                                            "last": time.monotonic()}
+        return ok
+
+    def _resend_answers(self, now):
+        """Resend each decision every APPROVAL_RESEND_S while its request
+        is still pending in the unit's 1087 (fresh envelope each time,
+        like the WebClient)."""
+        due = []
+        with self._lock:
+            for (party, req), a in self._answers.items():
+                if req not in (self._pending.get(party) or {}):
+                    continue
+                if now - a["last"] >= self.APPROVAL_RESEND_S:
+                    a["last"] = now
+                    due.append((party, req, a["kind"], a["decision"]))
+        for party, req, kind, decision in due:
+            env = self._approval_envelope(party, req, decision, kind)
+            self._submit(self._send_async(
+                {"ty": "i", "mt": 1090, "tg": party, "ms": env},
+                "APPROVAL_RESEND", f"{decision} {party} req={req} kind={kind}"))
 
     def decide(self, unit, req=None, kind=None, decision="approve",
                wait_s=10.0):
@@ -717,6 +748,7 @@ class OperatorBot:
     def _policy_once(self):
         now = time.monotonic()
         self._resend_watch(now)
+        self._resend_answers(now)
         up = self._client.connected.is_set()
         if up and not self._was_connected:
             self.log("SESSION", f"{self.party} online (reconnect)")
