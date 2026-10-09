@@ -381,7 +381,7 @@ def load_sim(path_or_spec, base_dir=None):
     the sim file's stem or an explicit `name:` - owns var/run/<name>/."""
     spec, src = _sim_spec(path_or_spec, base_dir)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
-                           "slot_base", "units", "render"}
+                           "slot_base", "units", "render", "speedup"}
     if unknown:
         raise SimError(f"sim: unknown keys {sorted(unknown)}")
     if spec.get("version", 1) != 1:
@@ -400,9 +400,16 @@ def load_sim(path_or_spec, base_dir=None):
         "server": load_server(spec.get("server") or {}, slot_base),
         "home": list(home),
         "slot_base": slot_base,
+        # SITL --speedup: sim `speedup:` > SIM_SPEEDUP > 1. de_comm's
+        # timers stay wall-clock - only a fast first pass, never timing
+        # evidence (realtime: true scenarios pin 1)
+        "speedup": float(spec.get("speedup")
+                         or setting("SIM_SPEEDUP", "1")),
         "units": [],
         "render": _render_spec(spec.get("render"), slot_base),
     }
+    if sim["speedup"] < 1:
+        raise SimError("sim: speedup must be >= 1")
     if not sim["server"]["gcs_party"]:
         # parallel external sims share one real server: give each its own
         # GCS party so their bridges don't fight over GCS_FLEET
@@ -836,6 +843,7 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             "vehicle": fc["vehicle"],
             "model": fc.get("model", kind["model"]),
             "sysid": slot, "instance": slot,
+            "speedup": sim["speedup"],
             "pilot_port": 5760 + 10 * slot,
             "aux_port": 5762 + 10 * slot,
             "fcb_port": 7660 + 10 * slot,
@@ -1307,14 +1315,16 @@ def gen_unit(u, sim, catalog):
         serial5 = " --serial5 tcp:5" if fc.get("pose_port") else ""
         serial4 = (" --serial4 udpclient:127.0.0.1:%d" % fc["mav_port"]
                    if fc.get("mav_port") else "")
+        speedup = (" --speedup %g" % fc["speedup"]
+                   if fc.get("speedup", 1) != 1 else "")
         write_text(os.path.join(udir, "launch.sitl.sh"),
                    "#!/bin/bash\ncd '%s'\n'%s' -w -M %s -I %d --sysid %d "
                    "--home %.7f,%.7f,%.1f,%.0f --defaults '%s' "
-                   "--serial0 tcp:0 --serial1 tcp:%d --serial2 tcp:2%s%s &\n"
+                   "--serial0 tcp:0 --serial1 tcp:%d --serial2 tcp:2%s%s%s &\n"
                    "child=$!\necho $child > '%s'\nwait $child\n"
                    % (sdir, sitl_bin, fc["model"], fc["instance"], fc["sysid"],
                       p["lat"], p["lng"], p["alt"], p["yaw"], defaults,
-                      fc["fcb_port"], serial5, serial4,
+                      fc["fcb_port"], serial5, serial4, speedup,
                       pid_path(u["sim"], u["name"], "sitl")), 0o755)
     u.pop("config", None)
     u.pop("parm_files", None)
@@ -1645,7 +1655,8 @@ def generate(sim, sim_file=None):
                 "server_procs": server_procs,
                 "render_procs": render_procs,
                 "render": sim.get("render"),
-                "home": sim["home"], "units": units}
+                "home": sim["home"], "speedup": sim.get("speedup", 1),
+                "units": units}
     write_json(manifest_path(sim["name"]), manifest, indent=2)
     return manifest
 

@@ -262,6 +262,7 @@ def load_scenario(path, seed=None):
             "slot_base": sb,
             "units": units,
             "render": raw.get("render"),
+            **({"speedup": 1} if scn["realtime"] else {}),
         }
 
     if raw.get("slot_base"):

@@ -128,7 +128,12 @@ def main():
     ap.add_argument("--seeds", default="1,2,3")
     ap.add_argument("--out", default=os.path.join(RESULTS, "nightly"))
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--speedup", type=float, default=None,
+                    help="SITL --speedup for every non-realtime scenario "
+                         "(a fast first pass - rerun at 1 for evidence)")
     a = ap.parse_args()
+    if a.speedup:
+        os.environ["SIM_SPEEDUP"] = f"{a.speedup:g}"
     seeds = [int(s) for s in a.seeds.split(",") if s.strip()]
     files = yaml_files(a.roots)
     if not files:

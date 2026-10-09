@@ -850,6 +850,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
         "wall_s": round(wall, 1),
         "commits": _commits(),
         "speedup": speedups,
+        "speedup_requested": m.get("speedup", 1),
         "realtime": {"required": scn["realtime"],
                      "ok": ctx["realtime_ok"],
                      "note": ctx["realtime_note"]},
@@ -929,6 +930,9 @@ def main(argv):
         elif argv[i] == "--seed":
             seeds = [int(argv[i + 1])]
             i += 2
+        elif argv[i] == "--speedup":
+            os.environ["SIM_SPEEDUP"] = argv[i + 1]
+            i += 2
         else:
             t_file = argv[i]
             i += 1
@@ -936,7 +940,7 @@ def main(argv):
         return run_suite(os.path.abspath(suite), seeds, keep)
     if not t_file:
         sys.exit("usage: run_scenario.py <file.yaml> [--seed N] [--keep] "
-                 "[--hold] | --suite <dir> [--seeds 1,2,3]")
+                 "[--hold] [--speedup N] | --suite <dir> [--seeds 1,2,3]")
     return run_scenario(t_file, seed=seeds[0], keep=keep, hold=hold)
 
 
