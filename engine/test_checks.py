@@ -802,6 +802,16 @@ class TNoSep(unittest.TestCase):
                       h_m=10, v_m=10)
         self.assertEqual(r["status"], "PASS")
 
+    def test_layer_exactly_v_m_apart_passes(self):
+        """the P4B-10 e_loss30 pair: 82 m / 76 m layers over homes 1 cm
+        apart read 5.99 m AMSL - still the 6 m layer; 5.9 m is not."""
+        self.assertEqual(self._run({"u1": [self.fix(0, 30.0, 666.07)],
+                                    "u2": [self.fix(0, 30.0, 660.08)]},
+                                   h_m=25, v_m=6)["status"], "PASS")
+        self.assertEqual(self._run({"u1": [self.fix(0, 30.0, 666.0)],
+                                    "u2": [self.fix(0, 30.0, 660.1)]},
+                                   h_m=25, v_m=6)["status"], "FAIL")
+
     def test_close_pair_fails_far_pair_passes(self):
         self.assertEqual(self._run({"u1": [self.fix(0, 30.0)],
                                     "u2": [self.fix(0, 30.00001)]}, h_m=10)["status"], "FAIL")

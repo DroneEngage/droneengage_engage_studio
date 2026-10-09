@@ -603,6 +603,12 @@ def _signals_in_range(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", total, "; ".join(bits))
 
 
+# no_sep_violation: the planner layers units exactly min_vsep_m apart, and
+# AMSL readings of units on different home spots differ by a cm or so
+# (82 m over one home vs 76 m over another read 5.99 m) - still the layer
+SEP_V_TOL_M = 0.05
+
+
 def _no_sep_violation(name, a, ctx):
     units = [u["name"] for u in ctl.with_fc(_units(a, ctx))]
     if len(units) < 2:
@@ -645,7 +651,7 @@ def _no_sep_violation(name, a, ctx):
                 if v_min is not None \
                         and r1.get("alt_m") is not None \
                         and r2.get("alt_m") is not None \
-                        and abs(r1["alt_m"] - r2["alt_m"]) >= v_min:
+                        and abs(r1["alt_m"] - r2["alt_m"]) >= v_min - SEP_V_TOL_M:
                     separated_only = True
                     continue          # vertically separated - no violation
                 if worst[0] is None or d < worst[0]:
