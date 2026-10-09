@@ -17,6 +17,7 @@
 version: 1
 name: p4f05_time_limit
 seed: 7
+realtime: true
 transport: fake
 world: ../../worlds/sar_forest.yaml
 operation: ../../packages/p4f05_time_limit.deploy.json
