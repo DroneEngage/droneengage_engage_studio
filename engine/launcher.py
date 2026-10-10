@@ -275,6 +275,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                  if fc else "no-fc ")
               + " ".join(f"{mod}:{simlib.col_cyan(p)}"
                          for mod, p in u["ports"].items())
+              + (f" linkpx={simlib.col_cyan(u['link_proxy']['port'])}"
+                 f"/{simlib.col_cyan(u['link_proxy']['ctrl'])}"
+                 if u.get("link_proxy") else "")
               + (f" acc={u['account']['user']}" if u.get("account") else ""))
 
     # ---- server side ----

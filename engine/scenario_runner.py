@@ -732,7 +732,12 @@ def _link_monitor(ctx, stop):
     Works on fake (control `list`) and real (bridge `list`) alike. A fake
     server is also tailed for "[server] ... connected/disconnected": a
     drop+reconnect inside one poll window (a hung de_comm resuming) still
-    lands as an offline->online pair."""
+    lands as an offline->online pair.
+
+    SL-0009: units behind a link_proxy are read off the proxy instead -
+    the bridge `list` is a 60 s "heard lately" window that cannot see a
+    30 s cut, while the proxy knows the exact session state. Its proc
+    log is tailed like the fake's for sub-poll transitions."""
     path = os.path.join(ctx["results_dir"], "links.jsonl")
     events = ctx["link_events"]
     # a fake server is also tailed for "[server] <party> connected/
@@ -745,6 +750,19 @@ def _link_monitor(ctx, stop):
     log_re = re.compile(r"\[server\] (?:d:)?(\S+) "
                         r"(connected|disconnected)")
     log_pos = 0
+    # SL-0009: proxied units - per-party proxy session state, plus a
+    # tail of each link_proxy log ("session established/closed")
+    proxied = {u["party_id"]: u for u in ctx["manifest"]["units"]
+               if u.get("link_proxy")}
+    px_logs = {p: {"path": os.path.join(
+                    simlib.unit_dir(u), "logs", "link_proxy.log"),
+                   "pos": 0}
+               for p, u in proxied.items()}
+    px_re = re.compile(r"session (established|closed)")
+    # a falsy proxy `list` (transient connect blip) must not flap the
+    # party - offline needs two consecutive falsy polls; the px log's
+    # "session closed" stays the precise edge
+    px_falsy = {}
     was = None
 
     def record(p, online, now):
@@ -758,21 +776,40 @@ def _link_monitor(ctx, stop):
 
     while not stop.is_set():
         try:
-            online = ctl.online_parties(ctx["sim"])
+            online = ctl.online_parties(ctx["sim"]) - set(proxied)
         except BaseException:
             # server/control port unreachable (server_down fault, restart
             # in flight): nobody is online at a server that is not there
             online = set()
+        for p, u in proxied.items():
+            try:
+                st = ctl.link_proxy_online(u)
+            except BaseException:
+                st = None
+            if st:
+                px_falsy[p] = 0
+                online.add(p)
+            else:
+                px_falsy[p] = px_falsy.get(p, 0) + 1
+                if was is not None and p in was and px_falsy[p] < 2:
+                    online.add(p)        # suspect once, offline twice
         if was is None and not online:
             stop.wait(1.5)
             continue
-        if was is None and log_path:
-            # the first sample is the baseline; skip the log's history -
-            # a reused sim replays the last run's transitions otherwise
-            try:
-                log_pos = os.path.getsize(log_path)
-            except OSError:
-                log_pos = 0
+        if was is None and (log_path or px_logs):
+            # the first sample is the baseline; skip every log's
+            # history - a reused sim replays the last run's transitions
+            # otherwise
+            if log_path:
+                try:
+                    log_pos = os.path.getsize(log_path)
+                except OSError:
+                    log_pos = 0
+            for st in px_logs.values():
+                try:
+                    st["pos"] = os.path.getsize(st["path"])
+                except OSError:
+                    st["pos"] = 0
         now = int(time.time() * 1000)
         if was is not None:
             if log_path:
@@ -790,6 +827,28 @@ def _link_monitor(ctx, stop):
                     if not mm or mm.group(1) not in unit_parties:
                         continue
                     p, on = mm.group(1), mm.group(2) == "connected"
+                    if on == (p in was):
+                        continue
+                    record(p, on, now)
+                    if on:
+                        was.add(p)
+                    else:
+                        was.discard(p)
+            for p, st in px_logs.items():
+                # a proxied session that died and re-established inside
+                # one poll still lands as an offline->online pair
+                try:
+                    with open(st["path"], errors="ignore") as f:
+                        f.seek(st["pos"])
+                        lines = f.readlines()
+                        st["pos"] = f.tell()
+                except OSError:
+                    lines = []
+                for ln in lines:
+                    mm = px_re.search(ln)
+                    if not mm:
+                        continue
+                    on = mm.group(1) == "established"
                     if on == (p in was):
                         continue
                     record(p, on, now)
@@ -1130,8 +1189,11 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
            "proc_events": [], "restore_events": []}
     _CTX[0] = ctx
     _SCN[0] = scn
-    fake = m["server"]["type"] == "fake"
-    if fake:
+    # link-capable transports start clean: the fake server's links{} and
+    # every unit's link_proxy survive sim reuse
+    link_capable = m["server"]["type"] == "fake" or \
+        any(u.get("link_proxy") for u in m["units"])
+    if link_capable:
         runner.run_ctl("link_clear", "all")
     ctx["marks"] = {u["name"]: simlib.journal_mark(u) for u in m["units"]}
     bot = operator_bot.OperatorBot(m, scn["operator"],
@@ -1270,7 +1332,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
             "evidence", "FAIL", None,
             "every assertion SKIPped - the run proved nothing "
             "(set allow_all_skip: true to accept)"))
-    if fake:
+    if link_capable:
         runner.run_ctl("link_clear", "all")
     td = "none" if keep else scn["teardown"]
     if td in ("land", "reset"):

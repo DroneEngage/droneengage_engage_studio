@@ -153,6 +153,7 @@ Server types:
 |---|---|---|
 | `{type: real}` | `droneengage_server` in `local_server_enabled` mode | default: the real routing |
 | `{type: real, auth: true}` | + `droneengage_authenticator` (single account); every unit and the GCS log in | the login path |
+| `{type: real, link_proxy: true}` | + `engine/link_proxy.py` per unit between de_comm and the server wss | the SL-0007 link model on the real routing: byte-level stall / Gilbert-Elliot / bandwidth / jitter / delay / cut, per unit (auth: false only) |
 | `{type: fake}` | `engine/fake_fleet_server.py` | seeded per-link loss / delay / cut plus the SL-0007 link model: per-direction loss, Gilbert-Elliot bursts (drop or in-order stall), bandwidth cap, jitter, named profiles |
 | `{type: external, host, port}` | nothing - your own running server stack | personal sims on your real servers |
 
@@ -186,7 +187,12 @@ read or changed.
 With a real or external server, `engine/gcs_bridge.py` holds one GCS
 session (`GCS_FLEET`, or `GCS_<sim>` for external sims) and serves the
 same control protocol as the fake server, so `./sim ctl` behaves the
-same on all of them. Link faults are refused on a real server.
+same on all of them. Link faults on a real server are refused unless
+`link_proxy: true` is set - then `./sim ctl link <unit> ...` goes to that
+unit's own proxy (the GCS bridge session is never proxied). Message-level
+loss (`loss`, `loss_tx`, `loss_rx`, loss-knob profiles like
+`uplink_dead`) and the clock faults stay fake-only: a raw TLS relay
+cannot see inside the stream.
 
 ### Running several sims in parallel
 
@@ -234,6 +240,7 @@ ready-made single-box personal sims for an external server, on disjoint
 | de_mavlink -> SITL (serial1) | 7660+10k, sysid k |
 | fcb proxy listen / control (`fcb_proxy: true`) | 7760+10k / 7860+10k |
 | de_comm / de_mavlink / de_camera s2s | 62000 / 63000 / 64000 + 10k |
+| link proxy relay / control (`link_proxy`) | 61500 / 61501 + 10k |
 | comm server wss / control | 62008 / 62009 (`server.port`) |
 | authenticator https / s2s | port+10 / port+11 |
 
@@ -263,9 +270,12 @@ short:
   `dur_s` and always by `sim down`), `clock_step` (per-process clock skew
   on a `faketime: true` unit's de_comm via libfaketime's
   `FAKETIME_TIMESTAMP_FILE`), `reboot` (de_comm under a new
-  boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
-  (fake server only), `link` (`{unit, set}` - raw link-model sub-lines:
-  `stall`, `ge`, `bw`, `jitter`, `loss_tx`, `loss_rx`, `profile`),
+  boot id), `server_up`, `loss` (fake server only) / `delay` /
+  `link_cut` / `link_clear`
+  (fake server, or real with `link_proxy: true`), `link` (`{unit, set}` -
+  raw link-model sub-lines:
+  `stall`, `ge`, `bw`, `jitter`, `loss_tx`, `loss_rx`, `profile`; loss*
+  is fake-only),
   `commline`, `send`, `udp_chunks` (`{unit, module,
   drop_pct, reorder, dup_pct, seed}` - knobs on the unit's
   module↔de_comm chunk proxy), `write_file` (`{unit, module,

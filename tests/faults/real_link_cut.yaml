@@ -1,0 +1,28 @@
+# faults/real_link_cut - SL-0009: a 30 s cut on ONE unit through its
+# per-unit link proxy on `transport: {type: real, link_proxy: true}`.
+# The proxy sits between s1's de_comm and the real droneengage_server's
+# wss port; `link_cut` kills the live session and accept-drops s1's
+# re-dials until the window ends - so the real server sees the unit's
+# own de_auth vanish and come back. Unlike the fake-server link faults,
+# the offline/online evidence is the server's routing of the
+# client-provided sender id, not a stamped `sd`.
+# s2 keeps its link the whole window - the fault is per-unit - and the
+# GCS bridge is never proxied.
+version: 1
+name: real_link_cut
+transport: {type: real, link_proxy: true}
+settle_s: 50
+fleet:
+  - {id: s1, cls: static}
+  - {id: s2, cls: static}
+timeline:
+  - {t: 3, fault: link_cut, unit: s1, dur_s: 30}
+assert:
+  # the monitor reads the proxy's session: killed at once, offline for
+  # the window, re-established when the accept-drop ends
+  - link_offline: {unit: s1, at_least: 1, min_s: 5}
+  - link_offline: {unit: s2, eq: 0}
+  - proc_alive: {unit: s1, proc: de_comm}
+  - proc_alive: {unit: s1, proc: link_proxy}
+  # the cut clears at ~t=33s: link online again well within a minute
+  - recovers_after_fault: {within_s: 60}

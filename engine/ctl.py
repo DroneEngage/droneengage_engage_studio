@@ -57,17 +57,21 @@ Pilot (units with an fc):
   land <unit>   copter LAND / rover HOLD, wait disarmed; plane -> reset
   reset <unit>  power-cycle: SITL at home + de_comm + modules, wait ready
 
-Link faults (server type fake only):
-  link_cut <unit> <s> | kick <unit> | loss <unit> <%> | delay <unit> <ms> |
-  link_clear <unit> | links | clock offset <ms> |
-  noclock <unit> <0|1>                drop/restore the unit's clock stamps
-                                      (P5-07 no_time_sync: it stays tq=0)
+Link faults (server type fake, or real with `link_proxy: true`):
+  link_cut <unit> <s> | kick <unit> | delay <unit> <ms> |
+  link_clear <unit> | links
+  loss <unit> <%> | clock offset <ms> |
+  noclock <unit> <0|1>                message-level / server-stamp faults -
+                                      server type fake only (the byte
+                                      proxy cannot see inside TLS)
   link <unit> <sub> [args...]         raw link_model control (SL-0007):
                                       stall <s> | ge <p_gb> <p_bg> <lg>
                                       <lb> [drop|stall] | bw <B/s> |
                                       jitter <ms> | loss_tx <%> |
                                       loss_rx <%> | profile <name> |
                                       cut <s> | clear
+                                      (loss_tx/loss_rx and profiles with
+                                      loss knobs are fake-only)
 
 Vehicle faults:
   param <unit> <NAME> <value>       SITL param set, verified: the
@@ -235,21 +239,24 @@ def with_fc(units):
 
 FAULT_CMDS = ("link", "kick", "clock", "stats", "noclock")
 
+LOSS_MSG = ("loss is a message-level fault - it needs "
+            "`server: {type: fake}` (the byte-level link proxy relays "
+            "TLS and cannot drop a frame inside it)")
 
-def ctrl(line, read_s=0.4, sim=None):
-    """Send one control line; print the reply. Returns the reply text.
-    Exits non-zero when the backend reports ERR."""
-    srv = manifest(sim)["server"]
-    if line.split()[0] in FAULT_CMDS and srv["type"] != "fake":
-        sys.exit(f"'{line.split()[0]}' is a link fault - it needs "
-                 "`server: {type: fake}` in the sim (this sim runs "
-                 f"{srv['type']} server)")
-    port = srv["control_port"]
+
+def _ctrl_exchange(port, line, read_s=0.4):
+    """One control line to a control port -> raw reply text. The write
+    side is half-closed so the backend ends its read loop and closes -
+    recv returns on EOF instead of always burning read_s."""
     try:
         s = socket.create_connection(("127.0.0.1", port), 3)
     except OSError as e:
         sys.exit(f"cannot reach the sim control port {port}: {e}")
     s.sendall((line + "\n").encode())
+    try:
+        s.shutdown(socket.SHUT_WR)
+    except OSError:
+        pass
     s.settimeout(read_s)
     data = b""
     try:
@@ -261,7 +268,76 @@ def ctrl(line, read_s=0.4, sim=None):
     except socket.timeout:
         pass
     s.close()
-    text = data.decode(errors="replace")
+    return data.decode(errors="replace")
+
+
+def _link_fault(line, srv, units, read_s):
+    """A FAULT_CMDS line on a non-fake server (SL-0009): routed to the
+    units' link_proxy control ports when `link_proxy` is on. Byte-level
+    faults only - message-level loss and the clock stamps stay fake-only
+    (a TLS relay cannot see inside the stream)."""
+    head = line.split()[0]
+    if head in ("clock", "noclock"):
+        sys.exit(f"'{head}' rewrites server-stamped fields - it needs "
+                 "`server: {type: fake}`")
+    proxies = {u["party_id"]: u["link_proxy"]["ctrl"]
+               for u in units if u.get("link_proxy")}
+    if not proxies:
+        sys.exit(f"'{head}' is a link fault - it needs "
+                 "`server: {type: fake}` in the sim (this sim runs "
+                 f"{srv['type']} server), or `server: {{type: real, "
+                 "link_proxy: true}}` for the byte-level faults")
+    if head == "stats":
+        forwards = {p: "stats" for p in sorted(proxies)}
+    else:
+        parts = line.split(None, 2)
+        if len(parts) < 2:
+            sys.exit(f"'{line}' needs <party> <fault> [args]")
+        party, rest = parts[1], (parts[2] if len(parts) > 2 else "")
+        if head == "link":
+            if not rest:
+                sys.exit(f"'{line}' needs a link fault (stall|ge|bw|"
+                         "jitter|delay|profile|cut|clear)")
+            sub = rest.split()[0]
+            if sub in ("loss", "loss_tx", "loss_rx"):
+                sys.exit(LOSS_MSG)
+            if sub == "profile":
+                import link_model
+                name = rest.split()[1] if len(rest.split()) > 1 else ""
+                prof = link_model.PROFILES.get(name)
+                if prof and any(k in prof
+                                for k in ("loss", "loss_tx", "loss_rx")):
+                    sys.exit(f"profile {name}: {LOSS_MSG}")
+        targets = sorted(proxies) if party == "all" else [party]
+        forwards = {}
+        for p in targets:
+            if p not in proxies:
+                if head == "link" and rest.split()[0] == "clear":
+                    print(f"{p}: no link proxy - nothing to clear")
+                    continue
+                sys.exit(f"{p}: no link proxy (not a unit of this sim, "
+                         "or it runs without `link_proxy`)")
+            forwards[p] = f"{head} {p} {rest}".rstrip()
+    failed = False
+    for p, fwd in forwards.items():
+        text = _ctrl_exchange(proxies[p], fwd, read_s)
+        out = "\n".join(ln for ln in text.splitlines() if ln != "OK")
+        if out:
+            print(out)
+        failed = failed or any(ln.startswith("ERR")
+                               for ln in text.splitlines())
+    if failed:
+        sys.exit(1)
+
+
+def ctrl(line, read_s=0.4, sim=None):
+    """Send one control line; print the reply. Returns the reply text.
+    Exits non-zero when the backend reports ERR."""
+    m = manifest(sim)
+    srv = m["server"]
+    if line.split()[0] in FAULT_CMDS and srv["type"] != "fake":
+        return _link_fault(line, srv, m["units"], read_s)
+    text = _ctrl_exchange(srv["control_port"], line, read_s)
     out = "\n".join(ln for ln in text.splitlines() if ln != "OK")
     if out:
         print(out)
@@ -988,6 +1064,10 @@ def online_parties(sim=None):
     try:
         s = socket.create_connection(("127.0.0.1", port), 3)
         s.sendall(b"list\n")
+        try:
+            s.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
         s.settimeout(2)
         data = b""
         while True:
@@ -1002,6 +1082,37 @@ def online_parties(sim=None):
     except OSError:
         return set()
     return {ln[2:] for ln in data.decode().splitlines() if ln.startswith("d:")}
+
+
+def link_proxy_online(u):
+    """SL-0009: the unit's link_proxy `list` - True when the session is
+    live AND established (a re-dial still held by a stall reads offline,
+    like an un-authed ws on the fake). None = proxy unreachable."""
+    pr = u.get("link_proxy")
+    if not pr:
+        return None
+    try:
+        s = socket.create_connection(("127.0.0.1", pr["ctrl"]), 3)
+        s.sendall(b"list\n")
+        try:
+            s.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+        s.settimeout(2)
+        data = b""
+        while True:
+            try:
+                chunk = s.recv(4096)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            data += chunk
+        s.close()
+    except OSError:
+        return None
+    return any(ln == "d:" + u["party_id"]
+               for ln in data.decode().splitlines())
 
 
 # ------------------------------------------------------------- GCS reads

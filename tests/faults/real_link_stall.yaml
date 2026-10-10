@@ -1,0 +1,56 @@
+# faults/real_link_stall - SL-0009: the link_model's GE stall behaviour
+# on `transport: {type: real, link_proxy: true}`, byte for byte through
+# s1's proxy in front of the real server.
+#
+# t=3: a Gilbert-Elliot stall profile (frequent short bad phases that
+# hold every byte in order, plus seeded jitter) rides the link for 40 s.
+# With s1's watchdog raised to 20 s the bursts hold the stream ~1-4 s
+# each - well under it - so the session stays established and every
+# held byte is still delivered, a bounded-latency link that drops
+# nothing. The `beacon` step hears the unit's presence 1004 inside the
+# window: the uplink kept delivering, just delayed.
+#
+# t=50: a 40 s hard stall - the "long burst". It outlasts the watchdog,
+# the unit's ws dies ~20 s in and its re-dial stays un-registered at the
+# server (every byte still held) until the window ends; the whole queue
+# then flushes in order and it rejoins. s2 is untouched - the fault is
+# per-unit and the GCS bridge connects direct.
+version: 1
+name: real_link_stall
+transport: {type: real, link_proxy: true}
+settle_s: 75
+fleet:
+  - id: s1
+    cls: static
+    # watchdog/reconnect raised to 20 s: GE bad phases are per-chunk
+    # bursts and on a static unit's quiet link a tick is ~1.5 s, so the
+    # named lte_stall burst lengths could occasionally outlast the
+    # stock ~5 s watchdog. 20 s keeps the GE window a bounded-latency
+    # case with certainty while the 40 s hard stall still kills it.
+    config: {de_comm: {max_allowed_ping_delay_in_ms: 20000}}
+  - {id: s2, cls: static}
+timeline:
+  # GE stall (not the named profile: lte_stall's 0.2 p_bg runs are too
+  # long for a quiet link; same model, shorter mean burst)
+  - t: 3
+    fault: link_profile
+    unit: s1
+    cmds: ["ge 0.10 0.5 0 0 stall", "jitter 60"]
+    dur_s: 40
+  # inside the GE window: the uplink still delivers, just held briefly -
+  # the unit's presence beacons are heard within the window, never
+  # dropped (bounded delay)
+  - {t: 10, do: beacon, unit: s1, seconds: 18, min: 1}
+  # the long burst: 40 s buffered blackout, outlasting the 20 s watchdog
+  - {t: 50, fault: link_stall, unit: s1, dur_s: 40}
+assert:
+  - link_offline: {unit: s2, eq: 0}
+  # exactly one long offline (the hard stall ~t=70..90): the GE window
+  # above never produced one
+  - link_offline: {unit: s1, at_least: 1, at_most: 1, min_s: 15}
+  # at most one extra brief interval - the GE auto-clear at ~t=43 can
+  # bounce the session once if it purged held bytes
+  - link_offline: {unit: s1, at_most: 2}
+  - proc_alive: {unit: s1, proc: link_proxy}
+  - proc_alive: {unit: s1, proc: de_comm}
+  - recovers_after_fault: {within_s: 90}
