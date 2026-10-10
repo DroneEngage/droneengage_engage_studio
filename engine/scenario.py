@@ -61,8 +61,9 @@ CLS_BLOCK = {"copter": "copter", "plane": "plane", "rover": "rover",
 
 # every kind scenario_runner._fault implements
 FAULT_KINDS = ("link_cut", "loss", "delay", "gcs_disconnect", "server_down",
-               "kill", "restart", "module_kill", "battery", "gps_off",
-               "server_clock", "no_time_sync", "rc_override", "mode")
+               "kill", "restart", "module_kill", "freeze", "battery",
+               "gps_off", "server_clock", "no_time_sync", "rc_override",
+               "mode")
 
 
 def is_legacy_spec(raw):

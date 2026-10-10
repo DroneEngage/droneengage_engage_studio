@@ -928,5 +928,73 @@ class TModuleLog(unittest.TestCase):
                                       marks))
 
 
+class TFreeze(unittest.TestCase):
+    """TASK-04: ctl freeze/unfreeze signal only pidfile pids that
+    simlib.pid_is_ours accepts - a recycled/foreign pid is refused."""
+
+    def _proc_state(self, pid):
+        return open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1] \
+            .split()[0]
+
+    def _pidfile(self, td, owner="u1", proc="de_mavlink"):
+        pids = os.path.join(td, "tsim", "pids")
+        os.makedirs(pids, exist_ok=True)
+        return os.path.join(pids, f"{owner}.{proc}.pid")
+
+    def test_freeze_refuses_foreign_pid(self):
+        """`sleep 30` is a live pid whose cmdline does not point into this
+        repo - pid_is_ours rejects it, so freeze must not signal it."""
+        import signal
+        import subprocess
+        import ctl as ctl_mod
+        child = subprocess.Popen(["sleep", "30"])
+        try:
+            with tempfile.TemporaryDirectory() as td, \
+                    mock.patch.object(simlib, "RUN_DIR", td), \
+                    mock.patch.object(ctl_mod, "owner_sim",
+                                      lambda o: "tsim"):
+                with open(self._pidfile(td), "w") as f:
+                    f.write(str(child.pid))
+                self.assertFalse(ctl_mod.freeze_proc("u1", "de_mavlink"))
+                self.assertFalse(
+                    ctl_mod._signal_proc("u1", "de_mavlink",
+                                         signal.SIGCONT))
+            self.assertNotEqual(self._proc_state(child.pid), "T")
+        finally:
+            child.kill()
+            child.wait()
+
+    def test_freeze_unfreeze_own_pid(self):
+        """A child tagged with RUN_DIR on its cmdline is 'ours': freeze
+        stops it (state T) and unfreeze resumes it."""
+        import signal
+        import subprocess
+        import time
+        import ctl as ctl_mod
+        with tempfile.TemporaryDirectory() as td, \
+                mock.patch.object(simlib, "RUN_DIR", td), \
+                mock.patch.object(ctl_mod, "owner_sim",
+                                  lambda o: "tsim"):
+            child = subprocess.Popen(
+                [sys.executable, "-c",
+                 "import time; time.sleep(30)", os.path.join(td, "tsim")])
+            try:
+                with open(self._pidfile(td), "w") as f:
+                    f.write(str(child.pid))
+                self.assertTrue(ctl_mod.freeze_proc("u1", "de_mavlink"))
+                self.assertEqual(self._proc_state(child.pid), "T")
+                self.assertTrue(
+                    ctl_mod._signal_proc("u1", "de_mavlink",
+                                         signal.SIGCONT))
+                for _ in range(20):
+                    if self._proc_state(child.pid) != "T":
+                        break
+                    time.sleep(0.1)
+                self.assertNotEqual(self._proc_state(child.pid), "T")
+            finally:
+                child.kill()
+                child.wait()
+
+
 if __name__ == "__main__":
     unittest.main()

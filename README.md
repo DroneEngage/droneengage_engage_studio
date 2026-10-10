@@ -254,7 +254,8 @@ short:
 - **steps:** `deploy`, `arm`, `start`, `stop`, `clear`, `fire`, `mode`,
   `land`, `reset`, `wait`, `wait_journal`, `wait_log`, `wait_online`,
   `wait_ready`,
-  `kill` / `restart` (also `unit: server`), `reboot` (de_comm under a new
+  `kill` / `restart` / `freeze` / `unfreeze` (also `unit: server`;
+  `freeze` is SIGSTOP - a hang, not a crash), `reboot` (de_comm under a new
   boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
   (fake server only), `commline`, `send`, `write_file` (`{unit, module,
   path, json}` - a JSON file into `var/run/<unit>/<module>/`, for module file

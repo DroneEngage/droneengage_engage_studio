@@ -35,6 +35,8 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - link_cut: {unit: 1, seconds: 20}
       - kill: {unit: 1, proc: de_comm}   # unit: server, proc: de_server
       - restart: {unit: 1, proc: de_comm}
+      - freeze: {unit: 1, proc: de_mavlink, dur_s: 30}   # SIGSTOP - a hang,
+      - unfreeze: {unit: 1, proc: de_mavlink}            # not a crash
       - reset: 1                         # SITL back to home, disarmed
       - mode: {unit: 1, mode: RTL}
       - wait_online: 60                  # every unit seen by the GCS
@@ -111,7 +113,8 @@ def unit_arg(arg, key="unit", default="all"):
 _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
                "wait_ready", "loss",
                "delay", "link_cut", "kick", "commline", "link_clear", "kill",
-               "restart", "journal", "mode", "disarm", "fire", "fc",
+               "restart", "freeze", "unfreeze",
+               "journal", "mode", "disarm", "fire", "fc",
                "write_file"}
 
 
@@ -254,6 +257,12 @@ def run_step(step, t, marks):
         return run_ctl(name, unit, arg["seconds"])
     if name in ("kill", "restart"):
         return run_ctl(name, unit, arg.get("proc", "all"))
+    if name in ("freeze", "unfreeze"):
+        # freeze <unit> <proc> [dur_s]: a hang (SIGSTOP), not a crash;
+        # dur_s runs the resume inside the same ctl call for a `do:` step
+        return run_ctl(name, unit, arg.get("proc", arg.get("module")),
+                       *([arg["dur_s"]] if name == "freeze" and
+                         arg.get("dur_s") else []))
     if name == "write_file":
         # GE-07: JSON file(s) into var/run/<unit>/<module>/ - drives module
         # file seams (de_rpi_gpio's gpio_inputs.json). `also` folds extra

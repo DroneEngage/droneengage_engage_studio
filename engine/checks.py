@@ -364,11 +364,20 @@ def _status_field(name, a, ctx):
 
 
 def _journal_order(name, a, ctx):
+    """journal_order {unit, first, then, proc?}: `first`'s earliest match
+    must precede a `then` match. With `proc` the ordered lines come from
+    logs/<proc>.log instead of the journal - a module's stdout (de_comm's
+    own "Module X is not responding") never reaches the journal."""
     r1, r2 = re.compile(a["first"]), re.compile(a["then"])
     ok, bits = True, []
     marks = ctx["marks"]
     for u in _units(a, ctx):
-        lines = simlib.journal_lines(u, marks.get(u["name"]))
+        if a.get("proc"):
+            lines = [(0, "-", "-", "-", "RAW", ln, "log")
+                     for ln in simlib.log_match(u, a["proc"], r"",
+                                                marks.get(u["name"]))]
+        else:
+            lines = simlib.journal_lines(u, marks.get(u["name"]))
         i1 = next((i for i, l in enumerate(lines)
                    if simlib.line_hit(l, r1)), None)
         i2 = next((i for i, l in enumerate(lines)

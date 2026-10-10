@@ -1,0 +1,24 @@
+# freeze_mavlink: SIGSTOP de_mavlink for 30 s - the process stays alive
+# (its sockets stay open, nothing is read) but goes silent, so de_comm's
+# module watchdog (~5 s silence) declares it dead: "Module FCB_CTRL is
+# not responding." in de_comm's stdout. On SIGCONT the periodic
+# re-registration flips the fcb flag back: "Module Found: fcb". The
+# ordered lost->recovered pair (journal_order over the proc log) plus
+# proc_alive prove a HANG is not a crash: the pid never changed.
+version: 1
+name: f_freeze_mavlink
+transport: fake
+realtime: true
+settle_s: 30
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 3, fault: freeze, unit: c1, proc: de_mavlink, dur_s: 30}
+  - {t: 10, do: wait_log, unit: c1, module: de_comm,
+     re: "Module FCB_CTRL is not responding", timeout: 60}
+  - {t: 36, do: wait_log, unit: c1, module: de_comm,
+     re: "Module Found: fcb", timeout: 60}
+assert:
+  - journal_order: {unit: c1, proc: de_comm,
+                    first: "is not responding", then: "Module Found: fcb"}
+  - proc_alive: {unit: c1, proc: de_mavlink}

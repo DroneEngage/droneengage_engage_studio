@@ -359,6 +359,20 @@ def _fault(step, scn, ctx):
         return runner.run_ctl("restart", unit, a.get("proc", "all"))
     if kind == "module_kill":
         return runner.run_ctl("kill", unit, a["module"])
+    if kind == "freeze":
+        # SIGSTOP - a hang, not a crash: sockets stay open, the process
+        # is alive-but-silent (TASK-04). dur_s schedules the SIGCONT like
+        # every other timed fault's restore; without it the unit stays
+        # frozen until teardown (launcher SIGCONTs before killing).
+        proc = a.get("proc") or a.get("module")
+        if not proc:
+            print("  fault freeze needs proc:|module:", flush=True)
+            return False
+        ok = runner.run_ctl("freeze", unit, proc)
+        if ok and dur:
+            _schedule(ctx, float(dur), runner.run_ctl,
+                      "unfreeze", unit, proc)
+        return ok
     if kind == "battery":
         ok = runner.run_ctl("param", unit, "SIM_BATT_VOLTAGE",
                             a.get("volts", 10.5))
@@ -421,10 +435,33 @@ def _fault(step, scn, ctx):
 def _link_monitor(ctx, stop):
     """Poll the server's online list; journal every unit's link
     transitions to links.jsonl (link_offline reads ctx["link_events"]).
-    Works on fake (control `list`) and real (bridge `list`) alike."""
+    Works on fake (control `list`) and real (bridge `list`) alike. A fake
+    server is also tailed for "[server] ... connected/disconnected": a
+    drop+reconnect inside one poll window (a hung de_comm resuming) still
+    lands as an offline->online pair."""
     path = os.path.join(ctx["results_dir"], "links.jsonl")
     events = ctx["link_events"]
+    # a fake server is also tailed for "[server] <party> connected/
+    # disconnected": a drop+reconnect inside one poll window (a hung
+    # de_comm resuming) still lands as an offline->online pair
+    log_path = (os.path.join(simlib.run_dir(ctx["sim"]), "server", "logs",
+                             "fake_server.log")
+                if ctx["server"]["type"] == "fake" else None)
+    unit_parties = {u["party_id"] for u in ctx["manifest"]["units"]}
+    log_re = re.compile(r"\[server\] (?:d:)?(\S+) "
+                        r"(connected|disconnected)")
+    log_pos = 0
     was = None
+
+    def record(p, online, now):
+        events.setdefault(p, []).append((now, online))
+        try:
+            with open(path, "a") as f:
+                f.write(json.dumps(
+                    {"t_ms": now, "party": p, "online": online}) + "\n")
+        except OSError:
+            pass
+
     while not stop.is_set():
         try:
             online = ctl.online_parties(ctx["sim"])
@@ -435,26 +472,41 @@ def _link_monitor(ctx, stop):
         if was is None and not online:
             stop.wait(1.5)
             continue
+        if was is None and log_path:
+            # the first sample is the baseline; skip the log's history -
+            # a reused sim replays the last run's transitions otherwise
+            try:
+                log_pos = os.path.getsize(log_path)
+            except OSError:
+                log_pos = 0
         now = int(time.time() * 1000)
         if was is not None:
+            if log_path:
+                # every new log line arrived since the last poll - replay
+                # in order, deduped against was (poll may see it too)
+                try:
+                    with open(log_path, errors="ignore") as f:
+                        f.seek(log_pos)
+                        lines = f.readlines()
+                        log_pos = f.tell()
+                except OSError:
+                    lines = []
+                for ln in lines:
+                    mm = log_re.search(ln)
+                    if not mm or mm.group(1) not in unit_parties:
+                        continue
+                    p, on = mm.group(1), mm.group(2) == "connected"
+                    if on == (p in was):
+                        continue
+                    record(p, on, now)
+                    if on:
+                        was.add(p)
+                    else:
+                        was.discard(p)
             for p in was - online:
-                events.setdefault(p, []).append((now, False))
-                try:
-                    with open(path, "a") as f:
-                        f.write(json.dumps(
-                            {"t_ms": now, "party": p,
-                             "online": False}) + "\n")
-                except OSError:
-                    pass
+                record(p, False, now)
             for p in online - was:
-                events.setdefault(p, []).append((now, True))
-                try:
-                    with open(path, "a") as f:
-                        f.write(json.dumps(
-                            {"t_ms": now, "party": p,
-                             "online": True}) + "\n")
-                except OSError:
-                    pass
+                record(p, True, now)
         was = online
         stop.wait(1.5)
 

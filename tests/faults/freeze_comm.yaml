@@ -1,0 +1,17 @@
+# freeze_comm: SIGSTOP de_comm itself for 30 s. The ws socket stays
+# open so the server never drops it while frozen - the drop comes AFTER
+# SIGCONT, when the wall-clock ping watchdog sees a >10 s gap, shuts the
+# socket and re-dials: the link monitor sees offline -> online. A hung
+# de_comm therefore looks different from a dead one only in how the
+# outage ends (reconnect on resume, not a fresh pid).
+version: 1
+name: f_freeze_comm
+transport: fake
+settle_s: 60
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, fault: freeze, unit: s1, proc: de_comm, dur_s: 30}
+assert:
+  - link_offline: {unit: s1, at_least: 1}
+  - proc_alive: {unit: s1, proc: de_comm}

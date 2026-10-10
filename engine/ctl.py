@@ -66,6 +66,10 @@ Vehicle faults:
 
 Processes:
   kill <unit> <proc> | restart <unit> <proc> | start_proc <unit> <proc>
+  freeze <unit> <proc> [s]          SIGSTOP the process - it stays alive
+                                    (sockets open) but silent: a hang, not
+                                    a crash. With <s> it self-resumes.
+  unfreeze <unit> <proc>            SIGCONT a frozen process
   bootid <unit>                     new boot id (DE_BOOT_ID_FILE) - the next
                                     de_comm start counts as a reboot
       proc = sitl | de_comm | de_mavlink | <module> ; unit "server" with
@@ -517,6 +521,45 @@ def kill_proc(owner, proc):
     except OSError:
         print(f"{owner}.{proc}: pid {pid} already gone")
     os.unlink(pf)
+    return True
+
+
+def _signal_proc(owner, proc, sig):
+    """SIGSTOP/SIGCONT one pidfile-tracked process. Like kill_proc it
+    refuses a pid pid_is_ours rejects (recycled or foreign) - a freeze
+    that silently no-ops would fake a hang that never happened. The
+    pidfile stays: the process still exists, just stopped."""
+    pf = simlib.pid_path(owner_sim(owner), owner, proc)
+    if not os.path.isfile(pf):
+        print(f"{owner}.{proc}: no pidfile")
+        return False
+    pid = int(open(pf).read().strip())
+    if not os.path.isdir(f"/proc/{pid}"):
+        print(f"{owner}.{proc}: pid {pid} already gone")
+        return False
+    if not simlib.pid_is_ours(pid):
+        print(f"{owner}.{proc}: pid {pid} is not a sim process - "
+              "refusing to signal it")
+        return False
+    try:
+        os.kill(pid, sig)
+    except OSError as e:
+        print(f"{owner}.{proc}: signal to pid {pid} failed: {e}")
+        return False
+    what = "stopped" if sig == signal.SIGSTOP else "resumed"
+    print(f"{owner}.{proc}: {what} pid {pid}")
+    return True
+
+
+def freeze_proc(owner, proc, secs=None):
+    """SIGSTOP now; with `secs` block and SIGCONT after it (the bare
+    command leaves the resume to `unfreeze` - the scenario's dur_s
+    schedules that call so the timeline is not held)."""
+    if not _signal_proc(owner, proc, signal.SIGSTOP):
+        return False
+    if secs is not None:
+        time.sleep(float(secs))
+        return _signal_proc(owner, proc, signal.SIGCONT)
     return True
 
 
@@ -1524,6 +1567,21 @@ def main(argv):
         for owner, p in owners:
             if c in ("restart", "start_proc"):
                 start_proc(owner, p)
+    elif c in ("freeze", "unfreeze"):
+        if a[0] == "server":
+            owners = [("server", p)
+                      for p in server_procs(a[1] if len(a) > 1 else "all")]
+        else:
+            owners = [(u["name"], a[1]) for u in resolve(a[0])]
+        ok = True
+        for owner, p in owners:
+            if c == "freeze":
+                ok &= freeze_proc(owner, p,
+                                  float(a[2]) if len(a) > 2 else None)
+            else:
+                ok &= _signal_proc(owner, p, signal.SIGCONT)
+        if not ok:
+            sys.exit(1)
     elif c == "bootid":
         # P4F-03: rewrite the unit's boot-id file so its next de_comm
         # start counts as a reboot (DE_BOOT_ID_FILE hook)

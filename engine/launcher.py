@@ -40,6 +40,26 @@ def _pids_dirs(name=None):
     return dirs
 
 
+def _proc_stopped(pid):
+    """True when /proc shows the pid in state T (SIGSTOP/freeze fault)."""
+    try:
+        return open(f"/proc/{pid}/stat").read().rsplit(")", 1)[1] \
+            .split()[0] == "T"
+    except (OSError, IndexError):
+        return False
+
+
+def _unstop(pid):
+    """SIGCONT a stopped pid before the SIGTERM below: a frozen process
+    never runs its TERM handler and would sit out the whole grace
+    window (and leak in state T when the killer is kill -9 shy)."""
+    if _proc_stopped(pid):
+        try:
+            os.kill(pid, signal.SIGCONT)
+        except OSError:
+            pass
+
+
 def down(name=None, quiet=False):
     dirs = [d for d in _pids_dirs(name) if os.path.isdir(d)]
     strays = _stray_pids(name)
@@ -61,6 +81,7 @@ def down(name=None, quiet=False):
             os.unlink(path)
             if pid and os.path.isdir(f"/proc/{pid}"):
                 if simlib.pid_is_ours(pid):
+                    _unstop(pid)
                     os.kill(pid, signal.SIGTERM)
                     pids.append(pid)
                 else:
@@ -74,6 +95,7 @@ def down(name=None, quiet=False):
     strays = [p for p in strays if p not in pids]
     for p in strays:
         if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
+            _unstop(p)
             os.kill(p, signal.SIGTERM)
     t0 = time.time()
     while time.time() - t0 < 3 and any(os.path.isdir(f"/proc/{p}") for p in strays):

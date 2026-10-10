@@ -135,6 +135,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `opstart` / `opabort` / `opstatus` / `opmsg` | 1094 fleet ops (`opmsg: {tg, ms, expect, secs}`) |
 | `fire` | `unit`, `event`, `payload`, `until: {re, count, tries, every_s}` |
 | `kill` / `restart` | `unit`, `proc` (`all`, `de_comm`, `de_mavlink`, `server`…) |
+| `freeze` / `unfreeze` | `unit`, `proc` (`dur_s` self-resume on freeze) — SIGSTOP/SIGCONT: a hang, not a crash |
 | `reboot` | `unit` — de_comm under a fresh boot id |
 | `loss` / `delay` / `link_cut` / `commline` | `unit`, `percent`/`ms`/`seconds` — **fake transport only** |
 | `write_file` | `unit`, `module`, `path`, `json`, `also: []` (`delay_ms`) |
@@ -152,6 +153,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `kill` | `unit`, `proc` (all) — SIGKILL unit processes |
 | `restart` | `unit`, `proc` (all) |
 | `module_kill` | `unit`, `module` — kill one module proc |
+| `freeze` | `unit`, `proc`\|`module`, `dur_s` — SIGSTOP the process (alive but silent); `dur_s` schedules the SIGCONT, without it the freeze holds until teardown |
 | `battery` | `unit`, `volts` (10.5), `cap_mah`, `dur_s`, `ok_volts`/`ok_cap_mah` |
 | `gps_off` | `unit`, `dur_s` — SIM_GPS1_FIXTYPE=0 |
 | `server_clock` | `offset_ms` (-3600000) — skew the fleet clock, fake only |
@@ -171,7 +173,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `no_journal` | `unit`, `re` | the pattern never appears |
 | `status_field` | `unit`, `path`, `equals`/`re`/bounds | a field of the latest 1087 (e.g. `launch.grant`) |
 | `module_log_count` | same + `module` | a module's stdout log |
-| `journal_order` | `unit`, `first`, `then` | ordering |
+| `journal_order` | `unit`, `first`, `then`, `proc` | ordering; `proc` reads `logs/<proc>.log` instead of the journal (module stdout lines) |
 | `journal_time_delta` | `u1`, `re1`, `u2`, `re2`, `max_s` | timing between lines |
 | `proc_alive` / `proc_dead` | `unit`, `proc` | process state at end |
 | `link_offline` | `unit`, `at_least`, `min_s` | monitor saw it drop |
