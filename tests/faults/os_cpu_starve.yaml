@@ -10,7 +10,6 @@ version: 1
 name: f_os_cpu_starve
 transport: fake
 realtime: true
-slot_base: 11
 settle_s: 30
 fleet:
   - {id: c1, cls: copter}
