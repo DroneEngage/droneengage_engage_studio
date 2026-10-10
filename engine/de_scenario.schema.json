@@ -87,7 +87,9 @@
             "description": "per-module config overlay (sim unit config:)"},
           "account": {"type": "object", "additionalProperties": false,
             "properties": {"user": {"type": "string"},
-                           "code": {"type": ["string", "integer"]}}}
+                           "code": {"type": ["string", "integer"]}}},
+          "faketime": {"type": "boolean",
+            "description": "SL-0014: launch de_comm under libfaketime so a clock_step fault can skew its clock at runtime"}
         }
       }
     },

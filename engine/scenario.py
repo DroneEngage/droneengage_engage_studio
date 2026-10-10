@@ -63,7 +63,9 @@ CLS_BLOCK = {"copter": "copter", "plane": "plane", "rover": "rover",
 FAULT_KINDS = ("link_cut", "loss", "delay", "gcs_disconnect", "server_down",
                "kill", "restart", "module_kill", "freeze", "battery",
                "gps_off", "server_clock", "no_time_sync", "rc_override",
-               "mode", "fcb_cut", "fcb_stall", "fcb_corrupt")
+               "mode", "fcb_cut", "fcb_stall", "fcb_corrupt",
+               # SL-0014 OS faults
+               "cpu_starve", "journal_unwritable", "clock_step")
 
 
 def is_legacy_spec(raw):
@@ -133,6 +135,28 @@ def _validate(raw, path):
         if ("do" in step) == ("fault" in step):
             raise simlib.SimError(
                 f"{path}: timeline[{i}] needs exactly one of do:/fault:")
+    # SL-0014: clock_step needs libfaketime on this machine AND the
+    # target unit booted under it (`faketime: true` - there is no
+    # retroactive LD_PRELOAD). Fail at validate, not mid-run.
+    fleet_by = {str(ent.get("id")): ent for ent in raw.get("fleet", [])}
+    clock_steps = [s for s in raw.get("timeline", [])
+                   if s.get("fault") == "clock_step"]
+    if clock_steps or any(ent.get("faketime") for ent in fleet_by.values()):
+        if not simlib.faketime_lib():
+            raise simlib.SimError(
+                f"{path}: clock_step / `faketime: true` needs libfaketime "
+                "- apt install libfaketime, or set SIM_FAKETIME_LIB in "
+                "sim.local.env")
+    for i, step in enumerate(clock_steps):
+        target = str(step.get("unit", "all"))
+        ids = list(fleet_by) if target == "all" else [target]
+        for uid in ids:
+            ent = fleet_by.get(uid)
+            if ent is not None and not ent.get("faketime"):
+                raise simlib.SimError(
+                    f"{path}: clock_step on {uid} needs `faketime: true` "
+                    "in its fleet entry - de_comm must launch under "
+                    "libfaketime")
 
 
 def _absolute_to_at(home, pos):
@@ -201,6 +225,8 @@ def _fleet_units(scn, home):
             u["config"] = cfg
         if ent.get("account"):
             u["account"] = ent["account"]
+        if ent.get("faketime"):
+            u["faketime"] = True     # SL-0014: de_comm under libfaketime
         units.append(u)
     return units
 

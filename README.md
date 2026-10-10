@@ -256,7 +256,12 @@ short:
   `land`, `reset`, `wait`, `wait_journal`, `wait_log`, `wait_online`,
   `wait_ready`,
   `kill` / `restart` / `freeze` / `unfreeze` (also `unit: server`;
-  `freeze` is SIGSTOP - a hang, not a crash), `reboot` (de_comm under a new
+  `freeze` is SIGSTOP - a hang, not a crash), `cpu_starve` /
+  `cpu_unstarve` (a SIGSTOP/SIGCONT duty cycle), `journal_unwritable` /
+  `journal_writable` (unit journal dir read-only, auto-restored on
+  `dur_s` and always by `sim down`), `clock_step` (per-process clock skew
+  on a `faketime: true` unit's de_comm via libfaketime's
+  `FAKETIME_TIMESTAMP_FILE`), `reboot` (de_comm under a new
   boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
   (fake server only), `commline`, `send`, `write_file` (`{unit, module,
   path, json}` - a JSON file into `var/run/<unit>/<module>/`, for module file

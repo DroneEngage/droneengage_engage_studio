@@ -1,0 +1,33 @@
+# os_journal_unwritable: the unit's journal dir goes read-only for 30 s
+# (SL-0014). de_comm stays alive and already-open journal fds keep
+# writing, but a NEW sink open fails - the supervisor re-opens only when
+# the sink path changes, so the fault bites at the package `clear` that
+# moves the sink to none.pre.log: the first "OPERATOR clear" still lands
+# (old fd) and the second is dropped, while the untouched unit's journal
+# records both and c1's stdout log records both too (journalAppend
+# mirrors to cout - the actions executed, only the journal lost them).
+# After the timed restore a fresh deploy re-opens <hash>.pre.log, so
+# "package READY" #2 proves journaling resumed.
+version: 1
+name: f_os_journal_unwritable
+transport: fake
+operation: ../../packages/copter_square.json
+slot_base: 15
+settle_s: 20
+fleet:
+  - {id: c1, cls: copter}
+  - {id: s1, cls: static}
+timeline:
+  - {t: 2, do: deploy}
+  - {t: 6, fault: journal_unwritable, unit: c1, dur_s: 30}
+  - {t: 12, do: clear}
+  - {t: 16, do: clear}
+  - {t: 44, do: deploy}
+assert:
+  - journal_count: {unit: c1, re: "OPERATOR clear", equals: 1}
+  - journal_count: {unit: s1, re: "OPERATOR clear", equals: 2}
+  - module_log_count: {unit: c1, module: de_comm, re: "OPERATOR clear",
+                       equals: 2}
+  - journal_count: {unit: c1, re: "package READY", equals: 2}
+  - proc_alive: {unit: c1, proc: de_comm}
+  - link_offline: {unit: c1, eq: 0}

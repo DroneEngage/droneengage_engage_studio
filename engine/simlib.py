@@ -34,6 +34,7 @@ sim ports clear of any developer's own servers):
 """
 
 import copy
+import glob
 import hashlib
 import json
 import os
@@ -435,7 +436,8 @@ def load_sim(path_or_spec, base_dir=None):
         if isinstance(entry, str):
             entry = {"block": entry}
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
-                            "account", "add_modules", "role", "fcb_proxy"}
+                            "account", "add_modules", "role", "fcb_proxy",
+                            "faketime"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -822,7 +824,10 @@ def _expand_unit(sim, b, name, entry, at, catalog):
          "modules": list(b["modules"]), "ports": {}, "fc": None,
          "config": copy.deepcopy(b["config"]),
          "parm_files": list(b["parm_files"]),
-         "location": None, "role": entry.get("role")}
+         "location": None, "role": entry.get("role"),
+         # SL-0014: launch de_comm under libfaketime so `ctl clock_step`
+         # can skew its clock (FAKETIME_TIMESTAMP_FILE)
+         "faketime": bool(entry.get("faketime"))}
     # P5-07: a unit may add modules on top of its block (scenario fleet
     # entries carry `modules:` for the P5-08 stubs). Unknown modules fail
     # here with the catalog list, before ports are allocated.
@@ -964,6 +969,11 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         if px:
             u["fc"]["fcb_proxy"] = {"port": 7760 + 10 * slot,
                                     "ctrl": 7860 + 10 * slot}
+    if u.get("faketime") and not faketime_lib():
+        raise SimError(
+            f"unit {u['name']}: `faketime: true` needs libfaketime - "
+            "apt install libfaketime, or set SIM_FAKETIME_LIB in "
+            "sim.local.env")
     return u
 
 
@@ -1172,6 +1182,27 @@ def journal_dir(u):
     return os.path.join(unit_dir(u), "journal")
 
 
+def faketime_lib():
+    """Path to libfaketime.so.1 used by `faketime: true` units and the
+    clock_step fault (SL-0014), or None when libfaketime is not on this
+    machine. SIM_FAKETIME_LIB pins a non-standard location."""
+    p = setting("SIM_FAKETIME_LIB")
+    if p:
+        return p if os.path.isfile(p) else None
+    hits = glob.glob(os.path.join(VAR_DIR, "faketime", "libfaketime.so.1"))
+    hits += glob.glob("/usr/lib/faketime/libfaketime.so.1")
+    hits += glob.glob("/usr/local/lib/faketime/libfaketime.so.1")
+    hits += glob.glob("/usr/lib/*/faketime/libfaketime.so.1")
+    hits += glob.glob("/usr/lib64/faketime/libfaketime.so.1")
+    return hits[0] if hits else None
+
+
+def faketime_rc_path(u):
+    """Per-unit FAKETIME_TIMESTAMP_FILE - `ctl clock_step` rewrites it
+    at runtime, libfaketime re-reads it."""
+    return os.path.join(unit_dir(u), "faketime.rc")
+
+
 def procs_of(u):
     """Process names of a unit in launch order. fcb_proxy (SL-0008) rides
     between sitl and the modules: it must listen before de_mavlink's
@@ -1294,9 +1325,27 @@ def gen_unit(u, sim, catalog):
     boot_id = os.path.join(udir, "boot_id")
     if not os.path.isfile(boot_id):
         write_text(boot_id, "boot-1\n")
+    env = [("DE_BOOT_ID_FILE", boot_id)]
+    if u.get("faketime"):
+        # SL-0014: run de_comm under libfaketime. FAKETIME_TIMESTAMP_FILE
+        # holds a signed relative offset ("+3600") that ctl clock_step
+        # rewrites, so a runtime step needs no relaunch. A short cache
+        # lets the step land within a second or two.
+        lib = faketime_lib()
+        if not lib:
+            raise SimError(
+                f"unit {u['name']}: `faketime: true` needs libfaketime - "
+                "apt install libfaketime, or set SIM_FAKETIME_LIB in "
+                "sim.local.env")
+        rc = faketime_rc_path(u)
+        if not os.path.isfile(rc):
+            write_text(rc, "+0\n")
+        env += [("LD_PRELOAD", lib),
+                ("FAKETIME_TIMESTAMP_FILE", rc),
+                ("FAKETIME_CACHE_DURATION", "2")]
     _launch_script(u, "de_comm", cdir,
                    f"'{DE_COMM_BIN}' -c '{comm_cfg}' -b '{comm_local}'",
-                   env=(("DE_BOOT_ID_FILE", boot_id),))
+                   env=tuple(env))
 
     # ---- generic s2s modules ----
     ctx = {"unit": u["name"], "comm_port": u["ports"]["de_comm"],

@@ -1,0 +1,29 @@
+# os_clock_step: a +3600 s step on c1's de_comm via its
+# FAKETIME_TIMESTAMP_FILE (SL-0014) - per-process libfaketime, no
+# adjtimex, no relaunch needed for the step itself. The fleet clock is
+# server-stamped (monotonic deltas are never faked) while the CLOCK
+# journal line stamps unix_ms from the faked wall clock, so the stepped
+# unit reports fleet_minus_unix_ms ~= -3.6e6 and the untouched one ~0.
+# CLOCK lines only emit on a clock-quality change (fresh window is 10
+# min), so both de_comms restart after the step to force a fresh sync;
+# the restart blip is well under the link_offline 10 s window and the
+# units keep routing through the server.
+version: 1
+name: f_os_clock_step
+transport: fake
+slot_base: 18
+settle_s: 30
+fleet:
+  - {id: c1, cls: copter, faketime: true}
+  - {id: c2, cls: copter}
+timeline:
+  - {t: 5, fault: clock_step, unit: c1, offset_s: 3600}
+  - {t: 10, fault: restart, unit: c1, proc: de_comm}
+  - {t: 12, fault: restart, unit: c2, proc: de_comm}
+assert:
+  - journal_count: {unit: c1, re: "fleet_minus_unix_ms=-3[0-9]{6}",
+                    at_least: 1}
+  - clock_spread: {unit: "c1,c2", min_ms: 3000000}
+  - link_offline: {unit: c1, min_s: 10, eq: 0}
+  - link_offline: {unit: c2, min_s: 10, eq: 0}
+  - proc_alive: {unit: c1, proc: de_comm}

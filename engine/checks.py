@@ -463,9 +463,16 @@ def _clock_spread(name, a, ctx):
                   f"CLOCK lines from only {list(vals)} - a spread needs "
                   "at least two units")
     spread = max(vals.values()) - min(vals.values())
-    good = spread <= a.get("max_ms", 100)
+    # SL-0014 clock_step inverts the check: min_ms asks for a spread at
+    # least this big (a stepped unit vs the rest of the fleet)
+    if a.get("min_ms") is not None:
+        good = spread >= a["min_ms"] and \
+            ("max_ms" not in a or spread <= a["max_ms"])
+    else:
+        good = spread <= a.get("max_ms", 100)
     return _r(name, "PASS" if good else "FAIL", spread,
-              f"spread {spread} ms over {vals} (max {a.get('max_ms')})")
+              f"spread {spread} ms over {vals} (min {a.get('min_ms')}, "
+              f"max {a.get('max_ms')})")
 
 
 def _mission_current(name, a, ctx):

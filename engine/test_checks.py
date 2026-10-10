@@ -6,6 +6,7 @@ assertion engine itself must be trustworthy. No SITL needed:
 """
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -817,6 +818,108 @@ class TNoSep(unittest.TestCase):
                                     "u2": [self.fix(0, 30.00001)]}, h_m=10)["status"], "FAIL")
         self.assertEqual(self._run({"u1": [self.fix(0, 30.0)],
                                     "u2": [self.fix(0, 30.001)]}, h_m=10)["status"], "PASS")
+
+
+class TOsFaults(unittest.TestCase):
+    """SL-0014: the cpu_starve worker, the journal perm toggle, the
+    libfaketime lookup and the clock_spread min_ms extension."""
+
+    def test_clock_spread_min_ms(self):
+        j = {"u1": [line(1, "CLOCK", "fleet_minus_unix_ms=-3600000")],
+             "u2": [line(1, "CLOCK", "fleet_minus_unix_ms=0")]}
+        a = {"clock_spread": {"unit": "all", "min_ms": 3000000}}
+        self.assertEqual(run(a, j)["status"], "PASS")
+        j["u2"] = [line(1, "CLOCK", "fleet_minus_unix_ms=-3599000")]
+        self.assertEqual(run(a, j)["status"], "FAIL")   # 1 s apart only
+        # min_ms still honours a max_ms ceiling
+        a["clock_spread"]["max_ms"] = 4000000
+        j["u2"] = [line(1, "CLOCK", "fleet_minus_unix_ms=-5000000")]
+        self.assertEqual(run(a, j)["status"], "FAIL")   # spread 5 s > max
+
+    def test_faketime_lib_honours_setting(self):
+        with mock.patch.dict(os.environ,
+                             {"SIM_FAKETIME_LIB": "/no/such/libfaketime.so.1"}):
+            self.assertIsNone(simlib.faketime_lib())
+        with tempfile.NamedTemporaryFile(suffix=".so.1") as f:
+            with mock.patch.dict(os.environ, {"SIM_FAKETIME_LIB": f.name}):
+                self.assertEqual(simlib.faketime_lib(), f.name)
+
+    def test_clock_step_validation(self):
+        import scenario
+        raw = {"version": 1, "name": "x",
+               "fleet": [{"id": "u1", "cls": "copter"}],
+               "timeline": [{"t": 5, "fault": "clock_step", "unit": "u1",
+                             "offset_s": 60}]}
+        # libfaketime present, but the target was never booted under it
+        with mock.patch.object(simlib, "faketime_lib",
+                               return_value="/tmp/libfaketime.so.1"):
+            with self.assertRaises(simlib.SimError) as cm:
+                scenario._validate(raw, "x.yaml")
+            self.assertIn("faketime", str(cm.exception))
+            raw["fleet"][0]["faketime"] = True
+            scenario._validate(raw, "x.yaml")       # passes now
+        # no libfaketime at all: `faketime: true` alone must fail
+        with mock.patch.object(simlib, "faketime_lib", return_value=None):
+            with self.assertRaises(simlib.SimError) as cm:
+                scenario._validate(raw, "x.yaml")
+            self.assertIn("libfaketime", str(cm.exception))
+
+    def test_journal_set_writable_round_trip(self):
+        import ctl
+        u = {"name": "u1", "sim": "_test_jrnl"}
+        jdir = simlib.journal_dir(u)
+        os.makedirs(jdir, exist_ok=True)
+        self.addCleanup(shutil.rmtree, os.path.dirname(jdir), True)
+        f = os.path.join(jdir, "none.pre.log")
+        simlib.write_text(f, "x\n")
+        self.assertTrue(ctl.journal_set_writable(u, False))
+        self.assertFalse(os.stat(jdir).st_mode & 0o200, "dir still writable")
+        self.assertFalse(os.stat(f).st_mode & 0o200, "file still writable")
+        with self.assertRaises(OSError):
+            open(os.path.join(jdir, "new.log"), "w")
+        self.assertTrue(ctl.journal_set_writable(u, True))
+        self.assertTrue(os.stat(jdir).st_mode & 0o200)
+        self.assertTrue(os.stat(f).st_mode & 0o200)
+
+    def test_starve_worker_stops_and_releases(self):
+        import ctl
+        import subprocess
+        import threading
+        import time
+        run_dir = os.path.join(simlib.RUN_DIR, "_test_starve")
+        pids = os.path.join(run_dir, "pids")
+        os.makedirs(pids, exist_ok=True)
+        self.addCleanup(shutil.rmtree, run_dir, True)
+        # the sleeper's argv carries a var/run path so pid_is_ours gates
+        # it in - the same ownership rule live units pass
+        script = os.path.join(run_dir, "sleeper.py")
+        open(script, "w").write("import time\ntime.sleep(120)\n")
+        proc = subprocess.Popen([sys.executable, script])
+        self.addCleanup(proc.kill)
+        pf = os.path.join(pids, "u1.de_comm.pid")
+        spf = os.path.join(pids, "u1.de_comm.starve.pid")
+        simlib.write_text(pf, str(proc.pid))
+        t = threading.Thread(target=ctl._starve_worker,
+                             args=(pf, spf, 80.0, 1.2, 200.0))
+        t.start()
+        saw_stop = False
+        deadline = time.time() + 3
+        while time.time() < deadline and t.is_alive():
+            try:
+                st = open(f"/proc/{proc.pid}/stat").read() \
+                    .rsplit(")", 1)[1].split()[0]
+                if st == "T":
+                    saw_stop = True
+            except OSError:
+                break
+            time.sleep(0.05)
+        t.join(5)
+        self.assertFalse(t.is_alive(), "worker did not finish dur_s")
+        self.assertTrue(saw_stop, "worker never stopped the proc")
+        st = open(f"/proc/{proc.pid}/stat").read().rsplit(")", 1)[1] \
+            .split()[0]
+        self.assertNotEqual(st, "T", "proc left SIGSTOPped")
+        self.assertFalse(os.path.exists(spf), "worker pidfile left behind")
 
 
 class TRunSuiteResults(unittest.TestCase):
