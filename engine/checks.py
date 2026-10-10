@@ -1425,6 +1425,250 @@ def _link_offline(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", total, "; ".join(bits))
 
 
+# ------------------------------------------------------------- invariants
+
+def _sample_rows(ctx):
+    """samples.jsonl rows (sampler thread output), capped at hold_ms
+    like every other reader. ctx["samples"] (a pre-parsed list) wins
+    over ctx["samples_file"] so tests can feed rows directly."""
+    rows = ctx.get("samples")
+    if rows is None:
+        path = ctx.get("samples_file")
+        rows = []
+        if path and os.path.isfile(path):
+            with open(path, errors="replace") as f:
+                for ln in f:
+                    try:
+                        rows.append(json.loads(ln))
+                    except ValueError:
+                        continue
+    hold_ms = ctx.get("hold_ms")
+    if hold_ms is not None:
+        rows = [r for r in rows if r.get("t_ms", 0) <= hold_ms]
+    return rows
+
+
+def _sample_keys(rows, a, ctx):
+    """pidfile stems the args select: proc matches the stem's suffix,
+    unit its prefix; either absent = all sampled processes."""
+    proc = a.get("proc")
+    keys = sorted({r["key"] for r in rows if r.get("key")})
+    if proc:
+        keys = [k for k in keys if k.split(".", 1)[1] == proc]
+    if str(a.get("unit", "all")) != "all":
+        sel = {u["name"] for u in _units(a, ctx)}
+        keys = [k for k in keys if k.split(".", 1)[0] in sel]
+    return keys
+
+
+def _no_unexpected_restart(name, a, ctx):
+    """Every pid change a tracked process made must sit inside a fault
+    window (kill/restart/module_kill/server_down/reset/server_up) - a
+    process that dies or is reborn with no such step is a restart nobody
+    asked for. Events come from ctx["proc_events"]; `tol_s` is how far
+    the observed change may drift from the ctl call."""
+    rows = _sample_rows(ctx)
+    events = ctx.get("proc_events") or []
+    tol_ms = float(a.get("tol_s", 10)) * 1000
+
+    def allowed(key, t_ms):
+        ku, _, kp = key.partition(".")
+        for e in events:
+            if abs(t_ms - e["t_ms"]) > tol_ms:
+                continue
+            if e.get("unit") not in (ku, "all"):
+                continue
+            if e.get("proc") not in (kp, "all"):
+                continue
+            return e
+        return None
+
+    ok, bits, worst = True, [], 0
+    keys = _sample_keys(rows, a, ctx)
+    if not keys:
+        return _r(name, "SKIP", None, "no sampled processes")
+    last_t = max(r["t_ms"] for r in rows)
+    for key in keys:
+        seq = [r for r in rows if r["key"] == key]
+        prev = None
+        for r in seq:
+            if prev is not None and r["pid"] != prev["pid"]:
+                ev = allowed(key, r["t_ms"])
+                if ev is None:
+                    ok = False
+                    worst += 1
+                    bits.append(
+                        f"{key}: pid {prev['pid']} -> {r['pid']} "
+                        f"at +{(r['t_ms'] - seq[0]['t_ms']) / 1000:.0f}s "
+                        "with no fault window")
+            prev = r
+        # a key that stopped being sampled well before the run ended
+        # died mid-run - the last sighting stamps the change
+        if seq and last_t - seq[-1]["t_ms"] > 2500:
+            ev = allowed(key, seq[-1]["t_ms"])
+            if ev is None:
+                ok = False
+                worst += 1
+                bits.append(f"{key}: pid {seq[-1]['pid']} vanished "
+                            "mid-run with no fault window")
+    detail = "; ".join(bits) if bits else \
+        f"{len(keys)} process(es): every pid change inside a fault window"
+    return _r(name, "PASS" if ok else "FAIL", worst, detail)
+
+
+def _rss_growth(name, a, ctx):
+    """Least-squares slope of VmRSS vs time per process, after warmup_s
+    of samples; must stay <= max_mb_per_h."""
+    rows = _sample_rows(ctx)
+    limit = a.get("max_mb_per_h")
+    if limit is None:
+        return _r(name, "FAIL", None, "rss_growth needs max_mb_per_h")
+    warmup_ms = float(a.get("warmup_s", 30)) * 1000
+    ok, bits, worst = True, [], 0.0
+    keys = _sample_keys(rows, a, ctx)
+    if not keys:
+        return _r(name, "SKIP", None, "no sampled processes")
+    for key in keys:
+        seq = [r for r in rows if r["key"] == key]
+        if not seq:
+            continue
+        t0 = seq[0]["t_ms"]
+        seq = [r for r in seq if r["t_ms"] - t0 >= warmup_ms]
+        if len(seq) < 2:
+            bits.append(f"{key}: {len(seq)} post-warmup sample(s) - SKIP")
+            continue
+        n = len(seq)
+        sx = sum(r["t_ms"] for r in seq)
+        sy = sum(r["rss_kb"] for r in seq)
+        sxx = sum(r["t_ms"] ** 2 for r in seq)
+        sxy = sum(r["t_ms"] * r["rss_kb"] for r in seq)
+        den = n * sxx - sx * sx
+        slope = (n * sxy - sx * sy) / den if den else 0.0
+        mb_h = slope * 3600 * 1000 / 1024
+        good = mb_h <= float(limit)
+        ok &= good
+        worst = max(worst, mb_h)
+        bits.append(f"{key}: {mb_h:+.2f} MB/h (max {limit:g})")
+    return _r(name, "PASS" if ok else "FAIL",
+              round(worst, 2), "; ".join(bits))
+
+
+def _fd_growth(name, a, ctx):
+    """Open-fd count growth over the run per process <= max."""
+    rows = _sample_rows(ctx)
+    limit = a.get("max")
+    if limit is None:
+        return _r(name, "FAIL", None, "fd_growth needs max")
+    ok, bits, worst = True, [], 0
+    keys = _sample_keys(rows, a, ctx)
+    if not keys:
+        return _r(name, "SKIP", None, "no sampled processes")
+    for key in keys:
+        seq = [r for r in rows if r["key"] == key]
+        if not seq:
+            continue
+        growth = seq[-1]["fd"] - seq[0]["fd"]
+        good = growth <= float(limit)
+        ok &= good
+        worst = max(worst, growth)
+        bits.append(f"{key}: {seq[0]['fd']} -> {seq[-1]['fd']} "
+                    f"({growth:+d}; max {limit:g})")
+    return _r(name, "PASS" if ok else "FAIL", worst, "; ".join(bits))
+
+
+def _journal_size(name, a, ctx):
+    """Total bytes of a unit's journal dir <= max_mb."""
+    limit = a.get("max_mb")
+    if limit is None:
+        return _r(name, "FAIL", None, "journal_size needs max_mb")
+    ok, bits, worst = True, [], 0.0
+    for u in _units(a, ctx):
+        d = simlib.journal_dir(u)
+        total = 0
+        try:
+            for f in os.listdir(d):
+                total += os.path.getsize(os.path.join(d, f))
+        except OSError:
+            pass
+        mb = total / 1048576.0
+        good = mb <= float(limit)
+        ok &= good
+        worst = max(worst, mb)
+        bits.append(f"{u['name']}: {mb:.2f} MB (max {limit:g})")
+    return _r(name, "PASS" if ok else "FAIL",
+              round(worst, 3), "; ".join(bits))
+
+
+def _recovers_after_fault(name, a, ctx):
+    """Every connectivity restore the faults scheduled (link_cut dur_s,
+    server_down dur_s, de_comm freeze dur_s, restart) must be followed
+    by the unit back online - and, for FC units, fresh telemetry -
+    within within_s of the expected restore instant."""
+    events = ctx.get("restore_events") or []
+    if not events:
+        return _r(name, "SKIP", None, "no fault restores recorded")
+    within_ms = float(a.get("within_s", 60)) * 1000
+    link_events = ctx.get("link_events") or {}
+    tele = ctx.get("telemetry")
+    ok, bits, n = True, [], 0
+    for e in events:
+        t0, horizon = e["t_ms"], e["t_ms"] + within_ms
+        for u in ctl.resolve(str(e.get("unit", "all")),
+                             ctx["manifest"]):
+            n += 1
+            ev = link_events.get(u["party_id"], [])
+            state = True     # no transitions at all = still online
+            for t, on in sorted(ev):
+                if t <= horizon:
+                    state = on
+            link_ok = state
+            tele_ok = True
+            if u.get("fc"):
+                if not tele:
+                    tele_ok = False
+                else:
+                    tele_ok = any(
+                        t0 < r.get("t_ms", 0) <= horizon
+                        for r in tele.rows(u["name"]))
+            good = link_ok and tele_ok
+            ok &= good
+            detail = f"link {'up' if link_ok else 'down'}"
+            if u.get("fc"):
+                detail += f", tele {'fresh' if tele_ok else 'stale'}"
+            bits.append(f"{u['name']}@{e['kind']}: "
+                        f"{'ok' if good else 'NOT recovered'} ({detail})")
+    return _r(name, "PASS" if ok else "FAIL", n, "; ".join(bits))
+
+
+def _no_stuck_state(name, a, ctx):
+    """A state-reporting journal line (re) must change value at least
+    every max_s: a run of identical matching msgs spanning longer means
+    the reporter is stuck."""
+    rx = re.compile(a["re"])
+    max_ms = float(a.get("max_s", 60)) * 1000
+    marks = ctx["marks"]
+    ok, bits, worst = True, [], 0.0
+    for u in _units(a, ctx):
+        seq = [ln for ln in simlib.journal_lines(u, marks.get(u["name"]))
+               if simlib.line_hit(ln, rx)]
+        stuck_s = 0.0
+        run_msg, run_start, run_end = None, 0, 0
+        for ln in seq:
+            msg = f"{ln[4]} {ln[5]}"
+            if msg != run_msg:
+                stuck_s = max(stuck_s, (run_end - run_start) / 1000.0)
+                run_msg, run_start = msg, ln[0]
+            run_end = ln[0]
+        stuck_s = max(stuck_s, (run_end - run_start) / 1000.0)
+        good = stuck_s <= float(a.get("max_s", 60))
+        ok &= good
+        worst = max(worst, stuck_s)
+        bits.append(f"{u['name']}: longest identical {stuck_s:.0f}s "
+                    f"(max {a.get('max_s', 60):g})")
+    return _r(name, "PASS" if ok else "FAIL",
+              round(worst, 1), "; ".join(bits))
+
+
 def _roster_value(name, a, ctx):
     """A field of the unit's last 1092 roster frame via the bot
     (tq, bat, st, ...)."""
@@ -1695,6 +1939,12 @@ DISPATCH = {
     "proc_dead": lambda n, a, c: _proc_state(n, a, c, False),
     "operator_log_count": _operator_log_count,
     "link_offline": _link_offline,
+    "no_unexpected_restart": _no_unexpected_restart,
+    "rss_growth": _rss_growth,
+    "fd_growth": _fd_growth,
+    "journal_size": _journal_size,
+    "recovers_after_fault": _recovers_after_fault,
+    "no_stuck_state": _no_stuck_state,
     "roster_value": _roster_value,
     "telemetry_value": _telemetry_value,
     "fc_mode": _fc_mode,

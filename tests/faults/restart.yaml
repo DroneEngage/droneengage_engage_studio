@@ -11,3 +11,5 @@ timeline:
 assert:
   - proc_alive: {unit: s1, proc: de_comm}
   - journal_count: {unit: s1, re: "CLOCK", at_least: 1}
+  # the pid change the fault made is inside a recorded fault window
+  - no_unexpected_restart: {proc: de_comm}

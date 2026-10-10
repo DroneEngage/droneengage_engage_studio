@@ -1,0 +1,14 @@
+# unexpected_restart: a NEGATIVE example. `do: kill` stops de_comm
+# without a fault: window around it - the no_unexpected_restart
+# invariant must FAIL the run. Use it to check the invariant fires;
+# it is not part of any passing suite.
+version: 1
+name: ex_unexpected_restart
+transport: fake
+settle_s: 20
+fleet:
+  - {id: s1, cls: static}
+timeline:
+  - {t: 3, do: kill, unit: s1, proc: de_comm}
+assert:
+  - no_unexpected_restart: {proc: de_comm}

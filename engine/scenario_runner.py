@@ -239,6 +239,14 @@ def _do(step, scn, ctx):
         return bot.op_revoke_launch(party, float(a.get("timeout", 10)))
     if name == "operator":
         return _operator_act(a, bot)
+    # infra lifecycle steps: an operator action rather than a `fault:`,
+    # but the pids they re-create are expected to change
+    if name in ("reset", "server_up", "land"):
+        ctx["proc_events"].append(
+            {"t_ms": int(time.time() * 1000),
+             "unit": "server" if name == "server_up"
+             else str(a.get("unit", "all")),
+             "proc": "all"})
     # every other name: the runner.py step, unchanged semantics
     t = {"__file": scn["file"], "operation": scn.get("operation")}
     return runner.run_step({name: a}, t, ctx["marks"])
@@ -330,7 +338,23 @@ def _fault(step, scn, ctx):
     unit = str(a.get("unit", "all"))
     dur = a.get("dur_s", a.get("seconds"))
     bot = ctx["bot"]
+
+    def _proc_event(proc, u=unit):
+        # a fault window that may legitimately change pids - the
+        # no_unexpected_restart invariant allows changes only inside it
+        ctx["proc_events"].append({"t_ms": int(time.time() * 1000),
+                                   "unit": str(u), "proc": str(proc)})
+
+    def _restore_at(after_s=0.0):
+        # the instant the unit's connectivity should be back - the
+        # recovers_after_fault invariant checks online + telemetry
+        # after it
+        ctx["restore_events"].append(
+            {"t_ms": int(time.time() * 1000) + int(after_s * 1000),
+             "unit": unit, "kind": kind})
+
     if kind == "link_cut":
+        _restore_at(float(dur or 30))
         return runner.run_ctl("link_cut", unit, dur or 30)
     if kind == "loss":
         return runner.run_ctl("loss", unit, a.get("percent", 50))
@@ -349,15 +373,21 @@ def _fault(step, scn, ctx):
             bot.disconnect_for(30)
         return ok
     if kind == "server_down":
+        _proc_event(a.get("proc", "all"), "server")
         ok = runner.run_ctl("kill", "server", a.get("proc", "all"))
         if dur:
             _schedule(ctx, float(dur), runner.run_ctl, "server_up")
+            _restore_at(float(dur))
         return ok
     if kind == "kill":
+        _proc_event(a.get("proc", "all"))
         return runner.run_ctl("kill", unit, a.get("proc", "all"))
     if kind == "restart":
+        _proc_event(a.get("proc", "all"))
+        _restore_at()
         return runner.run_ctl("restart", unit, a.get("proc", "all"))
     if kind == "module_kill":
+        _proc_event(a["module"])
         return runner.run_ctl("kill", unit, a["module"])
     if kind == "freeze":
         # SIGSTOP - a hang, not a crash: sockets stay open, the process
@@ -372,6 +402,8 @@ def _fault(step, scn, ctx):
         if ok and dur:
             _schedule(ctx, float(dur), runner.run_ctl,
                       "unfreeze", unit, proc)
+            if proc in ("de_comm", "all"):
+                _restore_at(float(dur))
         return ok
     if kind == "battery":
         ok = runner.run_ctl("param", unit, "SIM_BATT_VOLTAGE",
@@ -431,6 +463,34 @@ def _fault(step, scn, ctx):
 
 
 # --------------------------------------------------------- link monitor
+
+def _sampler(ctx, stop):
+    """1 Hz wall-clock over this sim's pidfile pids (read_pids already
+    gates on pid_is_ours): rss_kb + open-fd count + the pid itself ->
+    results/samples.jsonl. Feeds the invariant assertions
+    (no_unexpected_restart, rss_growth, fd_growth)."""
+    path = ctx["samples_file"]
+    rss_re = re.compile(r"VmRSS:\s*(\d+)")
+    while not stop.is_set():
+        now = int(time.time() * 1000)
+        rows = []
+        for key, pid in sorted(simlib.read_pids(ctx["sim"]).items()):
+            try:
+                st = open(f"/proc/{pid}/status").read()
+                rss = int(rss_re.search(st).group(1))
+                fd = len(os.listdir(f"/proc/{pid}/fd"))
+            except (OSError, ValueError, AttributeError):
+                continue                  # died between read_pids and now
+            rows.append({"t_ms": now, "key": key, "pid": pid,
+                         "rss_kb": rss, "fd": fd})
+        try:
+            with open(path, "a") as f:
+                for r in rows:
+                    f.write(json.dumps(r) + "\n")
+        except OSError:
+            pass
+        stop.wait(1.0)
+
 
 def _link_monitor(ctx, stop):
     """Poll the server's online list; journal every unit's link
@@ -740,7 +800,9 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
            "telemetry": None, "marks": {}, "timers": [], "pumps": [],
            "file": t_file, "results_dir": out,
            "units_by_name": {u["name"]: u for u in m["units"]},
-           "operator_log": os.path.join(out, "operator.log")}
+           "operator_log": os.path.join(out, "operator.log"),
+           "samples_file": os.path.join(out, "samples.jsonl"),
+           "proc_events": [], "restore_events": []}
     _CTX[0] = ctx
     _SCN[0] = scn
     fake = m["server"]["type"] == "fake"
@@ -760,6 +822,10 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     link_thread = threading.Thread(target=_link_monitor,
                                    args=(ctx, link_stop), daemon=True)
     link_thread.start()
+    sample_stop = threading.Event()
+    sample_thread = threading.Thread(target=_sampler,
+                                     args=(ctx, sample_stop), daemon=True)
+    sample_thread.start()
     ctx["baseline"] = checks.capture_baseline(ctx)
     ctx["world"] = wld
     recorder = None
@@ -873,6 +939,8 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     tele.stop()
     link_stop.set()
     link_thread.join(5)
+    sample_stop.set()
+    sample_thread.join(5)
 
     # P5-12: the coverage artefact pair per computed grid, when any
     # coverage assertion ran (coverage.geojson opens in any GIS)

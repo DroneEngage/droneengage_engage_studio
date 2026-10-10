@@ -12,3 +12,6 @@ timeline:
 assert:
   - link_offline: {unit: s1, at_least: 1, min_s: 5}
   - proc_alive: {unit: s1, proc: de_comm}
+  # the cut clears at ~t=28s: link online (+ telemetry on FC units)
+  # well within a minute
+  - recovers_after_fault: {within_s: 60}

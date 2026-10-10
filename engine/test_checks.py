@@ -996,5 +996,120 @@ class TFreeze(unittest.TestCase):
                 child.wait()
 
 
+class TInvariants(unittest.TestCase):
+    """SL-0011 run-wide invariant assertions over synthetic
+    samples.jsonl rows / journals."""
+
+    def _samples(self):
+        return [{"t_ms": t, "key": "u1.de_comm", "pid": 111,
+                 "rss_kb": 10000, "fd": 10}
+                for t in range(0, 61000, 1000)]
+
+    def test_no_unexpected_restart(self):
+        spec = {"no_unexpected_restart": {"proc": "de_comm"}}
+        rows = self._samples()
+        # pid changes once at t=30s with no fault window -> FAIL
+        for r in rows:
+            if r["t_ms"] >= 30000:
+                r["pid"] = 222
+        self.assertEqual(run(spec, {}, samples=rows)["status"], "FAIL")
+        # a fault window at the change -> PASS
+        ev = [{"t_ms": 30000, "unit": "u1", "proc": "de_comm"}]
+        self.assertEqual(run(spec, {}, samples=rows,
+                             proc_events=ev)["status"], "PASS")
+        # no change at all -> PASS
+        self.assertEqual(run(spec, {}, samples=self._samples(),
+                             proc_events=[])["status"], "PASS")
+
+    def test_no_unexpected_restart_vanished(self):
+        spec = {"no_unexpected_restart": {"proc": "de_comm"}}
+        rows = [{"t_ms": t, "key": "u1.de_comm", "pid": 111,
+                 "rss_kb": 1, "fd": 1} for t in range(0, 6000, 1000)]
+        rows += [{"t_ms": t, "key": "u2.de_comm", "pid": 222,
+                  "rss_kb": 1, "fd": 1} for t in range(0, 61000, 1000)]
+        # u1.de_comm disappears at t=6s of a 61s run, no event -> FAIL
+        self.assertEqual(run(spec, {}, samples=rows)["status"], "FAIL")
+        ev = [{"t_ms": 6000, "unit": "u1", "proc": "de_comm"}]
+        self.assertEqual(run(spec, {}, samples=rows,
+                             proc_events=ev)["status"], "PASS")
+
+    def test_rss_growth(self):
+        # +1 kb/s for 60 s -> ~3.5 MB/h
+        rows = self._samples()
+        for r in rows:
+            r["rss_kb"] = 10000 + r["t_ms"] // 1000
+        spec = {"rss_growth": {"proc": "de_comm", "max_mb_per_h": 5,
+                               "warmup_s": 0}}
+        self.assertEqual(run(spec, {}, samples=rows)["status"], "PASS")
+        spec["rss_growth"]["max_mb_per_h"] = 1
+        self.assertEqual(run(spec, {}, samples=rows)["status"], "FAIL")
+        # flat rss never trips
+        spec["rss_growth"]["max_mb_per_h"] = 0
+        self.assertEqual(run(spec, {}, samples=self._samples())["status"],
+                         "PASS")
+
+    def test_fd_growth(self):
+        rows = self._samples()
+        for r in rows:
+            r["fd"] = 10 + r["t_ms"] // 15000      # 10 -> 14 over 60 s
+        spec = {"fd_growth": {"proc": "de_comm", "max": 5}}
+        self.assertEqual(run(spec, {}, samples=rows)["status"], "PASS")
+        spec["fd_growth"]["max"] = 2
+        self.assertEqual(run(spec, {}, samples=rows)["status"], "FAIL")
+
+    def test_journal_size(self):
+        import tempfile
+        spec = {"journal_size": {"unit": "u1", "max_mb": 1}}
+        with tempfile.TemporaryDirectory() as td:
+            with open(os.path.join(td, "journal.jsonl"), "w") as f:
+                f.write("x" * 1000)
+            with mock.patch.object(simlib, "journal_dir",
+                                   lambda u: td):
+                self.assertEqual(run(spec, {})["status"], "PASS")
+            big = os.path.join(td, "big.jsonl")
+            with open(big, "w") as f:
+                f.write("x" * (1200 * 1024))
+            with mock.patch.object(simlib, "journal_dir",
+                                   lambda u: td):
+                self.assertEqual(run(spec, {})["status"], "FAIL")
+
+    def test_recovers_after_fault(self):
+        class _Tele:
+            def __init__(self, rows):
+                self._rows = rows
+
+            def rows(self, name=None):
+                return self._rows
+
+        spec = {"recovers_after_fault": {"within_s": 60}}
+        ev = [{"t_ms": 10000, "unit": "u1", "kind": "link_cut"}]
+        # link back at t=20s, telemetry fresh at t=30s -> PASS
+        kw = dict(restore_events=ev,
+                  link_events={"p1": [(12000, False), (20000, True)]},
+                  telemetry=_Tele([{"t_ms": 30000}]))
+        self.assertEqual(run(spec, {}, **kw)["status"], "PASS")
+        # link never comes back -> FAIL
+        kw = dict(restore_events=ev,
+                  link_events={"p1": [(12000, False)]},
+                  telemetry=_Tele([{"t_ms": 30000}]))
+        self.assertEqual(run(spec, {}, **kw)["status"], "FAIL")
+        # link back but telemetry stale -> FAIL
+        kw = dict(restore_events=ev,
+                  link_events={"p1": [(12000, False), (20000, True)]},
+                  telemetry=_Tele([{"t_ms": 5000}]))
+        self.assertEqual(run(spec, {}, **kw)["status"], "FAIL")
+
+    def test_no_stuck_state(self):
+        spec = {"no_stuck_state": {"unit": "u1",
+                                   "re": "STATE", "max_s": 60}}
+        j = {"u1": [line(t, "ST", "STATE a")
+                    for t in (0, 30000, 70000)]}
+        # same state for 70 s > 60 -> FAIL
+        self.assertEqual(run(spec, j)["status"], "FAIL")
+        j = {"u1": [line(0, "ST", "STATE a"), line(30000, "ST", "STATE b"),
+                    line(70000, "ST", "STATE a")]}
+        self.assertEqual(run(spec, j)["status"], "PASS")
+
+
 if __name__ == "__main__":
     unittest.main()

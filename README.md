@@ -446,6 +446,14 @@ Format (strict - unknown keys fail against
   epoch when none ran - to the first find, `max_s:`;
   realtime-sensitive), `signals_in_range`,
   `stub_deterministic` to the legacy assertion set.
+  Run-wide invariants (SL-0011): a 1 Hz sampler records every tracked
+  process's pid/RSS/fds into `results/samples.jsonl`;
+  `no_unexpected_restart` (pid changes only inside `fault:` kill/
+  restart/module_kill/server_down windows - `do: kill` fails it),
+  `rss_growth` (least-squares MB/h after `warmup_s`), `fd_growth`,
+  `journal_size`, `recovers_after_fault` (link+telemetry back within
+  `within_s` of each timed fault restore), `no_stuck_state` (a `re`
+  state line must change within `max_s`).
   `journal_count` takes `total: true` to compare the sum over its units
   instead of every unit's own count; `module_log_count` accepts the same
   `total:` flag (B4-01 - for a line exactly one runtime-chosen unit

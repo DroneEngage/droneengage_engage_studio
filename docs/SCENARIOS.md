@@ -177,6 +177,12 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `journal_time_delta` | `u1`, `re1`, `u2`, `re2`, `max_s` | timing between lines |
 | `proc_alive` / `proc_dead` | `unit`, `proc` | process state at end |
 | `link_offline` | `unit`, `at_least`, `min_s` | monitor saw it drop |
+| `no_unexpected_restart` | `proc` (+`unit`, `tol_s`) | every pid change in `samples.jsonl` sits inside a `fault:` kill/restart/module_kill/server_down window (or a `do:` reset/server_up/land) |
+| `rss_growth` | `proc` (+`unit`), `max_mb_per_h`, `warmup_s` | least-squares RSS slope after warm-up |
+| `fd_growth` | `proc` (+`unit`), `max` | open-fd count growth over the run |
+| `journal_size` | `unit`, `max_mb` | journal dir total size |
+| `recovers_after_fault` | `within_s` | every timed fault restore is followed by link online + fresh telemetry |
+| `no_stuck_state` | `unit`, `re`, `max_s` | a matching journal state line changes at least every `max_s` |
 | `telemetry_value` | `unit`, `field`, bounds, `pick: min\|max` | tlog sample(s) |
 | `fc_mode` | `unit`, `mode` | last FC mode |
 | `mission_items` | `unit`, `equals`/`at_least`/`at_most` | FC mission count, serial0 read-back |
@@ -191,6 +197,20 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 
 An unknown assertion or fault name fails **validation**, not the run —
 `./sim validate` catches it before anything is launched.
+
+**Run-wide invariants.** A 1 Hz sampler thread records every tracked
+process's pid / RSS / open-fd count into `results/samples.jsonl` for the
+whole run — one row per second per pidfile process, simulator-owned pids
+only. The invariant assertions above read that file (plus
+`links.jsonl`, the tlog and journals), so they work on chaos/soak runs
+with no per-step scripting. A pid change is *expected* only inside a
+fault window the runner recorded (`kill`, `restart`, `module_kill`,
+`server_down`, or the `do:` lifecycle steps `reset`/`server_up`/`land`);
+anything else fails `no_unexpected_restart` — a `do: kill` is *not* a
+fault window (see `scenarios/examples/unexpected_restart.yaml` for the
+negative case). `recovers_after_fault` needs `transport: fake` for the
+link evidence to be meaningful; on non-FC units it checks the link
+only.
 
 ## `operator:` — standing policy (optional)
 
@@ -237,7 +257,8 @@ detection assertions. `render:` (`viewer|cameras|physics|full`,
   timeline (`deploy` before `arm`, `mode: GUIDED` before a nav deploy).
 - `on:` is a YAML 1.1 boolean key — write it bare, the loader fixes it.
 - Each run writes `var/results/<utc>/<name>/`: journals, logs, tlog,
-  operator.log, truth.jsonl, verify.json, summary.json, junit.xml.
+  operator.log, truth.jsonl, samples.jsonl, verify.json, summary.json,
+  junit.xml.
   Exit 0 = every non-SKIP assertion passed.
 
 ## A complete example
