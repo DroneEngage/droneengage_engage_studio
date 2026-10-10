@@ -537,7 +537,10 @@ async def serve(port, cert, key):
     ctx.load_cert_chain(cert, key)
     async with websockets.serve(handler, "127.0.0.1", port, ssl=ctx,
                                 compression=None, ping_interval=None):
-        ctl = await asyncio.start_server(control_reader, "127.0.0.1", port + 1)
+        # same 64 KiB readline cap as gcs_bridge: `send` lines carry
+        # whole packages, give them real headroom
+        ctl = await asyncio.start_server(control_reader, "127.0.0.1",
+                                         port + 1, limit=16 << 20)
         print(f"[server] wss on 127.0.0.1:{port}, control on {port + 1}, "
               f"seed={SEED}", flush=True)
         async with ctl:
