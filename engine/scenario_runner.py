@@ -837,6 +837,14 @@ def _hold(m, world_stream=False):
     render = m.get("render") or {}
     print(simlib.col_bold("\n== holding - Ctrl-C to finish the run =="),
           flush=True)
+    # the parked sim's webclient deep links - a held run is exactly when
+    # the operator wants to click into the GCS (same links `ctl web`
+    # prints; each page gets its own GCS senderID)
+    print("webclient: " + simlib.col_cyan(simlib.webclient_url(m)),
+          flush=True)
+    print("planning:  " + simlib.col_cyan(
+          simlib.webclient_url(m, "/planning", "GCSPLN_" + m["name"])),
+          flush=True)
     if render:
         print("render viewer: " + simlib.col("1;36",
               simlib.render_viewer_url(render, world_stream)),
