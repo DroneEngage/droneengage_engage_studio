@@ -63,7 +63,7 @@ CLS_BLOCK = {"copter": "copter", "plane": "plane", "rover": "rover",
 FAULT_KINDS = ("link_cut", "loss", "delay", "gcs_disconnect", "server_down",
                "kill", "restart", "module_kill", "freeze", "battery",
                "gps_off", "server_clock", "no_time_sync", "rc_override",
-               "mode")
+               "mode", "link_stall", "link_profile")
 
 
 def is_legacy_spec(raw):
@@ -291,11 +291,10 @@ def _host_free_sim(sim_at, bases):
     return sim_at(bases[0])
 
 
-def _seed_slot_base(seed, units):
-    """10 + 25*(seed % 9), unless that block pushes this fleet's highest
-    module port past 65535 or an FC sysid past 250 (de_camera 64000 +
-    10*k overflows from k=154) - then the seed picks among the blocks that
-    fit, so a camera fleet runs on every seed."""
+def _slot_fits(units):
+    """fits(sb) for _seed_slot_base/_seed_slot_bases: the fleet's highest
+    module port must stay <= 65535 and its FC sysids <= 250 (de_camera
+    64000 + 10*k overflows from k=154)."""
     cat = simlib.load_catalog()
     top = simlib.DE_COMM_PORT_BASE
     has_fc = False
@@ -306,11 +305,15 @@ def _seed_slot_base(seed, units):
             if m in cat:
                 top = max(top, int(cat[m]["port_base"]))
     last = len(units) - 1
+    return lambda sb: (top + 10 * (sb + last) <= 65535
+                       and (not has_fc or sb + last <= 250))
 
-    def fits(sb):
-        return top + 10 * (sb + last) <= 65535 and \
-            (not has_fc or sb + last <= 250)
 
+def _seed_slot_base(seed, units):
+    """10 + 25*(seed % 9), unless that block pushes this fleet's highest
+    module port past 65535 or an FC sysid past 250 - then the seed picks
+    among the blocks that fit, so a camera fleet runs on every seed."""
+    fits = _slot_fits(units)
     cands = [10 + 25 * i for i in range(9)]
     pick = cands[seed % 9]
     if fits(pick):
@@ -318,14 +321,18 @@ def _seed_slot_base(seed, units):
     ok = [c for c in cands if fits(c)]
     if not ok:
         raise simlib.SimError(
-            f"{len(units)} units with module ports up to {top} fit no "
-            "slot block - pin a lower slot_base or split the fleet")
+            f"{len(units)} units fit no slot block - pin a lower "
+            "slot_base or split the fleet")
     return ok[seed % len(ok)]
 
 
 def _seed_slot_bases(seed, units):
     """Every fitting slot block, the seed's own first - the fallbacks
-    when a host process holds a port of the seed's block."""
+    when a host process holds a port of the seed's block. After the
+    canonical 25-port blocks come the in-between bases: a host crowded
+    with other worktrees' sims can hold a port in EVERY canonical block
+    (an FC fleet needs ~7 ports and any hit disqualifies the block),
+    and a fine base is a valid base - the port derivation is the same."""
     first = _seed_slot_base(seed, units)
     cands = [10 + 25 * i for i in range(9)]
     i = cands.index(first)
@@ -337,4 +344,7 @@ def _seed_slot_bases(seed, units):
                 out.append(c)
         except simlib.SimError:
             pass
+    fits = _slot_fits(units)
+    out += [b for blk in list(out) for b in range(blk + 1, blk + 25)
+            if fits(b)]
     return out

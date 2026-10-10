@@ -33,6 +33,12 @@ one sim file - that is the point of sims: a reusable fleet setup.
                                          # drop, sticky facts survive)
       - loss: {unit: all, percent: 30}   # link faults: server type fake only
       - link_cut: {unit: 1, seconds: 20}
+      - link: {unit: 1, set: "stall 30"} # SL-0007 raw link-model knobs;
+                                         # set: ["loss_tx 0", "loss_rx 100"]
+                                         # sends several sub-lines
+      - beacon: {unit: 1, seconds: 10, min: 3}   # count the unit's 1004
+                                         # presence beacons on a fresh GCS
+                                         # listen (SL-0007)
       - kill: {unit: 1, proc: de_comm}   # unit: server, proc: de_server
       - restart: {unit: 1, proc: de_comm}
       - freeze: {unit: 1, proc: de_mavlink, dur_s: 30}   # SIGSTOP - a hang,
@@ -113,9 +119,9 @@ def unit_arg(arg, key="unit", default="all"):
 _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
                "wait_ready", "loss",
                "delay", "link_cut", "kick", "commline", "link_clear", "kill",
-               "restart", "freeze", "unfreeze",
+               "link", "restart", "freeze", "unfreeze",
                "journal", "mode", "disarm", "fire", "fc",
-               "write_file"}
+               "write_file", "beacon"}
 
 
 def _wait_journal(u, rx, timeout, marks):
@@ -255,6 +261,17 @@ def run_step(step, t, marks):
         return run_ctl("delay", unit, arg["ms"])
     if name in ("link_cut", "commline"):
         return run_ctl(name, unit, arg["seconds"])
+    if name == "link":
+        # SL-0007 link-model knobs: {set: "stall 30"} or a list of
+        # control sub-lines {set: ["loss_tx 0", "loss_rx 100"]}
+        ok = True
+        for spec in ([arg["set"]] if isinstance(arg.get("set"), str)
+                     else arg.get("set") or []):
+            ok = run_ctl("link", unit, *str(spec).split()) and ok
+        if not arg.get("set"):
+            print("  link step needs set:", flush=True)
+            return False
+        return ok
     if name in ("kill", "restart"):
         return run_ctl(name, unit, arg.get("proc", "all"))
     if name in ("freeze", "unfreeze"):
@@ -329,6 +346,13 @@ def run_step(step, t, marks):
         return run_ctl("wait_online", secs)
     if name == "roster_peers":
         return run_ctl("roster", arg.get("seconds", 5), arg.get("count", 1))
+    if name == "beacon":
+        # SL-0007: bounded "the GCS still hears this unit" evidence
+        # inside an asymmetric fault window - count the unit's mt=1004
+        # presence beacons on a fresh GCS listen for `seconds`, fail
+        # under `min`.
+        return run_ctl("beacon", unit, arg.get("seconds", 5),
+                       arg.get("min", 1))
     print(f"unknown step {name!r}", flush=True)
     return False
 

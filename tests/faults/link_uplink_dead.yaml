@@ -1,0 +1,62 @@
+# faults/link_uplink_dead - SL-0007 asymmetric link fault: the unit's
+# downlink (server -> unit) dies at 100% loss while its uplink stays
+# clean, for 40 s - well past the unit's ~10 s ping watchdog.
+#
+# What proves each direction, inside the dead window:
+#   tx alive (unit -> GCS): the `beacon` step counts c1's mt=1004
+#     presence broadcasts on a fresh GCS listen while rx is dead -
+#     the same GCS-listen mechanism as `roster`, but pinned to this
+#     unit and not needing a multi-unit fleet for 1092s. The unit's
+#     own watchdog also flaps its ws once (~10 s in); the re-auth is
+#     processed on the clean tx, so the server sees the conn drop and
+#     come straight back (link_offline) while the auth ack - riding
+#     the dead rx - is dropped: the unit never journals
+#     "comm line online" again (a dead downlink leaves the unit
+#     comm-offline until its next real reconnect; receiving stray
+#     frames after link_clear does not re-auth it).
+#   rx dead (GCS -> unit): a `fire x.probe` fired into the window is
+#     dropped on rx and never journals; "comm line offline" is the
+#     unit-side proof it could no longer hear the server.
+# transport: fake; the unit is c1.
+version: 1
+name: f_link_uplink_dead
+transport: fake
+operation: ../../packages/copter_square_probe.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 40
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm, unit: c1}
+  - {t: 9, do: start}
+  - {t: 15, do: wait_journal, unit: c1, re: "RUN run .* started",
+     timeout: 60}
+  # uplink_dead preset: loss_tx 0 / loss_rx 100 for 40 s (auto-clear +
+  # a recorded restore for recovers_after_fault)
+  - {t: 20, fault: link_profile, unit: c1, profile: uplink_dead,
+     dur_s: 40}
+  # fired into the dead downlink - dropped on rx, never latched
+  - {t: 24, do: fire, event: x.probe, unit: c1}
+  # ~5..15 s into the dead window the GCS still hears the unit's own
+  # presence beacons: the uplink never broke (10 s listen inside the
+  # 40 s window)
+  - {t: 25, do: beacon, unit: c1, seconds: 10, min: 3}
+  - {t: 64, do: wait_journal, unit: c1, re: "mission main completed",
+     timeout: 240}
+assert:
+  # the unit itself noticed the dead downlink (no pongs -> watchdog):
+  # it journaled offline and - with every frame back to it dropped,
+  # its re-auth ack included - never journaled online again
+  - journal_count: {unit: c1, re: "comm line offline", at_least: 1}
+  - no_journal: {unit: c1, re: "comm line online"}
+  # the server saw the flap and the clean-tx reconnect: offline once,
+  # then straight back online while rx stayed dead
+  - link_offline: {unit: c1, at_least: 1}
+  # no commands while dead: the in-window x.probe fire never latched
+  - no_journal: {unit: c1, re: "x\\.probe"}
+  - recovers_after_fault: {within_s: 90}
+  - proc_alive: {unit: c1, proc: de_comm}
+  - journal_count: {unit: c1, re: "mission main completed", equals: 1}
+teardown: land

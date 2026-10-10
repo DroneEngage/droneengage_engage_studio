@@ -152,7 +152,7 @@ Server types:
 |---|---|---|
 | `{type: real}` | `droneengage_server` in `local_server_enabled` mode | default: the real routing |
 | `{type: real, auth: true}` | + `droneengage_authenticator` (single account); every unit and the GCS log in | the login path |
-| `{type: fake}` | `engine/fake_fleet_server.py` | seeded per-link loss / delay / cut |
+| `{type: fake}` | `engine/fake_fleet_server.py` | seeded per-link loss / delay / cut plus the SL-0007 link model: per-direction loss, Gilbert-Elliot bursts (drop or in-order stall), bandwidth cap, jitter, named profiles |
 | `{type: external, host, port}` | nothing - your own running server stack | personal sims on your real servers |
 
 `external` is for sims that join a server stack you run yourself (e.g.
@@ -257,7 +257,9 @@ short:
   `kill` / `restart` / `freeze` / `unfreeze` (also `unit: server`;
   `freeze` is SIGSTOP - a hang, not a crash), `reboot` (de_comm under a new
   boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
-  (fake server only), `commline`, `send`, `write_file` (`{unit, module,
+  (fake server only), `link` (`{unit, set}` - raw link-model sub-lines:
+  `stall`, `ge`, `bw`, `jitter`, `loss_tx`, `loss_rx`, `profile`),
+  `commline`, `send`, `write_file` (`{unit, module,
   path, json}` - a JSON file into `var/run/<unit>/<module>/`, for module file
   seams like de_rpi_gpio's `gpio_inputs.json` or de_precland's
   `precland_scene.json`; `also: [{path, json, delay_ms?}]`
@@ -422,7 +424,8 @@ Format (strict - unknown keys fail against
 - The operator bot mirrors the WebClient's 1093 resend watch: it keeps
   every decision of the run and re-sends it unchanged (2..30 s backoff)
   while the units' roster `wm` digests disagree.
-- `fault:` kinds: `link_cut`, `loss`, `delay`, `gcs_disconnect`,
+- `fault:` kinds: `link_cut`, `link_stall`, `link_profile`, `loss`,
+  `delay`, `gcs_disconnect`,
   `server_down`, `kill`, `restart`, `module_kill`, `battery`, `gps_off`,
   `mode`, `rc_override`, `server_clock`, `no_time_sync` (fake transport
   for the link/clock ones). `dur_s` auto-restores where it applies.
