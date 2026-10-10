@@ -1,0 +1,19 @@
+# airspace_intruder - the SL-0016 ADS-B world (de.world/1).
+#
+# One crewed intruder flying a 400x400 m square patrol over the SITL
+# home area at 150 m above home and ~25 m/s - the same corner case as
+# SITL's own SIM_ADSB_* random traffic, but scripted so the truth is
+# known: every ADSB_VEHICLE frame the feeder injects must decode within
+# the check's 50 m of this file's path.
+#
+#   intruder_1 - ICAO ac:0d:e1, callsign INTRUDER; a 400 m square loop
+#                200-600 m NE of home, legs N->E->S->W (loop: true)
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: intruder_1, cls: aircraft, icao: "0xAC0DE1",
+     callsign: INTRUDER, alt_m: 150, speed_mps: 25, loop: true,
+     path: [[-35.3614654, 149.1652370],
+            [-35.3614654, 149.1696432],
+            [-35.3650586, 149.1696432],
+            [-35.3650586, 149.1652370]]}

@@ -41,6 +41,19 @@ geometric tag ladder) and occlude [[t0_s, t1_s], ...] (world seconds the
 pad is invisible). world.pads() lists them; stub_ai_box never reports a
 pad as a detection class.
 
+A `cls: aircraft` entity (SL-0016) is an ADS-B intruder: an ordinary
+moving entity (pos/path/attach + alt_m) plus icao (required - the 24-bit
+ICAO address, an int or a hex string like "0xABCDEF"), callsign (<= 8
+chars, defaults to the entity id), emitter_type (MAVLink
+ADSB_EMITTER_TYPE, default 1 = light aircraft), squawk (optional) and
+units (optional list of unit names - the frames go only to those units).
+While a scenario's fleet is up, an AdsbFeeder thread in the runner
+encodes ADSB_VEHICLE frames from the entities' truth at 1 Hz and injects
+them through each fcb-proxied FC unit's `inject` control command
+(SL-0008) - de_mavlink parses and forwards them to the GCS exactly like
+the frames SITL's own SIM_ADSB_* traffic produces, and world.aircraft()
+lists the entities it feeds.
+
 Entity motion (t = seconds since the scenario epoch):
   pos:    static.
   path:   piecewise-linear walk at speed_mps starting at start_s; with
@@ -120,10 +133,12 @@ through the stubs (stubs/golden, test_golden.py).
 """
 
 import hashlib
+import io
 import json
 import math
 import os
 import random
+import socket
 import threading
 import time
 
@@ -232,6 +247,14 @@ class Entity:
         self.tags_max_m = float(spec["tags_max_m"]) \
             if "tags_max_m" in spec else None
         self.occlude = _parse_occlude(spec.get("occlude"), path, self.id)
+        # SL-0016 aircraft fields (meaningful on cls: aircraft - the
+        # ADSB_VEHICLE identity the feeder encodes); unused on every
+        # other cls
+        self.icao = _parse_icao(spec.get("icao"), path, self.id)
+        self.callsign = str(spec.get("callsign") or self.id)[:8]
+        self.emitter_type = int(spec.get("emitter_type", 1))
+        self.squawk = int(spec["squawk"]) if "squawk" in spec else None
+        self.units = _parse_str_list(spec.get("units"), path, self.id)
         self.behaviour = _parse_behaviour(spec.get("behaviour"),
                                           path, self.id)
         self._behav = None            # lazily-built seeded track state
@@ -520,6 +543,11 @@ class World:
                 raise simlib.SimError(
                     f"{path}: pad {e.id}: needs "
                     "0 < tags_min_m <= tags_max_m")
+        for e in self.entities:
+            if e.cls == "aircraft" and e.icao is None:
+                raise simlib.SimError(
+                    f"{path}: aircraft {e.id}: needs icao (24-bit "
+                    "address, int or hex string)")
 
     def entity(self, tid):
         return self._by_id.get(tid)
@@ -527,6 +555,10 @@ class World:
     def pads(self):
         """The cls: pad entities - precision-landing targets (PL-08)."""
         return [e for e in self.entities if e.cls == "pad"]
+
+    def aircraft(self):
+        """The cls: aircraft entities - ADS-B intruders (SL-0016)."""
+        return [e for e in self.entities if e.cls == "aircraft"]
 
     def pad_tag_sizes(self, pad):
         """The pad's tag-edge ladder, largest first: tags_max_m,
@@ -1030,6 +1062,41 @@ def _f_light(sun_elev_deg):
 
 # ------------------------------------------------- behaviour parsers
 
+def _parse_icao(spec, path, eid):
+    """A 24-bit ICAO address: an int, a "0x..." hex string or bare hex
+    digits ("A1B2C3"). None when absent; SimError on anything else."""
+    if spec is None:
+        return None
+    label = f"{path}: entity {eid}: icao"
+    try:
+        if isinstance(spec, int) and not isinstance(spec, bool):
+            v = spec
+        elif isinstance(spec, str):
+            s = spec.strip()
+            v = int(s, 0) if s.lower().startswith(("0x", "0o", "0b")) \
+                or s.isdigit() else int(s, 16)
+        else:
+            raise ValueError
+    except ValueError:
+        raise simlib.SimError(
+            f"{label}: not a 24-bit address: {spec!r}")
+    if not 0 <= v <= 0xFFFFFF:
+        raise simlib.SimError(
+            f"{label}: out of range: {spec!r} (needs 0..0xffffff)")
+    return v
+
+
+def _parse_str_list(spec, path, eid):
+    """Optional list of strings (the aircraft `units:` filter)."""
+    if spec is None:
+        return []
+    if not isinstance(spec, list) or \
+            not all(isinstance(x, str) for x in spec):
+        raise simlib.SimError(
+            f"{path}: entity {eid}: units must be a list of unit names")
+    return list(spec)
+
+
 def _parse_occlude(spec, path, eid):
     """occlude: [[t0_s, t1_s], ...] -> a list of closed world-second
     intervals the entity is not visible (PL-08 pads)."""
@@ -1466,5 +1533,158 @@ class TruthRecorder:
                         f.write(json.dumps(row) + "\n")
                 except OSError:
                     pass
+            next_t += 1.0 / self.hz
+            self._stop.wait(max(0.05, next_t - time.time()))
+
+
+# ------------------------------------------------------------ ADS-B feed
+
+# ADSB_FLAGS bits set on every emitted frame: valid coords, altitude,
+# heading, velocity, callsign and vertical velocity, plus SIMULATED -
+# the ADS-B equivalent of the truth rows (SITL's own SIM_ADSB traffic
+# does not set it, a world aircraft always does)
+ADSB_FLAG_BASE = 0x01 | 0x02 | 0x04 | 0x08 | 0x10 | 0x40 | 0x80
+ADSB_FLAG_SQUAWK = 0x20
+ADSB_ALTITUDE_GEOMETRIC = 1          # altitude is AMSL, not QNH
+
+
+def adsb_targets(entities, units):
+    """{entity: [unit,...]} - the fcb-proxied FC units each aircraft
+    entity feeds: all of them, or the subset named by its `units:`
+    filter (names that resolve to no unit are an authoring error)."""
+    out = {}
+    for e in entities:
+        if not e.units:
+            out[e] = list(units)
+            continue
+        by_name = {u["name"]: u for u in units}
+        missing = [n for n in e.units if n not in by_name]
+        if missing:
+            raise simlib.SimError(
+                f"aircraft {e.id}: units {missing} are not fcb-proxied "
+                f"FC units (have {[u['name'] for u in units]})")
+        out[e] = [by_name[n] for n in e.units]
+    return out
+
+
+class AdsbFeeder:
+    """1 Hz ADSB_VEHICLE frames for the world's cls:aircraft entities,
+    written into each target unit's fcb proxy via the `inject <hex>`
+    control command (SL-0016 on the SL-0008 hook) - de_mavlink parses
+    and forwards them to the GCS the same way it forwards the frames
+    SITL's SIM_ADSB_* traffic emits. One persistent control socket per
+    unit, re-dialed when it breaks; a unit whose proxy is briefly gone
+    (reset) just misses ticks. start()/stop(); frames are MAVLink v1
+    stamped with the unit's own sysid/compid - what the FC itself emits.
+    """
+
+    def __init__(self, world, epoch_ms, units, home_alt_m, hz=1.0):
+        self.world = world
+        self.epoch_ms = epoch_ms
+        self.home_alt_m = float(home_alt_m)
+        self.hz = hz
+        self.targets = adsb_targets(world.aircraft(), units)
+        # per-unit encode state: one BytesIO the pymavlink writer packs
+        # frames into (a shared io keeps each unit's own seq counter)
+        self._links = {u["name"]: {"sock": None, "io": io.BytesIO(),
+                                   "mav": None} for u in units}
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        if self._thread:
+            self._thread.join(5)
+        for link in self._links.values():
+            if link["sock"] is not None:
+                try:
+                    link["sock"].close()
+                except OSError:
+                    pass
+
+    # ------------------------------------------------------------ frames
+
+    def _frame(self, u, e, t_s):
+        """One complete ADSB_VEHICLE frame for entity e at t_s, stamped
+        with the unit's sysid/compid (the same identity SITL's own
+        traffic carries)."""
+        from pymavlink import mavutil
+        link = self._links[u["name"]]
+        if link["mav"] is None:
+            link["mav"] = mavutil.mavlink.MAVLink(
+                link["io"], srcSystem=u["fc"]["sysid"], srcComponent=1)
+        lat, lng, alt = e.pos_at(t_s, self.world)
+        # velocity from the same 0.5 s delta state_at() uses for heading
+        p1 = e.pos_at(t_s + 0.5, self.world)
+        heading = _bearing_deg(lat, lng, p1[0], p1[1])
+        hvel_ms = _dist(lat, lng, p1[0], p1[1]) * 2.0
+        vvel_ms = (p1[2] - alt) * 2.0
+        flags = ADSB_FLAG_BASE | (ADSB_FLAG_SQUAWK if e.squawk else 0)
+        bio = link["io"]
+        bio.seek(0)
+        bio.truncate(0)
+        link["mav"].adsb_vehicle_send(
+            e.icao, int(round(lat * 1e7)), int(round(lng * 1e7)),
+            ADSB_ALTITUDE_GEOMETRIC,
+            int(round((self.home_alt_m + alt) * 1000)),
+            int(round(heading * 100)) % 36000,
+            int(round(hvel_ms * 100)), int(round(vvel_ms * 100)),
+            e.callsign.encode("ascii", errors="replace")[:8],
+            e.emitter_type, 1, flags, e.squawk or 0)
+        return bio.getvalue()
+
+    # ------------------------------------------------------------ socket
+
+    def _inject(self, u, frame):
+        """`inject <hex>` on the unit's fcb proxy control port over a
+        persistent socket (re-dialed when it broke) -> True when the
+        proxy acknowledged the write."""
+        link = self._links[u["name"]]
+        for _retry in range(2):
+            if link["sock"] is None:
+                try:
+                    link["sock"] = socket.create_connection(
+                        ("127.0.0.1", int(u["fc"]["fcb_proxy"]["ctrl"])),
+                        2)
+                    link["sock"].settimeout(2.0)
+                except OSError:
+                    return False
+            try:
+                link["sock"].sendall(
+                    b"inject " + frame.hex().encode() + b"\n")
+                rep = link["sock"].recv(4096)
+            except OSError:
+                try:
+                    link["sock"].close()
+                except OSError:
+                    pass
+                link["sock"] = None
+                continue
+            if b"ERR" in rep:
+                print(f"  adsb feed {u['name']}: {rep.decode(errors='replace').strip()}",
+                      flush=True)
+                return False
+            return True
+        return False
+
+    # -------------------------------------------------------------- loop
+
+    def _run(self):
+        next_t = time.time()
+        while not self._stop.is_set():
+            t_s = (int(time.time() * 1000) - self.epoch_ms) / 1000.0
+            for e, units in self.targets.items():
+                if t_s < e.start_s:
+                    continue
+                for u in units:
+                    try:
+                        self._inject(u, self._frame(u, e, t_s))
+                    except Exception as exc:
+                        print(f"  adsb feed {u['name']}/{e.id}: "
+                              f"{type(exc).__name__}: {exc}", flush=True)
             next_t += 1.0 / self.hz
             self._stop.wait(max(0.05, next_t - time.time()))

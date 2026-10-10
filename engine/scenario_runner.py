@@ -829,6 +829,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
            "telemetry": None, "marks": {}, "timers": [], "pumps": [],
            "file": t_file, "results_dir": out,
            "units_by_name": {u["name"]: u for u in m["units"]},
+           "run_start_ms": int(t0_wall * 1000),
            "operator_log": os.path.join(out, "operator.log"),
            "samples_file": os.path.join(out, "samples.jsonl"),
            "proc_events": [], "restore_events": []}
@@ -869,6 +870,21 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
             wld, epoch_ms, world_mod.truth_path(m["name"]))
         recorder.start()
         ctx["world_epoch_ms"] = epoch_ms
+        # SL-0016: cls:aircraft entities emit ADSB_VEHICLE frames at
+        # 1 Hz through each fcb-proxied FC unit's inject control - the
+        # frames land on de_mavlink exactly like SITL's own traffic
+        if wld.aircraft():
+            adsb_units = [u for u in m["units"]
+                          if u["fc"] and u["fc"].get("fcb_proxy")]
+            if adsb_units:
+                feeder = world_mod.AdsbFeeder(
+                    wld, epoch_ms, adsb_units, m["home"][2])
+                feeder.start()
+                ctx["adsb_feeder"] = feeder
+            else:
+                print("  world has cls:aircraft entities but no FC "
+                      "unit runs fcb_proxy - no ADS-B injection",
+                      flush=True)
         # P5-13: a render-enabled scenario also opens the world stream
         # (de.worldstream/1 on render.stream_port) now that the epoch -
         # the truth clock - is fixed
@@ -902,6 +918,8 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     finally:
         if ctx.get("world_stream") is not None:
             ctx["world_stream"].stop()
+        if ctx.get("adsb_feeder") is not None:
+            ctx["adsb_feeder"].stop()
         if recorder is not None:
             recorder.stop()
         # a fault's dur_s restore that never fired inside the timeline

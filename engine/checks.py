@@ -1907,6 +1907,92 @@ def _detection_precision_render(name, a, ctx):
               f"(iou {iou_min:g}, min {lo})")
 
 
+def _icao_str(v):
+    """Normalize an icao spec (int, "0x..." hex, bare hex digits) to the
+    '%06x' form the bridge logs. None on an unparseable value."""
+    try:
+        if isinstance(v, int) and not isinstance(v, bool):
+            return "%06x" % (v & 0xFFFFFF)
+        s = str(v).strip()
+        n = int(s, 0) if s.lower().startswith(("0x", "0o", "0b")) \
+            or s.isdigit() else int(s, 16)
+        return "%06x" % (n & 0xFFFFFF)
+    except (ValueError, TypeError):
+        return None
+
+
+def _adsb_vehicle(name, a, ctx):
+    """adsb_vehicle {icao, tid, max_m (50), equals|at_least|at_most}:
+    the GCS-side proof that a cls:aircraft world entity (or SITL's own
+    SIM_ADSB_* traffic) reached a GCS - the bridge decodes every
+    ADSB_VEHICLE frame de_mavlink forwards over the mt-6502 binary path
+    and logs it as an `[adsb]` JSON row in server/logs/gcs_bridge.log
+    (SL-0016). Rows outside the run (older runs' leftovers in the
+    reused-sim log, post-hold viewer traffic) are ignored. `tid` names
+    the world entity the row must track: each matching row's position
+    has to sit within max_m of the entity's truth at the row's receive
+    time - the world model first (exact t_s interpolation), the 1 Hz
+    truth.jsonl rows as fallback."""
+    path = os.path.join(simlib.server_dir(ctx["sim"]), "logs",
+                        "gcs_bridge.log")
+    if not os.path.isfile(path):
+        return _r(name, "SKIP", None,
+                  "no gcs_bridge log (a real transport only artifact)")
+    want = _icao_str(a.get("icao"))
+    if want is None:
+        return _r(name, "FAIL", None, f"bad icao {a.get('icao')!r}")
+    lo = ctx.get("world_epoch_ms") or ctx.get("run_start_ms") or 0
+    hi = ctx.get("hold_ms") or float("inf")
+    rows = []
+    for ln in open(path, errors="replace"):
+        i = ln.find("[adsb]")
+        if i < 0:
+            continue
+        try:
+            r = json.loads(ln[i + 6:])
+        except ValueError:
+            continue
+        if lo <= r.get("t_ms", 0) <= hi:
+            rows.append(r)
+    hits = [r for r in rows
+            if str(r.get("icao", "")).lower() == want]
+    good, txt = _cmp(a, len(hits))
+    ok = good
+    bits = [f"{txt} (icao {want})"]
+    wld = ctx.get("world")
+    epoch = ctx.get("world_epoch_ms")
+    e = wld.entity(str(a["tid"])) if (wld and a.get("tid")) else None
+    if e is None and wld and not a.get("tid"):
+        e = next((x for x in wld.aircraft()
+                  if x.icao is not None and "%06x" % x.icao == want),
+                 None)
+    max_m = float(a.get("max_m", 50))
+    if e is not None and epoch is not None:
+        for r in hits:
+            t_s = (r["t_ms"] - epoch) / 1000.0
+            lat, lng, _a = e.pos_at(t_s, wld)
+            d = _haversine(lat, lng, r["lat"], r["lng"])
+            ok &= d <= max_m
+            if len(bits) < 6:
+                bits.append(f"d={d:.0f}m")
+    elif hits:
+        truth, _p = _truth_rows(ctx)
+        tid = a.get("tid")
+        if truth and tid:
+            for r in hits:
+                tr = _truth_at(truth, str(tid), r["t_ms"])
+                d = (_haversine(tr["lat"], _lng(tr), r["lat"], r["lng"])
+                     if tr else float("inf"))
+                ok &= d <= max_m
+                if len(bits) < 6:
+                    bits.append(f"d={d:.0f}m" if tr else "no truth row")
+        else:
+            ok = False
+            bits.append("no world/tid - position unverifiable")
+    return _r(name, "PASS" if ok else "FAIL", len(hits),
+              "; ".join(bits))
+
+
 DISPATCH = {
     "journal_count": _journal_count,
     "module_log_count": _module_log_count,
@@ -1949,6 +2035,7 @@ DISPATCH = {
     "telemetry_value": _telemetry_value,
     "fc_mode": _fc_mode,
     "status_field": _status_field,
+    "adsb_vehicle": _adsb_vehicle,
 }
 
 
