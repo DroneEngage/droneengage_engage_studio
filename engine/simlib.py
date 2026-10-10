@@ -486,7 +486,9 @@ def _load_sim_free_slot(spec, base_dir):
     "Free" means no clash with a live sim's manifest AND nothing already
     bound on the host - ports_held catches the dev server or stray SITL
     that is not a sim. A same-named live sim's ports are its own (`up`
-    restarts it); a unit-name clash is slot-independent, so fatal.
+    restarts it), and so are those of a live sim with clashing unit
+    names - an exclusive run downs it, up/--shared refuse it later in
+    check_conflicts.
     Candidates start at SLOT_BASE (the configured floor) and stop when a
     port would pass 65535. A shifted pick changes the sim hash - `ensure`
     then does a fresh up instead of reusing."""
@@ -507,10 +509,12 @@ def _load_sim_free_slot(spec, base_dir):
                     own = used_ports(m)
                     continue
                 if names & {u["name"] for u in m["units"]}:
-                    raise SimError(
-                        f"--slot-base any: unit names clash with live "
-                        f"sim {other!r} - no base fixes that; rename the "
-                        "units or down the sim first")
+                    # slot-independent: an exclusive test run downs it
+                    # (a suite's previous scenario), while up/--shared
+                    # still refuse it in check_conflicts - either way its
+                    # ports are not this pick's problem
+                    own |= used_ports(m)
+                    continue
                 if ports & used_ports(m):
                     clash = True
                     break

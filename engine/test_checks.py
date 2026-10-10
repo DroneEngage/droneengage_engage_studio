@@ -548,6 +548,29 @@ class T(unittest.TestCase):
             pinned = dict(spec, server=dict(spec["server"], port=9999))
             self.assertEqual(simlib.load_sim(pinned)["server"]["port"], 9999)
 
+    def test_slot_any_tolerates_same_unit_names_live_sim(self):
+        """a suite's previous scenario (same unit names) is still live
+        when the next one resolves --slot-base any - not fatal: the
+        exclusive run downs it, up/--shared refuse it later"""
+        import scenario
+        import simlib
+        spec = scenario.load_scenario(
+            os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "tests/p4f/p4f05_abort.yaml"),
+            8)["sim"]
+        with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "60"}):
+            prev = simlib.load_sim(dict(spec, name="prev_scenario"))
+        prev_m = {"name": "prev_scenario", "server": prev["server"],
+                  "units": prev["units"]}
+        with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "any"}), \
+                mock.patch.object(simlib, "live_sim_names",
+                                  lambda: ["prev_scenario"]), \
+                mock.patch.object(simlib, "load_manifest",
+                                  lambda n, required=True: prev_m), \
+                mock.patch.object(simlib, "ports_held", lambda p: []):
+            sim = simlib.load_sim(spec)
+        self.assertEqual(sim["slot_base"], simlib.SLOT_BASE)
+
     def test_slot_block_skips_host_held_port(self):
         import socket
         import scenario
