@@ -23,7 +23,7 @@ timeline:
      ms: {pkg: "{PKG:plan_survey_1000.json}",
           hash: "{HASH:plan_survey_1000.json}"}}
   - {t: 10, do: wait_journal, unit: p1,
-     re: "nav load failed|package READY", timeout: 600}
+     re: "nav load failed|nav load timed out|package READY", timeout: 600}
 assert:
   - journal_count: {unit: p1, re: "package upload accepted", at_least: 1}
   - journal_count: {unit: p1, re: "full layout rejected \\(ack:4\\)",
