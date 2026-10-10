@@ -60,6 +60,9 @@ one sim file - that is the point of sims: a reusable fleet setup.
                                                     # `faketime: true` unit
       - reset: 1                         # SITL back to home, disarmed
       - mode: {unit: 1, mode: RTL}
+      - takeoff: {unit: 1, alt: 10}      # NAV_TAKEOFF (arm GUIDED first)
+      - param: {unit: 1, name: SIM_BATT_VOLTAGE, value: 10.5}
+      - param_get: {unit: 1, name: SIM_BATT_VOLTAGE}
       - wait_online: 60                  # every unit seen by the GCS
       - wait: 10
       - write_file: {unit: 1, module: de_gpio, path: gpio_inputs.json,
@@ -139,6 +142,7 @@ _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
                "fcb_inject", "fcb_clear", "fcb_stats",
                "journal", "mode", "disarm", "fire", "fc",
                "write_file", "beacon",
+               "takeoff", "param", "param_get",
                # SL-0014 OS faults
                "cpu_starve", "cpu_unstarve", "clock_step",
                "journal_unwritable", "journal_writable"}
@@ -359,6 +363,12 @@ def run_step(step, t, marks):
         return run_ctl("server_up")
     if name == "mode":
         return run_ctl("mode", unit, arg["mode"])
+    if name == "takeoff":
+        return run_ctl("takeoff", unit, arg.get("alt", arg.get("alt_m", 10)))
+    if name == "param":
+        return run_ctl("param", unit, arg["name"], arg["value"])
+    if name == "param_get":
+        return run_ctl("param_get", unit, arg["name"])
     if name == "fire":
         pay = [json.dumps(arg["payload"])] if arg.get("payload") else []
         until = arg.get("until")

@@ -1,0 +1,17 @@
+# gps_jam: SIM_GPS1_JAM=1 - the sim GPS loses lock for 1-6 s outright,
+# then sats/fix flap at random while velocity jumps. Telemetry's
+# fix_type series proves the FC saw the jam (min < 3); the dur_s
+# restore returns the live fix.
+version: 1
+name: f_gps_jam
+transport: fake
+realtime: true
+slot_base: 118
+settle_s: 10
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 3, fault: gps_jam, unit: c1, dur_s: 40}
+  - {t: 20, do: wait, seconds: 8}
+assert:
+  - telemetry_value: {unit: c1, field: fix_type, lt: 3, pick: min}

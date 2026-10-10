@@ -420,8 +420,9 @@ Format (strict - unknown keys fail against
   may be negative (runs at once). `{on: {unit, re}}` arms a journal
   watcher instead; `once` defaults true; regex groups substitute as
   `{M1}`..`{M9}`. The run lasts `last_t + settle_s`.
-- `do:` names either a runner.py step (`arm`, `mode`, `wait`,
-  `link_clear`, ...) or an operator action (`deploy`, `start`, `abort`,
+- `do:` names either a runner.py step (`arm`, `mode`, `takeoff`,
+  `param`, `param_get`, `wait`, `link_clear`, ...) or an operator action
+  (`deploy`, `start`, `abort`,
   `operator act: approve|deny|confirm|dismiss|fire|<1086>`).
   `wait_journal` takes `any: true` to finish on the first of its units
   that journals the line (a line only a runtime-chosen unit writes, e.g.
@@ -433,9 +434,15 @@ Format (strict - unknown keys fail against
   while the units' roster `wm` digests disagree.
 - `fault:` kinds: `link_cut`, `link_stall`, `link_profile`, `loss`,
   `delay`, `gcs_disconnect`,
-  `server_down`, `kill`, `restart`, `module_kill`, `battery`, `gps_off`,
+  `server_down`, `kill`, `restart`, `module_kill`, `param`,
   `mode`, `rc_override`, `server_clock`, `no_time_sync` (fake transport
-  for the link/clock ones). `dur_s` auto-restores where it applies.
+  for the link/clock ones) plus the FC param presets `battery`,
+  `gps_off`, `gps_jam`, `gps_glitch`, `gps_degrade`, `motor_out`,
+  `rc_fail`, `compass_fail`, `vibration`. `param` writes a `set:
+  {NAME: value}` map through the verified serial0 param path; every
+  param fault (presets included) reads each value before writing, so
+  `dur_s` restores what the FC actually reported - never a hardcoded
+  default. `dur_s` auto-restores where it applies.
 - `assert:` adds `proc_alive`/`proc_dead`, `link_offline`,
   `roster_value`, `operator_log_count`, `telemetry_value`, `fc_mode`,
   `distance_to` (incl. `detected_cls:` against the bot's seen targets),

@@ -77,14 +77,49 @@ CLS_BLOCK = {"copter": "copter", "plane": "plane", "rover": "rover",
              "static": "comm_only", "comm_only": "comm_only"}
 
 
+# Named FC fault presets (SL-0005): fault kind -> {SITL param:
+# (step arg, default)}. A None default means the param is written only
+# when the step arg is given; arg None means "always the default".
+# scenario_runner._fault applies these through the generic `param`
+# read-before-set path, so dur_s restores the values the FC reported.
+# Param names verified against the pinned ArduPilot
+# (libraries/SITL/SITL.cpp, SIM_GPS.cpp) - note SIM_GPS1_POS_* is the
+# antenna offset, NOT a position fault.
+FC_PRESETS = {
+    "battery":     {"SIM_BATT_VOLTAGE": ("volts", 10.5),
+                    "BATT_CAPACITY": ("cap_mah", None),
+                    "SIM_BATT_RES_OHM": ("res_ohm", None)},
+    "gps_off":     {"SIM_GPS1_FIXTYPE": ("fixtype", 0)},
+    "gps_jam":     {"SIM_GPS1_JAM": ("jam", 1)},
+    "gps_glitch":  {"SIM_GPS1_GLTCH_X": ("x", 40),
+                    "SIM_GPS1_GLTCH_Y": ("y", 0),
+                    "SIM_GPS1_GLTCH_Z": ("z", 0)},
+    "gps_degrade": {"SIM_GPS1_NUMSATS": ("sats", 4),
+                    "SIM_GPS1_NOISE": ("noise", 10)},
+    "motor_out":   {"SIM_ENGINE_FAIL": ("motors", 1),
+                    "SIM_ENGINE_MUL": ("mul", 0)},
+    "rc_fail":     {"SIM_RC_FAIL": ("how", 1)},
+    "compass_fail": {"SIM_MAG1_FAIL": ("how", 1),
+                     "SIM_MAG1_OFS_X": ("ofs_x", None),
+                     "SIM_MAG1_OFS_Y": ("ofs_y", None),
+                     "SIM_MAG1_OFS_Z": ("ofs_z", None),
+                     "SIM_MAG_RND": ("noise", None)},
+    "vibration":   {"SIM_VIB_FREQ_X": ("freq", 60),
+                    "SIM_VIB_FREQ_Y": ("freq", 60),
+                    "SIM_VIB_FREQ_Z": ("freq", 60),
+                    "SIM_VIB_MOT_MAX": ("amp", 40),
+                    "SIM_ACC1_RND": ("noise", 20)},
+}
+
 # every kind scenario_runner._fault implements
 FAULT_KINDS = ("link_cut", "loss", "delay", "gcs_disconnect", "server_down",
-               "kill", "restart", "module_kill", "freeze", "battery",
-               "gps_off", "server_clock", "no_time_sync", "rc_override",
+               "kill", "restart", "module_kill", "freeze",
+               "server_clock", "no_time_sync", "rc_override",
                "mode", "fcb_cut", "fcb_stall", "fcb_corrupt",
                "link_stall", "link_profile",
                # SL-0014 OS faults
-               "cpu_starve", "journal_unwritable", "clock_step")
+               "cpu_starve", "journal_unwritable", "clock_step",
+               "param") + tuple(FC_PRESETS)
 
 # ------------------------------------------------------- chaos: (TASK-10)
 #
@@ -387,6 +422,10 @@ def _validate(raw, path):
             raise simlib.SimError(
                 f"{path}: timeline[{i}] unknown fault {step['fault']!r} "
                 f"(known: {', '.join(FAULT_KINDS)})")
+        if step.get("fault") == "param" and not step.get("set"):
+            raise simlib.SimError(
+                f"{path}: timeline[{i}] fault param needs a non-empty "
+                "set: {NAME: value, ...}")
     for i, step in enumerate(raw.get("timeline", [])):
         if ("t" in step) == ("on" in step):
             raise simlib.SimError(

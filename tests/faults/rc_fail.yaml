@@ -1,0 +1,23 @@
+# rc_fail: SIM_RC_FAIL=1 stops the RC pulses entirely on an airborne
+# copter - the throttle failsafe (FS_THR_ENABLE default) drives the FC
+# into RTL. fc_mode proves the failsafe mode was taken; de_mavlink's
+# stdout shows the FC's own "Radio Failsafe" statustext.
+version: 1
+name: f_rc_fail
+transport: fake
+realtime: true
+slot_base: 133
+settle_s: 12
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: arm, unit: c1}
+  - {t: 8, do: takeoff, unit: c1, alt: 12}
+  - {t: 30, fault: rc_fail, unit: c1, how: 1, dur_s: 90}
+  - {t: 50, do: wait, seconds: 10}
+assert:
+  - fc_mode: {unit: c1, mode: RTL}
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "Radio Failsafe", at_least: 1}
+teardown: land

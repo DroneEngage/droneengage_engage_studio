@@ -70,8 +70,11 @@ Link faults (server type fake only):
                                       cut <s> | clear
 
 Vehicle faults:
-  param <unit> <NAME> <value>       SITL param set (battery SIM_BATT_VOLTAGE,
-                                    gps SIM_GPS_DISABLE)
+  param <unit> <NAME> <value>       SITL param set, verified: the
+                                    PARAM_VALUE echo must match name AND
+                                    value, else exit 1
+  param_get <unit> <NAME>           print the live param value
+                                    (PARAM_REQUEST_READ)
   rc <unit> <chan> <pwm>            RC_CHANNELS_OVERRIDE; pwm 65535 releases
 
 FCB-link faults (units/sims with `fcb_proxy: true`, SL-0008; any
@@ -85,6 +88,9 @@ transport - the per-unit proxy is ours, not the server's):
   fcb_inject <unit> <hex>         raw MAVLink bytes towards de_mavlink
   fcb_clear <unit>                remove rules, end any cut/stall
   fcb_stats <unit>                proxy counters + active rules
+
+Pilot (units with an fc, cont'd):
+  takeoff <unit> [alt_m]            MAV_CMD_NAV_TAKEOFF (arm in GUIDED first)
 
 Processes:
   kill <unit> <proc> | restart <unit> <proc> | start_proc <unit> <proc>
@@ -557,6 +563,60 @@ def mission_current(u, timeout=5):
         return None
     finally:
         m.close()
+
+
+def _param_id(msg):
+    """PARAM_VALUE.param_id comes back as str or NUL-padded bytes."""
+    pid = msg.param_id
+    if isinstance(pid, bytes):
+        pid = pid.decode(errors="replace")
+    return str(pid).rstrip("\x00")
+
+
+def fc_param_get(m, name, timeout=8):
+    """PARAM_REQUEST_READ -> the live value of `name`, or None when the
+    FC never echoes it (unknown param)."""
+    m.mav.param_request_read_send(m.target_system, m.target_component,
+                                  name.encode(), -1)
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        got = m.recv_match(type="PARAM_VALUE", blocking=True, timeout=2)
+        if got is not None and _param_id(got) == name:
+            return got.param_value
+    return None
+
+
+def fc_param_set(m, u, name, value, timeout=5):
+    """PARAM_SET verified by the PARAM_VALUE echo: the echo's param_id
+    must be `name` and its value `value` (float32 round-trip), else this
+    reports False. Stale PARAM_VALUEs (a queued answer to an earlier
+    PARAM_REQUEST_READ) carry the right name with the old value, so a
+    name-matching echo only ends the wait when the VALUE matches;
+    otherwise a param_get read-back decides, retried once."""
+    want = float(value)
+    for attempt in range(2):
+        m.mav.param_set_send(m.target_system, m.target_component,
+                             name.encode(), want, 9)
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            got = m.recv_match(
+                type="PARAM_VALUE", blocking=True,
+                timeout=max(0.2, timeout - (time.time() - t0)))
+            if got is None:
+                break
+            if _param_id(got) != name:
+                continue
+            if abs(got.param_value - want) <= max(1e-4, abs(want) * 1e-5):
+                print(f"{u['name']}: {name} <- {want} set", flush=True)
+                return True
+        back = fc_param_get(m, name)
+        if back is not None and \
+                abs(back - want) <= max(1e-4, abs(want) * 1e-5):
+            print(f"{u['name']}: {name} <- {want} set", flush=True)
+            return True
+    print(f"{u['name']}: {name} <- {want} "
+          f"echo mismatch: {back}", flush=True)
+    return False
 
 
 # ------------------------------------------------------------- processes
@@ -1821,19 +1881,66 @@ def main(argv):
         for u in resolve(a[0]):
             ctrl(f"noclock {u['party_id']} {a[1]}")
     elif c == "param":
-        # P5-07 battery/gps faults: runtime SITL parameter set
+        # P5-07 battery/gps faults: runtime SITL parameter set; the
+        # PARAM_VALUE echo must carry our name AND value
+        ok = True
         for u in with_fc(resolve(a[0])):
             m = mav(u)
             try:
-                m.mav.param_set_send(m.target_system, m.target_component,
-                                     a[1].encode(), float(a[2]), 9)
-                got = m.recv_match(type="PARAM_VALUE", blocking=True,
-                                   timeout=5)
-                ok = got is not None
-                print(f"{u['name']}: {a[1]} <- {a[2]} "
-                      f"({'set' if ok else 'no PARAM_VALUE echo'})")
+                ok &= fc_param_set(m, u, a[1], a[2])
             finally:
                 m.close()
+        if not ok:
+            sys.exit(1)
+    elif c == "param_get":
+        ok = True
+        for u in with_fc(resolve(a[0])):
+            m = mav(u)
+            try:
+                v = fc_param_get(m, a[1])
+            finally:
+                m.close()
+            if v is None:
+                print(f"{u['name']}: {a[1]} not on the FC")
+                ok = False
+            else:
+                print(f"{u['name']}: {a[1]} = {v}")
+        if not ok:
+            sys.exit(1)
+    elif c == "takeoff":
+        # NAV_TAKEOFF in the current mode (arm sets GUIDED); waits until
+        # the EKF reports >= 80% of the target altitude
+        from pymavlink import mavutil
+        alt = float(a[1]) if len(a) > 1 else 10
+        res = []
+        for u in with_fc(resolve(a[0])):
+            m = mav(u)
+            try:
+                m.mav.request_data_stream_send(
+                    m.target_system, m.target_component,
+                    mavutil.mavlink.MAV_DATA_STREAM_POSITION, 4, 1)
+                m.mav.command_long_send(
+                    m.target_system, m.target_component,
+                    mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                    0, 0, 0, 0, 0, 0, 0, alt)
+                t0 = time.time()
+                ok = False
+                while time.time() - t0 < 60:
+                    pos = m.recv_match(type="GLOBAL_POSITION_INT",
+                                       timeout=3, blocking=True)
+                    if pos is not None and \
+                            pos.get_srcSystem() == u["fc"]["sysid"] and \
+                            pos.relative_alt >= alt * 800:
+                        ok = True
+                        break
+                print(f"{u['name']}: takeoff {alt}m "
+                      f"{'reached' if ok else 'not confirmed'}",
+                      flush=True)
+                res.append(ok)
+            finally:
+                m.close()
+        if res and not all(res):
+            sys.exit(1)
     elif c == "rc":
         # P5-07 rc_override fault: RC_CHANNELS_OVERRIDE, 65535 releases
         for u in with_fc(resolve(a[0])):

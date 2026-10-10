@@ -1,0 +1,23 @@
+# vibration: SIM_VIB_FREQ_* + SIM_VIB_MOT_MAX + SIM_ACC1_RND shake the
+# IMU while the motors run (SITL only injects the noise over
+# SIM_INS_THR_MIN throttle). The accel noise wrecks the EKF's velocity/
+# position estimates: the copter's reported vx swings past 1 m/s and
+# rel_alt bobs ~2 m around the hover where baseline is +/-0.05.
+version: 1
+name: f_vibration
+transport: fake
+realtime: true
+slot_base: 148
+settle_s: 10
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: arm, unit: c1}
+  - {t: 8, do: takeoff, unit: c1, alt: 10}
+  - {t: 25, fault: vibration, unit: c1, noise: 40, dur_s: 40}
+  - {t: 50, do: wait, seconds: 8}
+assert:
+  - telemetry_value: {unit: c1, field: vx, lt: -0.5, pick: min}
+  - telemetry_value: {unit: c1, field: rel_alt_m, gt: 10.8, pick: max}
+teardown: land

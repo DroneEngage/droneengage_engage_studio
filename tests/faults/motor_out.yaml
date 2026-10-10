@@ -1,0 +1,23 @@
+# motor_out: SIM_ENGINE_FAIL bitmask + SIM_ENGINE_MUL=0 kills motor 1
+# on an airborne quad - it loses a quarter of its thrust, tumbles and
+# comes down. Telemetry proves the fall (rel_alt min) and de_mavlink's
+# stdout carries the FC's own "Potential Thrust Loss" statustext.
+version: 1
+name: f_motor_out
+transport: fake
+realtime: true
+slot_base: 128
+settle_s: 12
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: arm, unit: c1}
+  - {t: 8, do: takeoff, unit: c1, alt: 12}
+  - {t: 30, fault: motor_out, unit: c1, motors: 1, mul: 0, dur_s: 60}
+  - {t: 45, do: wait, seconds: 10}
+assert:
+  - telemetry_value: {unit: c1, field: rel_alt_m, lt: 4, pick: min}
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "Thrust Loss", at_least: 1}
+teardown: land

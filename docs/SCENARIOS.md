@@ -138,6 +138,8 @@ takes a name, `all`, a comma list, or `block:<name>`):
 |---|---|
 | `arm` / `disarm` / `land` / `reset` / `journal` / `kick` / `link_clear` / `fc` | `unit` |
 | `mode` | `unit`, `mode` (GUIDED, AUTO, RTL, …) |
+| `takeoff` | `unit`, `alt` (10) — NAV_TAKEOFF, waits until ~80% of alt |
+| `param` / `param_get` | `unit`, `name`, `value` — verified SITL param set / live read-back |
 | `wait` | `seconds` |
 | `wait_journal` | `unit`, `re`, `timeout` (60), `any: true` |
 | `wait_log` | `unit`, `module`, `re`, `timeout` — module stdout, not journal |
@@ -169,8 +171,16 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `restart` | `unit`, `proc` (all) |
 | `module_kill` | `unit`, `module` — kill one module proc |
 | `freeze` | `unit`, `proc`\|`module`, `dur_s` — SIGSTOP the process (alive but silent); `dur_s` schedules the SIGCONT, without it the freeze holds until teardown |
-| `battery` | `unit`, `volts` (10.5), `cap_mah`, `dur_s`, `ok_volts`/`ok_cap_mah` |
-| `gps_off` | `unit`, `dur_s` — SIM_GPS1_FIXTYPE=0 |
+| `param` | `unit`, `set: {NAME: value, ...}`, `dur_s` — generic FC param write: each param is read BEFORE it is set (verified PARAM_VALUE echo), `dur_s` restores the read-back values |
+| `battery` | `unit`, `volts` (10.5), `cap_mah`, `res_ohm`, `dur_s`, `ok_volts`/`ok_cap_mah` — preset on `param`: SIM_BATT_VOLTAGE + optional BATT_CAPACITY / SIM_BATT_RES_OHM |
+| `gps_off` | `unit`, `dur_s`, `fixtype` (0) — SIM_GPS1_FIXTYPE |
+| `gps_jam` | `unit`, `dur_s`, `jam` (1) — SIM_GPS1_JAM: sats/lock/velocity go random |
+| `gps_glitch` | `unit`, `dur_s`, `x`/`y`/`z` (40/0/0 m) — SIM_GPS1_GLTCH_* position offset |
+| `gps_degrade` | `unit`, `dur_s`, `sats` (4), `noise` (10 m) — SIM_GPS1_NUMSATS + SIM_GPS1_NOISE |
+| `motor_out` | `unit`, `dur_s`, `motors` (bitmask, 1), `mul` (0) — SIM_ENGINE_FAIL + SIM_ENGINE_MUL |
+| `rc_fail` | `unit`, `dur_s`, `how` (1) — SIM_RC_FAIL: 1 no pulses, 2 throttle-950, 3 failsafe bit; airborne copter hits the FS_THR failsafe |
+| `compass_fail` | `unit`, `dur_s`, `how` (1 no data / 2 frozen), `ofs_x`/`ofs_y`/`ofs_z`, `noise` — SIM_MAG1_FAIL + optional SIM_MAG1_OFS_* / SIM_MAG_RND |
+| `vibration` | `unit`, `dur_s`, `freq` (60 Hz), `amp` (40), `noise` (20 m/s²) — SIM_VIB_FREQ_* + SIM_VIB_MOT_MAX + SIM_ACC1_RND; only bites with the motors on |
 | `server_clock` | `offset_ms` (-3600000) — skew the fleet clock, fake only |
 | `no_time_sync` | `unit`, `dur_s` — units stop carrying `ts`, fake only |
 | `rc_override` | `unit`, `chan`/`channels`+`pwm` (3:1600), `dur_s` (15) |
