@@ -257,7 +257,9 @@ short:
   `kill` / `restart` / `freeze` / `unfreeze` (also `unit: server`;
   `freeze` is SIGSTOP - a hang, not a crash), `reboot` (de_comm under a new
   boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
-  (fake server only), `commline`, `send`, `write_file` (`{unit, module,
+  (fake server only), `commline`, `send`, `udp_chunks` (`{unit, module,
+  drop_pct, reorder, dup_pct, seed}` - knobs on the unit's
+  module↔de_comm chunk proxy), `write_file` (`{unit, module,
   path, json}` - a JSON file into `var/run/<unit>/<module>/`, for module file
   seams like de_rpi_gpio's `gpio_inputs.json` or de_precland's
   `precland_scene.json`; `also: [{path, json, delay_ms?}]`
@@ -425,7 +427,10 @@ Format (strict - unknown keys fail against
 - `fault:` kinds: `link_cut`, `loss`, `delay`, `gcs_disconnect`,
   `server_down`, `kill`, `restart`, `module_kill`, `battery`, `gps_off`,
   `mode`, `rc_override`, `server_clock`, `no_time_sync` (fake transport
-  for the link/clock ones). `dur_s` auto-restores where it applies.
+  for the link/clock ones), `udp_chunks` (a seeded drop/reorder/dup
+  chunk proxy on the unit's module↔de_comm s2s link - works on any
+  transport; the loader wires the `udp_proxy_<module>` proc itself).
+  `dur_s` auto-restores where it applies.
 - `assert:` adds `proc_alive`/`proc_dead`, `link_offline`,
   `roster_value`, `operator_log_count`, `telemetry_value`, `fc_mode`,
   `distance_to` (incl. `detected_cls:` against the bot's seen targets),

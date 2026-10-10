@@ -428,7 +428,7 @@ def load_sim(path_or_spec, base_dir=None):
         if isinstance(entry, str):
             entry = {"block": entry}
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
-                            "account", "add_modules", "role"}
+                            "account", "add_modules", "role", "udp_proxy"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -872,6 +872,17 @@ def _expand_unit(sim, b, name, entry, at, catalog):
     for m in u["modules"]:
         if m != "de_comm":
             u["ports"][m] = int(catalog[m]["port_base"]) + 10 * slot
+    for m in entry.get("udp_proxy") or []:
+        # SL-0010: a chunk-fault proxy on this module's s2s link. It
+        # claims the module's slot port +1 (port_base strides are 1000,
+        # so +1..+9 of any module's slot decade is free); gen_unit then
+        # points the module's s2s_udp_target_port at it and the proxy
+        # owns the whole module<->de_comm path - de_comm answers the
+        # sender's address, so both directions cross it.
+        if m == "de_comm" or m not in u["modules"]:
+            raise SimError(f"unit {name}: udp_proxy {m!r} is not one of "
+                           f"its modules ({u['modules']})")
+        u["ports"]["udp_proxy_" + m] = u["ports"][m] + 1
     if max(u["ports"].values()) > 65535:
         raise SimError(f"unit {name}: slot {slot} pushes ports past 65535")
 
@@ -1150,7 +1161,12 @@ def journal_dir(u):
 
 def procs_of(u):
     """Process names of a unit in launch order."""
-    return (["sitl"] if u["fc"] else []) + list(u["modules"])
+    out = ["sitl"] if u["fc"] else []
+    for m in u["modules"]:
+        if "udp_proxy_" + m in u["ports"]:
+            out.append("udp_proxy_" + m)    # SL-0010: proxy before its module
+        out.append(m)
+    return out
 
 
 def ready_checks(u, catalog=None):
@@ -1296,17 +1312,40 @@ def gen_unit(u, sim, catalog):
         mcfg = load_config(module_template(spec))
         mcfg = deep_merge(mcfg, spec.get("set"))
         mcfg = deep_merge(mcfg, u["config"].get(m))
+        # SL-0010: a proxied module aims at its udp_proxy port instead
+        # of de_comm's - engine wiring, so block/unit overlays cannot
+        # break it either way
+        target = u["ports"].get("udp_proxy_" + m, u["ports"]["de_comm"])
         mcfg.update({
             "s2s_udp_target_ip": "127.0.0.1",
-            "s2s_udp_target_port": str(u["ports"]["de_comm"]),
+            "s2s_udp_target_port": str(target),
             "s2s_udp_listening_ip": "127.0.0.1",
             "s2s_udp_listening_port": str(u["ports"][m]),
             "use_unix_socket": False,
         })
         mcfg = deep_merge(mcfg, _fill(spec.get("wire") or {},
                                       dict(ctx, port=u["ports"][m])))
+        if "udp_proxy_" + m in u["ports"]:
+            # a catalog `wire:` s2s_udp_target_port would win that merge -
+            # the proxy keeps the last word
+            mcfg["s2s_udp_target_port"] = str(target)
         cfg_path = os.path.join(mdir, f"{m}.config.json")
         write_json(cfg_path, mcfg)
+        if "udp_proxy_" + m in u["ports"]:
+            # SL-0010: the pass-through default - ctl udp_chunks flips
+            # the knobs at fault time. The cmdline carries ENGINE_DIR
+            # so pid_is_ours claims it.
+            pdir = os.path.join(udir, "udp_proxy_" + m)
+            os.makedirs(pdir, exist_ok=True)
+            _launch_script(
+                u, "udp_proxy_" + m, pdir,
+                "python3 -u '%s' --listen '127.0.0.1:%d' "
+                "--upstream '127.0.0.1:%d' --peer '127.0.0.1:%d' "
+                "--label '%s.%s'"
+                % (os.path.join(ENGINE_DIR, "udp_proxy.py"),
+                   u["ports"]["udp_proxy_" + m],
+                   u["ports"]["de_comm"], u["ports"][m],
+                   u["name"], m))
         local = spec.get("local") or {}
         cmd = f"'{module_bin(m, spec)}' -c '{cfg_path}'"
         if local:

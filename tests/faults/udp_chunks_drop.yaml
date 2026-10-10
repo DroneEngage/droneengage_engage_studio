@@ -1,0 +1,40 @@
+# faults/udp_chunks_drop - the module<->de_comm UDP chunk proxy (SL-0010):
+# a seeded 5% of datagrams dropped on p1's de_mavlink<->de_comm s2s link
+# for dur_s 60, in both directions. A lost mid-train chunk kills that
+# whole message - the receiver resyncs on the next chunk 0 - so a
+# multi-chunk transfer sees a higher message loss than the 5% a solo
+# datagram sees; a "nav load timed out" in the journal is that loss
+# surfacing (the supervisor does not re-drive the leg). While the
+# window is open a 20 KB package is pushed as one 1085 frame
+# (packages/plan_survey_100.json, tools/gen_bigplan.py): de_comm always
+# journals "package upload accepted" - the GCS leg never crosses the
+# proxied link - whether or not the s2s nav-load train survives.
+# Assertions: every proc stays alive (de_comm, de_mavlink and the proxy
+# itself), the proxy's own log proves drops fired, and
+# recovers_after_fault sees link + telemetry healthy inside within_s of
+# the dur_s auto-restore. The trailing `wait` outlasts that restore by
+# ~40 s; it is relative to its own start so a slow wait_online can
+# never shrink the post-restore telemetry window.
+version: 1
+name: f_udp_chunks_drop
+transport: real
+settle_s: 10
+teardown: land
+fleet:
+  - {id: p1, cls: plane, params: {BRD_SD_MISSION: 32}}
+timeline:
+  - {t: 0, do: wait_online, unit: p1, timeout: 240}
+  - {t: 1, fault: udp_chunks, unit: p1, module: de_mavlink,
+     drop_pct: 5, reorder: 0, dup_pct: 0, dur_s: 60}
+  - {t: 2, do: send, ty: i, mt: 1085, tg: p1,
+     ms: {pkg: "{PKG:plan_survey_100.json}",
+          hash: "{HASH:plan_survey_100.json}"}}
+  - {t: 3, do: wait, seconds: 100}
+assert:
+  - proc_alive: {unit: p1, proc: de_comm}
+  - proc_alive: {unit: p1, proc: de_mavlink}
+  - proc_alive: {unit: p1, proc: udp_proxy_de_mavlink}
+  - journal_count: {unit: p1, re: "package upload accepted", equals: 1}
+  - recovers_after_fault: {within_s: 60}
+  - module_log_count: {unit: p1, module: udp_proxy_de_mavlink,
+                       re: " drop$", at_least: 1}

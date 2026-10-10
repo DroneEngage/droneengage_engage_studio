@@ -139,6 +139,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `reboot` | `unit` — de_comm under a fresh boot id |
 | `loss` / `delay` / `link_cut` / `commline` | `unit`, `percent`/`ms`/`seconds` — **fake transport only** |
 | `write_file` | `unit`, `module`, `path`, `json`, `also: []` (`delay_ms`) |
+| `udp_chunks` | `unit`, `module`, `drop_pct`, `reorder`, `dup_pct`, `seed` — knobs on the unit's chunk proxy (needs `udp_proxy:` on the unit) |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
 ### `fault:` kinds
@@ -160,8 +161,23 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `no_time_sync` | `unit`, `dur_s` — units stop carrying `ts`, fake only |
 | `rc_override` | `unit`, `chan`/`channels`+`pwm` (3:1600), `dur_s` (15) |
 | `mode` | `unit`, `mode` — force an FC mode |
+| `udp_chunks` | `unit`, `module`, `drop_pct`, `reorder`, `dup_pct`, `seed`, `dur_s` — seeded chunk faults on the module↔de_comm s2s proxy (any transport) |
 
 `dur_s` auto-restores where it applies. `unit` accepts `all`.
+
+`udp_chunks` is the local-transport fault, not a server-link one, so it
+works on `transport: real` too. A `fault: udp_chunks` step makes the
+loader wire a `udp_proxy_<module>` process between that module and
+de_comm from sim-up (the unit `udp_proxy: [module]` opt-in is injected
+automatically; you may also write it on the fleet/sim entry yourself to
+get the proxy without a fault step — it then relays pass-through until
+a `do: udp_chunks` or `./sim ctl udp_chunks` flips knobs). The proxy is
+a pidfile-tracked unit proc (starts before its module, dies with the
+sim, shows in `proc_alive`), and the same `drop_pct`/`reorder`/`dup_pct`
+knobs are reachable live as `./sim ctl udp_chunks <unit> <module> ...`
+(`clear`/`stats` included). See `engine/udp_proxy.py` for the chunk
+semantics: drop is per-datagram, dup/reorder act on whole messages so a
+multi-chunk transfer is never corrupted by reordering.
 
 ## `assert:` — what proves it
 
