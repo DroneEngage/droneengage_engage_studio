@@ -1,0 +1,24 @@
+# param: the generic fault reads each param BEFORE it writes it, so
+# dur_s restores the value the FC reported - never a baked-in default.
+# SIM_BATT_VOLTAGE is first set to 11.0 (a non-default), then fault:
+# param sags it to 10.0 for dur_s. The telemetry series proves the sag
+# (min < 10.6) and the read-back restore: the run ends back at ~11.0,
+# not at the 12.6 factory value.
+version: 1
+name: f_param
+transport: fake
+realtime: true
+slot_base: 113
+settle_s: 8
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 2, do: param, unit: c1, name: SIM_BATT_VOLTAGE, value: 11.0}
+  - {t: 6, do: param_get, unit: c1, name: SIM_BATT_VOLTAGE}
+  - {t: 8, fault: param, unit: c1, set: {SIM_BATT_VOLTAGE: 10.0},
+     dur_s: 15}
+  - {t: 30, do: wait, seconds: 8}
+assert:
+  - telemetry_value: {unit: c1, field: bat_v, lt: 10.6, pick: min}
+  - telemetry_value: {unit: c1, field: bat_v, gt: 10.7, lt: 11.5}
+teardown: reset

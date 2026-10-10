@@ -1,0 +1,22 @@
+# gps_glitch: SIM_GPS1_GLTCH_* shifts the reported position by metres
+# (x=100 north here; the runner converts metres -> the degrees this
+# ArduPilot's GLTCH takes). The EKF treats a sustained offset as real
+# and pulls the estimate to home+100 m - telemetry's lat max must land
+# in the shifted band (a bare "moved north" bound would pass on the
+# lat=0 rows the FC emits before its first fix).
+version: 1
+name: f_gps_glitch
+transport: fake
+realtime: true
+slot_base: 123
+settle_s: 10
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  # dur_s must outlast the run: the lat assert reads the LATEST row, so
+  # the glitch must still hold when the assert window opens
+  - {t: 3, fault: gps_glitch, unit: c1, x: 100, dur_s: 200}
+  - {t: 35, do: wait, seconds: 8}
+assert:
+  - telemetry_value: {unit: c1, field: lat, gt: -35.3630, lt: -35.3610}
+  - telemetry_value: {unit: c1, field: fix_type, ge: 3}

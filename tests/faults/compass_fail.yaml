@@ -1,0 +1,19 @@
+# compass_fail: SIM_MAG1_FAIL=1 stops compass data - the FC reports
+# "Compass 1 not healthy" over statustext and the EKF switches compass
+# instances; both land in de_mavlink's stdout log.
+version: 1
+name: f_compass_fail
+transport: fake
+realtime: true
+slot_base: 138
+settle_s: 10
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 3, fault: compass_fail, unit: c1, how: 1, dur_s: 60}
+  - {t: 25, do: wait, seconds: 10}
+assert:
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "Compass 1 not healthy", at_least: 1}
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "switching to compass", at_least: 1}

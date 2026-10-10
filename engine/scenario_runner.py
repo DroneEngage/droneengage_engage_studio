@@ -30,6 +30,7 @@ file. The recorder and epoch are always torn down with the run.
 """
 
 import json
+import math
 import os
 import re
 import shutil
@@ -297,10 +298,77 @@ def ctx_manifest():
 # ---------------------------------------------------------------- faults
 
 def _schedule(ctx, after_s, fn, *args):
-    t = threading.Timer(after_s, fn, args=args)
+    # `fired` marks "the callback began" - is_alive() alone cannot tell a
+    # pending timer from one mid-callback, and the finally flush below
+    # must not double-run restores that are already in flight
+    fired = threading.Event()
+    def once():
+        fired.set()
+        fn(*args)
+    t = threading.Timer(after_s, once)
     t.daemon = True
+    t.fired_once = fired
     t.start()
     ctx["timers"].append(t)
+
+
+def _fc_param_restore(unit, spec):
+    """The dur_s restore half of a param fault: write every read-back
+    value through the verified ctl path."""
+    ok = True
+    for name, val in spec.items():
+        ok &= runner.run_ctl("param", unit, name, val)
+    return ok
+
+
+def _fc_param_fault(ctx, unit, spec, dur, restore_over=None):
+    """Generic FC param fault (SL-0005): one serial0 session per unit
+    reads each param BEFORE setting it; dur_s schedules the restore of
+    the values that were read (never a baked-in default). `restore_over`
+    maps {param: value} explicit restores on top (battery's ok_* args)."""
+    us = [u for u in ctl.resolve(unit, ctx["manifest"]) if u["fc"]]
+    if not us:
+        print("  fault param needs an FC unit", flush=True)
+        return False
+    ok = True
+    for u in us:
+        m = ctl.mav(u)
+        before = {}
+        try:
+            for name in spec:
+                v = ctl.fc_param_get(m, name)
+                if v is None:
+                    print(f"  {u['name']}: {name} not on the FC",
+                          flush=True)
+                    ok = False
+                    continue
+                before[name] = v
+            for name, val in spec.items():
+                if name in before:
+                    ok &= ctl.fc_param_set(m, u, name, val)
+        finally:
+            m.close()
+        if dur and before:
+            restore = dict(before)
+            for p, v in (restore_over or {}).items():
+                if v is not None and p in restore:
+                    restore[p] = v
+            _schedule(ctx, float(dur), _fc_param_restore,
+                      u["name"], restore)
+    return ok
+
+
+def _fc_param_spec(kind, a):
+    """fault kind + step args -> {PARAM: value}. `param` takes its own
+    set:; a preset expands its table row (scenario.FC_PRESETS)."""
+    if kind == "param":
+        return {str(k): v for k, v in (a.get("set") or {}).items()}
+    out = {}
+    for p, (arg, default) in scenario.FC_PRESETS[kind].items():
+        v = a.get(arg, default) if arg else default
+        if v is not None:
+            out[p] = v
+    return out
 
 
 def _rc_pump(ctx, u, chans, dur_s):
@@ -405,34 +473,36 @@ def _fault(step, scn, ctx):
             if proc in ("de_comm", "all"):
                 _restore_at(float(dur))
         return ok
-    if kind == "battery":
-        ok = runner.run_ctl("param", unit, "SIM_BATT_VOLTAGE",
-                            a.get("volts", 10.5))
+    if kind == "param" or kind in scenario.FC_PRESETS:
+        # SL-0005 generic path: `param` writes its set:; the named
+        # presets (gps_jam, motor_out, ...) and the re-implemented
+        # battery/gps_off expand to one. Everything rides the
+        # read-before-set + read-back restore machinery.
+        spec = _fc_param_spec(kind, a)
+        if not spec:
+            print(f"  fault {kind}: empty param set", flush=True)
+            return False
+        if kind == "gps_glitch":
+            # GLTCH.x/y are DEGREES of lat/lng on this ArduPilot
+            # (SIM_GPS.cpp: d.latitude += glitch.x) - the step args are
+            # metres (z already is); convert against the sim home
+            home = (ctx["manifest"].get("home") or simlib.HOME)[0]
+            spec["SIM_GPS1_GLTCH_X"] = \
+                float(spec["SIM_GPS1_GLTCH_X"]) / 111320.0
+            spec["SIM_GPS1_GLTCH_Y"] = float(spec["SIM_GPS1_GLTCH_Y"]) / (
+                111320.0 * math.cos(math.radians(home)))
         # the supervisor's battery_low watches remaining PERCENT, which
         # the FC derives from consumed mAh vs BATT_CAPACITY - a voltage
         # sag alone never moves it. cap_mah shrinks the pack so remaining
         # collapses to 0% at once (must stay >10 mAh: below that the FC
         # reports the reading invalid, which would reset the handler).
-        if a.get("cap_mah") is not None:
-            ok &= runner.run_ctl("param", unit, "BATT_CAPACITY",
-                                 a["cap_mah"])
-        if dur:
-            _schedule(ctx, float(dur), runner.run_ctl,
-                      "param", unit, "SIM_BATT_VOLTAGE", a.get("ok_volts", 12.6))
-            if a.get("cap_mah") is not None:
-                _schedule(ctx, float(dur), runner.run_ctl,
-                          "param", unit, "BATT_CAPACITY",
-                          a.get("ok_cap_mah", 3300))
-        return ok
-    if kind == "gps_off":
-        # SIM_GPS1_FIXTYPE forces the fix the sim GPS reports (6=3D_DGPS,
-        # 0=NO_GPS) - deterministic on every SITL version; the old
-        # SIM_GPS_DISABLE knob no longer exists.
-        ok = runner.run_ctl("param", unit, "SIM_GPS1_FIXTYPE", 0)
-        if dur:
-            _schedule(ctx, float(dur), runner.run_ctl,
-                      "param", unit, "SIM_GPS1_FIXTYPE", 6)
-        return ok
+        # ok_volts/ok_cap_mah (legacy args) pin the restore instead of
+        # the read-back value.
+        restore_over = None
+        if kind == "battery":
+            restore_over = {"SIM_BATT_VOLTAGE": a.get("ok_volts"),
+                            "BATT_CAPACITY": a.get("ok_cap_mah")}
+        return _fc_param_fault(ctx, unit, spec, dur, restore_over)
     if kind == "server_clock":
         if ctx["server"]["type"] != "fake":
             print("  fault server_clock needs transport: fake", flush=True)
@@ -878,7 +948,9 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
         # a fault's dur_s restore that never fired inside the timeline
         # runs now instead - faults never leak into a reused fleet
         for t in ctx["timers"]:
-            if t.is_alive():
+            if t.is_alive() and not t.fired_once.is_set():
+                # an in-flight callback counts as is_alive() too - skip
+                # it or the restore would run twice, concurrently
                 t.cancel()
                 try:
                     t.function(*t.args, **t.kwargs)
