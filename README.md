@@ -65,6 +65,7 @@ More of the catalog:
 ./sim show sims/copters3.yaml         # what a sim expands to (units, ports)
 ./sim new my_run                      # scaffold scenarios/my_run.yaml
 ./sim validate scenarios/my_run.yaml  # schema + refs, starts nothing
+./sim expand tests/soak/soak_copters3.yaml  # the chaos: schedule, run nothing
 ./sim suite tests/faults              # a whole directory x seeds
 ```
 

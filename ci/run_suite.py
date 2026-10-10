@@ -51,13 +51,20 @@ RESULTS = simlib.RESULTS_DIR
 
 
 def yaml_files(roots):
+    """Every *.yaml under each root - except soak suites: a */soak/ dir
+    holds wall-clock runs (tests/soak is 30 min at speed-up 1), opt-in
+    only via an explicit --roots <path>/soak."""
     out = []
     for r in roots:
         d = os.path.join(ROOT, r)
-        out += sorted(glob.glob(os.path.join(d, "**", "*.yaml"),
-                                recursive=True) +
-                      glob.glob(os.path.join(d, "**", "*.yml"),
-                                recursive=True))
+        files = sorted(glob.glob(os.path.join(d, "**", "*.yaml"),
+                                 recursive=True) +
+                       glob.glob(os.path.join(d, "**", "*.yml"),
+                                 recursive=True))
+        if os.path.basename(os.path.normpath(d)) != "soak":
+            files = [f for f in files
+                     if "soak" not in os.path.relpath(f, d).split(os.sep)]
+        out += files
     return out
 
 

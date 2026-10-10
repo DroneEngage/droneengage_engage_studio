@@ -89,6 +89,35 @@
         }
       }
     },
+    "chaos": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["faults"],
+      "description": "TASK-10 seeded fault schedule, expanded at load time into timeline fault steps (same seed -> same schedule; docs/SCENARIOS.md)",
+      "properties": {
+        "faults": {"type": "array", "minItems": 1,
+          "description": "draw pool: a bare kind, or {kind, ...step args} (args: merges too)",
+          "items": {"oneOf": [
+            {"type": "string"},
+            {"type": "object", "required": ["kind"],
+             "properties": {"kind": {"type": "string"},
+                            "args": {"type": "object"}}},
+            {"type": "object", "minProperties": 1, "maxProperties": 1,
+             "not": {"required": ["kind"]}}]}},
+        "units": {"type": "array", "minItems": 1,
+                  "items": {"type": "string"},
+                  "description": "fleet ids the faults may hit (default: the whole fleet)"},
+        "every_s": {"type": "array", "minItems": 2, "maxItems": 2,
+                    "items": {"type": "number", "minimum": 0},
+                    "description": "seconds between draws (default [60,180])"},
+        "dur_s": {"type": "array", "minItems": 2, "maxItems": 2,
+                  "items": {"type": "number", "minimum": 0},
+                  "description": "fault window for dur_s kinds (default [10,60])"},
+        "from_t": {"type": "number", "default": 0},
+        "until_t": {"type": "number",
+                    "description": "end of the draw window (default: the timeline's last t)"}
+      }
+    },
     "operator": {
       "type": ["object", "null"],
       "additionalProperties": false,

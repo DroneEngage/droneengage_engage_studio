@@ -33,6 +33,7 @@ introduced them:
 | `precland/` | precision landing (stub and real de_precland) |
 | `capacity/` | oversized plans: wire/package/FC/GCS capacity and the no-space boundary |
 | `camera/`, `gpio/`, `sound/`, `payload/` | per-module capability events and actions |
+| `soak/` | long wall-clock chaos soaks (30 min, speed-up 1) - **not** in the default suite; run with `./sim suite tests/soak` or `--roots tests/soak` |
 
 Every file opens with a one-paragraph `#` header saying what it proves;
 `ci/check_library.py` enforces it, and `./sim list tests` prints the

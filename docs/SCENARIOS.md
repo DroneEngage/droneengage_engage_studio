@@ -25,8 +25,10 @@ Commands:
 ./sim validate scenarios/my_scenario.yaml   # schema + refs, starts nothing
 ./sim run scenarios/my_scenario.yaml        # run it (owns the machine)
 ./sim run <file> --seed 7                   # seeded rerun
+./sim expand <file> [--seed N]              # print the chaos: schedule, run nothing
 ./sim view <file>                           # run + hold with the 3D viewer
 ./sim suite tests/faults --seeds 1,2        # a directory x seeds
+./sim suite tests/soak                      # soak suites are opt-in (excluded by default)
 ./sim list                                  # catalog everything runnable
 ```
 
@@ -161,7 +163,60 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `rc_override` | `unit`, `chan`/`channels`+`pwm` (3:1600), `dur_s` (15) |
 | `mode` | `unit`, `mode` — force an FC mode |
 
-`dur_s` auto-restores where it applies. `unit` accepts `all`.
+`dur_s` auto-restores where it applies: `link_cut` expires server-side;
+`loss`/`delay` run `link_clear`; `kill`/`module_kill` restart the proc;
+`server_down` relaunches the server; `freeze`/`battery`/`gps_off`/
+`no_time_sync`/`server_clock`/`rc_override`/`gcs_disconnect` undo
+themselves. `unit` accepts `all`.
+
+## `chaos:` — a seeded fault schedule (optional)
+
+A `chaos:` block draws a fault schedule at **load time** and inlines it
+into the timeline as ordinary `fault:` steps — no RNG exists at run
+time, so the same seed always produces the same schedule:
+
+```yaml
+chaos:
+  faults:                          # the draw pool (required)
+    - loss                         #   a bare kind
+    - {kind: freeze, proc: de_comm}#   or {kind, ...step args}
+    - {kind: mode, mode: RTL}      #   `mode` needs an explicit mode:
+  units: [c1, c2, c3]              # fleet ids to hit (default: the fleet)
+  every_s: [120, 300]              # seconds between draws (default [60,180])
+  dur_s: [20, 60]                  # fault window for dur_s kinds (default [10,60])
+  from_t: 120                      # start of the draw window (default 0)
+  until_t: 1700                    # end (default: the timeline's last t)
+```
+
+Rules the loader enforces at `validate` time:
+
+- Every kind must be one the **transport** serves — link/clock faults
+  (`link_cut`, `loss`, `delay`, `server_clock`, `no_time_sync`) only on
+  `transport: fake`.
+- FC faults (`battery`, `gps_off`, `rc_override`, `mode`) need at least
+  one FC unit in `units:`, and draw only from FC units.
+- Overlapping windows of the **same unit+kind** are never drawn (a
+  scripted `fault:` step's window counts too).
+- A chaos scenario must carry **at least one run-wide invariant
+  assertion** (`no_unexpected_restart`, `rss_growth`, `fd_growth`,
+  `journal_size`, `recovers_after_fault`, `no_stuck_state`) — an
+  unscripted run proves nothing without one.
+- `module_kill`/`freeze` without a `module:`/`proc:` pick a random module
+  of the drawn unit; `server_down`/`gcs_disconnect`/`server_clock` are
+  fleet-scoped and get no `unit:`.
+
+The expansion is printed when the run starts and written to
+`var/results/<run>/expanded.yaml` — a valid de.scenario/1 file (chaos:
+removed, steps inlined, paths absolutized). `./sim expand <file>
+[--seed N]` prints the same file without running anything; a failing
+seed's `expanded.yaml` reruns as a fixed regression
+(`./sim run <out>/expanded.yaml`).
+
+Long wall-clock soaks live in `tests/soak/` — the default `./sim suite`
+/ `ci/run_suite.py` roots skip them; run one explicitly with
+`./sim suite tests/soak` or `--roots tests/soak` (DE timers are
+wall-clock: soaks always run at speed-up 1, e.g.
+`tests/soak/soak_copters3.yaml`).
 
 ## `assert:` — what proves it
 
