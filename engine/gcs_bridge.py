@@ -243,7 +243,10 @@ async def main():
     global PARTY
     srv = simlib.load_manifest(sys.argv[1] if len(sys.argv) > 1 else None)["server"]
     PARTY = srv.get("gcs_party") or simlib.GCS_PARTY
-    ctl = await asyncio.start_server(control, "127.0.0.1", srv["control_port"])
+    # control lines carry whole packages (`send <1085>`) - the default
+    # 64 KiB stream limit resets the conn on a big plan
+    ctl = await asyncio.start_server(control, "127.0.0.1",
+                                     srv["control_port"], limit=16 << 20)
     print(f"[bridge] control on 127.0.0.1:{srv['control_port']} "
           f"(server {srv['port']}, auth={srv['auth']})", flush=True)
     async with ctl:

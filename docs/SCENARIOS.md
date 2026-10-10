@@ -148,6 +148,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `freeze` / `unfreeze` | `unit`, `proc` (`dur_s` self-resume on freeze) — SIGSTOP/SIGCONT: a hang, not a crash |
 | `reboot` | `unit` — de_comm under a fresh boot id |
 | `loss` / `delay` / `link_cut` / `commline` | `unit`, `percent`/`ms`/`seconds` — **fake transport only** |
+| `link` | `unit`, `set` — raw link-model sub-line(s), e.g. `set: "ge 0.05 0.2 0 90 stall"` or `set: ["loss_tx 0", "loss_rx 100"]`, fake only |
 | `write_file` | `unit`, `module`, `path`, `json`, `also: []` (`delay_ms`) |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
@@ -156,6 +157,8 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | fault | args |
 |---|---|
 | `link_cut` | `unit`, `dur_s` (30) — sever the server link, fake only |
+| `link_stall` | `unit`, `dur_s` (30) — hold every byte in order for the window (a buffered blackout: the ws stays up, the unit's own watchdog notices), fake only |
+| `link_profile` | `unit`, `profile` (a `link_model.PROFILES` name: `lte_edge`, `lte_stall`, `uplink_dead`, `dial_up`) and/or `cmds` (raw `link` sub-lines like `loss_rx 100`); `dur_s` clears the link, fake only |
 | `loss` | `unit`, `percent` (50) — seeded packet loss, fake only |
 | `delay` | `unit`, `ms` (500) — link delay, fake only |
 | `gcs_disconnect` | `dur_s` (30) — drop the operator's GCS session |

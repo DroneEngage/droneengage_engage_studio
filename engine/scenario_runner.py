@@ -92,8 +92,14 @@ def run_verify(scn, results_dir):
     # --json: without it the CLI prints human text and the findings can
     # never be counted (a list of {sev, rule, path, msg} on stdout)
     try:
+        # the wrapper locates the webclient repo by env or sibling path;
+        # neither works from an sl-* worktree - hand it the resolved
+        # simlib paths (same values the main checkout would find)
+        env = dict(os.environ, DE_CODE=simlib.DE_CODE,
+                   DE_WEBCLIENT_DIR=simlib.WEBCLIENT_REPO)
         r = subprocess.run(["node", cli, scn["operation"], "--json"],
-                           capture_output=True, text=True, timeout=120)
+                           capture_output=True, text=True, timeout=120,
+                           env=env)
     except (subprocess.TimeoutExpired, OSError) as e:
         out["cli"] = cli
         out["error"] = f"{type(e).__name__}: {e}"
@@ -363,6 +369,32 @@ def _fault(step, scn, ctx):
     if kind == "link_cut":
         _restore_at(float(dur or 30))
         return runner.run_ctl("link_cut", unit, dur or 30)
+    if kind == "link_stall":
+        # SL-0007: a hard in-order hold of every byte on the link for
+        # dur|seconds s - the ws stays up (only the unit's own watchdog
+        # notices); the buffered frames flush when the window ends.
+        seconds = float(dur or 30)
+        _restore_at(seconds)
+        return runner.run_ctl("link", unit, "stall", seconds)
+    if kind == "link_profile":
+        # SL-0007: a named link_model preset (lte_edge, uplink_dead,
+        # ...) via `profile:`, and/or raw model knobs via
+        # `cmds: ["loss_rx 100", ...]`; dur_s clears the link after.
+        ok = True
+        if a.get("profile"):
+            ok = runner.run_ctl("link", unit, "profile",
+                                a["profile"]) and ok
+        for cmd in a.get("cmds") or []:
+            ok = runner.run_ctl("link", unit,
+                                *str(cmd).split()) and ok
+        if not a.get("profile") and not a.get("cmds"):
+            print("  link_profile needs profile:|cmds:", flush=True)
+            return False
+        if ok and dur:
+            _schedule(ctx, float(dur), runner.run_ctl, "link_clear",
+                      unit)
+            _restore_at(float(dur))
+        return ok
     if kind == "loss":
         return runner.run_ctl("loss", unit, a.get("percent", 50))
     if kind == "delay":

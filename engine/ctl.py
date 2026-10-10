@@ -41,6 +41,10 @@ Fleet ops (P4A-09, DE_OP_CONTROL 1094):
                                     regex a reply line must match
   journal <unit> [from]             P2-12 download (1088 pages)
   roster <seconds> <min_peers>      listen for 1092 rosters as a GCS
+  beacon <unit> <seconds> [min]     count the unit's mt=1004 presence
+                                    beacons on a fresh GCS listen - bounded
+                                    "GCS still hears it" evidence inside an
+                                    asymmetric link-fault window (SL-0007)
   commline <unit> <s>               in-band cut: 6509 {ws:false, wsd:s}
   write_file <unit> <module> <path> <json> [<path> <json> ...]
                                     write JSON file(s) into
@@ -58,6 +62,12 @@ Link faults (server type fake only):
   link_clear <unit> | links | clock offset <ms> |
   noclock <unit> <0|1>                drop/restore the unit's clock stamps
                                       (P5-07 no_time_sync: it stays tq=0)
+  link <unit> <sub> [args...]         raw link_model control (SL-0007):
+                                      stall <s> | ge <p_gb> <p_bg> <lg>
+                                      <lb> [drop|stall] | bw <B/s> |
+                                      jitter <ms> | loss_tx <%> |
+                                      loss_rx <%> | profile <name> |
+                                      cut <s> | clear
 
 Vehicle faults:
   param <unit> <NAME> <value>       SITL param set (battery SIM_BATT_VOLTAGE,
@@ -1707,6 +1717,20 @@ def main(argv):
         u = resolve(a[0])[0]
         for ln in journal_download(u, int(a[1]) if len(a) > 1 else 0):
             print(ln)
+    elif c == "beacon":
+        # SL-0007: mt=1004 presence beacons are the unit's own periodic
+        # broadcasts to _GCS_ - hearing them inside a link-fault window
+        # proves the unit->server->GCS direction is alive without
+        # needing a multi-unit fleet for 1092 rosters
+        u = resolve(a[0])[0]
+        secs = float(a[1]) if len(a) > 1 else 5
+        want = int(a[2]) if len(a) > 2 else 1
+        n = sum(1 for m in gcs_collect(None, {1004}, secs)
+                if m.get("sd") == u["party_id"])
+        print(f"  {u['name']}: {n} presence beacon(s) in {secs:g}s")
+        if n < want:
+            sys.exit(f"FAIL: heard {n} < {want} of {u['name']}'s "
+                     "1004 beacons")
     elif c == "roster":
         secs = float(a[0]) if a else 5
         want = int(a[1]) if len(a) > 1 else 0
@@ -1775,6 +1799,18 @@ def main(argv):
     elif c == "link_clear":
         for u in resolve(a[0]):
             ctrl(f"link {u['party_id']} clear")
+    elif c == "link":
+        # SL-0007 raw link-model control passthrough:
+        # `link <unit> stall 30` / `link 1 ge 0.05 0.2 0 90 stall` /
+        # `link all profile lte_edge` - sub-command args after the unit
+        # token go to the fake server verbatim
+        if len(a) < 2:
+            sys.exit("usage: link <unit> <sub> [args...]  "
+                     "(stall|ge|bw|jitter|loss_tx|loss_rx|profile|"
+                     "cut|clear)")
+        for u in resolve(a[0]):
+            ctrl(f"link {u['party_id']} "
+                 + " ".join(str(x) for x in a[1:]))
     elif c == "links":
         ctrl("stats")
     elif c == "clock":

@@ -24,10 +24,18 @@ GPS/NavInfo/IMU) are routed on the header's tg/ty with sd+p stamped and
 the payload carried verbatim - same as js_chat_routing.js does.
 
 Per-link fault injection (the replacement for tc/netem, no root needed).
-Each party id owns a link state {loss %, delay ms, cut until} and one seeded
-RNG per direction. Faults apply in BOTH directions and to EVERY frame,
-including the 9005 ping echo: de_comm's watchdog treats any received frame
-as proof of life, so a cut that let pings through would never be noticed.
+Each party id owns a link_model.Link: the link state plus one seeded RNG
+per direction (tx = unit->server, rx = server->unit, unit-centric). Faults
+apply in BOTH directions and to EVERY frame, including the 9005 ping echo:
+de_comm's watchdog treats any received frame as proof of life, so a cut
+that let pings through would never be noticed. The model (engine/
+link_model.py) adds what a real bad link does on top of the flat knobs:
+per-direction loss, Gilbert-Elliot bursts (bad state = drop, or = stall:
+frames held in order while the ws stays connected - only the peer's own
+watchdog notices), a bandwidth cap with an ordered byte queue, seeded
+jitter, and a directed `stall <s>` (buffered blackout). Every admitted
+frame lands in the direction's ordered queue; a per-direction flusher
+task releases it at its computed time, so order is never violated.
 A cut link therefore behaves like an unreachable server:
   * established ws: silent - no frames either way; de_comm's ping watchdog
     (max_allowed_ping_delay_in_ms, floor 10 s) drops it -> "comm line offline"
@@ -41,7 +49,7 @@ runs with the same seed are statistically alike, not frame-identical.
 Control port (TCP, port+1), newline-delimited:
 
     list                              connected parties
-    stats                             per-link drop/delay counters
+    stats                             per-link model counters
     send <json>                       inject a wire message as GCS_FLEET
     to <tg> <json>                    same, with tg forced
     upload <pkgfile> <tg|all>         1085 DE_Package_Upload {pkg,hash}
@@ -52,8 +60,23 @@ Control port (TCP, port+1), newline-delimited:
                                       combine with `link ... cut` to keep it
                                       offline for a while)
     link <party|all> loss <0-100>     seeded packet loss on that link
+    link <party|all> loss_tx <0-100>  loss on the unit's tx (unit->server)
+    link <party|all> loss_rx <0-100>  loss on the unit's rx (server->unit)
     link <party|all> delay <ms>       fixed outbound+inbound delay
+    link <party|all> jitter <ms>      seeded jitter added to the delay
+    link <party|all> bw <bytes/s>     bandwidth cap - bytes serialize
+                                      through the ordered queue
+    link <party|all> ge <p_gb> <p_bg> <loss_g> <loss_b> [drop|stall]
+                                      Gilbert-Elliot burst loss per
+                                      direction; bad state drops or
+                                      holds frames in order
+    link <party|all> stall <seconds>  hold ALL traffic in order for N s
+                                      (a buffered blackout - the ws
+                                      stays up, the watchdog notices)
     link <party|all> cut <seconds>    drop everything for N seconds
+    link <party|all> profile <name>   named preset (link_model.PROFILES:
+                                      lte_edge, lte_stall, uplink_dead,
+                                      dial_up)
     link <party|all> clear            remove all faults
     clock offset <ms>                 skew the stamped server clock (P4A-07:
                                       the fleet clock is the SERVER's clock -
@@ -69,7 +92,6 @@ import asyncio
 import hashlib
 import json
 import os
-import random
 import ssl
 import sys
 import time
@@ -84,6 +106,7 @@ sys.pycache_prefix = os.environ.setdefault(
 
 sys.path.insert(0, __file__.rsplit("/", 1)[0])
 import simlib as fleet_lib
+import link_model
 
 GCS_SENDER = fleet_lib.GCS_PARTY
 FULL_PERM = fleet_lib.FULL_PERM
@@ -104,51 +127,13 @@ T0 = time.time()                    # stats uptime
 
 conns = {}          # ws -> Conn
 by_party = {}       # party_id -> Conn (latest connection wins)
-links = {}          # party_id -> Link (survives reconnects)
+links = {}          # party_id -> link_model.Link (survives reconnects)
 
 
 def fleet_ms():
     """The server's clock in unix ms, as stamped into 9007/9005 (CLOCK.md
     T2 - the fleet clock IS this clock, skew included)."""
     return int(time.time() * 1000) + CLOCK_OFFSET_MS
-
-
-class Link:
-    """Fault state of one party's server link (both directions)."""
-    __slots__ = ("loss", "delay_ms", "cut_until", "rng", "dropped",
-                 "delayed", "roster_bytes", "roster_msgs")
-
-    def __init__(self, party):
-        self.loss = 0.0
-        self.delay_ms = 0
-        self.cut_until = 0.0
-        # one stream per direction so uplink volume can't shift the
-        # downlink drop pattern
-        self.rng = {"rx": random.Random(f"{SEED}:{party}:rx"),
-                    "tx": random.Random(f"{SEED}:{party}:tx")}
-        self.dropped = 0
-        self.delayed = 0
-        # P4A-07 bandwidth: 1092 bytes/ms offered to this link
-        self.roster_bytes = 0
-        self.roster_msgs = 0
-
-    def is_cut(self):
-        return time.time() < self.cut_until
-
-    def admit(self, direction, label, loss=True):
-        """True if a frame may pass now. direction 'rx' (unit -> server)
-        or 'tx' (server -> unit). loss=False checks the cut only."""
-        if self.is_cut():
-            self.dropped += 1
-            if PRETTY:
-                print(f"[link  ] CUT drop {label}", flush=True)
-            return False
-        if loss and self.loss and self.rng[direction].random() * 100.0 < self.loss:
-            self.dropped += 1
-            if PRETTY:
-                print(f"[link  ] LOSS drop {label}", flush=True)
-            return False
-        return True
 
 
 def fleet_parties():
@@ -164,10 +149,102 @@ def fleet_parties():
     return sorted(parties)
 
 
+flushers = {}       # (party_id, direction) -> {"ev", "task"}
+
+
 def link_for(party):
     if party not in links:
-        links[party] = Link(party)
+        ln = link_model.Link(party, SEED)
+        ln.on_change = _link_changed
+        links[party] = ln
     return links[party]
+
+
+def _link_changed(party, direction):
+    """link_model.on_change: the direction's queue gained a head or a
+    stall released - wake its flusher (created lazily, on the loop)."""
+    fl = flushers.get((party, direction))
+    if fl is None:
+        fl = flushers[(party, direction)] = {"ev": asyncio.Event(),
+                                             "task": None}
+    fl["ev"].set()
+    if fl["task"] is None:
+        fl["task"] = asyncio.ensure_future(_flusher(party, direction))
+
+
+async def _flusher(party, direction):
+    """Drain one link direction forever: release due queue heads to
+    _emit in order, then sleep until the next release time or the next
+    on_change (a GE-stall head has no release - it waits on on_change)."""
+    ln = link_for(party)
+    ev = flushers[(party, direction)]["ev"]
+    while True:
+        now = time.time()
+        for tag in ln.pop_ready(direction, now):
+            try:
+                await _emit(party, direction, tag)
+            except Exception as e:
+                print(f"[link  ] emit {party}:{direction}: {e!r}",
+                      flush=True)
+        rel = ln.next_release(direction)
+        ev.clear()
+        try:
+            if rel is None:
+                await ev.wait()
+            else:
+                await asyncio.wait_for(ev.wait(), max(0.05, rel - now))
+        except asyncio.TimeoutError:
+            pass
+
+
+async def _emit(party, direction, tag):
+    """Hand one released frame to its destination. rx (server->unit)
+    goes to the party's CURRENT session - a frame held over a reconnect
+    still lands, in order. tx (unit->server) replays the ws receive
+    path; a frame whose ws already died is stale (TCP would RST it)."""
+    ln = link_for(party)
+    if direction == "rx":
+        conn = by_party.get(party)
+        if conn is None or ln.is_cut(time.time()):
+            ln.dir["rx"].purged += 1
+            return
+        try:
+            await conn.ws.send(tag)
+        except Exception:
+            pass
+        return
+    state, ws, raw = tag
+    if ws.state.name == "CLOSED" or ln.is_cut(time.time()):
+        # ws died while the frame rode the link (TCP would RST it), or
+        # a cut started in flight - same re-check rx does above
+        ln.dir["tx"].purged += 1
+        return
+    await process_frame(state, ws, raw)
+
+
+def egress(party, raw):
+    """Queue one server->unit frame on the party's rx link (was
+    deliver()): loss/delay/stall/bw all apply. Delivery targets the
+    party's CURRENT session at release time."""
+    ln = link_for(party)
+    ln.offer("rx", len(raw), time.time(), raw)
+
+
+def _auth_party(raw):
+    """The party id of a de_auth frame, else None - the rx loop uses it
+    to pick the tx link before the session's conn exists (pre-auth
+    traffic has no link: it is skipped, same as before)."""
+    try:
+        if isinstance(raw, (bytes, bytearray)):
+            sep = raw.find(b"\0")
+            msg = json.loads(raw[:sep] if sep >= 0 else raw)
+        else:
+            msg = json.loads(raw)
+    except Exception:
+        return None
+    if msg.get("ty") == "s" and msg.get("mt") == "de_auth":
+        return str(msg.get("s", ""))
+    return None
 
 
 class Conn:
@@ -177,26 +254,6 @@ class Conn:
         self.ws = ws
         self.party = party
         self.actor = actor          # 'd' drone (de_comm) | 'g' GCS
-
-
-async def deliver(conn, raw):
-    """Send raw to conn honouring its link delay/drop/cut."""
-    ln = link_for(conn.party)
-    if not ln.admit("tx", f"-> {conn.party}"):
-        return
-    if ln.delay_ms > 0:
-        ln.delayed += 1
-        await asyncio.sleep(ln.delay_ms / 1000.0)
-        if conns.get(conn.ws) is not conn:
-            return
-        # loss was already rolled once; only a cut that started while
-        # the frame was in flight can still drop it
-        if not ln.admit("tx", f"-> {conn.party} (delayed)", loss=False):
-            return
-    try:
-        await conn.ws.send(raw)
-    except Exception:
-        pass
 
 
 def targets_for(msg, src):
@@ -246,7 +303,7 @@ async def route(msg, src, wire=None):
             ln.roster_bytes += len(raw)
             ln.roster_msgs += 1
     for c in tgts:
-        asyncio.ensure_future(deliver(c, raw))
+        egress(c.party, raw)
 
 
 # ------------------------------------------------------------- pretty log
@@ -295,99 +352,111 @@ def pretty_rx(mt, ms, sd, tg):
 # ------------------------------------------------------------ ws handler
 
 async def handler(ws):
-    conn = None
+    state = {"conn": None, "party": None}
     try:
         async for raw in ws:
-            # binary frames (sendMavlinkData_Packed & co: packed MAVLink
-            # telemetry - GPS/NavInfo/IMU) arrive as bytes: "json header"
-            # \0 payload. Route on the header like the real server does;
-            # before this, every binary frame died in json.loads and a
-            # GCS saw IDs/missions but never a position -> no drones on
-            # the webclient map.
-            binary = isinstance(raw, (bytes, bytearray))
-            try:
-                if binary:
-                    raw = bytes(raw)
-                    sep = raw.find(b"\0")
-                    msg = json.loads(raw[:sep] if sep >= 0 else raw)
-                else:
-                    msg = json.loads(raw)
-            except Exception:
-                continue
-            if msg.get("ty") == "s" and msg.get("mt") == "de_auth":
-                party = str(msg.get("s", ""))
-                actor = msg.get("at", "d")
-                if actor not in ("d", "g"):
-                    actor = "d"
-                if link_for(party).is_cut():
-                    # unreachable server: refuse the session (de_comm
-                    # sees a socket error and retries on its own timer)
-                    print(f"[server] {actor}:{party} refused (link cut)",
-                          flush=True)
-                    await ws.close()
-                    return
-                if not link_for(party).admit("rx", f"auth <- {party}"):
-                    # the login frame itself rode the lossy link and was
-                    # dropped - the client times out and retries, so a
-                    # 100% loss keeps the unit offline like a real link
-                    continue
-                conn = Conn(ws, party, actor)
-                conns[ws] = conn
-                by_party[party] = conn
-                link_for(party)
-                await ws.send(json.dumps(
-                    {"ty": "s", "mt": "de_auth_ack", "r": "ok"}))
-                # P4A-07 (CLOCK.md T2.1): "ts" is the fleet clock push -
-                # like the real server's "ts": Date.now(). A NOCLOCK
-                # party gets no stamp - it never syncs (tq=0 from boot,
-                # the P4A-10 closed-environment case).
-                c9007 = {"s": f"OK:connected:tcp:127.0.0.1:{PORT}"}
-                if party not in NOCLOCK:
-                    c9007["ts"] = fleet_ms()
-                await ws.send(json.dumps(
-                    {"ty": "s", "mt": 9007, "ms": c9007}))
-                print(f"[server] {actor}:{party} connected "
-                      f"({sum(1 for c in conns.values() if c.actor == 'd')} units)",
-                      flush=True)
-                continue
-            if conn is None:
+            # every inbound frame rides the party's tx link (unit ->
+            # server): loss/delay/stall/bw apply, then the model's
+            # flusher replays it through process_frame in order. The
+            # party comes from the session, or from a de_auth in flight:
+            # remember it so frames pipelined behind the auth queue
+            # behind it instead of falling off (they still die in
+            # process_frame if the auth itself was dropped).
+            party = state["conn"].party if state["conn"] is not None \
+                else (_auth_party(raw) or state["party"])
+            if party is None:
                 continue                     # no traffic before de_auth
-            # sender-side link: a cut/lossy link cannot send either
-            if not link_for(conn.party).admit("rx", f"<- {conn.party}"):
-                continue
-            if msg.get("mt") == 9005 and not binary:
-                # ping - pong back through the link
-                # CLOCK.md T2.2: echo tm/b and stamp ts (like the real
-                # server's "s:OK:pong" + "ts:Date.now()")
-                ms = msg.get("ms")
-                if isinstance(ms, dict):
-                    ms["s"] = "OK:pong"
-                    # no "ts" for NOCLOCK parties: the pong still proves
-                    # liveness (the link stays up) but carries no clock
-                    # sample - the unit stays at tq=0 forever.
-                    if conn.party not in NOCLOCK:
-                        ms["ts"] = fleet_ms()
-                    asyncio.ensure_future(deliver(conn, json.dumps(msg)))
-                else:
-                    asyncio.ensure_future(deliver(
-                        conn, raw if isinstance(raw, str)
-                        else raw.decode(errors="ignore")))
-                continue
-            if PRETTY:
-                pretty_rx(msg.get("mt"), msg.get("ms")
-                          if isinstance(msg.get("ms"), dict) else {},
-                          conn.party, msg.get("tg", ""))
-            else:
-                print(f"[server] rx sd={conn.party} mt={msg.get('mt')} "
-                      f"tg={msg.get('tg', '')} ms={json.dumps(msg.get('ms', {}))[:600]}",
+            if state["conn"] is None and state["party"] is None:
+                state["party"] = party
+            ln = link_for(party)
+            if state["conn"] is None and ln.is_cut(time.time()):
+                # unreachable server: refuse the session (de_comm
+                # sees a socket error and retries on its own timer)
+                print(f"[server] d:{party} refused (link cut)",
                       flush=True)
-            await route(msg, conn, raw if binary else None)
+                await ws.close()
+                return
+            ln.offer("tx", len(raw), time.time(), (state, ws, raw))
     finally:
+        conn = state["conn"]
         if conn is not None:
             conns.pop(conn.ws, None)
             if by_party.get(conn.party) is conn:
                 del by_party[conn.party]
             print(f"[server] {conn.party} disconnected", flush=True)
+
+
+async def process_frame(state, ws, raw):
+    """One unit->server frame after its tx link released it - the old
+    receive loop body: de_auth registers the session, the 9005 ping
+    pongs back through the rx link, everything else routes.
+    Binary frames (sendMavlinkData_Packed & co: packed MAVLink
+    telemetry - GPS/NavInfo/IMU) arrive as bytes: "json header" \0
+    payload. Route on the header like the real server does."""
+    conn = state["conn"]
+    binary = isinstance(raw, (bytes, bytearray))
+    if binary:
+        raw = bytes(raw)
+    try:
+        if binary:
+            sep = raw.find(b"\0")
+            msg = json.loads(raw[:sep] if sep >= 0 else raw)
+        else:
+            msg = json.loads(raw)
+    except Exception:
+        return
+    if msg.get("ty") == "s" and msg.get("mt") == "de_auth":
+        party = str(msg.get("s", ""))
+        actor = msg.get("at", "d")
+        if actor not in ("d", "g"):
+            actor = "d"
+        conn = Conn(ws, party, actor)
+        conns[ws] = conn
+        by_party[party] = conn
+        link_for(party)
+        egress(party, json.dumps({"ty": "s", "mt": "de_auth_ack",
+                                  "r": "ok"}))
+        # P4A-07 (CLOCK.md T2.1): "ts" is the fleet clock push -
+        # like the real server's "ts": Date.now(). A NOCLOCK
+        # party gets no stamp - it never syncs (tq=0 from boot,
+        # the P4A-10 closed-environment case).
+        c9007 = {"s": f"OK:connected:tcp:127.0.0.1:{PORT}"}
+        if party not in NOCLOCK:
+            c9007["ts"] = fleet_ms()
+        egress(party, json.dumps({"ty": "s", "mt": 9007, "ms": c9007}))
+        state["conn"] = conn
+        print(f"[server] {actor}:{party} connected "
+              f"({sum(1 for c in conns.values() if c.actor == 'd')} units)",
+              flush=True)
+        return
+    if conn is None:
+        return                            # no traffic before de_auth
+    if msg.get("mt") == 9005 and not binary:
+        # ping - pong back through the link
+        # CLOCK.md T2.2: echo tm/b and stamp ts (like the real
+        # server's "s:OK:pong" + "ts:Date.now()")
+        ms = msg.get("ms")
+        if isinstance(ms, dict):
+            ms["s"] = "OK:pong"
+            # no "ts" for NOCLOCK parties: the pong still proves
+            # liveness (the link stays up) but carries no clock
+            # sample - the unit stays at tq=0 forever.
+            if conn.party not in NOCLOCK:
+                ms["ts"] = fleet_ms()
+            egress(conn.party, json.dumps(msg))
+        else:
+            egress(conn.party, raw if isinstance(raw, str)
+                   else raw.decode(errors="ignore"))
+        return
+    if PRETTY:
+        pretty_rx(msg.get("mt"), msg.get("ms")
+                  if isinstance(msg.get("ms"), dict) else {},
+                  conn.party, msg.get("tg", ""))
+    else:
+        print(f"[server] rx sd={conn.party} mt={msg.get('mt')} "
+              f"tg={msg.get('tg', '')} ms={json.dumps(msg.get('ms', {}))[:600]}",
+              flush=True)
+    await route(msg, conn, raw if binary else None)
 
 
 # ------------------------------------------------------------- control port
@@ -464,12 +533,7 @@ async def control_reader(reader, writer):
                 if line == "stats":
                     el = max(1.0, time.time() - T0)
                     for p, ln in links.items():
-                        say(f"{p}: loss={ln.loss}% delay={ln.delay_ms}ms "
-                            f"cut={max(0.0, ln.cut_until - time.time()):.0f}s "
-                            f"dropped={ln.dropped} delayed={ln.delayed} "
-                            f"roster_msgs={ln.roster_msgs} "
-                            f"roster_bytes={ln.roster_bytes} "
-                            f"({ln.roster_bytes / el:.1f} B/s)")
+                        say(f"{p}: {ln.stats_line(time.time(), el)}")
                     continue
                 if line.startswith("clock "):
                     # clock offset <ms> - skew every future ts stamp
@@ -508,17 +572,34 @@ async def control_reader(reader, writer):
                     _, party, cmd, *rest = line.split()
                     for p in (fleet_parties() if party == "all" else [party]):
                         ln = link_for(p)
+                        now = time.time()
                         if cmd == "loss":
                             ln.loss = float(rest[0])
+                        elif cmd == "loss_tx":
+                            ln.dir["tx"].loss = float(rest[0])
+                        elif cmd == "loss_rx":
+                            ln.dir["rx"].loss = float(rest[0])
                         elif cmd == "delay":
                             ln.delay_ms = int(rest[0])
+                        elif cmd == "jitter":
+                            ln.jitter_ms = int(rest[0])
+                        elif cmd == "bw":
+                            ln.bw_bps = int(rest[0])
+                        elif cmd == "ge":
+                            # ge <p_gb> <p_bg> <loss_g> <loss_b> [drop|stall]
+                            ln.set_ge(float(rest[0]), float(rest[1]),
+                                      float(rest[2]), float(rest[3]),
+                                      rest[4] if len(rest) > 4
+                                      else "drop")
+                        elif cmd == "stall":
+                            ln.stall(float(rest[0]), now)
                         elif cmd == "cut":
-                            ln.cut_until = time.time() + float(rest[0])
+                            ln.cut(float(rest[0]), now)
+                        elif cmd == "profile":
+                            ln.apply_profile(rest[0], now)
                         elif cmd == "clear":
-                            ln.loss, ln.delay_ms, ln.cut_until = 0.0, 0, 0.0
-                        say(f"link {p}: loss={ln.loss}% "
-                            f"delay={ln.delay_ms}ms "
-                            f"cut={max(0.0, ln.cut_until - time.time()):.0f}s")
+                            ln.clear()
+                        say(f"link {p}: {ln.stats_line(now, time.time() - T0)}")
                     continue
                 _tg, msg = build_message(line)
                 if msg is None:
