@@ -266,7 +266,9 @@ short:
   boot id), `server_up`, `loss` / `delay` / `link_cut` / `link_clear`
   (fake server only), `link` (`{unit, set}` - raw link-model sub-lines:
   `stall`, `ge`, `bw`, `jitter`, `loss_tx`, `loss_rx`, `profile`),
-  `commline`, `send`, `write_file` (`{unit, module,
+  `commline`, `send`, `udp_chunks` (`{unit, module,
+  drop_pct, reorder, dup_pct, seed}` - knobs on the unit's
+  module↔de_comm chunk proxy), `write_file` (`{unit, module,
   path, json}` - a JSON file into `var/run/<unit>/<module>/`, for module file
   seams like de_rpi_gpio's `gpio_inputs.json` or de_precland's
   `precland_scene.json`; `also: [{path, json, delay_ms?}]`
@@ -443,6 +445,10 @@ Format (strict - unknown keys fail against
   param fault (presets included) reads each value before writing, so
   `dur_s` restores what the FC actually reported - never a hardcoded
   default. `dur_s` auto-restores where it applies.
+  default. `udp_chunks` runs a seeded drop/reorder/dup
+  chunk proxy on the unit's module↔de_comm s2s link - works on any
+  transport; the loader wires the `udp_proxy_<module>` proc itself.
+  `dur_s` auto-restores where it applies.
 - `assert:` adds `proc_alive`/`proc_dead`, `link_offline`,
   `roster_value`, `operator_log_count`, `telemetry_value`, `fc_mode`,
   `distance_to` (incl. `detected_cls:` against the bot's seen targets),

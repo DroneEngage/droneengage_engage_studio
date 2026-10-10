@@ -71,6 +71,11 @@ one sim file - that is the point of sims: a reusable fleet setup.
                                           # writes more files in the same ctl
                                           # call; delay_ms sleeps N ms first
                                           # (a +N marker inside the call)
+      - udp_chunks: {unit: 1, module: de_mavlink, drop_pct: 5,
+                     reorder: 3, dup_pct: 10, seed: 1}
+                                          # SL-0010: knobs on the unit's
+                                          # module<->de_comm chunk proxy
+                                          # (needs udp_proxy: on the unit)
     assert:
       - journal_count: {unit: all, re: "EVENT_IN area.clear", equals: 1}
       - journal_order: {unit: 1, first: "A re", then: "B re"}
@@ -359,6 +364,11 @@ def run_step(step, t, marks):
                 argv.append("+" + str(delay_ms))
             argv += [w["path"], json.dumps(w["json"])]
         return run_ctl("write_file", *argv)
+    if name == "udp_chunks":
+        # SL-0010: chunk-fault knobs on the unit's udp_proxy
+        return run_ctl("udp_chunks", unit, arg["module"],
+                       arg.get("drop_pct", 0), arg.get("reorder", 0),
+                       arg.get("dup_pct", 0), arg.get("seed", 0))
     if name == "server_up":
         return run_ctl("server_up")
     if name == "mode":

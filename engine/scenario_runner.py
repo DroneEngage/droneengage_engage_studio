@@ -600,6 +600,26 @@ def _fault(step, scn, ctx):
         for u in us:
             _rc_pump(ctx, u, chans, dur or 15)
         return True
+    if kind == "udp_chunks":
+        # SL-0010: seeded chunk drop/reorder/dup on the module<->de_comm
+        # s2s link. The proxy itself is wired at sim-up (the scenario
+        # loader injects the unit's udp_proxy opt-in for this fault);
+        # the fault only flips knobs - no pid changes, and the unit's
+        # server link is untouched, so dur_s restores are a plain
+        # ctl call plus a restore event for recovers_after_fault.
+        mod = a.get("module")
+        if not mod:
+            print("  fault udp_chunks needs module:", flush=True)
+            return False
+        ok = runner.run_ctl("udp_chunks", unit, mod,
+                            a.get("drop_pct", 0), a.get("reorder", 0),
+                            a.get("dup_pct", 0),
+                            a.get("seed", scn["seed"]))
+        if ok and dur:
+            _schedule(ctx, float(dur), runner.run_ctl,
+                      "udp_chunks", unit, mod, "clear")
+            _restore_at(float(dur))
+        return ok
     if kind == "mode":
         return runner.run_ctl("mode", unit, a["mode"])
     if kind in ("fcb_cut", "fcb_stall", "fcb_corrupt"):

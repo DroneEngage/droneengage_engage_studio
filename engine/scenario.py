@@ -119,7 +119,7 @@ FAULT_KINDS = ("link_cut", "loss", "delay", "gcs_disconnect", "server_down",
                "link_stall", "link_profile",
                # SL-0014 OS faults
                "cpu_starve", "journal_unwritable", "clock_step",
-               "param") + tuple(FC_PRESETS)
+               "param", "udp_chunks") + tuple(FC_PRESETS)
 
 # ------------------------------------------------------- chaos: (TASK-10)
 #
@@ -362,6 +362,7 @@ def expanded_text(scn):
             + yaml.safe_dump(exp, sort_keys=False))
 
 
+
 def is_legacy_spec(raw):
     """A P4A-03 test file: version 1 with sim:/steps: and no scenario
     keys. Runs unchanged through the new runner."""
@@ -527,8 +528,57 @@ def _fleet_units(scn, home):
             u["account"] = ent["account"]
         if ent.get("faketime"):
             u["faketime"] = True     # SL-0014: de_comm under libfaketime
+        if ent.get("udp_proxy"):
+            u["udp_proxy"] = list(ent["udp_proxy"])
         units.append(u)
     return units
+
+
+def _fault_units(units, tok):
+    """The `unit:` selector over resolved sim unit dicts - all | name |
+    1-based index | block:<b> | comma list (the ctl.resolve subset a
+    scenario file can name)."""
+    if tok in (None, "all"):
+        return list(units)
+    out = []
+    for t in str(tok).split(","):
+        if t.startswith("block:"):
+            out += [u for u in units if u["block"] == t[6:]]
+        elif t.isdigit() and 1 <= int(t) <= len(units):
+            out.append(units[int(t) - 1])
+        else:
+            out += [u for u in units if u["name"] == t]
+    return out
+
+
+def _inject_udp_proxies(units, timeline, path):
+    """SL-0010: a `fault: udp_chunks` step needs the module's s2s link
+    proxied from sim-up (the module's s2s_udp_target_port is generated
+    once). Inject the unit's udp_proxy opt-in here so the scenario file
+    stays self-contained like every other fault - an explicit
+    `udp_proxy:` fleet key does the same by hand."""
+    blocks = {}
+    for i, s in enumerate(timeline):
+        if s.get("fault") != "udp_chunks":
+            continue
+        mod = s.get("module")
+        if not mod:
+            raise simlib.SimError(
+                f"{path}: timeline[{i}] udp_chunks needs module:")
+        hit = 0
+        for u in _fault_units(units, s.get("unit")):
+            b = blocks.setdefault(u["block"], simlib.load_block(u["block"]))
+            if mod not in b["modules"] + u.get("add_modules", []):
+                continue
+            u.setdefault("udp_proxy", [])
+            if mod not in u["udp_proxy"]:
+                u["udp_proxy"].append(mod)
+            hit += 1
+        if not hit:
+            raise simlib.SimError(
+                f"{path}: timeline[{i}] udp_chunks "
+                f"{s.get('unit', 'all')}.{mod}: no unit in the fleet "
+                "runs that module")
 
 
 def _yaml_bool_keys(raw):
@@ -590,6 +640,7 @@ def load_scenario(path, seed=None, probe_ports=True):
         scn["chaos_steps"] = []
     scn["expanded"] = bool(raw.get("chaos"))
     units = _fleet_units(scn, home)
+    _inject_udp_proxies(units, scn["timeline"], path)
     # one port block per run: the scenario may pin slot_base, else it is
     # derived from the seed so --seeds runs never share ports (a parallel
     # `sim up` would still refuse a clash)

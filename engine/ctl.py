@@ -92,6 +92,15 @@ transport - the per-unit proxy is ours, not the server's):
 Pilot (units with an fc, cont'd):
   takeoff <unit> [alt_m]            MAV_CMD_NAV_TAKEOFF (arm in GUIDED first)
 
+Module s2s faults (the unit's udp_proxy: [<module>] opt-in - a scenario
+`fault: udp_chunks` injects it itself; works on any server type):
+  udp_chunks <unit> <module> <drop%> <reorder> <dup%> [seed]
+                                    seeded chunk faults on the module<->
+                                    de_comm proxy: % datagrams dropped /
+                                    % duplicated / shuffle window
+  udp_chunks <unit> <module> clear  back to pass-through
+  udp_chunks <unit> <module> stats  the proxy's counters
+
 Processes:
   kill <unit> <proc> | restart <unit> <proc> | start_proc <unit> <proc>
   freeze <unit> <proc> [s]          SIGSTOP the process - it stays alive
@@ -1077,6 +1086,33 @@ def write_module_files(u, module, writes):
     return out
 
 
+def udp_proxy_call(u, module, obj, wait_s=2.0):
+    """SL-0010: one control datagram to a unit's udp_proxy process
+    ({set|clear|stats} JSON in, a JSON state line back). The proxy port
+    is the unit's udp_proxy_<module> entry - absent when the sim did
+    not opt that module in."""
+    port = (u.get("ports") or {}).get("udp_proxy_" + module)
+    if not port:
+        sys.exit(f"{u['name']}.{module}: no udp_proxy - add "
+                 f"`udp_proxy: [{module}]` to the unit (a scenario "
+                 "`fault: udp_chunks` does it itself)")
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(wait_s)
+    try:
+        s.sendto(json.dumps(obj).encode(), ("127.0.0.1", port))
+        data, _ = s.recvfrom(65536)
+    except socket.timeout:
+        sys.exit(f"{u['name']}.{module}: proxy on :{port} did not "
+                 "answer - process down? (./sim ctl status)")
+    finally:
+        s.close()
+    rep = json.loads(data.decode(errors="replace"))
+    print(f"{u['name']}.{module}: {json.dumps(rep)}")
+    if not rep.get("ok"):
+        sys.exit(1)
+    return rep
+
+
 def journal_download(u, frm=0):
     frames = gcs_collect({"ty": "i", "mt": 1086, "tg": u["party_id"],
                           "ms": {"a": "journal", "from": frm}}, {1088}, 15, True)
@@ -1880,6 +1916,21 @@ def main(argv):
         # for the unit (it stays tq=0) until `noclock <unit> 0`
         for u in resolve(a[0]):
             ctrl(f"noclock {u['party_id']} {a[1]}")
+    elif c == "udp_chunks":
+        # SL-0010: knobs on the module<->de_comm chunk proxy
+        # (udp_proxy.py). <drop%> <reorder> <dup%> [seed] | clear | stats
+        mod = a[1]
+        for u in resolve(a[0]):
+            if len(a) < 3 or a[2] == "stats":
+                udp_proxy_call(u, mod, {"stats": True})
+            elif a[2] == "clear":
+                udp_proxy_call(u, mod, {"clear": True})
+            else:
+                udp_proxy_call(u, mod, {"set": {
+                    "drop_pct": float(a[2]),
+                    "reorder": int(a[3]),
+                    "dup_pct": float(a[4]),
+                    "seed": int(a[5]) if len(a) > 5 else 0}})
     elif c == "param":
         # P5-07 battery/gps faults: runtime SITL parameter set; the
         # PARAM_VALUE echo must carry our name AND value

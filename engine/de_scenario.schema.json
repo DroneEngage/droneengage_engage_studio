@@ -79,6 +79,8 @@
                            "yaw": {"type": "number"}}},
           "modules": {"type": "array", "items": {"type": "string"},
             "description": "extra modules on top of the class block (P5-08 stubs)"},
+          "udp_proxy": {"type": "array", "items": {"type": "string"},
+            "description": "SL-0010: run a chunk-fault UDP proxy on these modules' s2s link (a fault: udp_chunks step injects it itself)"},
           "params": {"type": "object",
             "description": "extra SITL params (fc.params)"},
           "fcb_proxy": {"type": "boolean",

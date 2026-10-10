@@ -154,6 +154,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `loss` / `delay` / `link_cut` / `commline` | `unit`, `percent`/`ms`/`seconds` — **fake transport only** |
 | `link` | `unit`, `set` — raw link-model sub-line(s), e.g. `set: "ge 0.05 0.2 0 90 stall"` or `set: ["loss_tx 0", "loss_rx 100"]`, fake only |
 | `write_file` | `unit`, `module`, `path`, `json`, `also: []` (`delay_ms`) |
+| `udp_chunks` | `unit`, `module`, `drop_pct`, `reorder`, `dup_pct`, `seed` — knobs on the unit's chunk proxy (needs `udp_proxy:` on the unit) |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
 ### `fault:` kinds
@@ -191,6 +192,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `cpu_starve` | `unit`, `proc`\|`module`, `duty_pct` (80), `cycle_ms` (1000), `dur_s` — SL-0014: a detached SIGSTOP/SIGCONT worker holds the proc stopped `duty_pct`% of each cycle (pid + sockets kept); `dur_s` ends the cycle, without it `cpu_unstarve` or teardown does |
 | `journal_unwritable` | `unit`, `dur_s` — SL-0014: the unit's journal dir + files go read-only; open fds still write but every new journal sink open fails. `dur_s` restores, `sim down` always restores |
 | `clock_step` | `unit`, `offset_s`, `dur_s` — SL-0014: step a `faketime: true` unit's de_comm clock by signed seconds via its `FAKETIME_TIMESTAMP_FILE` (per-process libfaketime, no adjtimex); `dur_s` steps back to `+0` |
+| `udp_chunks` | `unit`, `module`, `drop_pct`, `reorder`, `dup_pct`, `seed`, `dur_s` — seeded chunk faults on the module↔de_comm s2s proxy (any transport) |
 
 `dur_s` auto-restores where it applies: `link_cut` expires server-side;
 `loss`/`delay` run `link_clear`; `kill`/`module_kill` restart the proc;
@@ -274,6 +276,20 @@ unchanged — same hash, `de_mavlink` dials SITL directly.
 de_comm must launch under libfaketime (there is no retroactive
 LD_PRELOAD), and validation fails when libfaketime is not installed
 (`SIM_FAKETIME_LIB` in `sim.local.env` pins a non-standard `.so`).
+
+`udp_chunks` is the local-transport fault, not a server-link one, so it
+works on `transport: real` too. A `fault: udp_chunks` step makes the
+loader wire a `udp_proxy_<module>` process between that module and
+de_comm from sim-up (the unit `udp_proxy: [module]` opt-in is injected
+automatically; you may also write it on the fleet/sim entry yourself to
+get the proxy without a fault step — it then relays pass-through until
+a `do: udp_chunks` or `./sim ctl udp_chunks` flips knobs). The proxy is
+a pidfile-tracked unit proc (starts before its module, dies with the
+sim, shows in `proc_alive`), and the same `drop_pct`/`reorder`/`dup_pct`
+knobs are reachable live as `./sim ctl udp_chunks <unit> <module> ...`
+(`clear`/`stats` included). See `engine/udp_proxy.py` for the chunk
+semantics: drop is per-datagram, dup/reorder act on whole messages so a
+multi-chunk transfer is never corrupted by reordering.
 
 ## `assert:` — what proves it
 
