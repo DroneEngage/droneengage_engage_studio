@@ -1,0 +1,31 @@
+# fcb_corrupt: 1% seeded byte drop on the de_mavlink<->SITL fcb link
+# for the whole run - the UART noise model (a lost byte kills its
+# frame, so a 30 B frame drops at ~26%). A package pushed as one raw
+# 1085 frame (the same wire path `deploy` uses; no `operation:` so no
+# pre-deploy verifier) still lands its FC plan: the MAVLink mission
+# protocol retransmits dropped frames, so the serial0 read-back finds
+# every item (mission_items equals the package's fc_items count).
+version: 1
+name: f_fcb_corrupt
+transport: real
+settle_s: 10
+fleet:
+  - {id: c1, cls: copter, fcb_proxy: true}
+timeline:
+  - {t: 0, fault: fcb_corrupt, unit: c1, byte_drop_pct: 1}
+  - {t: 5, do: send, ty: i, mt: 1085, tg: c1,
+     ms: {pkg: "{PKG:copter_square.json}",
+          hash: "{HASH:copter_square.json}"}}
+  # READY inside de_comm's 30 s nav-load deadline, else the late result
+  # ("nav result ... ignored") - either marks the FC write finished
+  - {t: 10, do: wait_journal, unit: c1,
+     re: "package READY|nav result", timeout: 180}
+assert:
+  - journal_count: {unit: c1, re: "package upload accepted", at_least: 1}
+  # every package item landed on the FC: 4 fc_items + the home waypoint
+  # ArduPilot stores as seq 0 (may finish past de_comm's 30 s nav-load
+  # deadline on the noisy link - "nav load failed: timeout" is then the
+  # expected journal line, not a failure of this test)
+  - mission_items: {unit: c1, equals: 5}
+  - proc_alive: {unit: c1, proc: fcb_proxy}
+teardown: land

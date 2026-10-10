@@ -64,6 +64,18 @@ Vehicle faults:
                                     gps SIM_GPS_DISABLE)
   rc <unit> <chan> <pwm>            RC_CHANNELS_OVERRIDE; pwm 65535 releases
 
+FCB-link faults (units/sims with `fcb_proxy: true`, SL-0008; any
+transport - the per-unit proxy is ours, not the server's):
+  fcb_cut <unit> <s>              close both ends; reconnects are accepted
+                                  then dropped until <s> expires
+  fcb_stall <unit> <ms>           hold the link silent for ms, then resume
+  fcb_corrupt <unit> <drop%> <flip%> [seed]
+                                  seeded frame drop / bit flips
+  fcb_drop <unit> <msgid|all> <%> drop only frames of one msgid (all clears)
+  fcb_inject <unit> <hex>         raw MAVLink bytes towards de_mavlink
+  fcb_clear <unit>                remove rules, end any cut/stall
+  fcb_stats <unit>                proxy counters + active rules
+
 Processes:
   kill <unit> <proc> | restart <unit> <proc> | start_proc <unit> <proc>
   freeze <unit> <proc> [s]          SIGSTOP the process - it stays alive
@@ -245,6 +257,42 @@ def ctrl_stream(line, secs, sim=None):
 
 def action(obj, tg="_AGN_"):
     ctrl("action " + tg + " " + json.dumps(obj))
+
+
+# ------------------------------------------------------------- fcb proxy
+
+def fcb_ctrl(u, line, read_s=0.5):
+    """One control line to the unit's fcb proxy (SL-0008). The proxy is
+    per-unit on fc.fcb_proxy.ctrl, spawned by us - the server type does
+    not matter (these faults work on real and fake transports alike)."""
+    pr = (u.get("fc") or {}).get("fcb_proxy")
+    if not pr:
+        sys.exit(f"{u['name']}: no fcb proxy - set `fcb_proxy: true` "
+                 "on the unit or the sim")
+    try:
+        s = socket.create_connection(("127.0.0.1", int(pr["ctrl"])), 3)
+    except OSError as e:
+        sys.exit(f"{u['name']}: fcb proxy ctrl port {pr['ctrl']} "
+                 f"unreachable: {e}")
+    s.sendall((line + "\n").encode())
+    s.settimeout(read_s)
+    data = b""
+    try:
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+    except socket.timeout:
+        pass
+    s.close()
+    text = data.decode(errors="replace")
+    out = "\n".join(ln for ln in text.splitlines() if ln != "OK")
+    if out:
+        print(f"{u['name']}: {out}")
+    if any(ln.startswith("ERR") for ln in text.splitlines()):
+        sys.exit(1)
+    return text
 
 
 # ------------------------------------------------------------- mavlink
@@ -1548,6 +1596,30 @@ def main(argv):
                 print(f"{u['name']}: rc{a[1]} <- {a[2]}")
             finally:
                 m.close()
+    elif c in ("fcb_cut", "fcb_stall", "fcb_corrupt", "fcb_drop",
+               "fcb_inject", "fcb_clear", "fcb_stats"):
+        # SL-0008: the per-unit fcb proxy's control port - the fault is
+        # ours, no server involved (any transport works)
+        us = with_fc(resolve(a[0]))
+        if not us:
+            sys.exit(f"{a[0]}: no FC unit in the target set")
+        for u in us:
+            if c == "fcb_cut":
+                fcb_ctrl(u, f"cut {a[1]}")
+            elif c == "fcb_stall":
+                fcb_ctrl(u, f"stall {a[1]}")
+            elif c == "fcb_corrupt":
+                fcb_ctrl(u, "corrupt %s %s %s"
+                         % (a[1], a[2], a[3] if len(a) > 3 else 0))
+            elif c == "fcb_drop":
+                fcb_ctrl(u, "drop %s %s"
+                         % (a[1], a[2] if len(a) > 2 else 100))
+            elif c == "fcb_inject":
+                fcb_ctrl(u, f"inject {a[1]}")
+            elif c == "fcb_clear":
+                fcb_ctrl(u, "clear")
+            else:
+                fcb_ctrl(u, "stats")
     elif c == "server_up":
         for p in server_procs("all"):
             if p not in {k.split(".", 1)[1]

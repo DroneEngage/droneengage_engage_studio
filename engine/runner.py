@@ -37,6 +37,14 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - restart: {unit: 1, proc: de_comm}
       - freeze: {unit: 1, proc: de_mavlink, dur_s: 30}   # SIGSTOP - a hang,
       - unfreeze: {unit: 1, proc: de_mavlink}            # not a crash
+      - fcb_cut: {unit: 1, seconds: 20}      # SL-0008 fcb proxy faults -
+      - fcb_stall: {unit: 1, ms: 5000}       # needs `fcb_proxy: true` on
+      - fcb_corrupt: {unit: 1, byte_drop_pct: 1, bit_flip_pct: 0, seed: 7}
+                                           # the unit/sim; any transport
+      - fcb_drop: {unit: 1, msgid: 30, percent: 50}   # one msgid only
+      - fcb_inject: {unit: 1, hex: "fe0900..."}   # raw MAVLink bytes ->
+                                           # de_mavlink (TASK-14 ADS-B hook)
+      - fcb_clear / fcb_stats: {unit: 1}     # remove rules / counters
       - reset: 1                         # SITL back to home, disarmed
       - mode: {unit: 1, mode: RTL}
       - wait_online: 60                  # every unit seen by the GCS
@@ -114,6 +122,8 @@ _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
                "wait_ready", "loss",
                "delay", "link_cut", "kick", "commline", "link_clear", "kill",
                "restart", "freeze", "unfreeze",
+               "fcb_cut", "fcb_stall", "fcb_corrupt", "fcb_drop",
+               "fcb_inject", "fcb_clear", "fcb_stats",
                "journal", "mode", "disarm", "fire", "fc",
                "write_file"}
 
@@ -263,6 +273,25 @@ def run_step(step, t, marks):
         return run_ctl(name, unit, arg.get("proc", arg.get("module")),
                        *([arg["dur_s"]] if name == "freeze" and
                          arg.get("dur_s") else []))
+    if name == "fcb_cut":
+        # SL-0008: sever the de_mavlink<->SITL fcb link for N seconds
+        return run_ctl("fcb_cut", unit,
+                       arg.get("seconds", arg.get("dur_s", 30)))
+    if name == "fcb_stall":
+        return run_ctl("fcb_stall", unit,
+                       arg.get("ms", float(arg.get("dur_s", 1)) * 1000))
+    if name == "fcb_corrupt":
+        extra = [str(arg["seed"])] if arg.get("seed") is not None else []
+        return run_ctl("fcb_corrupt", unit,
+                       arg.get("byte_drop_pct", 0),
+                       arg.get("bit_flip_pct", 0), *extra)
+    if name == "fcb_drop":
+        return run_ctl("fcb_drop", unit, arg.get("msgid", "all"),
+                       arg.get("percent", 100))
+    if name == "fcb_inject":
+        return run_ctl("fcb_inject", unit, arg["hex"])
+    if name in ("fcb_clear", "fcb_stats"):
+        return run_ctl(name, unit)
     if name == "write_file":
         # GE-07: JSON file(s) into var/run/<unit>/<module>/ - drives module
         # file seams (de_rpi_gpio's gpio_inputs.json). `also` folds extra

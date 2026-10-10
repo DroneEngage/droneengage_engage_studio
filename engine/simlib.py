@@ -25,6 +25,8 @@ Port scheme (slot k = slot_base + unit index, default slot_base 10 keeps
 sim ports clear of any developer's own servers):
     SITL -I k:  pilot 5760+10k (serial0)  aux 5762+10k (serial2)
                 fcb   7660+10k (serial1, de_mavlink)   sysid k
+    fcb proxy   opt-in (`fcb_proxy: true` on the sim or a unit, SL-0008):
+                data 7760+10k -> fcb_port, control 7860+10k
     de_comm     62000 + 10k     other modules: catalog port_base + 10k
     server      wss 62008, control 62009 (sim `server.port`)
     external    no local server; the sim's GCS bridge listens on
@@ -381,7 +383,8 @@ def load_sim(path_or_spec, base_dir=None):
     the sim file's stem or an explicit `name:` - owns var/run/<name>/."""
     spec, src = _sim_spec(path_or_spec, base_dir)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
-                           "slot_base", "units", "render", "speedup"}
+                           "slot_base", "units", "render", "speedup",
+                           "fcb_proxy"}
     if unknown:
         raise SimError(f"sim: unknown keys {sorted(unknown)}")
     if spec.get("version", 1) != 1:
@@ -411,6 +414,10 @@ def load_sim(path_or_spec, base_dir=None):
         # evidence (realtime: true scenarios pin 1)
         "speedup": float(spec.get("speedup")
                          or setting("SIM_SPEEDUP", "1")),
+        # SL-0008: run the fcb MAVLink proxy on every FC unit; a unit may
+        # still override with its own `fcb_proxy:` - not hashed itself,
+        # the per-unit fc.fcb_proxy dict it produces is
+        "fcb_proxy": bool(spec.get("fcb_proxy", False)),
         "units": [],
         "render": _render_spec(spec.get("render"), slot_base),
     }
@@ -428,7 +435,7 @@ def load_sim(path_or_spec, base_dir=None):
         if isinstance(entry, str):
             entry = {"block": entry}
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
-                            "account", "add_modules", "role"}
+                            "account", "add_modules", "role", "fcb_proxy"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -887,6 +894,14 @@ def _expand_unit(sim, b, name, entry, at, catalog):
     fc = deep_merge(b["fc"] or {}, entry.get("fc") or {}) if b["fc"] else None
     if entry.get("fc") and not b["fc"]:
         raise SimError(f"unit {name}: `fc:` override but block {b['name']} has no fc")
+    # SL-0008: `fcb_proxy: true` (unit or sim level) inserts the MAVLink
+    # proxy between de_mavlink and SITL's fcb port. Sim-level applies to
+    # FC units only (a static skips it silently); an explicit unit flag
+    # on a no-fc unit is a spec error. An explicit `false` opts one unit
+    # back out of a sim-level `true`. The proxy ports land in fc.* so
+    # enabling it changes the sim hash.
+    if entry.get("fcb_proxy") and not fc:
+        raise SimError(f"unit {name}: `fcb_proxy` but the block has no fc")
     if fc:
         if not 1 <= slot <= 250:
             raise SimError(f"unit {name}: slot {slot} is not a valid MAVLink sysid")
@@ -943,6 +958,12 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                  f"MAV{mav_n}_POSITION": 10, f"MAV{mav_n}_EXTRA1": 10,
                  f"MAV{mav_n}_RC_CHAN": 2, f"MAV{mav_n}_EXT_STAT": 2},
                 u["fc"]["params"])
+        px = entry.get("fcb_proxy")
+        if px is None:
+            px = bool(sim.get("fcb_proxy"))
+        if px:
+            u["fc"]["fcb_proxy"] = {"port": 7760 + 10 * slot,
+                                    "ctrl": 7860 + 10 * slot}
     return u
 
 
@@ -1097,6 +1118,9 @@ def used_ports(sim):
                           u["fc"]["fcb_port"]))
             if u["fc"].get("pose_port"):
                 ports.add(u["fc"]["pose_port"])
+            if u["fc"].get("fcb_proxy"):
+                ports.update((u["fc"]["fcb_proxy"]["port"],
+                              u["fc"]["fcb_proxy"]["ctrl"]))
     return ports
 
 
@@ -1149,8 +1173,12 @@ def journal_dir(u):
 
 
 def procs_of(u):
-    """Process names of a unit in launch order."""
-    return (["sitl"] if u["fc"] else []) + list(u["modules"])
+    """Process names of a unit in launch order. fcb_proxy (SL-0008) rides
+    between sitl and the modules: it must listen before de_mavlink's
+    fcb_connection_uri is dialed."""
+    return (["sitl"] if u["fc"] else []) \
+        + (["fcb_proxy"] if u["fc"] and u["fc"].get("fcb_proxy") else []) \
+        + list(u["modules"])
 
 
 def ready_checks(u, catalog=None):
@@ -1277,6 +1305,10 @@ def gen_unit(u, sim, catalog):
            "ai_label": u.get("cam_labels", ("", ""))[1]}
     if u["fc"]:
         ctx.update({k: u["fc"][k] for k in ("fcb_port", "pilot_port", "sysid")})
+        # SL-0008: where de_mavlink actually dials the FC - the proxy's
+        # listen port when the unit runs one, else the SITL fcb port
+        ctx["fcb_connect_port"] = (u["fc"].get("fcb_proxy") or {}) \
+            .get("port", u["fc"]["fcb_port"])
     for m in u["modules"]:
         if m == "de_comm":
             continue
@@ -1378,6 +1410,24 @@ def gen_unit(u, sim, catalog):
                       p["lat"], p["lng"], p["alt"], p["yaw"], defaults,
                       fc["fcb_port"], serial5, serial4, speedup,
                       pid_path(u["sim"], u["name"], "sitl")), 0o755)
+
+        # ---- fcb proxy (SL-0008) ----
+        # Opt-in MAVLink proxy between de_mavlink and serial1: it listens
+        # on fc.fcb_proxy.port and forwards to fcb_port; ctl drives its
+        # fault control port (fc.fcb_proxy.ctrl). A plain daemon like the
+        # modules: exec'd, own pidfile, killed by `sim down`. --statedir
+        # keeps the sim's var/run path on its cmdline for stray-pid sweeps.
+        px = fc.get("fcb_proxy")
+        if px:
+            pdir = os.path.join(udir, "fcb_proxy")
+            os.makedirs(pdir, exist_ok=True)
+            _launch_script(
+                u, "fcb_proxy", pdir,
+                "'%s' -u '%s' --unit %s --listen %d --ctrl %d "
+                "--target 127.0.0.1:%d --statedir '%s' --seed %d"
+                % (sys.executable, os.path.join(ENGINE_DIR, "fcb_proxy.py"),
+                   u["name"], px["port"], px["ctrl"], fc["fcb_port"],
+                   pdir, u["slot"]))
     u.pop("config", None)
     u.pop("parm_files", None)
 

@@ -458,6 +458,35 @@ def _fault(step, scn, ctx):
         return True
     if kind == "mode":
         return runner.run_ctl("mode", unit, a["mode"])
+    if kind in ("fcb_cut", "fcb_stall", "fcb_corrupt"):
+        # SL-0008: faults on the per-unit fcb proxy between de_mavlink
+        # and SITL (unit/sim `fcb_proxy: true`). The proxy is ours, not
+        # the server's - these work on any transport.
+        us = [u for u in ctl.resolve(unit, ctx["manifest"]) if u["fc"]]
+        if not us:
+            print(f"  {kind} needs an FC unit", flush=True)
+            return False
+        if not all(u["fc"].get("fcb_proxy") for u in us):
+            print(f"  {kind} needs `fcb_proxy: true` on the unit/sim",
+                  flush=True)
+            return False
+        if kind == "fcb_cut":
+            # the proxy itself expires the cut (accepted-then-dropped
+            # reconnects); de_mavlink's TCP retry loop drives the restore
+            _restore_at(float(dur or 30))
+            return runner.run_ctl("fcb_cut", unit, dur or 30)
+        if kind == "fcb_stall":
+            ms = a.get("ms") or int(float(dur or 1) * 1000)
+            _restore_at(ms / 1000.0)
+            return runner.run_ctl("fcb_stall", unit, ms)
+        ok = runner.run_ctl("fcb_corrupt", unit,
+                            a.get("byte_drop_pct", 0),
+                            a.get("bit_flip_pct", 0),
+                            a.get("seed", ctx["scn"]["seed"]))
+        if ok and dur:
+            _schedule(ctx, float(dur), runner.run_ctl, "fcb_clear", unit)
+            _restore_at(float(dur))
+        return ok
     print(f"  unknown fault {kind!r}", flush=True)
     return False
 

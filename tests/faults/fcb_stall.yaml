@@ -1,0 +1,23 @@
+# fcb_stall: the proxy holds the fcb link silent for 15 s - sockets
+# stay open, nothing is pumped (a frozen UART, not a cut: de_mavlink
+# never logs a close). The proxy's own log records the stall; the link
+# resumes on its own when the window expires.
+version: 1
+name: f_fcb_stall
+transport: real
+settle_s: 25
+fleet:
+  - {id: c1, cls: copter, fcb_proxy: true}
+timeline:
+  - {t: 0, do: arm, unit: c1}                     # arm waits for EKF
+  - {t: 5, fault: fcb_stall, unit: c1, dur_s: 15}
+  - {t: 8, do: wait_log, unit: c1, module: fcb_proxy,
+     re: "stall 15000ms", timeout: 60}
+assert:
+  - journal_order: {unit: c1, proc: fcb_proxy, first: "link held",
+                    then: "resumed"}
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "TCP connection closed by remote", equals: 0}
+  - telemetry_value: {unit: c1, field: ekf_ok, equals: true}
+  - proc_alive: {unit: c1, proc: de_mavlink}
+teardown: land

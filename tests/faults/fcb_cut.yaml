@@ -1,0 +1,29 @@
+# fcb_cut: the SL-0008 fcb proxy between de_mavlink and SITL's serial1
+# drops the link on an armed copter for 20 s - both sockets close and
+# reconnects are accepted-then-dropped until expiry (de_mavlink never
+# sees a refused handshake: five of those would exit it). Evidence:
+# de_mavlink's own stdout shows "TCP connection closed by remote" then
+# the post-cut reconnect ("TCP Client connected"), FC telemetry keeps
+# flowing (serial2 is untouched), and neither process died.
+version: 1
+name: f_fcb_cut
+transport: real          # the proxy is ours - no fake server needed
+realtime: true
+settle_s: 30
+fleet:
+  - {id: c1, cls: copter, fcb_proxy: true}
+timeline:
+  - {t: 0, do: arm, unit: c1}
+  - {t: 5, fault: fcb_cut, unit: c1, dur_s: 20}
+  - {t: 10, do: wait_log, unit: c1, module: de_mavlink,
+     re: "TCP connection closed by remote", timeout: 60}
+  - {t: 30, do: wait_log, unit: c1, module: de_mavlink,
+     re: "TCP Client connected", timeout: 90}
+assert:
+  - journal_order: {unit: c1, proc: de_mavlink,
+                    first: "TCP connection closed by remote",
+                    then: "TCP Client connected"}
+  - telemetry_value: {unit: c1, field: ekf_ok, equals: true}
+  - proc_alive: {unit: c1, proc: de_mavlink}
+  - proc_alive: {unit: c1, proc: fcb_proxy}
+teardown: land
