@@ -12,10 +12,22 @@ trail stays on its polyline until the seeded leave draw fires, and the
 environment's D5 factors answer the documented values for rgb and
 thermal cameras at sun_elev 30 / 0 / -10. World wind lands in a FC
 unit's sim.parm params as SIM_WIND_* (D6).
+
+The TestReact cases cover SL-0013: the react: spec validates,
+world.react_knots fires a trigger on a synthetic pose feed, the knot
+lands in world_overrides.jsonl through the TruthRecorder (the single
+authority, fleet poses stubbed by a callable), and pos_at given the
+file is deterministic - two Worlds reading the same overrides file
+reproduce identical reacted positions while an unread file changes
+nothing for a non-reactive entity.
 """
+import contextlib
+import json
 import math
 import os
 import sys
+import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -334,6 +346,209 @@ class TestBehaviourValidation(unittest.TestCase):
         lat, lng, _a = w.entity("h1").pos_at(0, w)
         self.assertAlmostEqual(lat, at(0, 0)[0])
         self.assertAlmostEqual(lng, at(0, 0)[1])
+
+
+class TestReact(unittest.TestCase):
+    """SL-0013: react: {near:{unit|unit_cls, dist_m, then:{kind,
+    speed_mps}}} - the truth tick is the single authority; pos_at
+    applies the recorded knot from the overrides file."""
+
+    REACTER = {"id": "p1", "cls": "person", "pos": at(0, 0),
+               "react": {"near": {"unit": "cam1", "dist_m": 30,
+                                   "then": {"kind": "flee",
+                                            "speed_mps": 1.5}}}}
+
+    @staticmethod
+    def _pose(lat, lng, cls="copter"):
+        return {"lat": lat, "lng": lng, "cls": cls}
+
+    def test_react_validation(self):
+        bad = ({"near": {"unit": "c1", "unit_cls": "copter",
+                         "dist_m": 10, "then": {"kind": "flee"}}},
+               {"near": {"unit": "c1", "then": {"kind": "flee"}}},
+               {"near": {"unit": "c1", "dist_m": -5,
+                         "then": {"kind": "flee"}}},
+               {"near": {"unit": "c1", "dist_m": 10}},
+               {"near": {"unit": "c1", "dist_m": 10,
+                         "then": {"kind": "teleport"}}},
+               {"near": {"unit": "c1", "dist_m": 10,
+                         "then": {"kind": "flee", "speed_mps": 0}}},
+               {"near": {"unit": "c1", "dist_m": 10,
+                         "then": {"kind": "freeze", "speed_mps": 2}}},
+               {"near": {"unit": "c1", "dist_m": 10,
+                         "then": {"kind": "flee", "bogus": 1}}},
+               {"near": {"unit": "c1", "dist_m": 10,
+                         "then": {"kind": "flee"}, "bogus": 1}},
+               {"far": {"unit": "c1", "dist_m": 10,
+                        "then": {"kind": "flee"}}})
+        for r in bad:
+            with self.assertRaises(simlib.SimError, msg=str(r)):
+                spec_world([{"id": "p1", "cls": "person",
+                             "pos": at(0, 0), "react": r}])
+
+    def test_trigger_fires_knot(self):
+        """A synthetic pose feed inside dist_m produces one knot with
+        everything pos_at needs; outside it produces none, and the
+        fired latch suppresses a second trigger."""
+        w = spec_world([dict(self.REACTER)])
+        far = {"cam1": self._pose(*at(0, 200))}
+        self.assertEqual(world_mod.react_knots(w, far, 10.0, 10000,
+                                               set()), [])
+        near = {"cam1": self._pose(*at(0, 20))}
+        fired = set()
+        knots = world_mod.react_knots(w, near, 10.0, 10000, fired)
+        self.assertEqual(len(knots), 1)
+        k = knots[0]
+        self.assertEqual((k["tid"], k["kind"], k["unit"]),
+                         ("p1", "flee", "cam1"))
+        self.assertEqual(k["from"], at(0, 0))
+        self.assertEqual(k["threat"], at(0, 20))
+        self.assertAlmostEqual(k["dist_m"], 20.0, delta=0.5)
+        self.assertEqual(k["speed_mps"], 1.5)
+        # threat due east of the entity -> flee walks west (~270 deg)
+        self.assertAlmostEqual(k["heading_deg"], 270.0, delta=1.0)
+        fired.add(k["tid"])
+        self.assertEqual(world_mod.react_knots(w, near, 11.0, 11000,
+                                               fired), [])
+
+    def test_unit_cls_and_unit_matching(self):
+        e = dict(self.REACTER)
+        e["react"] = {"near": {"unit_cls": "copter", "dist_m": 30,
+                               "then": {"kind": "freeze"}}}
+        w = spec_world([e])
+        # nearest matching unit decides; a non-matching cls is ignored
+        poses = {"s1": self._pose(*at(0, 5), cls="static"),
+                 "c1": self._pose(*at(0, 25), cls="copter")}
+        knots = world_mod.react_knots(w, poses, 5.0, 5000, set())
+        self.assertEqual(len(knots), 1)
+        self.assertEqual(knots[0]["unit"], "c1")
+        self.assertEqual(knots[0]["kind"], "freeze")
+
+    def _write_overrides(self, d, knots):
+        path = os.path.join(d, "world_overrides.jsonl")
+        with open(path, "w") as f:
+            for k in knots:
+                f.write(json.dumps(k) + "\n")
+        return path
+
+    def test_pos_at_given_file_is_deterministic(self):
+        """The knot file alone decides the override: two Worlds over
+        the same spec + file reproduce identical reacted positions
+        (the single-authority contract - the stub and the truth
+        recorder never diverge)."""
+        w = spec_world([dict(self.REACTER)])
+        k = world_mod.react_knots(
+            w, {"cam1": self._pose(*at(0, 20))}, 10.0, 10000,
+            set())[0]
+        with self._tmp() as d:
+            path = self._write_overrides(d, [k])
+            w1 = spec_world([dict(self.REACTER)])
+            w2 = spec_world([dict(self.REACTER)])
+            w1.use_overrides(path)
+            w2.use_overrides(path)
+            self.assertEqual(positions(w1, "p1", 600),
+                             positions(w2, "p1", 600))
+            # before the knot the scripted anchor still answers
+            self.assertEqual(positions(w1, "p1", 9),
+                             positions(spec_world([dict(self.REACTER)]),
+                                       "p1", 9))
+            # after it: flees west at 1.5 m/s - t=100 is 90 s * 1.5 m
+            lat, lng, _a = w1.entity("p1").pos_at(100.0, w1)
+            n, e2 = gp.geo_latlng_to_ne(ORIGIN[0], ORIGIN[1], lat, lng)
+            self.assertAlmostEqual(e2, -135.0, delta=2.0)
+            st = w1.entity("p1").state_at(100.0, w1)
+            self.assertEqual(st["behaviour"], "react:flee")
+            self.assertTrue(st["moving"])
+
+        # an unread file changes nothing (non-reactive consumers
+        # and pre-attach worlds are untouched)
+        w3 = spec_world([dict(self.REACTER)])
+        lat3, lng3, _a3 = w3.entity("p1").pos_at(100.0, w3)
+        self.assertAlmostEqual(lat3, at(0, 0)[0])
+        self.assertAlmostEqual(lng3, at(0, 0)[1])
+
+    def test_freeze_and_seek_knots(self):
+        with self._tmp() as d:
+            e = dict(self.REACTER)
+            e["react"] = {"near": {"unit": "cam1", "dist_m": 30,
+                                   "then": {"kind": "freeze"}}}
+            w = spec_world([e])
+            k = world_mod.react_knots(
+                w, {"cam1": self._pose(*at(0, 10))}, 4.0, 4000,
+                set())[0]
+            w.use_overrides(self._write_overrides(d, [k]))
+            self.assertEqual(w.entity("p1").pos_at(4.0, w),
+                             w.entity("p1").pos_at(400.0, w))
+            self.assertFalse(w.entity("p1").state_at(400.0, w)["moving"])
+
+            e = dict(self.REACTER)
+            e["react"] = {"near": {"unit": "cam1", "dist_m": 30,
+                                   "then": {"kind": "seek",
+                                            "speed_mps": 5}}}
+            w = spec_world([e])
+            k = world_mod.react_knots(
+                w, {"cam1": self._pose(*at(0, 20))}, 4.0, 4000,
+                set())[0]
+            w.use_overrides(self._write_overrides(d, [k]))
+            # 20 m at 5 m/s: arrived by t=8 and holds the threat pos
+            lat, lng, _a = w.entity("p1").pos_at(60.0, w)
+            self.assertAlmostEqual(lat, at(0, 20)[0])
+            self.assertAlmostEqual(lng, at(0, 20)[1])
+            self.assertFalse(w.entity("p1").state_at(60.0, w)["moving"])
+
+    def test_attach_follows_reacted_parent(self):
+        """An attach child has no react of its own; the parent's knot
+        moves it anyway (absolute from/threat, offset reapplied)."""
+        spec = [dict(self.REACTER),
+                {"id": "ph1", "cls": "phone", "attach": "p1",
+                 "offset_m": [0, 5]}]
+        w = spec_world(spec)
+        k = world_mod.react_knots(
+            w, {"cam1": self._pose(*at(0, 20))}, 10.0, 10000, set())[0]
+        with self._tmp() as d:
+            w.use_overrides(self._write_overrides(d, [k]))
+            plat, plng, _a = w.entity("p1").pos_at(100.0, w)
+            lat, lng, _a = w.entity("ph1").pos_at(100.0, w)
+            d = gp.geo_distance_m(plat, plng, lat, lng)
+            self.assertAlmostEqual(d, 5.0, delta=0.5)
+
+    def test_truth_recorder_is_the_authority(self):
+        """The 1 Hz tick writes the overrides file + the world_event
+        row and latches once - the synthetic fleet pose is a callable
+        so this exercises the whole authority path."""
+        with self._tmp() as d:
+            w = spec_world([dict(self.REACTER)])
+            ov = os.path.join(d, "world_overrides.jsonl")
+            tp = os.path.join(d, "truth.jsonl")
+            epoch_ms = int(time.time() * 1000)
+            rec = world_mod.TruthRecorder(
+                w, epoch_ms, tp, hz=4.0, overrides_path=ov,
+                fleet_poses=lambda: {"cam1": self._pose(*at(0, 10))})
+            rec.start()
+            time.sleep(1.4)
+            rec.stop()
+            with open(ov) as f:
+                knots = [json.loads(ln) for ln in f]
+            self.assertEqual(len(knots), 1)         # latched once
+            self.assertEqual(knots[0]["kind"], "flee")
+            rows = [json.loads(ln) for ln in open(tp)]
+            evs = [r for r in rows if r.get("type") == "world_event"]
+            self.assertEqual(len(evs), 1)
+            self.assertEqual(evs[0]["event"], "react")
+            self.assertIn("react p1 flee", evs[0]["msg"])
+            # and the truth rows after the knot already show reacted
+            # positions (the recorder's own world reads the file)
+            moved = [r for r in rows
+                     if r.get("state", {}).get("behaviour")
+                     == "react:flee"]
+            self.assertTrue(moved)
+
+    # a tiny temp-dir helper keeps the tests' file artifacts out of the
+    # tree (var/ is for live runs only)
+    @contextlib.contextmanager
+    def _tmp(self):
+        with tempfile.TemporaryDirectory() as d:
+            yield d
 
 
 if __name__ == "__main__":
