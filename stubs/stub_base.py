@@ -12,6 +12,8 @@ From the config path the stub derives var/run/<sim>/ and reads:
   var/run/<sim>/world_epoch.json   {"epoch_unix_ms"} - scenario t0 written
                                by the runner; absent -> the stub idles
   var/run/<sim>/truth.jsonl        per-detection rows are appended here
+  var/run/<sim>/world_overrides.jsonl  react knots the truth tick writes
+                               (SL-0013); the stub reads, never writes
   var/run/<sim>/stubs/<unit>.log   one line per sent message:
                                "<unix_ms> <kind> <json>"
 
@@ -288,6 +290,11 @@ class StubBase:
         self.world = None
         if spec.get("world") and os.path.isfile(spec["world"]):
             self.world = world_mod.load(spec["world"], self.seed)
+            # SL-0013: the truth tick's reaction knots - the same file
+            # the recorder writes, so detections track the truth's
+            # reacted positions (absent file = nothing reacts)
+            self.world.use_overrides(os.path.join(
+                self.run_dir, "world_overrides.jsonl"))
         self.pose_feed = PoseFeed(self.pose_port,
                                   sysid=int(spec.get("sysid", 1)))
         self.module = None

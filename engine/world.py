@@ -123,6 +123,34 @@ measurements - each world overrides them): canopy base_m 3,
 gap_fraction 0.3, rf_db_per_m 0.3, rf_max_db 20; building base_m 0,
 rf_loss_db 12. height_m is always required.
 
+Reactive entities (SL-0013) - `react:` on an entity, ONE authority:
+
+    - {id: person_1, cls: person, pos: [lat,lng],
+       react: {near: {unit: cam1, dist_m: 30,
+                      then: {kind: flee, speed_mps: 1.2}}}}
+    - {id: guard_1, cls: person, path: [...],
+       react: {near: {unit_cls: copter, dist_m: 50,
+                      then: {kind: freeze}}}}
+
+A reaction depends on fleet pose, so per-process evaluation would
+diverge truth from detections (pos_at is pure; every stub evaluates it
+independently). The design: the runner's 1 Hz truth tick is the single
+authority. It evaluates near: triggers against the fleet poses
+(horizontal ground distance; `unit` a fleet unit name, `unit_cls` the
+scenario fleet cls), appends each latched knot - once per entity per
+run - to var/run/<sim>/world_overrides.jsonl and logs a
+{"type": "world_event", "event": "react", ...} row to truth.jsonl.
+then: {kind: flee|freeze|seek, speed_mps}: flee walks straight away
+from the recorded threat pose at speed_mps, freeze holds the trigger
+position, seek walks to it (a moving unit is RECORDED at trigger time,
+not tracked - pos_at stays pure GIVEN THE FILE). Stubs and the world
+stream read the same file (world.use_overrides), so truth, detections
+and the render feed see the same motion. A reactive world is excluded
+from golden byte-identity (the authority is wall-clock - statistically
+reproducible only); a non-reactive world never touches the file. The
+scenario `on:` watcher accepts {world: <entity_id>, re: ...} against
+the world_event rows.
+
 All randomness derives streams from (scenario seed, purpose, unit, entity,
 tick) so two same-seed runs produce identical model output. A world
 with no obstacles and the default sensor keys replays byte-identically
@@ -202,6 +230,13 @@ BEHAVIOUR_KEYS = {
     "seek": {"kind", "target"} | set(SEEK_DEFAULTS),
 }
 
+# react: defaults (SL-0013 - see the module docstring; the single
+# authority is the truth tick, not the entity model itself)
+REACT_THEN_KINDS = ("flee", "freeze", "seek")
+REACT_DEFAULT_SPEED_MPS = {"flee": 1.5, "seek": 1.0}
+REACT_NEAR_KEYS = {"unit", "unit_cls", "dist_m", "then"}
+REACT_THEN_KEYS = {"kind", "speed_mps"}
+
 # environment defaults (ESTIMATES - see the module docstring)
 PRECIP_FACTOR = {"none": 1.0, "rain": 0.8, "snow": 0.6}
 SUN_DUSK_DEG = -6.0                    # rgb goes blind below this
@@ -257,6 +292,10 @@ class Entity:
         self.behaviour = _parse_behaviour(spec.get("behaviour"),
                                           path, self.id)
         self._behav = None            # lazily-built seeded track state
+        # SL-0013: react: is only a TRIGGER DECLARATION - the truth tick
+        # latches it into world_overrides.jsonl; pos_at applies the
+        # recorded knot (see _react_pos_at). Nothing reacts here.
+        self.react = _parse_react(spec.get("react"), path, self.id)
         kinds = sum(1 for k in ("pos", "path", "attach") if spec.get(k))
         if self.behaviour is not None and self.attach is not None:
             raise simlib.SimError(
@@ -299,6 +338,12 @@ class Entity:
 
     def pos_at(self, t_s, world, _depth=0):
         """(lat, lng, alt_above_home_m) at scenario time t_s."""
+        if self.react is not None:
+            # SL-0013: a latched knot overrides every other motion from
+            # its t_s on (the file makes it identical in every process)
+            pos = self._react_pos_at(t_s, world)
+            if pos is not None:
+                return pos
         if self.behaviour is not None:
             kind = self.behaviour["kind"]
             if kind == "stationary":
@@ -339,6 +384,10 @@ class Entity:
         state for tracked behaviours, a 0.5 s position delta otherwise
         (a patrolling path flips its heading on the U-turn, a frozen
         stationary reports still)."""
+        if self.react is not None:
+            st = self._react_state_at(t_s, world)
+            if st is not None:
+                return st
         kind = self.behaviour["kind"] if self.behaviour else None
         if self.behaviour is not None and kind != "stationary":
             tr = self._extend_track(t_s, world)
@@ -356,6 +405,71 @@ class Entity:
                 "heading_deg": round(math.degrees(
                     math.atan2(east_m, north_m)) % 360.0, 1),
                 "behaviour": kind}
+
+    # ------------------------------------------------------- react
+    # SL-0013: the authority (the runner's truth tick) appends a knot
+    # row per fired trigger to var/run/<sim>/world_overrides.jsonl;
+    # world.reacts holds the parsed rows (every evaluator reads the same
+    # file, so pos_at stays deterministic GIVEN THE FILE - the entity
+    # itself never looks at the fleet).
+
+    def _react_knot(self, t_s, world):
+        """The newest knot for this entity at/before t_s, or None -
+        the trigger has not latched yet."""
+        world._sync_reacts()
+        knot = None
+        for k in world.reacts.get(self.id) or ():
+            if k["t_s"] <= t_s + 1e-9:
+                knot = k
+        return knot
+
+    def _react_pos_at(self, t_s, world):
+        """Position under the active react knot (closed form, no rng):
+        freeze holds the recorded spot, flee walks its recorded heading
+        away from the recorded threat, seek interpolates from -> threat
+        and holds on arrival."""
+        knot = self._react_knot(t_s, world)
+        if knot is None:
+            return None
+        kind = knot["kind"]
+        lat0, lng0 = knot["from"]
+        if kind == "freeze":
+            return (lat0, lng0, self.alt_m)
+        speed = float(knot.get("speed_mps") or 0.0)
+        dt = max(0.0, t_s - knot["t_s"])
+        if kind == "seek":
+            d = _dist(lat0, lng0, knot["threat"][0], knot["threat"][1])
+            f = 1.0 if d <= 0.0 else min(1.0, speed * dt / d)
+            return (lat0 + (knot["threat"][0] - lat0) * f,
+                    lng0 + (knot["threat"][1] - lng0) * f, self.alt_m)
+        lat, lng = _walk_to(lat0, lng0, speed * dt,
+                            knot.get("heading_deg", 0.0))
+        return (lat, lng, self.alt_m)
+
+    def _react_state_at(self, t_s, world):
+        """{moving, heading_deg, behaviour} under an active knot;
+        behaviour reports "react:<kind>" so a truth row shows the
+        reaction, not the scripted anchor model."""
+        knot = self._react_knot(t_s, world)
+        if knot is None:
+            return None
+        kind = knot["kind"]
+        if kind == "freeze":
+            return {"moving": False, "heading_deg": 0.0,
+                    "behaviour": "react:freeze"}
+        speed = float(knot.get("speed_mps") or 0.0)
+        if kind == "seek":
+            h = _bearing_deg(knot["from"][0], knot["from"][1],
+                             knot["threat"][0], knot["threat"][1])
+            d = _dist(knot["from"][0], knot["from"][1],
+                      knot["threat"][0], knot["threat"][1])
+            arrived = speed * max(0.0, t_s - knot["t_s"]) >= d
+            return {"moving": not arrived, "heading_deg": round(h, 1),
+                    "behaviour": "react:seek"}
+        return {"moving": speed > 0.0,
+                "heading_deg": round(float(knot.get("heading_deg", 0.0)),
+                                     1),
+                "behaviour": "react:flee"}
 
     # -------------------------------------------------------- behaviour
     # The stochastic track of a behaviour entity (D1): a lazily-built
@@ -483,6 +597,14 @@ class World:
                                               path)
         self.entities = [Entity(e, path) for e in spec.get("entities") or []]
         self._by_id = {e.id: e for e in self.entities}
+        # SL-0013 react overrides: the parsed world_overrides.jsonl rows
+        # (tid -> [knot, ...]); _react_file is set by use_overrides -
+        # absent file/None means no overrides ever apply, so a
+        # non-reactive or pre-run world is untouched
+        self.reacts = {}
+        self._react_file = None
+        self._react_off = 0
+        self._react_size = -1
         self.obstacles = [Obstacle(o, path, i, self.origin)
                           for i, o in enumerate(spec.get("obstacles") or [])]
         self.areas = _parse_areas(spec.get("areas"), path)
@@ -704,6 +826,55 @@ class World:
         enu = self._enu((lat, lng, alt_m))
         return any(o.kind == "building" and o.contains(enu)
                    for o in self.obstacles)
+
+    # --------------------------------------------------- react
+    # SL-0013: var/run/<sim>/world_overrides.jsonl is the reaction
+    # record the single authority (the truth tick) appends. Every
+    # pos_at caller - the recorder, each stub, the world stream - reads
+    # the same append-only file, so truth and detections agree.
+
+    def use_overrides(self, path):
+        """Point pos_at at the run's world_overrides.jsonl (set by the
+        recorder and by every stub from its run dir)."""
+        self._react_file = path
+        self._react_off = 0
+        self._react_size = -1
+        self.reacts = {}
+        self._sync_reacts()
+
+    def _sync_reacts(self):
+        """Pull newly appended knots off the overrides file into
+        self.reacts. Only complete lines are consumed (a torn tail is
+        re-read next call); a truncated file (a fresh run on a reused
+        sim) rewinds. Pure given the file contents."""
+        if not self._react_file:
+            return
+        try:
+            size = os.path.getsize(self._react_file)
+        except OSError:
+            return
+        if size == self._react_size:
+            return
+        if size < self._react_size:      # truncated - a new run began
+            self._react_off = 0
+            self.reacts = {}
+        try:
+            with open(self._react_file, "rb") as f:
+                f.seek(self._react_off)
+                data = f.read()
+        except OSError:
+            return
+        end = data.rfind(b"\n") + 1
+        self._react_off += end
+        self._react_size = size
+        for ln in data[:end].decode(errors="replace").splitlines():
+            try:
+                k = json.loads(ln)
+            except ValueError:
+                continue
+            if isinstance(k, dict) and k.get("tid") is not None \
+                    and k.get("t_s") is not None:
+                self.reacts.setdefault(str(k["tid"]), []).append(k)
 
     # ------------------------------------------------------ environment
 
@@ -1182,6 +1353,73 @@ def _parse_behaviour(spec, path, eid):
     return out
 
 
+def _parse_react(spec, path, eid):
+    """react: {near: {unit|unit_cls, dist_m, then: {kind, speed_mps}}}
+    -> a normalized trigger dict or None (SL-0013). The entity only
+    DECLARES the reaction; the truth tick evaluates it."""
+    if spec is None:
+        return None
+    label = f"{path}: entity {eid}: react"
+    if not isinstance(spec, dict) or set(spec) != {"near"}:
+        raise simlib.SimError(f"{label}: the only trigger is 'near'")
+    near = spec["near"]
+    if not isinstance(near, dict):
+        raise simlib.SimError(f"{label}.near: not a mapping")
+    bad = set(near) - REACT_NEAR_KEYS
+    if bad:
+        raise simlib.SimError(
+            f"{label}.near: unknown keys {sorted(bad)} "
+            f"(allows {sorted(REACT_NEAR_KEYS)})")
+    if ("unit" in near) == ("unit_cls" in near):
+        raise simlib.SimError(
+            f"{label}.near: exactly one of unit|unit_cls")
+    if near.get("unit") is not None \
+            and not isinstance(near["unit"], str):
+        raise simlib.SimError(f"{label}.near: unit is a fleet unit name")
+    if near.get("unit_cls") is not None \
+            and not isinstance(near["unit_cls"], str):
+        raise simlib.SimError(
+            f"{label}.near: unit_cls is a fleet cls name")
+    try:
+        dist_m = float(near["dist_m"])
+    except (KeyError, TypeError, ValueError):
+        raise simlib.SimError(f"{label}.near: dist_m must be > 0")
+    if dist_m <= 0.0:
+        raise simlib.SimError(f"{label}.near: dist_m must be > 0")
+    then = near.get("then")
+    if not isinstance(then, dict):
+        raise simlib.SimError(
+            f"{label}.near.then: a behaviour override mapping")
+    bad = set(then) - REACT_THEN_KEYS
+    if bad:
+        raise simlib.SimError(
+            f"{label}.near.then: unknown keys {sorted(bad)} "
+            f"(allows {sorted(REACT_THEN_KEYS)})")
+    kind = then.get("kind")
+    if kind not in REACT_THEN_KINDS:
+        raise simlib.SimError(
+            f"{label}.near.then: kind must be "
+            f"{'|'.join(REACT_THEN_KINDS)}, got {kind!r}")
+    speed = then.get("speed_mps")
+    if kind == "freeze":
+        if speed is not None:
+            raise simlib.SimError(
+                f"{label}.near.then: freeze takes no speed_mps")
+        speed = 0.0
+    else:
+        speed = float(speed if speed is not None
+                      else REACT_DEFAULT_SPEED_MPS[kind])
+        if speed <= 0.0:
+            raise simlib.SimError(
+                f"{label}.near.then: speed_mps must be > 0")
+    return {"unit": (str(near["unit"]) if near.get("unit") is not None
+                     else None),
+            "unit_cls": (str(near["unit_cls"])
+                         if near.get("unit_cls") is not None else None),
+            "dist_m": dist_m,
+            "then": {"kind": kind, "speed_mps": speed}}
+
+
 def _parse_trails(spec, path):
     """trails: {name: [[lat, lng], ...>=2]} -> {name: {"pts"}}."""
     out = {}
@@ -1461,6 +1699,12 @@ def truth_path(sim):
     return os.path.join(simlib.run_dir(sim), "truth.jsonl")
 
 
+def overrides_path(sim):
+    """SL-0013: the append-only reaction-knot record the truth tick
+    writes and every evaluator reads."""
+    return os.path.join(simlib.run_dir(sim), "world_overrides.jsonl")
+
+
 def stubs_dir(sim):
     return os.path.join(simlib.run_dir(sim), "stubs")
 
@@ -1481,9 +1725,10 @@ def write_epoch(sim, world_path, seed):
 
 def clear_run_state(sim):
     """Reset per-run world state before a scenario starts: drop the
-    epoch (stubs pause), truncate the truth file and the stub logs so a
-    reused sim only records this run."""
-    for p in (epoch_path(sim), truth_path(sim)):
+    epoch (stubs pause), truncate the truth file, the overrides file
+    (SL-0013) and the stub logs so a reused sim only records this
+    run."""
+    for p in (epoch_path(sim), truth_path(sim), overrides_path(sim)):
         if os.path.isfile(p):
             os.unlink(p)
     sdir = stubs_dir(sim)
@@ -1491,6 +1736,74 @@ def clear_run_state(sim):
         for f in os.listdir(sdir):
             if f.endswith(".log"):
                 os.unlink(os.path.join(sdir, f))
+
+
+# ------------------------------------------------- react authority
+
+def react_knots(world, poses, t_s, now_ms, fired):
+    """SL-0013 single-authority trigger evaluation - called ONLY by
+    the runner's truth tick (a per-stub evaluation would race the file
+    and diverge truth from detections).
+
+    poses: {unit_name: {"lat", "lng", "cls"}} - FC units from the
+    telemetry sampler, statics from their manifest position; `cls` is
+    the scenario fleet cls for near.unit_cls matching. fired: the set
+    of entity ids already latched this run (a react fires once - the
+    knot latches, the entity keeps the new motion).
+
+    -> [knot dicts] to append to world_overrides.jsonl; each carries
+    everything pos_at needs ({t_s, tid, kind, from, threat, unit,
+    dist_m, speed_mps, heading_deg?}) so the file alone decides the
+    override - deterministic given the file."""
+    out = []
+    for e in world.entities:
+        r = e.react
+        if r is None or e.id in fired:
+            continue
+        lat, lng, _a = e.pos_at(t_s, world)
+        best = None
+        for uname, p in poses.items():
+            if r["unit"] is not None and uname != r["unit"]:
+                continue
+            if r["unit_cls"] is not None and p.get("cls") != r["unit_cls"]:
+                continue
+            if p.get("lat") is None or p.get("lng") is None:
+                continue
+            # horizontal ground distance - "approached", not altitude
+            d = _dist(lat, lng, p["lat"], p["lng"])
+            if best is None or d < best[0]:
+                best = (d, uname, p)
+        if best is None or best[0] > r["dist_m"]:
+            continue
+        d, uname, p = best
+        then = r["then"]
+        knot = {"v": 1, "t_s": round(t_s, 3), "t_ms": now_ms,
+                "tid": e.id, "kind": then["kind"],
+                "from": [lat, lng],
+                "threat": [p["lat"], p["lng"]],
+                "unit": uname, "dist_m": round(d, 2),
+                "speed_mps": then["speed_mps"]}
+        if then["kind"] == "flee":
+            # directly away from the recorded threat; a degenerate
+            # zero-distance bearing takes a seeded draw so every
+            # reader still computes the same track
+            h = _bearing_deg(p["lat"], p["lng"], lat, lng) \
+                if d >= 1e-3 else \
+                rng(world.seed, "react", e.id).uniform(0.0, 360.0)
+            knot["heading_deg"] = round(h, 2)
+        out.append(knot)
+    return out
+
+
+def world_event_row(knot, now_ms):
+    """The truth.jsonl row a fired knot logs: the on:{world:..}
+    watcher matches its `re` against `msg`."""
+    return {"type": "world_event", "event": "react",
+            "tid": knot["tid"], "kind": knot["kind"],
+            "unit": knot.get("unit"), "dist_m": knot["dist_m"],
+            "t_s": knot["t_s"], "t_ms": now_ms,
+            "msg": (f"react {knot['tid']} {knot['kind']} near "
+                    f"{knot.get('unit')} dist_m {knot['dist_m']}")}
 
 
 # ------------------------------------------------------------ truth log
@@ -1502,13 +1815,26 @@ class TruthRecorder:
     they emit; distance_to/coverage_complete/detection_precision read
     both. start()/stop(); t_ms is unix ms (the fleet clock)."""
 
-    def __init__(self, world, epoch_ms, path, hz=1.0):
+    def __init__(self, world, epoch_ms, path, hz=1.0,
+                 overrides_path=None, fleet_poses=None):
         self.world = world
         self.epoch_ms = epoch_ms
         self.path = path
         self.hz = hz
         self._stop = threading.Event()
         self._thread = None
+        # SL-0013 react authority: when the runner hands us the
+        # overrides path + a fleet-pose callable, this tick alone fires
+        # react: triggers (knots -> the file, world_event rows ->
+        # truth.jsonl) and the world applies them
+        self._ov_path = overrides_path
+        self._poses = fleet_poses
+        self._fired = set()
+        self._reactive = []
+        if overrides_path:
+            world.use_overrides(overrides_path)
+            self._reactive = [e for e in world.entities
+                              if e.react is not None]
 
     def start(self):
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -1526,6 +1852,8 @@ class TruthRecorder:
         while not self._stop.is_set():
             now = int(time.time() * 1000)
             t_s = (now - self.epoch_ms) / 1000.0
+            if self._reactive:
+                self._react_tick(t_s, now)
             for e in self.world.entities:
                 lat, lng, alt = e.pos_at(t_s, self.world)
                 row = {"tid": e.id, "cls": e.cls, "t_ms": now,
@@ -1539,3 +1867,30 @@ class TruthRecorder:
                     pass
             next_t += 1.0 / self.hz
             self._stop.wait(max(0.05, next_t - time.time()))
+
+    def _react_tick(self, t_s, now):
+        """The ONE authority for react: triggers (SL-0013): evaluate
+        the fleet poses once per truth row, append each latched knot to
+        the overrides file and its world_event row to truth.jsonl. The
+        rows written this same tick already see the knot (pos_at reads
+        the file - from == the current position, so motion is
+        continuous across the trigger)."""
+        poses = {}
+        try:
+            poses = self._poses() if self._poses else {}
+            knots = react_knots(self.world, poses, t_s, now,
+                                self._fired)
+        except Exception:
+            return                      # a pose hiccup must not kill truth
+        for k in knots:
+            try:
+                with open(self._ov_path, "a") as f:
+                    f.write(json.dumps(k) + "\n")
+            except OSError:
+                continue                # no knot on disk -> no event
+            self._fired.add(k["tid"])
+            try:
+                with open(self.path, "a") as f:
+                    f.write(json.dumps(world_event_row(k, now)) + "\n")
+            except OSError:
+                pass

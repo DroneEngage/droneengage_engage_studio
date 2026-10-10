@@ -1,0 +1,52 @@
+# sar_forest_flee - the SL-0013 reactive-entities world (de.world/1).
+#
+# forest_a's layout, made reactive: person_1 patrols the same eastward
+# line the p5_over_person op loiters 40 m over (the waypoint sits on
+# the path midpoint), so the copter closes inside person_1's 30 m
+# react radius. The 1 Hz truth tick - the single authority, evaluated
+# against the fleet poses - latches the flee knot into
+# var/run/<sim>/world_overrides.jsonl and logs a world_event row to
+# truth.jsonl; person_1 then walks straight away from the recorded
+# threat position at 1.2 m/s. phone_1 rides person_1 (attach follows
+# the reacted motion - the knot is the parent's position), person_2
+# stands still further out as a non-reactive control.
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_1, cls: person,
+     path: [[-35.362950, 149.165880],
+            [-35.362800, 149.166080],
+            [-35.362660, 149.166260]],
+     speed_mps: 0.7, start_s: 3, loop: true, size_m: 0.5,
+     react: {near: {unit: cam1, dist_m: 30,
+                    then: {kind: flee, speed_mps: 1.2}}}}
+  - {id: phone_1, cls: phone, attach: person_1, offset_m: [2, 1],
+     tx_dbm: -10, freq_hz: 869000000, size_m: 0.2}
+  - {id: person_2, cls: person, pos: [-35.363000, 149.166250],
+     size_m: 0.5}
+clutter: {cls: person, rate_per_km2_min: 0.2, lifetime_s: 20}
+sensors:
+  camera:
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 4            # static mast camera only (stub on a
+                               # comm_only unit); FC units use rel_alt
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 0.95
+    p_detect_edge: 0.6
+    max_range_m: 120
+    pos_noise_px: 8
+    fps_boxes: 2
+    size_m: {person: 0.5, phone: 0.2}
+  sdr:
+    freq_hz: 869000000
+    path_loss_n: 2.7
+    ref_dbm_1m: -30
+    noise_db: 3
+    threshold_dbm: -70           # -10dBm tx -> ~13 m modelled gate
+    bin_hz: 25000
+    sweep_s: 2

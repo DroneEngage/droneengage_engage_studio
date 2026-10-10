@@ -12,9 +12,12 @@
   summary.json, junit.xml.
 
 Timeline steps carry {t, do:<step-name>, ...args} or {t, fault:<kind>,
-...args} or {on: {unit, re}, do:..., once:bool}; on: match groups are
-filled into the step's strings as {M1}..{M9}. `t` is seconds from the
-scenario start; negative t runs at once before the clock starts.
+...args} or {on: {unit, re}, do:..., once:bool} or
+{on: {world, re}, do:...} (SL-0013: a world-entity watcher tails the
+truth.jsonl world_event rows instead of a unit journal); on: match
+groups are filled into the step's strings as {M1}..{M9}. `t` is
+seconds from the scenario start; negative t runs at once before the
+clock starts.
 
 Operator-facing `do:` names (deploy/prepare/start/abort/operator) go
 through the operator bot's own GCS session so the fleet sees one
@@ -26,7 +29,10 @@ the fleet spec before `ensure` (stub config blocks, camera/SDR model
 settings on the real modules). Once the fleet is up, `world_epoch.json`
 is written (the stub start gun) and a TruthRecorder writes
 `var/run/<sim>/truth.jsonl` at 1 Hz; stub detection rows land in the same
-file. The recorder and epoch are always torn down with the run.
+file. That tick is also the single authority for entity `react:`
+triggers (SL-0013): it appends knots to world_overrides.jsonl and
+world_event rows to truth.jsonl. The recorder and epoch are always
+torn down with the run.
 """
 
 import json
@@ -176,7 +182,8 @@ def _do(step, scn, ctx):
     name = step["do"]
     a = _step_args(step)
     # an on-triggered step defaults its unit to the trigger's unit
-    if "on" in step and "unit" not in a:
+    # (a world-entity trigger has none - the step must name its own)
+    if "on" in step and "unit" not in a and step["on"].get("unit"):
         a["unit"] = step["on"]["unit"]
     bot = ctx["bot"]
     if name in ("deploy", "prepare"):
@@ -333,7 +340,7 @@ def _rc_pump(ctx, u, chans, dur_s):
 def _fault(step, scn, ctx):
     kind = step["fault"]
     a = _step_args(step)
-    if "on" in step and "unit" not in a:
+    if "on" in step and "unit" not in a and step["on"].get("unit"):
         a["unit"] = step["on"]["unit"]
     unit = str(a.get("unit", "all"))
     dur = a.get("dur_s", a.get("seconds"))
@@ -639,15 +646,86 @@ def _watcher_fires(w, ctx):
     return ok
 
 
+def _fleet_poses(ctx):
+    """{name: {"lat","lng","cls"}} for the react authority (SL-0013):
+    FC units report the telemetry sampler's latest row, statics sit at
+    their manifest position. cls is the scenario fleet cls (unit_cls
+    matches what the scenario author wrote - copter|static|a block)."""
+    out = {}
+    fleet_cls = {str(f.get("id")): f.get("cls")
+                 for f in ctx["scn"].get("fleet") or []}
+    tele = ctx.get("telemetry")
+    for u in ctx["manifest"]["units"]:
+        cls = fleet_cls.get(u["name"]) or u["block"]
+        if u.get("fc"):
+            row = tele.latest(u["name"]) if tele else {}
+            if row.get("lat") is not None:
+                out[u["name"]] = {"lat": row["lat"], "lng": row["lng"],
+                                  "cls": cls}
+        else:
+            p = u.get("position") or {}
+            out[u["name"]] = {"lat": p.get("lat"), "lng": p.get("lng"),
+                              "cls": cls}
+    return out
+
+
+def _world_watcher_fires(w, ctx):
+    """SL-0013: an `on: {world: <entity>, re}` watcher tails
+    truth.jsonl for that entity's world_event rows (the react
+    authority's log) and runs the step on new regex matches - the
+    match runs against the row's msg text."""
+    ok = True
+    path = world_mod.truth_path(ctx["sim"])
+    try:
+        with open(path, "rb") as f:
+            f.seek(w["offset"])
+            data = f.read()
+    except OSError:
+        return True
+    end = data.rfind(b"\n") + 1
+    w["offset"] += end                    # torn tail re-read next poll
+    for ln in data[:end].decode(errors="replace").splitlines():
+        try:
+            row = json.loads(ln)
+        except ValueError:
+            continue
+        if row.get("type") != "world_event" or \
+                str(row.get("tid")) != w["world"]:
+            continue
+        m = w["rx"].search(str(row.get("msg")
+                               or json.dumps(row, sort_keys=True)))
+        if not m:
+            continue
+        w["fired"] += 1
+        step = _fill(w["step"], m.groups())
+        print(f"  on:world {w['world']} {w['rx'].pattern!r} matched "
+              f"({str(row.get('msg'))[:60]}) - firing", flush=True)
+        ok &= _run_step(step, ctx["scn"], ctx)
+        if w["once"]:
+            w["armed"] = False
+            break
+    return ok
+
+
 def run_timeline(scn, ctx):
     """Scheduled t: steps + armed on: watchers until last_t + settle_s."""
     steps = scn["timeline"]
     t_steps = sorted((s for s in steps if "t" in s), key=lambda s: s["t"])
-    watchers = [{"unit": str(s["on"]["unit"]),
-                 "rx": re.compile(s["on"]["re"]),
-                 "step": s, "offsets": None, "fired": 0,
-                 "once": bool(s.get("once", True)), "armed": True}
-                for s in steps if "on" in s]
+    watchers = []
+    for s in steps:
+        if "on" not in s:
+            continue
+        w = {"rx": re.compile(s["on"]["re"]),
+             "step": s, "fired": 0,
+             "once": bool(s.get("once", True)), "armed": True}
+        if "world" in s["on"]:
+            # SL-0013: a world-entity watcher tails truth.jsonl's
+            # world_event rows; offset 0 is fine - clear_run_state
+            # truncated the file for this run
+            w.update(world=str(s["on"]["world"]), offset=0)
+        else:
+            w.update(unit=str(s["on"]["unit"]), offsets=None)
+        watchers.append(w)
     ok = True
     neg = [s for s in t_steps if s["t"] < 0]
     pos = [s for s in t_steps if s["t"] >= 0]
@@ -670,7 +748,8 @@ def run_timeline(scn, ctx):
                 end = max(end, time.time() + scn["settle_s"])
         for w in watchers:
             if w["armed"]:
-                ok &= _watcher_fires(w, ctx)
+                ok &= (_world_watcher_fires(w, ctx) if "world" in w
+                       else _watcher_fires(w, ctx))
         time.sleep(0.25)
     return ok
 
@@ -865,8 +944,15 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
         world_mod.clear_run_state(m["name"])
         epoch_ms = world_mod.write_epoch(m["name"], scn["world"],
                                          scn["seed"])
+        # SL-0013: the 1 Hz truth tick is the SINGLE authority for
+        # react: triggers - it reads the fleet poses (telemetry for FC
+        # units, the manifest position for statics), appends knots to
+        # world_overrides.jsonl and world_event rows to truth.jsonl;
+        # the stubs and the world stream read the same file.
         recorder = world_mod.TruthRecorder(
-            wld, epoch_ms, world_mod.truth_path(m["name"]))
+            wld, epoch_ms, world_mod.truth_path(m["name"]),
+            overrides_path=world_mod.overrides_path(m["name"]),
+            fleet_poses=lambda: _fleet_poses(ctx))
         recorder.start()
         ctx["world_epoch_ms"] = epoch_ms
         # P5-13: a render-enabled scenario also opens the world stream

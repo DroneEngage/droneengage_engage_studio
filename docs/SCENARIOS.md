@@ -93,13 +93,19 @@ Each step is exactly one of:
 - {t: 60, fault: link_cut, unit: s1, dur_s: 30}   # inject a fault
 - {on: {unit: s1, re: "comm line offline"},       # journal trigger
    do: fire, event: go.now, once: true}
+- {on: {world: person_1, re: "react"},            # world-event trigger
+   do: fire, event: world.reacted, unit: s1}
 ```
 
 - `t` is seconds from scenario start (after fleet bring-up + verify).
-- `on:` arms a journal watcher on `unit`'s de_comm journal; regex match
+- `on:` arms a watcher on `unit`'s de_comm journal; regex match
   groups substitute into the step's string args as `{M1}`..`{M9}`.
   `once` defaults to `true`. Watchers are polled between steps — a long
   blocking `wait` starves them; prefer a `wait_journal` with timeout.
+- `on: {world: <entity_id>, re: ...}` (SL-0013) watches `truth.jsonl`'s
+  `world_event` rows for that entity instead of a journal — e.g. the
+  `react` row the truth tick logs when a `react:` trigger latches. The
+  step's `unit:` is NOT defaulted from the trigger; name it yourself.
 - The run ends `settle_s` seconds after the last `t`.
 
 ### `do:` steps
@@ -274,6 +280,28 @@ thermal camera's contrast estimate (see `engine/world.py`'s header). A `world:` 
 fleet units), feeds `truth.jsonl`, and powers the truth/coverage/
 detection assertions. `render:` (`viewer|cameras|physics|full`,
 `headless`) adds the world stream + Mavlink3DMap.
+
+An entity may react to the fleet (SL-0013):
+
+```yaml
+entities:
+  - {id: person_1, cls: person, pos: [..],
+     react: {near: {unit: cam1, dist_m: 30,          # | unit_cls: copter
+                    then: {kind: flee, speed_mps: 1.2}}}}
+```
+
+`near.unit` names a fleet unit, `near.unit_cls` matches the fleet `cls`
+(exactly one required); `dist_m` is horizontal ground distance.
+`then.kind` is `flee` (walk straight away from the recorded threat
+pose at `speed_mps`), `freeze` (hold the trigger position) or `seek`
+(walk to the recorded pose). The reaction is evaluated by a SINGLE
+authority — the runner's 1 Hz truth tick — which latches one knot per
+entity into `var/run/<sim>/world_overrides.jsonl` and logs a
+`world_event` row to `truth.jsonl`; the stubs and the world stream
+read the same file, so truth, detections and the render feed agree.
+A reactive world is excluded from golden byte-identity (the authority
+is wall-clock — statistically reproducible only). See
+`tests/p5/world_react_flee.yaml`.
 
 ## Conventions & gotchas
 

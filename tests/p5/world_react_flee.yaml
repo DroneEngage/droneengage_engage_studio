@@ -1,0 +1,43 @@
+# p5/world_react_flee - SL-0013 acceptance: a reactive world entity
+# under a SINGLE authority. person_1 patrols sar_forest_flee's line;
+# the p5_react_flee op loiters the stub_ai_box copter 40 m over the
+# path midpoint, so it closes inside the entity's 30 m react radius.
+# The 1 Hz truth tick (the only evaluator - a per-stub reaction would
+# diverge truth from detections) latches the flee knot into
+# world_overrides.jsonl and a world_event row into truth.jsonl, and
+# person_1 walks away from the recorded copter position at 1.2 m/s.
+# Every consumer reads the same file: the stub's pos_at follows the
+# reacted truth, so distance_to/detection_precision stay consistent,
+# and the on: {world: person_1, re: "react"} watcher fires the
+# world.reacted event off the world_event row (journal evidence:
+# "event world.reacted latched").
+version: 1
+name: world_react_flee
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest_flee.yaml
+operation: ../../packages/p5_react_flee.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 25
+fleet:
+  - {id: cam1, cls: copter, modules: [stub_ai_box]}
+timeline:
+  - {t: 0, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 2, do: deploy, timeout: 120}
+  - {t: 4, do: wait_ready, unit: cam1, timeout: 120}
+  - {t: 6, do: arm, unit: cam1}
+  - {t: 9, do: start}
+  - {t: 10, do: wait_journal, unit: cam1,
+     re: "detect\\.detected", timeout: 240}
+  - {on: {world: person_1, re: "react"},
+     do: fire, event: world.reacted, unit: cam1}
+assert:
+  - journal_count: {unit: cam1, re: "detect\\.detected",
+                    at_least: 1}
+  - journal_count: {unit: cam1, re: "world\\.reacted",
+                    at_least: 1}
+  - distance_to: {unit: cam1, re: "detect\\.detected",
+                  detected_cls: person,
+                  truth: [person_1], max_m: 25}
+  - detection_precision: {cls: person, min: 0.8, unit: cam1}
+teardown: land

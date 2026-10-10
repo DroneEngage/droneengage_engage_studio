@@ -1,0 +1,11 @@
+{
+  "op": "p5_react_flee",
+  "roles": {
+    "cam_scout": {
+      "pkg": "p5_react_flee.json",
+      "units": [
+        "cam1"
+      ]
+    }
+  }
+}
