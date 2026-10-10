@@ -14,8 +14,11 @@ to either backend the same way:
     req <secs> <reply_mt> <json> send <json>, stream <reply_mt> replies until
                                  ms.more is false or <secs> pass
 
-Link faults (link / kick / clock / stats) need the fake server: the bridge
-answers "ERR ..." and ctl.py refuses them up front.
+Link faults (link / kick / clock / stats) are not the bridge's business:
+ctl.py sends them to the fake server, or - with server:
+{type: real, link_proxy: true} (SL-0009) - to the affected unit's own
+link_proxy; a raw line here still answers "ERR ...". The bridge's GCS
+session is never proxied.
 
 Unlike the fake server, the real server does NOT stamp `sd` - it routes
 the sender id the client wrote (checked 2026-10-01, js_chat_routing.js
@@ -220,8 +223,12 @@ async def control(reader, writer):
                                  float(secs), json.loads(body),
                                  stop_on_last=False)
                 elif line.split()[0] in ("link", "kick", "clock", "stats"):
+                    # ctl routes these to the unit link proxies itself;
+                    # a raw line here means it was sent by hand
                     say("ERR link faults need the fake server "
-                        "(sim server: {type: fake})")
+                        "(sim server: {type: fake}), or "
+                        "server: {type: real, link_proxy: true} with "
+                        "./sim ctl link <unit> ... (per-unit proxy)")
                 else:
                     _tg, msg = ffs.build_message(line)
                     if msg is None:

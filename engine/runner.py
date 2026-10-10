@@ -31,11 +31,15 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - reboot: {unit: 1}                # de_comm restart under a fresh
                                          # boot id (pending TTL signals
                                          # drop, sticky facts survive)
-      - loss: {unit: all, percent: 30}   # link faults: server type fake only
+      - loss: {unit: all, percent: 30}   # message loss: server type fake
+                                         # only (link faults otherwise
+                                         # work on `server: {type: real,
+                                         # link_proxy: true}` too)
       - link_cut: {unit: 1, seconds: 20}
       - link: {unit: 1, set: "stall 30"} # SL-0007 raw link-model knobs;
                                          # set: ["loss_tx 0", "loss_rx 100"]
-                                         # sends several sub-lines
+                                         # sends several sub-lines;
+                                         # loss* knobs are fake-only
       - beacon: {unit: 1, seconds: 10, min: 3}   # count the unit's 1004
                                          # presence beacons on a fresh GCS
                                          # listen (SL-0007)
@@ -415,7 +419,9 @@ def run(t_file, keep=False):
     ctl.CTX = SIM_NAME = m["name"]
     fake = m.get("server", {}).get("type") == "fake"
     # a previous test that died mid-way may have left link faults applied
-    if fake:
+    # (the fake server's links{}, or the SL-0009 per-unit link proxies)
+    link_capable = fake or any(u.get("link_proxy") for u in m["units"])
+    if link_capable:
         run_ctl("link_clear", "all")
     # journal assertions only see lines appended after this point
     marks = {u["name"]: simlib.journal_mark(u) for u in m["units"]}
@@ -436,7 +442,7 @@ def run(t_file, keep=False):
         print(f"  [{'PASS' if r else 'FAIL'}] {list(a)[0]}: {list(a.values())[0]}")
 
     # faults never leak into the next test (pass, fail or broken-off step)
-    if fake:
+    if link_capable:
         run_ctl("link_clear", "all")
 
     td = "none" if keep else t.get("teardown", "land")

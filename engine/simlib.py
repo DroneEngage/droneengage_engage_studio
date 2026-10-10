@@ -144,6 +144,12 @@ CLI_AUTH = {}
 DE_COMM_BIN = setting("DE_COMM_BIN", os.path.join(COMM_REPO, "bin", "de_comm"))
 DE_COMM_PORT_BASE = 62000
 
+# SL-0009: opt-in byte-level link-fault proxy between de_comm and the
+# real comm server (server: {type: real, link_proxy: true}). de_comm
+# dials <base>+10k instead of the server wss port; <base>+1+10k is the
+# fault control port (fake-server line protocol).
+LINK_PROXY_PORT_BASE = 61500
+
 # flight controller kinds: SITL binary, -M model, ArduPilot defaults,
 # pymavlink mode table, mode used to arm, how `land` brings it down
 FC_KINDS = {
@@ -428,7 +434,7 @@ def load_sim(path_or_spec, base_dir=None):
         if isinstance(entry, str):
             entry = {"block": entry}
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
-                            "account", "add_modules", "role"}
+                            "account", "add_modules", "role", "link_proxy"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -530,7 +536,11 @@ def load_server(srv, slot_base=None):
       sim's own port with a generated config. auth: false runs it in
       local_server_enabled mode (units connect directly, like
       use_local_comm_server); auth: true also starts droneengage_authenticator
-      and every unit logs in with the sim account.
+      and every unit logs in with the sim account. link_proxy: true
+      (auth: false only, SL-0009) inserts engine/link_proxy.py between
+      each unit's de_comm and the server wss port - byte-level
+      stall/GE/bw/jitter/delay/cut with a per-unit control port; a unit
+      may override with `link_proxy: false`.
     fake: engine/fake_fleet_server.py - same routing plus seeded per-link
       loss / delay / cut. Use it for link-fault tests. Extra fake-only
       keys: clock_offset_ms (skew the stamped fleet clock), noclock
@@ -559,7 +569,7 @@ def load_server(srv, slot_base=None):
     bad = set(srv) - {"type", "ip", "port", "auth", "account",
                       "unit_account", "seed", "clock_offset_ms", "noclock",
                       "auth_ip", "auth_port", "auth_verify_ssl",
-                      "control_port", "gcs_party"}
+                      "control_port", "gcs_party", "link_proxy"}
     if bad:
         raise SimError(f"sim server: unknown keys {sorted(bad)}")
     t = srv.get("type", "real")
@@ -567,6 +577,13 @@ def load_server(srv, slot_base=None):
         raise SimError(f"sim server.type must be one of {SERVER_TYPES}")
     if t == "fake" and srv.get("auth"):
         raise SimError("sim server: auth needs type real")
+    if srv.get("link_proxy") and t != "real":
+        raise SimError("sim server: link_proxy needs type real - it "
+                       "relays bytes to a spawned comm server")
+    if srv.get("link_proxy") and srv.get("auth"):
+        raise SimError("sim server: link_proxy needs auth: false - the "
+                       "authenticator hands de_comm the server address at "
+                       "login, which cannot be redirected per unit")
     acc = srv.get("account") or {}
     # one CLI credential alone silently pairs with the yaml/env
     # counterpart - a wrong-password login reads as a server failure
@@ -623,6 +640,7 @@ def load_server(srv, slot_base=None):
             "unit_account": unit_login,
             "gcs_party": srv.get("gcs_party"),
             "seed": 0, "clock_offset_ms": 0, "noclock": [],
+            "link_proxy": False,
         }
     port = int(srv.get("port", SERVER_PORT))
     return {
@@ -637,6 +655,7 @@ def load_server(srv, slot_base=None):
         "seed": int(srv.get("seed", 1337)),
         "clock_offset_ms": int(srv.get("clock_offset_ms", 0)),
         "noclock": list(srv.get("noclock") or []),
+        "link_proxy": bool(srv.get("link_proxy", False)),
     }
 
 
@@ -869,6 +888,20 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         check_account(user, code, f"unit {name} account")
         u["account"] = {"user": user, "code": code}
     u["ports"]["de_comm"] = DE_COMM_PORT_BASE + 10 * slot
+    # SL-0009: `link_proxy` (server block on a real sim, per-unit
+    # override) inserts engine/link_proxy.py between de_comm and the
+    # comm server wss port for byte-level link faults
+    lp = entry.get("link_proxy")
+    if lp is None:
+        lp = sim["server"].get("link_proxy")
+    elif not isinstance(lp, bool):
+        raise SimError(f"unit {name}: link_proxy must be true/false")
+    if lp and sim["server"]["type"] != "real":
+        raise SimError(f"unit {name}: link_proxy needs "
+                       "server: {type: real}")
+    u["link_proxy"] = {"port": LINK_PROXY_PORT_BASE + 10 * slot,
+                       "ctrl": LINK_PROXY_PORT_BASE + 1 + 10 * slot} \
+        if lp else None
     for m in u["modules"]:
         if m != "de_comm":
             u["ports"][m] = int(catalog[m]["port_base"]) + 10 * slot
@@ -1092,6 +1125,8 @@ def used_ports(sim):
                       sim["render"]["sink_port"]))
     for u in sim["units"]:
         ports.update(u["ports"].values())
+        if u.get("link_proxy"):
+            ports.update((u["link_proxy"]["port"], u["link_proxy"]["ctrl"]))
         if u["fc"]:
             ports.update((u["fc"]["pilot_port"], u["fc"]["aux_port"],
                           u["fc"]["fcb_port"]))
@@ -1149,8 +1184,12 @@ def journal_dir(u):
 
 
 def procs_of(u):
-    """Process names of a unit in launch order."""
-    return (["sitl"] if u["fc"] else []) + list(u["modules"])
+    """Process names of a unit in launch order. The link proxy goes
+    first: it is what de_comm dials for the comm server."""
+    out = ["sitl"] if u["fc"] else []
+    if u.get("link_proxy"):
+        out.append("link_proxy")
+    return out + list(u["modules"])
 
 
 def ready_checks(u, catalog=None):
@@ -1237,9 +1276,15 @@ def gen_unit(u, sim, catalog):
                     "userName": acc["user"],
                     "accessCode": acc["code"]})
     else:
+        # a proxied unit dials its link_proxy port; the proxy relays the
+        # TLS stream to the real server untouched. Only this unit's
+        # de_comm is redirected - the GCS bridge and other units keep the
+        # direct path.
         cfg.update({"use_local_comm_server": True,
                     "local_comm_server_ip": srv["ip"],
-                    "local_comm_server_port": srv["port"]})
+                    "local_comm_server_port":
+                        u["link_proxy"]["port"]
+                        if u.get("link_proxy") else srv["port"]})
     if not u["fc"]:
         p = u["position"]
         cfg["location"] = {
@@ -1269,6 +1314,21 @@ def gen_unit(u, sim, catalog):
     _launch_script(u, "de_comm", cdir,
                    f"'{DE_COMM_BIN}' -c '{comm_cfg}' -b '{comm_local}'",
                    env=(("DE_BOOT_ID_FILE", boot_id),))
+
+    # ---- link proxy (SL-0009) ----
+    # de_comm's generated server address already points here; the proxy
+    # relays TLS bytes to the real comm server and drives the shared
+    # link_model faults (stall/GE/bw/jitter/delay/cut) per direction.
+    if u.get("link_proxy"):
+        pdir = os.path.join(udir, "link_proxy")
+        os.makedirs(pdir, exist_ok=True)
+        _launch_script(
+            u, "link_proxy", pdir,
+            "'%s' -u '%s' --unit %s --listen %d --ctrl %d "
+            "--target %s:%d --statedir '%s' --seed %d"
+            % (sys.executable, os.path.join(ENGINE_DIR, "link_proxy.py"),
+               u["name"], u["link_proxy"]["port"], u["link_proxy"]["ctrl"],
+               srv["ip"], srv["port"], pdir, srv["seed"]))
 
     # ---- generic s2s modules ----
     ctx = {"unit": u["name"], "comm_port": u["ports"]["de_comm"],

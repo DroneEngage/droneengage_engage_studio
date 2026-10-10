@@ -39,7 +39,9 @@ version: 1
 name: my_scenario              # required; [A-Za-z0-9_-] - becomes the run dir
 seed: 42                       # optional; derives ports + fault/world RNG
 realtime: false                # true gates timing asserts (SKIP unless SITL ~1x)
-transport: fake                # fake | real  (link/clock faults need fake)
+transport: fake                # fake | real | {type: real, link_proxy: true}
+                               # (link faults need fake, or real+link_proxy;
+                               # clock faults always need fake)
 home: [lat, lng, alt, yaw]     # optional fleet home (defaults to SITL home)
 slot_base: 40                  # optional; default is derived from the seed
 world: ../../worlds/forest_a.yaml        # optional seeded world (stubs)
@@ -137,8 +139,9 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `kill` / `restart` | `unit`, `proc` (`all`, `de_comm`, `de_mavlink`, `server`…) |
 | `freeze` / `unfreeze` | `unit`, `proc` (`dur_s` self-resume on freeze) — SIGSTOP/SIGCONT: a hang, not a crash |
 | `reboot` | `unit` — de_comm under a fresh boot id |
-| `loss` / `delay` / `link_cut` / `commline` | `unit`, `percent`/`ms`/`seconds` — **fake transport only** |
-| `link` | `unit`, `set` — raw link-model sub-line(s), e.g. `set: "ge 0.05 0.2 0 90 stall"` or `set: ["loss_tx 0", "loss_rx 100"]`, fake only |
+| `delay` / `link_cut` / `commline` | `unit`, `ms`/`seconds` — fake transport, or real+`link_proxy` (commline is in-band: any transport) |
+| `loss` | `unit`, `percent` — **fake transport only** (message-level loss cannot ride a TLS byte relay) |
+| `link` | `unit`, `set` — raw link-model sub-line(s), e.g. `set: "ge 0.05 0.2 0 90 stall"` or `set: ["loss_tx 0", "loss_rx 100"]`; fake transport, or real+`link_proxy` (loss* subs stay fake-only) |
 | `write_file` | `unit`, `module`, `path`, `json`, `also: []` (`delay_ms`) |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
@@ -146,11 +149,11 @@ takes a name, `all`, a comma list, or `block:<name>`):
 
 | fault | args |
 |---|---|
-| `link_cut` | `unit`, `dur_s` (30) — sever the server link, fake only |
-| `link_stall` | `unit`, `dur_s` (30) — hold every byte in order for the window (a buffered blackout: the ws stays up, the unit's own watchdog notices), fake only |
-| `link_profile` | `unit`, `profile` (a `link_model.PROFILES` name: `lte_edge`, `lte_stall`, `uplink_dead`, `dial_up`) and/or `cmds` (raw `link` sub-lines like `loss_rx 100`); `dur_s` clears the link, fake only |
-| `loss` | `unit`, `percent` (50) — seeded packet loss, fake only |
-| `delay` | `unit`, `ms` (500) — link delay, fake only |
+| `link_cut` | `unit`, `dur_s` (30) — sever the server link; fake transport, or real+`link_proxy` (the proxy kills the session and accept-drops re-dials) |
+| `link_stall` | `unit`, `dur_s` (30) — hold every byte in order for the window (a buffered blackout: the socket stays up, the unit's own watchdog notices); fake transport, or real+`link_proxy` |
+| `link_profile` | `unit`, `profile` (a `link_model.PROFILES` name: `lte_edge`, `lte_stall`, `uplink_dead`, `dial_up`) and/or `cmds` (raw `link` sub-lines like `loss_rx 100`); `dur_s` clears the link. fake transport, or real+`link_proxy` — loss-knob subs/profiles (`loss*`, `uplink_dead`) stay fake-only and GE `drop` kills the session (a byte stream cannot skip bytes) |
+| `loss` | `unit`, `percent` (50) — seeded packet loss, **fake only** |
+| `delay` | `unit`, `ms` (500) — link delay; fake transport, or real+`link_proxy` |
 | `gcs_disconnect` | `dur_s` (30) — drop the operator's GCS session |
 | `server_down` | `proc` (all), `dur_s` — kill server procs |
 | `kill` | `unit`, `proc` (all) — SIGKILL unit processes |
@@ -211,9 +214,9 @@ fault window the runner recorded (`kill`, `restart`, `module_kill`,
 `server_down`, or the `do:` lifecycle steps `reset`/`server_up`/`land`);
 anything else fails `no_unexpected_restart` — a `do: kill` is *not* a
 fault window (see `scenarios/examples/unexpected_restart.yaml` for the
-negative case). `recovers_after_fault` needs `transport: fake` for the
-link evidence to be meaningful; on non-FC units it checks the link
-only.
+negative case). `recovers_after_fault` needs `transport: fake` or
+`link_proxy` for the link evidence to be meaningful; on non-FC units it
+checks the link only.
 
 ## `operator:` — standing policy (optional)
 
@@ -252,8 +255,12 @@ detection assertions. `render:` (`viewer|cameras|physics|full`,
 ## Conventions & gotchas
 
 - First line must be a `#` comment — the "what it proves" paragraph.
-- Link/clock faults refuse on `transport: real`. Real transport exercises
-  the actual comm server (and optional authenticator).
+- Link faults refuse on bare `transport: real` — add `link_proxy: true`
+  to run the byte-level ones against the real server (`link_cut`,
+  `link_stall`, `link_profile`, `delay`, `kick`, `link` subs
+  stall/ge/bw/jitter/delay/profile/cut/clear). `loss`/`loss_tx`/`loss_rx`,
+  loss-knob profiles and all clock faults stay fake-only. Real transport
+  exercises the actual comm server (and optional authenticator).
 - `teardown: land` for anything that flies — a reused airborne fleet
   drains batteries and fails the next run's `battery_low`.
 - SITL needs ~1–2 min for GPS/EKF; `arm` waits for it, but plan the

@@ -59,6 +59,11 @@ is now the only simulation/testing location.
     engine/scenario.py        de.scenario/1 loader (schema: de_scenario.schema.json)
     engine/scenario_runner.py de.scenario/1 runner (./sim run/view on timeline files)
     engine/gcs_bridge.py      persistent GCS session on the real server, control-port protocol
+    engine/link_proxy.py      opt-in per-unit byte-level link-fault proxy in
+                              front of de_comm (`server: {type: real,
+                              link_proxy: true}`, SL-0009): reuses link_model
+                              for stall/GE/bw/jitter/delay/cut on a raw TCP
+                              relay of the wss stream
     engine/fake_fleet_server.py  fault-injection server (copied from Phase-4A, uses simlib)
     var/run/<sim>/            generated per sim (gitignored): sim.json, configs,
                               launch scripts, logs, journals, pids
@@ -119,7 +124,9 @@ Machine paths come only from `simlib.setting()`: environment variable >
 Slot `k = slot_base (10) + unit index`. SITL `-I k`, sysid `k`, pilot
 `5760+10k`, fcb `7660+10k`. Module s2s ports are `port_base + 10k`
 (de_comm 62000, de_mavlink 63000, de_camera 64000, de_tracker 65000). Server
-wss 62008, control 62009, authenticator +10/+11. Keep `slot_base` >= 10 so
+wss 62008, control 62009, authenticator +10/+11. The opt-in link proxy
+(SL-0009) takes `61500+10k` (de_comm dials it instead of the server wss)
+and `61501+10k` (fault control port). Keep `slot_base` >= 10 so
 sim ports never collide with the developer's own servers.
 
 ## Extending
@@ -194,8 +201,18 @@ and make `ctl.ctrl` refuse it for that server type.
 - Authenticator: the account must be alphanumeric or an e-mail with a TLD;
   a bad one comes back as "API endpoint not found". Logins are limited to
   10/min per IP and every unit is 127.0.0.1.
-- Link-fault steps (`loss`, `delay`, `link_cut`, `kick`, `clock`) need
-  `server: {type: fake}`. `ctl` refuses them on a real server.
+- Link faults split by transport. On `server: {type: real,
+  link_proxy: true}` the per-unit proxies take the byte-level faults:
+  `link_cut`, `kick`, `link ... stall|ge|bw|jitter|delay|profile|cut|
+  clear`, `link_clear`, `links` (GE `drop` mode kills the session - a
+  byte stream cannot skip bytes). Fake-only, refused by `ctl` on real
+  with or without proxies: message-level `loss`/`loss_tx`/`loss_rx` and
+  profiles carrying loss knobs (`uplink_dead`), plus the server-stamp
+  faults `clock`/`noclock` (`server_clock`, `no_time_sync`). On
+  `transport: real` without `link_proxy` every link fault refuses.
+  `link_proxy` needs `auth: false` (the authenticator hands de_comm the
+  server address at login). The GCS bridge/operator always connects
+  direct - a unit's link fault never touches it.
 - **A downed sim keeps its manifest.** `var/run/<sim>/sim.json` stays for
   post-mortem logs/journals, so a dead sim's units can share names with a
   live one. `simlib.find_unit` and ctl resolution always prefer *live*

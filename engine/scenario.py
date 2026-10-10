@@ -152,14 +152,17 @@ def _server_spec(scn, slot_base):
     """transport: fake|real|{...} -> a sim `server:` block. The scenario
     seed drives the fake server's link RNG when no explicit seed is set;
     the server port rides the same slot block so --seeds runs can never
-    share ports (parallel `sim up` still refuses a real clash)."""
+    share ports (parallel `sim up` still refuses a real clash). A real
+    transport with `link_proxy: true` (SL-0009) seeds the proxies the
+    same way - their link RNG must not drift between runs either."""
     t = scn.get("transport", "real")
     if isinstance(t, str):
         srv = {"type": t}
     else:
         srv = dict(t)
     srv.setdefault("port", simlib.SERVER_PORT + slot_base)
-    if srv.get("type") == "fake" and "seed" not in srv:
+    if "seed" not in srv and \
+            (srv.get("type") == "fake" or srv.get("link_proxy")):
         srv["seed"] = scn["seed"]
     return srv
 
@@ -185,6 +188,8 @@ def _fleet_units(scn, home):
             u["at"] = dict(ent["at"])
         if ent.get("role"):
             u["role"] = ent["role"]
+        if "link_proxy" in ent:
+            u["link_proxy"] = ent["link_proxy"]
         if ent.get("modules"):
             u["add_modules"] = list(ent["modules"])
         if ent.get("params"):
