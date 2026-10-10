@@ -12,7 +12,6 @@ version: 1
 name: f_os_journal_unwritable
 transport: fake
 operation: ../../packages/copter_square.json
-slot_base: 15
 settle_s: 20
 fleet:
   - {id: c1, cls: copter}
