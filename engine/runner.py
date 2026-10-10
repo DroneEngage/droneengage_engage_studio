@@ -37,6 +37,13 @@ one sim file - that is the point of sims: a reusable fleet setup.
       - restart: {unit: 1, proc: de_comm}
       - freeze: {unit: 1, proc: de_mavlink, dur_s: 30}   # SIGSTOP - a hang,
       - unfreeze: {unit: 1, proc: de_mavlink}            # not a crash
+      - cpu_starve: {unit: 1, proc: de_mavlink, duty_pct: 80,  # SL-0014:
+                     dur_s: 60, cycle_ms: 1000}       # SIGSTOP/SIGCONT duty
+      - cpu_unstarve: {unit: 1, proc: de_mavlink}     # cycle; dur_s bounds it
+      - journal_unwritable: {unit: 1, dur_s: 30}      # journal dir RO,
+      - journal_writable: {unit: 1}                   # auto-restored on down
+      - clock_step: {unit: 1, offset_s: 3600}         # libfaketime step on a
+                                                    # `faketime: true` unit
       - reset: 1                         # SITL back to home, disarmed
       - mode: {unit: 1, mode: RTL}
       - wait_online: 60                  # every unit seen by the GCS
@@ -115,7 +122,10 @@ _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
                "delay", "link_cut", "kick", "commline", "link_clear", "kill",
                "restart", "freeze", "unfreeze",
                "journal", "mode", "disarm", "fire", "fc",
-               "write_file"}
+               "write_file",
+               # SL-0014 OS faults
+               "cpu_starve", "cpu_unstarve", "clock_step",
+               "journal_unwritable", "journal_writable"}
 
 
 def _wait_journal(u, rx, timeout, marks):
@@ -263,6 +273,25 @@ def run_step(step, t, marks):
         return run_ctl(name, unit, arg.get("proc", arg.get("module")),
                        *([arg["dur_s"]] if name == "freeze" and
                          arg.get("dur_s") else []))
+    if name == "cpu_starve":
+        # cpu_starve <unit> <proc> <duty_pct> [dur_s] [cycle_ms]
+        # (SL-0014) - spawns the detached duty-cycle worker; dur_s bounds
+        # its lifetime, without it cpu_unstarve/`sim down` ends it
+        extra = [arg.get("proc", arg.get("module", "de_comm")),
+                 arg.get("duty_pct", 80)]
+        if arg.get("dur_s"):
+            extra += [arg["dur_s"], arg.get("cycle_ms", 1000)]
+        return run_ctl(name, unit, *extra)
+    if name == "cpu_unstarve":
+        return run_ctl(name, unit, arg.get("proc", arg.get("module",
+                                                          "de_comm")))
+    if name == "journal_unwritable":
+        return run_ctl(name, unit,
+                       *([arg["dur_s"]] if arg.get("dur_s") else []))
+    if name == "journal_writable":
+        return run_ctl(name, unit)
+    if name == "clock_step":
+        return run_ctl(name, unit, arg["offset_s"])
     if name == "write_file":
         # GE-07: JSON file(s) into var/run/<unit>/<module>/ - drives module
         # file seams (de_rpi_gpio's gpio_inputs.json). `also` folds extra

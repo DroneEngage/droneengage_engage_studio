@@ -458,6 +458,48 @@ def _fault(step, scn, ctx):
         return True
     if kind == "mode":
         return runner.run_ctl("mode", unit, a["mode"])
+    if kind == "cpu_starve":
+        # SL-0014: SIGSTOP/SIGCONT duty cycle - the proc keeps its pid
+        # and sockets but gets (100-duty_pct)% of each cycle_ms window.
+        # A detached ctl worker does the cycling so the timeline never
+        # blocks; dur_s both ends the worker and schedules the restore
+        # like every timed fault.
+        proc = a.get("proc") or a.get("module") or "de_comm"
+        # the worker itself is a pidfile-tracked proc ("<proc>.starve")
+        # - its appearance, and its exit at dur_s, must sit inside a
+        # fault window for no_unexpected_restart
+        _proc_event(proc + ".starve")
+        ok = runner.run_ctl("cpu_starve", unit, proc,
+                            a.get("duty_pct", 80), dur or 0,
+                            a.get("cycle_ms", 1000))
+        if ok and dur:
+            _schedule(ctx, float(dur), runner.run_ctl,
+                      "cpu_unstarve", unit, proc)
+            _schedule(ctx, float(dur), _proc_event, proc + ".starve")
+            if proc in ("de_comm", "all"):
+                _restore_at(float(dur))
+        return ok
+    if kind == "journal_unwritable":
+        # SL-0014: the unit's journal dir goes read-only - de_comm stays
+        # alive but cannot open a new journal sink. dur_s schedules the
+        # restore; `sim down` also restores so nothing stays broken.
+        ok = runner.run_ctl("journal_unwritable", unit)
+        if ok and dur:
+            _schedule(ctx, float(dur), runner.run_ctl,
+                      "journal_writable", unit)
+        return ok
+    if kind == "clock_step":
+        # SL-0014: step a `faketime: true` unit's de_comm clock via its
+        # FAKETIME_TIMESTAMP_FILE - per-process, no relaunch. dur_s
+        # schedules the step back to "+0".
+        if "offset_s" not in a:
+            print("  fault clock_step needs offset_s:", flush=True)
+            return False
+        ok = runner.run_ctl("clock_step", unit, a["offset_s"])
+        if ok and dur:
+            _schedule(ctx, float(dur), runner.run_ctl,
+                      "clock_step", unit, 0)
+        return ok
     print(f"  unknown fault {kind!r}", flush=True)
     return False
 

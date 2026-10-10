@@ -1,0 +1,28 @@
+# os_cpu_starve: a SIGSTOP/SIGCONT duty cycle on de_mavlink (SL-0014) -
+# it is held stopped 80% of every 40 s cycle, so it keeps its pid and
+# sockets but goes silent long enough for de_comm's module watchdog
+# (~5 s silence) to declare "Module FCB_CTRL is not responding.", and
+# each run slice re-registers ("Module Found: fcb"). The ordered
+# lost->recovered pair plus proc_alive prove a starved process is a
+# hang, not a crash; link_offline 0 proves the unit stays routed - only
+# the module is starved, never de_comm itself.
+version: 1
+name: f_os_cpu_starve
+transport: fake
+realtime: true
+slot_base: 11
+settle_s: 30
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 3, fault: cpu_starve, unit: c1, proc: de_mavlink, duty_pct: 80,
+     cycle_ms: 40000, dur_s: 60}
+  - {t: 12, do: wait_log, unit: c1, module: de_comm,
+     re: "is not responding", timeout: 60}
+  - {t: 45, do: wait_log, unit: c1, module: de_comm,
+     re: "Module Found: fcb", timeout: 90}
+assert:
+  - journal_order: {unit: c1, proc: de_comm,
+                    first: "is not responding", then: "Module Found: fcb"}
+  - proc_alive: {unit: c1, proc: de_mavlink}
+  - link_offline: {unit: c1, eq: 0}

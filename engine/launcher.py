@@ -60,8 +60,40 @@ def _unstop(pid):
             pass
 
 
+def _journal_restore(sim_dir):
+    """A journal_unwritable fault (SL-0014) may have left a unit's
+    journal dir read-only - restore the write bits so a post-mortem
+    `collect`, the next `sim up`, or a human reading the journals never
+    inherits a dead journal."""
+    try:
+        entries = os.listdir(sim_dir)
+    except OSError:
+        return
+    for ent in entries:
+        jdir = os.path.join(sim_dir, ent, "journal")
+        if not os.path.isdir(jdir):
+            continue
+        try:
+            os.chmod(jdir, 0o755)
+        except OSError:
+            pass
+        try:
+            files = os.listdir(jdir)
+        except OSError:
+            continue
+        for f in files:
+            p = os.path.join(jdir, f)
+            try:
+                if os.path.isfile(p):
+                    os.chmod(p, 0o644)
+            except OSError:
+                pass
+
+
 def down(name=None, quiet=False):
     dirs = [d for d in _pids_dirs(name) if os.path.isdir(d)]
+    for d in dirs:
+        _journal_restore(os.path.dirname(d))
     strays = _stray_pids(name)
     if not dirs and not strays:
         if not quiet:

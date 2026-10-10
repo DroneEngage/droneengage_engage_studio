@@ -75,6 +75,8 @@ fleet:
     home: [-35.36, 149.16, 584, 90]              # absolute; or `at` offsets
     base: [-35.36, 149.16]                       # statics: absolute position
     account: {user: u@x.com, code: secret}       # own login (auth sims)
+    faketime: true           # launch de_comm under libfaketime - needed
+                             # by the clock_step fault (SL-0014)
 ```
 
 `cls` is `copter | plane | rover | static | comm_only` or a `blocks/`
@@ -160,8 +162,16 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `no_time_sync` | `unit`, `dur_s` — units stop carrying `ts`, fake only |
 | `rc_override` | `unit`, `chan`/`channels`+`pwm` (3:1600), `dur_s` (15) |
 | `mode` | `unit`, `mode` — force an FC mode |
+| `cpu_starve` | `unit`, `proc`\|`module`, `duty_pct` (80), `cycle_ms` (1000), `dur_s` — SL-0014: a detached SIGSTOP/SIGCONT worker holds the proc stopped `duty_pct`% of each cycle (pid + sockets kept); `dur_s` ends the cycle, without it `cpu_unstarve` or teardown does |
+| `journal_unwritable` | `unit`, `dur_s` — SL-0014: the unit's journal dir + files go read-only; open fds still write but every new journal sink open fails. `dur_s` restores, `sim down` always restores |
+| `clock_step` | `unit`, `offset_s`, `dur_s` — SL-0014: step a `faketime: true` unit's de_comm clock by signed seconds via its `FAKETIME_TIMESTAMP_FILE` (per-process libfaketime, no adjtimex); `dur_s` steps back to `+0` |
 
 `dur_s` auto-restores where it applies. `unit` accepts `all`.
+
+`clock_step` needs the unit's fleet entry to carry `faketime: true` —
+de_comm must launch under libfaketime (there is no retroactive
+LD_PRELOAD), and validation fails when libfaketime is not installed
+(`SIM_FAKETIME_LIB` in `sim.local.env` pins a non-standard `.so`).
 
 ## `assert:` — what proves it
 
@@ -189,6 +199,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `mission_pull` | `unit`, `secs`, bounds | the GCS 501→1027 plan read-back a WebClient draws; last chunk `i=999` required |
 | `roster_value` | `unit`, `key`, `equals`/`…` | roster field |
 | `operator_log_count` | `re`, bounds | the bot's decisions |
+| `clock_spread` | `unit`, `max_ms` (100) or `min_ms` | spread of the units' latest CLOCK `fleet_minus_unix_ms`; `min_ms` proves a `clock_step` landed |
 | `distance_to` | `unit`, `re`, `truth`, `min_m`/`max_m` | world truth geometry |
 | `coverage_complete` / `pod_mean` / `pod_at` | `area`, `cell_m`, `min` | coverage grading |
 | `detection_recall` / `detection_precision` | `src`, `match_m`, bounds | who was found |

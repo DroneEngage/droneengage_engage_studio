@@ -70,6 +70,23 @@ Processes:
                                     (sockets open) but silent: a hang, not
                                     a crash. With <s> it self-resumes.
   unfreeze <unit> <proc>            SIGCONT a frozen process
+  cpu_starve <unit> <proc> <duty_pct> [dur_s] [cycle_ms]
+                                    SIGSTOP/SIGCONT duty cycle (SL-0014):
+                                    the proc keeps its pid and sockets but
+                                    runs only (100-duty_pct)% of each
+                                    cycle_ms window. dur_s 0/absent = until
+                                    cpu_unstarve or `sim down`
+  cpu_unstarve <unit> <proc>        stop the duty cycle, SIGCONT the proc
+  journal_unwritable <unit> [s]     chmod the unit's journal dir + files
+                                    read-only - open journal fds still
+                                    write, but every new journal sink open
+                                    fails (de_comm stays alive). With [s]
+                                    it blocks and restores after it.
+  journal_writable <unit>           restore the journal dir writable
+  clock_step <unit> <offset_s>      step a `faketime: true` unit's de_comm
+                                    clock by offset_s (signed seconds) via
+                                    its FAKETIME_TIMESTAMP_FILE - per-process,
+                                    no relaunch, no adjtimex
   bootid <unit>                     new boot id (DE_BOOT_ID_FILE) - the next
                                     de_comm start counts as a reboot
       proc = sitl | de_comm | de_mavlink | <module> ; unit "server" with
@@ -560,6 +577,203 @@ def freeze_proc(owner, proc, secs=None):
     if secs is not None:
         time.sleep(float(secs))
         return _signal_proc(owner, proc, signal.SIGCONT)
+    return True
+
+
+def _pidfile_pid(owner, proc):
+    """pid from the unit's pidfile, but only while it names a live sim
+    process - the same pid_is_ours gate _signal_proc applies."""
+    pf = simlib.pid_path(owner_sim(owner), owner, proc)
+    if not os.path.isfile(pf):
+        return None
+    pid = int(open(pf).read().strip())
+    if not os.path.isdir(f"/proc/{pid}") or not simlib.pid_is_ours(pid):
+        return None
+    return pid
+
+
+def _starve_worker(pf, spf, duty_pct, dur_s, cycle_ms):
+    """SIGSTOP/SIGCONT duty cycle on the pid named by `pf` (SL-0014).
+    Re-resolves the pidfile every half-cycle so a restarted target is
+    left alone only until its pidfile points at a live ours process.
+    Runs `dur_s` seconds (<=0 = until killed: `cpu_unstarve` or the
+    pid-dir sweep on `sim up`), always SIGCONTs and drops its own
+    pidfile `spf` on the way out."""
+    cycle_s = float(cycle_ms) / 1000.0
+    stop_s = cycle_s * float(duty_pct) / 100.0
+    run_s = cycle_s - stop_s
+    end = time.time() + float(dur_s) if float(dur_s) > 0 else None
+    quit_ = [False]
+    try:
+        signal.signal(signal.SIGTERM, lambda *_: quit_.__setitem__(0, True))
+    except ValueError:
+        pass    # main-thread only; a test driving the worker in a thread
+                # just can't SIGTERM it - dur_s still bounds the loop
+    simlib.write_text(spf, str(os.getpid()))
+
+    def our_pid():
+        try:
+            pid = int(open(pf).read().strip())
+        except (OSError, ValueError):
+            return None
+        if not os.path.isdir(f"/proc/{pid}") or not simlib.pid_is_ours(pid):
+            return None
+        return pid
+
+    def sig(sig_):
+        pid = our_pid()
+        if pid is not None:
+            try:
+                os.kill(pid, sig_)
+            except OSError:
+                pass
+
+    def sleep_sliced(secs):
+        t0 = time.time()
+        while (not quit_[0] and (end is None or time.time() < end)
+               and time.time() - t0 < secs):
+            time.sleep(min(0.2, secs))
+
+    try:
+        while not quit_[0] and (end is None or time.time() < end):
+            sig(signal.SIGSTOP)
+            sleep_sliced(stop_s)
+            sig(signal.SIGCONT)
+            sleep_sliced(run_s)
+    finally:
+        sig(signal.SIGCONT)
+        try:
+            os.unlink(spf)
+        except OSError:
+            pass
+
+
+def cpu_starve_proc(owner, proc, duty_pct, dur_s=0.0, cycle_ms=1000.0):
+    """Spawn the detached `_starve` worker on a live ours process; the
+    caller stays unblocked (the scenario's dur_s schedules nothing -
+    the worker ends itself)."""
+    duty_pct = float(duty_pct)
+    if not 0.0 < duty_pct < 100.0:
+        print(f"{owner}.{proc}: duty_pct {duty_pct:g} not in (0,100)")
+        return False
+    if _pidfile_pid(owner, proc) is None:
+        print(f"{owner}.{proc}: no live sim pid to starve")
+        return False
+    sim = owner_sim(owner)
+    pf = simlib.pid_path(sim, owner, proc)
+    spf = simlib.pid_path(sim, owner, proc + ".starve")
+    subprocess.Popen(
+        ["setsid", "nohup", sys.executable, os.path.abspath(__file__),
+         "_starve", pf, spf, str(duty_pct), str(float(dur_s)),
+         str(float(cycle_ms))],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL)
+    t0 = time.time()
+    while time.time() - t0 < 3 and not os.path.isfile(spf):
+        time.sleep(0.05)
+    if not os.path.isfile(spf):
+        print(f"{owner}.{proc}: starve worker did not start")
+        return False
+    print(f"{owner}.{proc}: starved {duty_pct:g}% of every "
+          f"{float(cycle_ms):g}ms cycle"
+          + (f" for {float(dur_s):g}s" if float(dur_s) > 0 else ""))
+    return True
+
+
+def cpu_unstarve_proc(owner, proc):
+    """End a duty cycle: SIGTERM the worker (it SIGCONTs the target on
+    its way out) and SIGCONT the target anyway in case the worker died
+    leaving it stopped."""
+    sim = owner_sim(owner)
+    spf = simlib.pid_path(sim, owner, proc + ".starve")
+    if os.path.isfile(spf):
+        try:
+            wpid = int(open(spf).read().strip())
+        except ValueError:
+            wpid = None
+        if wpid is not None and simlib.pid_is_ours(wpid):
+            try:
+                os.kill(wpid, signal.SIGTERM)
+            except OSError:
+                pass
+        t0 = time.time()
+        while time.time() - t0 < 3 and os.path.isfile(spf):
+            time.sleep(0.05)
+        if os.path.isfile(spf):
+            try:
+                os.unlink(spf)
+            except OSError:
+                pass
+    else:
+        # the worker already finished (dur_s) - SIGCONT is still the
+        # right restore, so an absent worker is not an error
+        print(f"{owner}.{proc}: no starve worker running")
+    return _signal_proc(owner, proc, signal.SIGCONT)
+
+
+def journal_set_writable(u, writable):
+    """chmod the unit's journal dir and every file in it (SL-0014).
+    Read-only keeps de_comm alive and its open journal fd writable, but
+    every NEW journal sink open fails - the fault bites when the sink
+    path changes (deploy/clear/run). Restore order matters: dir first,
+    then files."""
+    jdir = simlib.journal_dir(u)
+    if not os.path.isdir(jdir):
+        print(f"{u['name']}: no journal dir {jdir}")
+        return False
+    if writable:
+        os.chmod(jdir, 0o755)
+        for f in os.listdir(jdir):
+            p = os.path.join(jdir, f)
+            if os.path.isfile(p):
+                os.chmod(p, 0o644)
+    else:
+        for f in os.listdir(jdir):
+            p = os.path.join(jdir, f)
+            if os.path.isfile(p):
+                os.chmod(p, 0o444)
+        os.chmod(jdir, 0o555)
+    print(f"{u['name']}: journal dir {'writable' if writable else 'read-only'}")
+    return True
+
+
+def journal_unwritable(u, secs=None):
+    """journal dir + files read-only; with `secs` block and restore
+    (the bare command leaves the restore to `journal_writable` - the
+    scenario's dur_s schedules that call so the timeline is not held)."""
+    if _pidfile_pid(u["name"], "de_comm") is None:
+        print(f"{u['name']}: no live sim de_comm - refusing to fault "
+              "another process's journals")
+        return False
+    if not journal_set_writable(u, False):
+        return False
+    if secs is not None:
+        time.sleep(float(secs))
+        return journal_set_writable(u, True)
+    return True
+
+
+def clock_step(u, offset_s):
+    """Runtime per-process clock step on a `faketime: true` unit's
+    de_comm (SL-0014): rewrite the FAKETIME_TIMESTAMP_FILE. "+3600"
+    shifts that process's clock an hour ahead; "+0" steps it back to
+    real time. The unit must have booted under libfaketime - there is
+    no retroactive preload."""
+    if not u.get("faketime"):
+        print(f"{u['name']}: clock_step needs `faketime: true` on the "
+              "unit (de_comm must launch under libfaketime)")
+        return False
+    if _pidfile_pid(u["name"], "de_comm") is None:
+        print(f"{u['name']}: no live sim de_comm - refusing to step "
+              "another process's clock")
+        return False
+    rc = simlib.faketime_rc_path(u)
+    spec = f"{float(offset_s):+g}"      # libfaketime relative offset
+    tmp = rc + ".tmp"
+    simlib.write_text(tmp, f"{spec}\n")
+    os.replace(tmp, rc)
+    print(f"{u['name']}: de_comm clock stepped {spec}s "
+          f"(FAKETIME_TIMESTAMP_FILE {rc})")
     return True
 
 
@@ -1646,6 +1860,42 @@ def main(argv):
                 return
             time.sleep(1)
         sys.exit(f"TIMEOUT: {rx!r} not in {u['name']} journal after {timeout}s")
+    elif c == "_starve":
+        # detached duty-cycle worker spawned by cpu_starve - argv is
+        # raw pidfile paths, no unit resolution
+        _starve_worker(a[0], a[1], float(a[2]), float(a[3]), float(a[4]))
+    elif c == "cpu_starve":
+        ok = True
+        for u in resolve(a[0]):
+            ok &= cpu_starve_proc(u["name"], a[1], float(a[2]),
+                                  float(a[3]) if len(a) > 3 else 0.0,
+                                  float(a[4]) if len(a) > 4 else 1000.0)
+        if not ok:
+            sys.exit(1)
+    elif c == "cpu_unstarve":
+        ok = True
+        for u in resolve(a[0]):
+            ok &= cpu_unstarve_proc(u["name"], a[1])
+        if not ok:
+            sys.exit(1)
+    elif c == "journal_unwritable":
+        ok = True
+        for u in resolve(a[0]):
+            ok &= journal_unwritable(u, float(a[1]) if len(a) > 1 else None)
+        if not ok:
+            sys.exit(1)
+    elif c == "journal_writable":
+        ok = True
+        for u in resolve(a[0]):
+            ok &= journal_set_writable(u, True)
+        if not ok:
+            sys.exit(1)
+    elif c == "clock_step":
+        ok = True
+        for u in resolve(a[0]):
+            ok &= clock_step(u, float(a[1]))
+        if not ok:
+            sys.exit(1)
     else:
         print(__doc__)
         sys.exit(1)
