@@ -20,7 +20,8 @@
                                    run a test/scenario (owns the machine:
                                    downs every other sim); --keep skips the
                                    teardown, --hold parks after the timeline
-                                   (world stream + Mavlink3DMap viewer live)
+                                   (world stream + Mavlink3DMap viewer live;
+                                   the sim's webclient deep links print)
                                    until Ctrl-C. A bare sims/*.yaml just
                                    comes up (hash-reused, like up)
   ./sim suite [dir ...] [--seeds 1,2,3] [--keep]
