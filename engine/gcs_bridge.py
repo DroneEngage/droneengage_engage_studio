@@ -47,11 +47,14 @@ import fake_fleet_server as ffs        # build_message / pretty_rx only
 ffs.PRETTY = True
 PARTY = simlib.GCS_PARTY  # the sim's GCS party (main() sets it from the manifest)
 SEEN_S = 60               # a unit counts as online if heard this recently
+MAVLINK_MT = 6502           # TYPE_AndruavMessage_MAVLINK - raw MAVLink payload
+ADSB_MSGID = 246            # MAVLINK_MSG_ID_ADSB_VEHICLE
 
 ws_conn = None              # current websocket (None while reconnecting)
 seen = {}                   # party -> last rx time
 listeners = []              # [(set(mt), asyncio.Queue)]
 last_id_req = 0.0
+_mav = None                 # lazy pymavlink parser for binary frames
 
 
 def _ssl_ctx():
@@ -78,6 +81,50 @@ def login(srv):
         raise RuntimeError(f"login refused: {rep.get('em', rep)}")
     cs = rep["cs"]
     return cs["g"], int(cs["h"]), cs["f"]
+
+
+def _mav_parse(payload):
+    """Decode the MAVLink frames of an mt-6502 payload (lazy parser -
+    pymavlink is a sim dependency, not every bridge run needs it)."""
+    global _mav
+    try:
+        if _mav is None:
+            from pymavlink import mavutil
+            _mav = mavutil.mavlink.MAVLink(None)
+        return _mav.parse_buffer(bytearray(payload)) or []
+    except Exception:
+        return []
+
+
+def _binary_rx(raw):
+    """A binary intermodule frame: `JSON\\0` header + payload. mt 6502
+    wraps the raw MAVLink bytes a unit forwards to the GCS; ADSB_VEHICLE
+    inside one is logged as a one-line JSON `[adsb] {...}` row - the
+    SL-0016 display-path evidence: a world aircraft injected through the
+    fcb proxy surfaces at the GCS only here (the webclient's own
+    ADSB_VEHICLE case is disabled, and nothing else consumes it)."""
+    nul = raw.find(b"\0")
+    if nul <= 0:
+        return
+    try:
+        hdr = json.loads(raw[:nul])
+    except ValueError:
+        return
+    if hdr.get("mt") != MAVLINK_MT:
+        return
+    for m in _mav_parse(raw[nul + 1:]):
+        if m is None or m.get_msgId() != ADSB_MSGID:
+            continue
+        row = {"t_ms": int(time.time() * 1000), "sd": hdr.get("sd"),
+               "icao": "%06x" % (m.ICAO_address & 0xFFFFFF),
+               "callsign": m.callsign,
+               "lat": round(m.lat * 1e-7, 7),
+               "lng": round(m.lon * 1e-7, 7),
+               "alt_m": round(m.altitude * 0.001, 1),
+               "heading_deg": round(m.heading * 0.01, 1),
+               "spd_mps": round(m.hor_velocity * 0.01, 1),
+               "emitter_type": m.emitter_type}
+        print("[adsb] " + json.dumps(row), flush=True)
 
 
 async def send(msg):
@@ -134,6 +181,11 @@ async def session(srv):
                       f"wss://{host}:{port}", flush=True)
                 await request_ids()
                 async for raw in ws:
+                    if not isinstance(raw, str):
+                        # binary intermodule frame (e.g. mt 6502): sniff
+                        # ADSB_VEHICLE for the SL-0016 evidence path
+                        _binary_rx(raw)
+                        continue
                     try:
                         msg = json.loads(raw)
                     except ValueError:

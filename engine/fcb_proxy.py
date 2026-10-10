@@ -96,6 +96,10 @@ class FcbProxy:
         self.unit = unit
         self.seed = seed
         self.lock = threading.Lock()
+        # serializes writes TOWARDS the client: the s2c pump and an
+        # `inject` write share the socket - without this an injected
+        # frame could land inside a pumped frame and desync de_mavlink
+        self.tx_lock = threading.Lock()
         self.stopping = threading.Event()
         # the one client session: (client_sock, upstream_sock, generation)
         self.client = None
@@ -221,7 +225,13 @@ class FcbProxy:
             out = self._shape(buf, direction)
             if out:
                 try:
-                    dst.sendall(out)
+                    if direction == "s2c":
+                        # share the client socket with `inject`: whole
+                        # frames only, never bytes mid-frame
+                        with self.tx_lock:
+                            dst.sendall(out)
+                    else:
+                        dst.sendall(out)
                 except OSError:
                     self._close_client(f"{direction} write error")
                     return
@@ -330,7 +340,8 @@ class FcbProxy:
             if c_sock is None:
                 return "ERR no client connected"
             try:
-                c_sock.sendall(raw)
+                with self.tx_lock:
+                    c_sock.sendall(raw)
             except OSError as e:
                 return f"ERR inject failed: {e}"
             self.log(f"inject {len(raw)} bytes -> client")

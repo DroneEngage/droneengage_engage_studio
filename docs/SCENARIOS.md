@@ -223,6 +223,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `journal_order` | `unit`, `first`, `then`, `proc` | ordering; `proc` reads `logs/<proc>.log` instead of the journal (module stdout lines) |
 | `journal_time_delta` | `u1`, `re1`, `u2`, `re2`, `max_s` | timing between lines |
 | `proc_alive` / `proc_dead` | `unit`, `proc` | process state at end |
+| `adsb_vehicle` | `icao` (hex/dec), `tid` (world entity), `at_least` (1), `max_m` (50), `log`/`unit` | the GCS bridge (or `log:`/unit proc stdout) saw ≥ `at_least` `ADSB_VEHICLE` frames with this ICAO, each within `max_m` of the entity's truth position at frame time |
 | `link_offline` | `unit`, `at_least`, `min_s` | monitor saw it drop |
 | `no_unexpected_restart` | `proc` (+`unit`, `tol_s`) | every pid change in `samples.jsonl` sits inside a `fault:` kill/restart/module_kill/server_down window (or a `do:` reset/server_up/land) |
 | `rss_growth` | `proc` (+`unit`), `max_mb_per_h`, `warmup_s` | least-squares RSS slope after warm-up |
@@ -316,6 +317,58 @@ read the same file, so truth, detections and the render feed agree.
 A reactive world is excluded from golden byte-identity (the authority
 is wall-clock — statistically reproducible only). See
 `tests/p5/world_react_flee.yaml`.
+
+### `cls: aircraft` — scripted ADS-B intruders
+
+An entity with `cls: aircraft` is an airborne intruder the runner feeds
+down the fcb proxy: once a second the scenario runner encodes the
+aircraft's truth position into a MAVLink `ADSB_VEHICLE` frame and
+`inject`s it through the control port of every `fcb_proxy: true` FC
+unit, so de_mavlink parses and forwards it exactly like SITL's own
+SIM_ADSB traffic — GCS-side, it is indistinguishable. See
+`tests/p5/world_adsb_intruder.yaml` + `worlds/airspace_intruder.yaml`.
+
+```yaml
+- {id: intruder_1, cls: aircraft, icao: "0xAC0DE1", callsign: INTRUDER,
+   alt_m: 150, speed_mps: 25, loop: true,
+   path: [[-35.3615, 149.1652], [-35.3615, 149.1696], ...]}
+```
+
+- `icao` (required): ICAO-24 address — hex (`"0xAC0DE1"`, `"ac0de1"`,
+  `"AC:0D:E1"`) or decimal; asserted as `ADSB_VEHICLE.ICAO_address`.
+- `callsign`: ≤ 8 chars (default `ADRONE`), padded to the 9-byte field.
+- `alt_m`: metres **above home**; the frame carries
+  `altitude_type: 0` (baro) and `home_alt + alt_m` in the millimetre
+  AMSL field. A bare `alt_m` with no `pos`/`path` parks the aircraft
+  directly over the fleet's first home.
+- `heading`, `hor_velocity`, `ver_velocity`: cm-deg / cm/s / cm/s
+  values stamped into every frame (default heading follows the path).
+- `emitter_type` (1 = light), `squawk` (1200), `tslc` (0): raw
+  `ADSB_VEHICLE` fields; `flags` always mark position/altitude/
+  heading/callsign/ICAO valid.
+- `speed_mps` (10), `turn_rate`, `loop`, `attach`, `behaviour`: the
+  usual world motion machinery applies, so an intruder can patrol,
+  follow a person, or run a swarm behaviour like any other entity.
+
+The feeder only runs when the scenario declares a `world:` **and** at
+least one fleet unit sets `fcb_proxy: true` — without a proxy there is
+no injection path. It needs no extra scenario keys; the `adsb_vehicle`
+assertion reads the evidence the GCS bridge logs.
+
+SITL can also spawn **random** ADS-B traffic with no world and no
+code: `SIM_ADSB_COUNT` / `SIM_ADSB_RADIUS` / `SIM_ADSB_ALT` /
+`SIM_ADSB_TX_FAIL` are ordinary SITL params, so they go through fleet
+`params:` like any other override:
+
+```yaml
+fleet:
+  - {id: c1, cls: copter, params: {SIM_ADSB_COUNT: 3,
+       SIM_ADSB_RADIUS: 3000, SIM_ADSB_ALT: 200}}
+```
+
+Those intruders are random per run — use a world aircraft when the
+assertion needs a known ICAO and position, SIM_ADSB when you want to
+stress the GCS display path with uncontrolled traffic.
 
 ## Conventions & gotchas
 
