@@ -410,10 +410,19 @@ def load_sim(path_or_spec, base_dir=None):
     if ov == "any":
         return _load_sim_free_slot(dict(spec, name=name), base_dir)
     slot_base = int(ov or spec.get("slot_base", SLOT_BASE))
+    srv_spec = spec.get("server") or {}
+    # a server port derived from the spec's own slot (the scenario loader
+    # writes SERVER_PORT + slot_base) follows an overridden slot like
+    # every unit port - else `any` moves the units but keeps a busy
+    # server port; a port pinned to anything else stays as written
+    own_slot = int(spec.get("slot_base", SLOT_BASE))
+    if ov and srv_spec.get("type") != "external" and \
+            srv_spec.get("port") == SERVER_PORT + own_slot:
+        srv_spec = dict(srv_spec, port=SERVER_PORT + slot_base)
     sim = {
         "name": name,
         "description": spec.get("description", "").strip(),
-        "server": load_server(spec.get("server") or {}, slot_base),
+        "server": load_server(srv_spec, slot_base),
         "home": list(home),
         "slot_base": slot_base,
         # SITL --speedup: sim `speedup:` > SIM_SPEEDUP > 1. de_comm's

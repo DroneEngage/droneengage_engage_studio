@@ -534,6 +534,20 @@ class T(unittest.TestCase):
         self.assertEqual(scenario._seed_slot_base(7, [{"block": "copter"}]),
                          10 + 7 * 25)
 
+    def test_slot_override_moves_derived_server_port(self):
+        import scenario
+        import simlib
+        spec = scenario.load_scenario(
+            os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "tests/p4f/p4f05_abort.yaml"),
+            8)["sim"]
+        with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "60"}):
+            sim = simlib.load_sim(spec)
+            self.assertEqual(sim["slot_base"], 60)
+            self.assertEqual(sim["server"]["port"], simlib.SERVER_PORT + 60)
+            pinned = dict(spec, server=dict(spec["server"], port=9999))
+            self.assertEqual(simlib.load_sim(pinned)["server"]["port"], 9999)
+
     def test_slot_block_skips_host_held_port(self):
         import socket
         import scenario
