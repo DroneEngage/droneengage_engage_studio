@@ -17,6 +17,10 @@ epoch, so truth and detections always agree.
       - {id: phone_1, cls: phone, attach: person_1, offset_m: [30,0],
          tx_dbm: 20}
       - {id: mast, cls: phone, pos: [lat,lng], alt_m: 0, tx_dbm: 20}
+    an entity may carry temp_c (TASK-13): the temperature a thermal
+    camera contrasts against the ambient - unset falls back to the
+    cls ESTIMATE (person 34, vehicle/car 40 while it runs and ambient
+    once it holds, every other cls ambient).
     obstacles:                       # optional (TASK-P5-10)
       - {id: wood_n, kind: canopy, poly: [[lat,lng],...], height_m: 15,
          base_m: 3, gap_fraction: 0.3, rf_db_per_m: 0.3, rf_max_db: 20}
@@ -84,6 +88,10 @@ environment (P5-11, static per run - D4):
   visibility_m: fog/haze cap on the camera's max_range_m
   precip:       none | rain | snow - the p_detect multiplier
                 f_precip is an ESTIMATE (rain 0.8, snow 0.6)
+  ambient_c:    the thermal model's background temperature (TASK-13)
+                - absent: ESTIMATE 15 + 0.4 * sun_elev_deg (39 at sun
+                60, -9 at -60; use ambient_c directly when the value
+                matters)
   wind: {speed_mps, dir_deg (FROM, true), gust_mps, turb} - pushed to
         every FC unit's sim.parm as SIM_WIND_SPD (m/s) / SIM_WIND_DIR
         (deg FROM) / SIM_WIND_TURB (m/s) at bring-up (D6; verified on
@@ -94,8 +102,10 @@ environment (P5-11, static per run - D4):
 Sensor effects (P5-11 D5, ESTIMATES): p_detect *= f_light * f_precip;
 f_light ramps 0 at sun_elev -6 to 1 at +6; effective max_range_m =
 min(max_range_m, visibility_m); pixel noise *= 1/f_light. A thermal
-camera (sensors.camera.kind: thermal) ignores light and uses flat
-p_detect_thermal instead of the nadir/edge ramp. The sdr model adds
+camera (sensors.camera.kind: thermal) ignores light and uses
+p_detect_thermal instead of the nadir/edge ramp, scaled by the
+TASK-13 contrast ESTIMATE |temp_c - ambient_c| / 15 capped at 1 - a
+target at ambient (the dawn/dusk crossover) reads 0. The sdr model adds
 rf_precip_db_per_km of excess loss per km of slant path when precip
 is on (default 0 at UHF - documented and effectively off).
 
@@ -197,8 +207,16 @@ PRECIP_FACTOR = {"none": 1.0, "rain": 0.8, "snow": 0.6}
 SUN_DUSK_DEG = -6.0                    # rgb goes blind below this
 SUN_DEFAULT_DEG = 30.0                 # unspecified environment = day
 ENV_KEYS = {"time_of_day", "sun_elev_deg", "visibility_m", "precip",
-            "wind"}
+            "wind", "ambient_c"}
 WIND_KEYS = {"speed_mps", "dir_deg", "gust_mps", "turb"}
+
+# thermal model defaults (TASK-13, ESTIMATES - see the docstring)
+AMBIENT_BASE_C = 15.0                  # shade temp at sun_elev 0
+AMBIENT_GAIN_C_PER_DEG = 0.4           # per degree of sun elevation
+TEMP_C_PERSON = 34.0
+TEMP_C_VEHICLE_RUNNING = 40.0          # cold-soaks to ambient when still
+VEHICLE_CLS = {"vehicle", "car"}
+THERMAL_FULL_CONTRAST_C = 15.0         # |temp - ambient| reading full p
 
 
 # ---------------------------------------------------------------- model
@@ -223,6 +241,10 @@ class Entity:
         self.freq_hz = float(spec["freq_hz"]) if "freq_hz" in spec else None
         self.alt_m = float(spec.get("alt_m", 0.0))
         self.size_m = (float(spec["size_m"]) if "size_m" in spec else None)
+        # TASK-13: the thermal contrast target - None falls back to
+        # the cls ESTIMATE at world.temp_c_at()
+        self.temp_c = (float(spec["temp_c"]) if "temp_c" in spec
+                       else None)
         # PL-08 pad metadata (meaningful on cls: pad - a landing board's
         # yaw, its tag-edge ladder and the world-second windows it is
         # occluded in); unused on every other cls
@@ -711,6 +733,40 @@ class World:
                     float(self.sensors["camera"]["max_range_m"]),
                     env["visibility_m"])}
 
+    # --------------------------------------------------------- thermal
+
+    def ambient_c(self):
+        """The environment's background temperature for the thermal
+        model - the explicit ambient_c, else the sun-elevation
+        ESTIMATE (see _ambient_c)."""
+        return self.environment["ambient_c"]
+
+    def temp_c_at(self, e, t_s):
+        """The entity's temperature at t_s: its own temp_c when set,
+        else the cls ESTIMATE - a person is a 34 C body, a vehicle/car
+        is 40 C while it runs and cold-soaked to ambient once it
+        holds, every other cls sits at ambient (invisible to the
+        contrast model)."""
+        if e.temp_c is not None:
+            return e.temp_c
+        if e.cls == "person":
+            return TEMP_C_PERSON
+        if e.cls in VEHICLE_CLS and e.state_at(t_s, self)["moving"]:
+            return TEMP_C_VEHICLE_RUNNING
+        return self.environment["ambient_c"]
+
+    def thermal_factor(self, e, t_s):
+        """TASK-13 contrast ESTIMATE for a thermal camera: 1 at/above
+        THERMAL_FULL_CONTRAST_C of |temp - ambient|, ramping linearly
+        to 0 as the target reaches ambient (the dawn/dusk crossover).
+        An entity id that resolves to nothing keeps the old flat p
+        (1.0)."""
+        if e is None:
+            return 1.0
+        return min(1.0, abs(self.temp_c_at(e, t_s)
+                            - self.environment["ambient_c"])
+                   / THERMAL_FULL_CONTRAST_C)
+
 
 def _dist(lat1, lng1, lat2, lng2):
     import geo_projection
@@ -1028,6 +1084,14 @@ def _f_light(sun_elev_deg):
     return max(0.0, min(1.0, (sun_elev_deg - SUN_DUSK_DEG) / 12.0))
 
 
+def _ambient_c(sun_elev_deg):
+    """ESTIMATE: the ambient (background) temperature tracks the sun
+    elevation linearly - AMBIENT_BASE_C at the horizon plus
+    AMBIENT_GAIN_C_PER_DEG per degree (39 C at sun_elev 60, -9 at
+    -60). environment.ambient_c overrides it when the value matters."""
+    return AMBIENT_BASE_C + AMBIENT_GAIN_C_PER_DEG * sun_elev_deg
+
+
 # ------------------------------------------------- behaviour parsers
 
 def _parse_occlude(spec, path, eid):
@@ -1196,7 +1260,8 @@ def _parse_environment(spec, path):
     "wind"} with the documented defaults. Static per run (D4)."""
     env = {"sun_elev_deg": SUN_DEFAULT_DEG,
            "visibility_m": float("inf"),
-           "precip": "none", "wind": None}
+           "precip": "none", "wind": None,
+           "ambient_c": _ambient_c(SUN_DEFAULT_DEG)}
     if not spec:
         return env
     label = f"{path}: environment"
@@ -1256,6 +1321,12 @@ def _parse_environment(spec, path):
                 f"{label}: needs speed/gust/turb >= 0, "
                 "0 <= dir_deg < 360")
         env["wind"] = wind
+    if "ambient_c" in spec:
+        env["ambient_c"] = float(spec["ambient_c"])
+        if not -80.0 <= env["ambient_c"] <= 80.0:
+            raise simlib.SimError(f"{label}: ambient_c out of range")
+    else:
+        env["ambient_c"] = _ambient_c(env["sun_elev_deg"])
     return env
 
 

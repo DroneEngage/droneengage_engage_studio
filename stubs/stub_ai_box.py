@@ -29,8 +29,11 @@ clutter model injects) - detection_precision counts them.
 P5-11: the world environment scales the model - p_detect picks up
 f_light * f_precip, max_range_m is capped by visibility_m and pixel
 noise grows 1/f_light in the dark (a unit config camera_kind:
-thermal swaps the nadir/edge ramp for flat p_detect_thermal and
-ignores light - the same dusk world can fly both roles).
+thermal swaps the nadir/edge ramp for p_detect_thermal and ignores
+light - the same dusk world can fly both roles). TASK-13 refines
+the thermal p with the contrast ESTIMATE: it scales by
+|entity temp_c - ambient| so a body sunk to ambient (the dawn/dusk
+crossover) reads 0.
 
 Live runs read the scenario clock from var/run/<sim>/world_epoch.json;
 --selftest <poses.jsonl> replays scripted poses on a virtual clock so
@@ -304,9 +307,13 @@ class StubAIBox(StubBase):
         # P5-11 D5: fog/haze caps the range; night kills rgb outright
         if rng_m > self.env_f["max_range_m"]:
             return
+        ent = self.world.entity(tid)
         if self.cam_kind == "thermal":
-            # flat p_detect_thermal, no nadir/edge ramp (D5)
-            p_cam = float(cam.get("p_detect_thermal", 0.85))
+            # flat p_detect_thermal, no nadir/edge ramp (D5), scaled
+            # by the TASK-13 contrast ESTIMATE: |temp_c - ambient| ->
+            # a body at ambient reads 0 (the dawn/dusk crossover)
+            p_cam = float(cam.get("p_detect_thermal", 0.85)) * \
+                self.world.thermal_factor(ent, t_s)
         else:
             # p_detect interpolates nadir -> frame edge by the off-axis
             # fraction of the HALF-frame the point occupies
@@ -319,8 +326,7 @@ class StubAIBox(StubBase):
         # transmittance. The SAME single draw decides, so a world with
         # no obstacles and no environment keeps today's RNG stream and
         # log byte-identical
-        size = self.world.size_m(self.world.entity(tid)) \
-            if self.world.entity(tid) else 0.5
+        size = self.world.size_m(ent) if ent else 0.5
         vis, blockers = self.world.transmittance(
             (gp_pose.lat_deg, gp_pose.lng_deg, gp_pose.rel_alt_m),
             (lat, lng, ealt + size / 2.0))

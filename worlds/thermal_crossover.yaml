@@ -1,0 +1,47 @@
+# thermal_crossover - the TASK-13 thermal-contrast world (de.world/1).
+#
+# About the SITL home (-35.363262, 149.165237), two people on the
+# north line ~75 m east of home that the p5_canopy_sweep lawnmower
+# (40 m legs at lat -35.363082 / -35.362750) passes over, one person
+# per leg:
+#   person_night (N 57, E 75) - a 34 C body against the ~11 C dusk
+#                 ambient: |23 C| of contrast, the full p_detect - the
+#                 "night leg" a thermal camera must find.
+#   person_xo    (N 20, E 75) - temp_c 11, sunk to the ambient
+#                 temperature: contrast 0, the dawn/dusk crossover a
+#                 thermal camera cannot see - the "crossover leg".
+#
+# environment: sun_elev -10 deg gives the ambient ESTIMATE
+# 15 + 0.4 * (-10) = 11 C (and would blind an rgb camera outright -
+# the fleet unit's camera_kind: thermal ignores light). visibility
+# 600 m stays above the camera's max_range_m so fog does not factor.
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_night, cls: person, pos: [-35.362750, 149.166063],
+     size_m: 0.5}
+  - {id: person_xo, cls: person, pos: [-35.363082, 149.166063],
+     temp_c: 11.0, size_m: 0.5}
+environment:
+  sun_elev_deg: -10               # ambient ESTIMATE: ~11 C
+  visibility_m: 600
+  precip: none
+sensors:
+  camera:
+    kind: rgb                      # the world default; a unit may
+    p_detect_thermal: 0.85         # override with camera_kind: thermal
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 4            # static mast camera only; FC units
+                               # use rel_alt (the 40 m sweep layer)
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 0.95
+    p_detect_edge: 0.6
+    max_range_m: 120
+    pos_noise_px: 8
+    fps_boxes: 2
+    size_m: {person: 0.5}

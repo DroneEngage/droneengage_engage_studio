@@ -61,6 +61,16 @@ def set_pose(stub, lat, lng, rel_alt, t_ms=0):
     f._att = {"roll": 0.0, "pitch": 0.0, "yaw": 0.0, "t_ms": t_ms}
 
 
+class _RowSink:
+    """TruthAppender stand-in: capture the appended rows in a list."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def append(self, row, ms=None):
+        self.rows.append(dict(row))
+
+
 @unittest.skipUnless(HAVE_DATABUS, "droneengage_databus not checked out")
 class T(unittest.TestCase):
     def setUp(self):
@@ -250,6 +260,59 @@ class T(unittest.TestCase):
         self.assertTrue(all(r["tid"] == "clutter" for r in rows))
         s.reset_run()
         self.assertEqual(s._clutter, [])
+
+    # ------------------------------------------------------- TASK-13
+
+    HOME_LL = (-35.363262, 149.165237)          # the SITL home
+
+    def _thermal_world(self, ambient_c):
+        """A one-person world under the camera whose only difference
+        is the environment's ambient temperature."""
+        import world as world_mod
+        return world_mod.World(
+            {"version": 1, "origin": list(self.HOME_LL),
+             "entities": [{"id": "p1", "cls": "person",
+                           "pos": list(self.HOME_LL)}],
+             "environment": {"ambient_c": ambient_c}},
+            7, "test")
+
+    def test_thermal_crossover_ambient_drops_p_detect(self):
+        """Same person dead under a thermal camera at 40 m: the night
+        ambient (8 C) keeps a 34 C body at full contrast, a warmer
+        dusk partial, and the crossover ambient (== body temp) drops
+        p_detect to 0 - sent rows count the contrast ramp."""
+        sent = {}
+        factors = {}
+        for label, ambient in (("night", 8.0), ("dusk", 30.0),
+                               ("crossover", 34.0)):
+            s = make(stub_ai_box.StubAIBox, f"stub_ai_box_{label}",
+                     self.d, {"camera_kind": "thermal"})
+            s.world = self._thermal_world(ambient)
+            s.env_f = s.world.sensor_factors("thermal")
+            s.classes = [c for c in s.world.classes() if c != "pad"]
+            s._vt_ms = 0
+            rows = []
+            s.truth = _RowSink(rows)
+            set_pose(s, self.HOME_LL[0], self.HOME_LL[1], 40.0)
+            pose = s.pose_feed.pose()
+            att = gp.GeoAttitude()
+            gpose = gp.GeoPose(lat_deg=pose["lat"], lng_deg=pose["lng"],
+                               rel_alt_m=40.0)
+            ent = s.world.entity("p1")
+            factors[label] = s.world.thermal_factor(ent, 0.0)
+            for f in range(60):
+                s._maybe_detect("p1", "person", self.HOME_LL[0],
+                                self.HOME_LL[1], 0.0,
+                                pose, att, gpose, f, f * 0.5)
+            sent[label] = sum(1 for r in rows if r.get("sent"))
+        # the contrast ESTIMATE ramps 1 -> ~0.27 -> 0 over the ambients
+        self.assertEqual(factors["crossover"], 0.0)
+        self.assertLess(factors["dusk"], factors["night"])
+        # and the stub emits accordingly: blind at crossover, sees at
+        # night, somewhere between at the dusk ambient
+        self.assertEqual(sent["crossover"], 0)
+        self.assertGreater(sent["night"], sent["dusk"])
+        self.assertGreaterEqual(sent["dusk"], sent["crossover"])
 
 
 if __name__ == "__main__":
