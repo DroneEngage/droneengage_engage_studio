@@ -366,6 +366,18 @@ def _fault(step, scn, ctx):
             {"t_ms": int(time.time() * 1000) + int(after_s * 1000),
              "unit": unit, "kind": kind})
 
+    def _restart_later(after_s, owner, proc):
+        """dur_s on kill/module_kill/server_down: bring the proc back
+        inside a recorded fault window, so no_unexpected_restart still
+        sees the new pid as expected."""
+        def go():
+            _proc_event(proc, "server" if owner == "server" else unit)
+            if owner == "server":
+                runner.run_ctl("server_up")
+            else:
+                runner.run_ctl("restart", owner, proc)
+        _schedule(ctx, float(after_s), go)
+
     if kind == "link_cut":
         _restore_at(float(dur or 30))
         return runner.run_ctl("link_cut", unit, dur or 30)
@@ -396,16 +408,27 @@ def _fault(step, scn, ctx):
             _restore_at(float(dur))
         return ok
     if kind == "loss":
-        return runner.run_ctl("loss", unit, a.get("percent", 50))
+        ok = runner.run_ctl("loss", unit, a.get("percent", 50))
+        if dur:
+            # windowed degradation: link_clear restores; the link may
+            # have dropped meanwhile - recovers_after_fault checks it
+            _schedule(ctx, float(dur), runner.run_ctl, "link_clear", unit)
+            _restore_at(float(dur))
+        return ok
     if kind == "delay":
-        return runner.run_ctl("delay", unit, a.get("ms", 500))
+        ok = runner.run_ctl("delay", unit, a.get("ms", 500))
+        if dur:
+            _schedule(ctx, float(dur), runner.run_ctl, "link_clear", unit)
+            _restore_at(float(dur))
+        return ok
     if kind == "gcs_disconnect":
         ok = True
         if ctx["server"]["type"] != "fake":
             # the ctl/deploy GCS is the bridge on a real stack - drop it
+            _proc_event("gcs_bridge", "server")
             ok = runner.run_ctl("kill", "server", "gcs_bridge")
             if dur:
-                _schedule(ctx, float(dur), runner.run_ctl, "server_up")
+                _restart_later(float(dur), "server", "gcs_bridge")
         if dur:
             bot.disconnect_for(float(dur))
         else:
@@ -415,19 +438,27 @@ def _fault(step, scn, ctx):
         _proc_event(a.get("proc", "all"), "server")
         ok = runner.run_ctl("kill", "server", a.get("proc", "all"))
         if dur:
-            _schedule(ctx, float(dur), runner.run_ctl, "server_up")
+            _restart_later(float(dur), "server", a.get("proc", "all"))
             _restore_at(float(dur))
         return ok
     if kind == "kill":
         _proc_event(a.get("proc", "all"))
-        return runner.run_ctl("kill", unit, a.get("proc", "all"))
+        ok = runner.run_ctl("kill", unit, a.get("proc", "all"))
+        if dur:
+            _restart_later(float(dur), unit, a.get("proc", "all"))
+            _restore_at(float(dur))
+        return ok
     if kind == "restart":
         _proc_event(a.get("proc", "all"))
         _restore_at()
         return runner.run_ctl("restart", unit, a.get("proc", "all"))
     if kind == "module_kill":
         _proc_event(a["module"])
-        return runner.run_ctl("kill", unit, a["module"])
+        ok = runner.run_ctl("kill", unit, a["module"])
+        if dur:
+            _restart_later(float(dur), unit, a["module"])
+            _restore_at(float(dur))
+        return ok
     if kind == "freeze":
         # SIGSTOP - a hang, not a crash: sockets stay open, the process
         # is alive-but-silent (TASK-04). dur_s schedules the SIGCONT like
@@ -476,8 +507,12 @@ def _fault(step, scn, ctx):
         if ctx["server"]["type"] != "fake":
             print("  fault server_clock needs transport: fake", flush=True)
             return False
-        return runner.run_ctl("clock", "offset",
-                              a.get("offset_ms", -3600000))
+        ok = runner.run_ctl("clock", "offset",
+                            a.get("offset_ms", -3600000))
+        if dur:
+            _schedule(ctx, float(dur), runner.run_ctl,
+                      "clock", "offset", 0)
+        return ok
     if kind == "no_time_sync":
         if ctx["server"]["type"] != "fake":
             print("  fault no_time_sync needs transport: fake", flush=True)
@@ -961,6 +996,16 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     out = _results_dir(scn)
     os.makedirs(out, exist_ok=True)
     print(f"== {scn['name']} (seed {scn['seed']}) -> {out}", flush=True)
+    if scn.get("chaos_steps"):
+        # TASK-10: the seeded schedule the run will execute, printed and
+        # saved as a standalone scenario - a failing seed becomes a fixed
+        # regression file (`./sim run <out>/expanded.yaml`)
+        print(f"== chaos: seed {scn['seed']} drew "
+              f"{len(scn['chaos_steps'])} fault step(s)", flush=True)
+        for s in scn["chaos_steps"]:
+            print("  " + json.dumps(s, sort_keys=True), flush=True)
+        simlib.write_text(os.path.join(out, "expanded.yaml"),
+                          scenario.expanded_text(scn))
     # P5-08: load the world and inject it into the sim spec BEFORE the
     # fleet is ensured - the stub config blocks (world path, seed, unit,
     # pose port) and the geo_projection model land in the generated

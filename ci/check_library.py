@@ -73,7 +73,7 @@ for f in yamls:
         continue                    # sims/*.yaml are fleet specs, not
                                     # de.scenario/1 - resolved by ./sim show
     try:
-        scenario.load_scenario(f, seed=1)
+        scenario.load_scenario(f, seed=1, probe_ports=False)
     except SystemExit as e:
         fail("schema", f, f"load_scenario exited {e.code}")
     except Exception as e:

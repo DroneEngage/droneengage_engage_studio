@@ -21,6 +21,13 @@ fail fast.
     operator:                       # the bot's standing policy
       approve: {launch: {after_s: 5}, action: {after_s: 3}}
       confirm: {person: {after_s: 10}}
+    chaos:                          # TASK-10 seeded fault schedule
+      faults: [loss, {kind: freeze, proc: de_comm}]
+      units: [c1, c2]               # draw pool (default: the fleet)
+      every_s: [60, 180]            # gap between draws
+      dur_s: [10, 60]               # fault window
+      from_t: 60                    # window; until_t defaults to the
+      until_t: 1800                 # scripted timeline's last t
     timeline:
       - {t: 0,   do: deploy}
       - {t: 5,   do: start, start: {searcher: standby}}
@@ -38,13 +45,24 @@ nominal start. `on:` arms a journal watcher; its regex match groups are
 available to the step's string args as {M1}..{M9} (e.g. req=(\\S+) ->
 req: "{M1}").
 
+`chaos:` expands at LOAD time into concrete timeline fault steps on the
+run's seed - the same seed always draws the same schedule. Only kinds
+the transport serves are allowed (link faults need transport: fake),
+same unit+kind windows never overlap, and a chaos scenario must carry
+at least one run-wide invariant assertion (validate enforces all three).
+The expansion is printed, written to var/results/<run>/expanded.yaml
+(`./sim expand` prints it without running) and reruns as an ordinary
+scenario - a failing seed becomes a fixed regression file.
+
 A legacy tests/*.yaml file (version 1, `sim:` + `steps:`) loads as
 {legacy: True} unchanged - the scenario runner executes the same steps
 through the P4A-03 machinery and adds the new results layout.
 """
 
+import copy
 import json
 import os
+import random
 import re
 
 import yaml
@@ -67,6 +85,246 @@ FAULT_KINDS = ("link_cut", "loss", "delay", "gcs_disconnect", "server_down",
                "link_stall", "link_profile",
                # SL-0014 OS faults
                "cpu_starve", "journal_unwritable", "clock_step")
+
+# ------------------------------------------------------- chaos: (TASK-10)
+#
+# A `chaos:` block is a seeded fault schedule expanded at LOAD time into
+# ordinary {t, fault, ...} timeline steps - no RNG exists at run time,
+# and the same seed always draws the same schedule. The expanded file
+# (var/results/<run>/expanded.yaml, `./sim expand`) is a valid
+# de.scenario/1: a failing seed reruns as a fixed regression.
+
+# kinds that need the fake server's control port - drawn only on
+# transport: fake (TASK-07 lifts link faults onto real transports;
+# update this set when that lands)
+CHAOS_FAKE_ONLY = {"link_cut", "loss", "delay", "server_clock",
+                   "no_time_sync"}
+
+# kinds that need a flight controller (pilot/param commands) - they
+# draw only from chaos.units entries with an fc
+CHAOS_FC_ONLY = {"battery", "gps_off", "rc_override", "mode"}
+
+# kinds that take a unit: (server_down / gcs_disconnect / server_clock
+# are server- and operator-scoped)
+CHAOS_UNIT_KINDS = frozenset(FAULT_KINDS) - {"gcs_disconnect",
+                                             "server_down",
+                                             "server_clock"}
+
+# kinds whose dur_s ends a fault window (restart already brings the
+# unit back; a mode switch has no window)
+CHAOS_DUR_KINDS = frozenset(FAULT_KINDS) - {"restart", "mode"}
+
+CHAOS_EVERY_S = (60.0, 180.0)
+CHAOS_DUR_S = (10.0, 60.0)
+
+
+def _chaos_entry(ent):
+    """one chaos.faults entry -> (kind, args): a bare kind string,
+    {kind: <name>, ...step args} (an `args:` mapping merges in), or the
+    single-key {kind: {step args}} form."""
+    if isinstance(ent, str):
+        return ent, {}
+    if isinstance(ent, dict):
+        if "kind" not in ent and len(ent) == 1:
+            (k, v), = ent.items()
+            return k, (dict(v) if isinstance(v, dict) else {})
+        args = {k: v for k, v in ent.items() if k not in ("kind", "args")}
+        args.update(ent.get("args") or {})
+        return ent.get("kind"), args
+    return None, {}
+
+
+def _fleet_draw_info(raw):
+    """fleet -> {id: {fc, modules}} for the chaos draw: which units a
+    kind may hit and which proc names module_kill/freeze can pick."""
+    info = {}
+    for ent in raw.get("fleet") or []:
+        b = simlib.load_block(CLS_BLOCK.get(ent["cls"], ent["cls"]))
+        mods = list(b["modules"]) + [
+            m for m in (ent.get("modules") or []) if m not in b["modules"]]
+        info[ent["id"]] = {"fc": bool(b["fc"]), "modules": mods}
+    return info
+
+
+def _last_t(raw):
+    """The last scheduled t: of the scripted timeline, or None - the
+    default chaos.until_t."""
+    ts = [s["t"] for s in raw.get("timeline") or []
+          if isinstance(s, dict) and isinstance(s.get("t"), (int, float))]
+    return max(ts) if ts else None
+
+
+def _chaos_window(ch, key, default, path):
+    """A [min, max] range arg - schema-checked when jsonschema is
+    installed, rechecked here so the loader alone never draws from a
+    malformed range."""
+    v = ch.get(key) or default
+    if not isinstance(v, (list, tuple)) or len(v) != 2:
+        raise simlib.SimError(f"{path}: chaos.{key} must be a [min, max] pair")
+    lo, hi = float(v[0]), float(v[1])
+    if lo < 0 or hi < lo:
+        raise simlib.SimError(
+            f"{path}: chaos.{key} must be [min, max] with 0 <= min <= max")
+    return lo, hi
+
+
+def _validate_chaos(raw, path):
+    """chaos: semantics the schema cannot express - known kinds the
+    transport can serve, at least one drawable unit, a usable window,
+    and (TASK-10) a run-wide invariant assertion: an unscripted run is
+    only evidence when an invariant watched it."""
+    import checks
+    ch = raw["chaos"]
+    if not isinstance(ch, dict):
+        raise simlib.SimError(f"{path}: chaos: must be a mapping")
+    fleet_ids = [e["id"] for e in raw.get("fleet") or []]
+    info = _fleet_draw_info(raw)
+    if not ch.get("faults"):
+        raise simlib.SimError(
+            f"{path}: chaos.faults must list at least one fault kind")
+    units = [str(u) for u in (ch.get("units") or fleet_ids)]
+    unknown = [u for u in units if u not in fleet_ids]
+    if unknown:
+        raise simlib.SimError(
+            f"{path}: chaos.units {unknown} not in the fleet "
+            f"({', '.join(fleet_ids)})")
+    t = raw.get("transport", "real")
+    ttype = t.get("type") if isinstance(t, dict) else t
+    fc_units = [u for u in units if info[u]["fc"]]
+    for i, ent in enumerate(ch.get("faults") or []):
+        kind, args = _chaos_entry(ent)
+        if kind not in FAULT_KINDS:
+            raise simlib.SimError(
+                f"{path}: chaos.faults[{i}] unknown fault {kind!r} "
+                f"(known: {', '.join(FAULT_KINDS)})")
+        if kind in CHAOS_FAKE_ONLY and ttype != "fake":
+            raise simlib.SimError(
+                f"{path}: chaos.faults[{i}] {kind!r} needs the fake "
+                f"server's control port - transport is {ttype!r} "
+                "(link faults ride a real transport only once "
+                "TASK-07 lands)")
+        if kind in CHAOS_FC_ONLY and not fc_units:
+            raise simlib.SimError(
+                f"{path}: chaos.faults[{i}] {kind!r} needs a flight "
+                "controller - no FC unit in chaos.units")
+        if kind == "mode" and not args.get("mode"):
+            raise simlib.SimError(
+                f"{path}: chaos.faults[{i}] 'mode' needs a mode: "
+                "(e.g. {kind: mode, mode: RTL})")
+    every_lo, _ = _chaos_window(ch, "every_s", CHAOS_EVERY_S, path)
+    if every_lo < 1:
+        raise simlib.SimError(
+            f"{path}: chaos.every_s min must be >= 1")
+    _chaos_window(ch, "dur_s", CHAOS_DUR_S, path)
+    until = ch.get("until_t", _last_t(raw))
+    if until is None or float(until) <= float(ch.get("from_t", 0)):
+        raise simlib.SimError(
+            f"{path}: chaos needs until_t (or a timeline) beyond "
+            f"from_t {ch.get('from_t', 0)}")
+    names = {next(iter(a)) for a in raw.get("assert") or []
+             if isinstance(a, dict) and len(a) == 1}
+    if not names & checks.INVARIANT_ASSERTS:
+        raise simlib.SimError(
+            f"{path}: a chaos scenario must carry at least one run-wide "
+            f"invariant assertion ({', '.join(sorted(checks.INVARIANT_ASSERTS))})"
+            " - an unscripted run proves nothing without one")
+
+
+def expand_chaos(raw, seed):
+    """chaos: -> concrete timeline fault steps, drawn on a private
+    random.Random(seed) stream at load time. Overlapping windows of the
+    same unit+kind are never drawn (scripted fault: steps pre-mark
+    theirs too)."""
+    ch = raw["chaos"]
+    rng = random.Random(seed)
+    pool = [_chaos_entry(ent) for ent in ch["faults"]]
+    info = _fleet_draw_info(raw)
+    fleet_ids = [e["id"] for e in raw["fleet"]]
+    units = [str(u) for u in (ch.get("units") or fleet_ids)]
+    every_lo, every_hi = _chaos_window(ch, "every_s", CHAOS_EVERY_S,
+                                       "<expansion>")
+    dur_lo, dur_hi = _chaos_window(ch, "dur_s", CHAOS_DUR_S, "<expansion>")
+    until_t = float(ch.get("until_t", _last_t(raw)))
+
+    # (unit, kind) -> the t the fault window ends; None = server-scoped
+    busy = {}
+    for s in raw.get("timeline") or []:
+        if not isinstance(s, dict) or "fault" not in s or "t" not in s:
+            continue            # on:-triggered faults mark no window
+        dur = float(s.get("dur_s") or s.get("seconds") or 0)
+        tok = str(s.get("unit", "all"))
+        hit = units if tok == "all" else \
+            [u for u in tok.split(",") if u in units]
+        for u in hit:
+            busy[(u, s["fault"])] = float(s["t"]) + dur
+
+    steps = []
+    t = float(ch.get("from_t", 0))
+    while True:
+        t += rng.uniform(every_lo, every_hi)
+        if t > until_t:
+            break
+        kind, args = rng.choice(pool)
+        if kind in CHAOS_FC_ONLY:
+            cands = [u for u in units if info[u]["fc"]]
+        elif kind in CHAOS_UNIT_KINDS:
+            cands = list(units)
+        else:
+            cands = [None]
+        free = [u for u in cands
+                if busy.get((u, kind), float("-inf")) <= t]
+        if not free:
+            continue                # this (unit, kind) is inside a window
+        u = rng.choice(free)
+        step = {"t": round(t, 1), "fault": kind}
+        step.update(args)
+        if u is not None:
+            step["unit"] = u
+        if kind == "module_kill" and "module" not in step:
+            step["module"] = rng.choice(info[u]["modules"])
+        if kind == "freeze" \
+                and "proc" not in step and "module" not in step:
+            step["proc"] = rng.choice(info[u]["modules"])
+        if kind in CHAOS_DUR_KINDS and "dur_s" not in step:
+            d = round(rng.uniform(dur_lo, dur_hi), 1)
+            if d > 0:
+                step["dur_s"] = d
+        busy[(u, kind)] = t + float(step.get("dur_s") or 0)
+        steps.append(step)
+    return steps
+
+
+def _merge_timeline(timeline, chaos_steps):
+    """scripted + chaos steps, t-sorted (stable: a scripted step wins a
+    tie); on: watchers keep their order at the end - position means
+    nothing for a watcher."""
+    timed = [s for s in timeline if "t" in s] + chaos_steps
+    timed.sort(key=lambda s: s["t"])
+    return timed + [s for s in timeline if "t" not in s]
+
+
+def expanded_text(scn):
+    """The chaos-expanded scenario as a standalone de.scenario/1 file:
+    chaos: removed, the drawn steps inlined into timeline:, file-relative
+    paths absolutized (expanded.yaml lives under var/results/). A failing
+    seed's expansion reruns as a fixed regression."""
+    exp = copy.deepcopy(scn["raw"])
+    exp.pop("chaos", None)
+    exp["seed"] = scn["seed"]
+    exp["timeline"] = scn["timeline"]
+    if scn.get("operation"):
+        exp["operation"] = scn["operation"]
+    if scn.get("world"):
+        exp["world"] = scn["world"]
+    verify = exp.get("verify")
+    if isinstance(verify, dict) and isinstance(verify.get("cli"), str) \
+            and not os.path.isabs(verify["cli"]):
+        verify["cli"] = os.path.abspath(
+            os.path.join(os.path.dirname(scn["file"]), verify["cli"]))
+    return (f"# {scn['name']} seed {scn['seed']} - the chaos: schedule "
+            "expanded into a fixed de.scenario/1 file\n"
+            f"# source: {scn['file']}\n"
+            + yaml.safe_dump(exp, sort_keys=False))
 
 
 def is_legacy_spec(raw):
@@ -158,6 +416,8 @@ def _validate(raw, path):
                     f"{path}: clock_step on {uid} needs `faketime: true` "
                     "in its fleet entry - de_comm must launch under "
                     "libfaketime")
+    if "chaos" in raw:
+        _validate_chaos(raw, path)
 
 
 def _absolute_to_at(home, pos):
@@ -241,9 +501,11 @@ def _yaml_bool_keys(raw):
             step["on"] = step.pop(True)
 
 
-def load_scenario(path, seed=None):
+def load_scenario(path, seed=None, probe_ports=True):
     """-> a normalized run spec. Raises simlib.SimError on any format
-    violation (unknown keys, bad timeline steps, unknown cls)."""
+    violation (unknown keys, bad timeline steps, unknown cls).
+    probe_ports=False skips the free-slot search (expand/validate only
+    need the spec, not a live port check - and stay silent)."""
     path = os.path.abspath(path)
     raw = yaml.safe_load(open(path)) or {}
     base = os.path.dirname(path)
@@ -279,6 +541,15 @@ def load_scenario(path, seed=None):
         "render": raw.get("render"),
         "raw": raw,
     }
+    # TASK-10: a chaos: block expands here - at load time, on the run's
+    # effective seed - into ordinary timeline steps
+    if raw.get("chaos"):
+        scn["chaos_steps"] = expand_chaos(raw, seed)
+        scn["timeline"] = _merge_timeline(scn["timeline"],
+                                          scn["chaos_steps"])
+    else:
+        scn["chaos_steps"] = []
+    scn["expanded"] = bool(raw.get("chaos"))
     units = _fleet_units(scn, home)
     # one port block per run: the scenario may pin slot_base, else it is
     # derived from the seed so --seeds runs never share ports (a parallel
@@ -297,8 +568,10 @@ def load_scenario(path, seed=None):
 
     if raw.get("slot_base"):
         scn["sim"] = sim_at(int(raw["slot_base"]))
-    else:
+    elif probe_ports:
         scn["sim"] = _host_free_sim(sim_at, _seed_slot_bases(seed, units))
+    else:
+        scn["sim"] = sim_at(_seed_slot_bases(seed, units)[0])
     return scn
 
 

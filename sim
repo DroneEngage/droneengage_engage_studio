@@ -36,6 +36,10 @@
                                    templates/scenario.yaml
   ./sim validate <file.yaml>       schema + referenced-file check, starts
                                    nothing
+  ./sim expand <file.yaml> [--seed N]
+                                   print the chaos: schedule a run would
+                                   execute (concrete fault steps inlined;
+                                   same seed, same schedule), run nothing
   ./sim logs [-s <sim>] <unit|server> [proc]  tail a process log
   ./sim clean [--days N] [--all] [--dry-run]  prune var/run/ and var/results/
                                    (never a live sim; default keeps 7 days)
@@ -166,7 +170,7 @@ def _validate_file(f):
             if not isinstance(raw.get("steps"), list):
                 problems.append("steps: must be a list")
         else:
-            scn = scenario_mod.load_scenario(f, seed=1)
+            scn = scenario_mod.load_scenario(f, seed=1, probe_ports=False)
             exists("operation", raw.get("operation"))
             exists("world", raw.get("world"))
             cli = (raw.get("verify") or {}).get("cli")
@@ -398,6 +402,25 @@ def main(argv):
                     print(simlib.col_red("not ok") + f"  {p}")
                 sys.exit(f"{files[0]}: {len(problems)} problem(s)")
             print(simlib.col_green("ok") + f"  {files[0]}")
+        elif c == "expand":
+            import scenario as scenario_mod
+            seed = None
+            if "--seed" in a:
+                i = a.index("--seed")
+                if i + 1 >= len(a):
+                    sys.exit("--seed needs a value")
+                seed = int(a[i + 1])
+                del a[i:i + 2]
+            files = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ())
+            if bad or len(files) != 1:
+                sys.exit("usage: ./sim expand <file.yaml> [--seed N]"
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+            scn = scenario_mod.load_scenario(files[0], seed=seed,
+                                             probe_ports=False)
+            if not scn.get("expanded"):
+                sys.exit(f"{files[0]}: no chaos: block to expand")
+            sys.stdout.write(scenario_mod.expanded_text(scn))
         elif c == "view":
             import scenario_runner
             files = [x for x in a if not x.startswith("-")]

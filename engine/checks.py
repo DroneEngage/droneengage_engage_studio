@@ -2045,6 +2045,14 @@ DISPATCH = {
     "adsb_vehicle": _adsb_vehicle,
 }
 
+# the SL-0011 run-wide invariants: they read run evidence (samples.jsonl,
+# links.jsonl, journals) rather than a scripted step, so they are the
+# only assertions meaningful on an unscripted chaos/soak run - a
+# scenario with a chaos: block must carry at least one (validate enforces)
+INVARIANT_ASSERTS = frozenset({
+    "no_unexpected_restart", "rss_growth", "fd_growth", "journal_size",
+    "recovers_after_fault", "no_stuck_state"})
+
 
 def check_assertion(a, ctx):
     """One {name: args} assertion -> the structured result dict."""
