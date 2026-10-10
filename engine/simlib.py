@@ -1186,7 +1186,8 @@ def check_conflicts(sim):
                 f"sim {sim['name']!r} conflicts with running sim {other!r}:"
                 + (f" ports {clash}" if clash else "")
                 + (f" unit names {dup}" if dup else "")
-                + f" - change slot_base/names, or `./sim down {other}` first")
+                + f" - rerun with --shared --slot-base any to park on a "
+                  f"free block, or `./sim down {other}` first")
 
 
 def journal_dir(u):

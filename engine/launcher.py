@@ -241,8 +241,12 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                 if port_busy(p)]
         if busy:
             sys.exit(simlib.col_red(
-                f"ports {busy} are in use by something else - set "
-                "`server: {port: ...}` in the sim"))
+                f"ports {busy} are in use by something else - either "
+                "down what holds them (./sim status), set "
+                "`server: {port: ...}` in the sim, or rerun with "
+                "--shared --slot-base any to park next to live sims "
+                "on a free port block (the server port rides the "
+                "slot for transport: scenarios)"))
     rdir = simlib.run_dir(name)
     if fresh and os.path.isdir(rdir):
         shutil.rmtree(rdir)
