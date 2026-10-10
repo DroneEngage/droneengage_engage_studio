@@ -233,6 +233,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                  f"sysid={fc['sysid']} "
                  f"pilot={simlib.col_cyan(fc['pilot_port'])} "
                  f"fcb={simlib.col_cyan(fc['fcb_port'])} "
+                 + (f"fcbpx={simlib.col_cyan(fc['fcb_proxy']['port'])}/"
+                    f"{simlib.col_cyan(fc['fcb_proxy']['ctrl'])} "
+                    if fc.get("fcb_proxy") else "")
                  if fc else "no-fc ")
               + " ".join(f"{mod}:{simlib.col_cyan(p)}"
                          for mod, p in u["ports"].items())

@@ -59,6 +59,9 @@ is now the only simulation/testing location.
     engine/scenario.py        de.scenario/1 loader (schema: de_scenario.schema.json)
     engine/scenario_runner.py de.scenario/1 runner (./sim run/view on timeline files)
     engine/gcs_bridge.py      persistent GCS session on the real server, control-port protocol
+    engine/fcb_proxy.py       opt-in MAVLink proxy between de_mavlink and SITL
+                              serial1 (`fcb_proxy: true`, SL-0008): cut/stall/
+                              corrupt/drop/inject on a per-unit control port
     engine/fake_fleet_server.py  fault-injection server (copied from Phase-4A, uses simlib)
     var/run/<sim>/            generated per sim (gitignored): sim.json, configs,
                               launch scripts, logs, journals, pids
@@ -117,7 +120,9 @@ Machine paths come only from `simlib.setting()`: environment variable >
 ## Ports
 
 Slot `k = slot_base (10) + unit index`. SITL `-I k`, sysid `k`, pilot
-`5760+10k`, fcb `7660+10k`. Module s2s ports are `port_base + 10k`
+`5760+10k`, fcb `7660+10k`. The opt-in fcb proxy (`fcb_proxy: true`,
+SL-0008) takes `7760+10k` (de_mavlink dials it instead of `fcb_port`) and
+`7860+10k` (fault control port). Module s2s ports are `port_base + 10k`
 (de_comm 62000, de_mavlink 63000, de_camera 64000, de_tracker 65000). Server
 wss 62008, control 62009, authenticator +10/+11. Keep `slot_base` >= 10 so
 sim ports never collide with the developer's own servers.

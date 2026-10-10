@@ -231,6 +231,7 @@ ready-made single-box personal sims for an external server, on disjoint
 |---|---|
 | SITL pilot (serial0) / aux (serial2) | 5760+10k / 5762+10k |
 | de_mavlink -> SITL (serial1) | 7660+10k, sysid k |
+| fcb proxy listen / control (`fcb_proxy: true`) | 7760+10k / 7860+10k |
 | de_comm / de_mavlink / de_camera s2s | 62000 / 63000 / 64000 + 10k |
 | comm server wss / control | 62008 / 62009 (`server.port`) |
 | authenticator https / s2s | port+10 / port+11 |

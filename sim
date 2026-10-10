@@ -261,7 +261,10 @@ def main(argv):
                 fc = u["fc"]
                 print(f"  {u['name']:12s} block={u['block']:16s} "
                       + (f"{fc['vehicle']} sysid={fc['sysid']} pilot={fc['pilot_port']} "
-                         f"fcb={fc['fcb_port']} " if fc else "no-fc ")
+                         f"fcb={fc['fcb_port']} "
+                         + (f"fcbpx={fc['fcb_proxy']['port']}/"
+                            f"{fc['fcb_proxy']['ctrl']} "
+                            if fc.get("fcb_proxy") else "") if fc else "no-fc ")
                       + " ".join(f"{m}:{p}" for m, p in u["ports"].items())
                       + (f" acc={u['account']['user']}" if u.get("account") else "")
                       + f"  @{u['position']['lat']:.6f},{u['position']['lng']:.6f}")

@@ -75,6 +75,8 @@ fleet:
     home: [-35.36, 149.16, 584, 90]              # absolute; or `at` offsets
     base: [-35.36, 149.16]                       # statics: absolute position
     account: {user: u@x.com, code: secret}       # own login (auth sims)
+    fcb_proxy: true            # route de_mavlink via the SL-0008 fcb
+                             # proxy (enables the fcb_* faults/steps)
 ```
 
 `cls` is `copter | plane | rover | static | comm_only` or a `blocks/`
@@ -160,8 +162,34 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `no_time_sync` | `unit`, `dur_s` — units stop carrying `ts`, fake only |
 | `rc_override` | `unit`, `chan`/`channels`+`pwm` (3:1600), `dur_s` (15) |
 | `mode` | `unit`, `mode` — force an FC mode |
+| `fcb_cut` | `unit`, `dur_s` (30) — sever the de_mavlink↔SITL link via the fcb proxy; reconnects are accepted-then-dropped until expiry |
+| `fcb_stall` | `unit`, `ms` or `dur_s` — hold the fcb link silent (sockets stay open) |
+| `fcb_corrupt` | `unit`, `byte_drop_pct`/`bit_flip_pct`, `seed`, `dur_s` — seeded frame-aware noise on the fcb link |
 
 `dur_s` auto-restores where it applies. `unit` accepts `all`.
+
+The `fcb_*` faults need `fcb_proxy: true` on the unit (or the sim) —
+they ride a per-unit MAVLink-aware TCP proxy (`engine/fcb_proxy.py`)
+inserted between `de_mavlink` and SITL's serial1 port:
+
+    de_mavlink ──▶ proxy listen 7760+10k ──▶ SITL serial1 7660+10k
+                        control 7860+10k (`./sim ctl fcb_*`, runner steps)
+
+The proxy is a pidfile'd unit proc (`proc_alive: {proc: fcb_proxy}`
+works; `sim down` kills it) and works on **any transport** — it is
+ours, not the server's, so `transport: real` is fine. Cut exercises
+de_mavlink's reconnect path (its log shows `TCP connection closed by
+remote` then `TCP Client connected`); stall keeps the sockets open so
+no close is logged — a frozen UART, not a cut; corrupt drops whole
+frames or flips one bit inside a frame (frame-aware, so the TCP stream
+never desyncs — a "dropped byte" kills its whole frame at
+`pct × frame_len` rate, matching the same byte-error channel). The
+same control port takes `do:`/`ctl` steps `fcb_drop` (one msgid only),
+`fcb_inject` (raw MAVLink hex towards de_mavlink — the TASK-14 ADS-B
+hook), `fcb_clear` and `fcb_stats`. The serial2 aux telemetry port and
+the GCS pilot port bypass the proxy, so `telemetry_*`/`mission_items`
+asserts keep working through a cut. Without `fcb_proxy` a unit is
+unchanged — same hash, `de_mavlink` dials SITL directly.
 
 ## `assert:` — what proves it
 

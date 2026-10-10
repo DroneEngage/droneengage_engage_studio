@@ -63,7 +63,7 @@ CLS_BLOCK = {"copter": "copter", "plane": "plane", "rover": "rover",
 FAULT_KINDS = ("link_cut", "loss", "delay", "gcs_disconnect", "server_down",
                "kill", "restart", "module_kill", "freeze", "battery",
                "gps_off", "server_clock", "no_time_sync", "rc_override",
-               "mode")
+               "mode", "fcb_cut", "fcb_stall", "fcb_corrupt")
 
 
 def is_legacy_spec(raw):
@@ -189,6 +189,8 @@ def _fleet_units(scn, home):
             u["add_modules"] = list(ent["modules"])
         if ent.get("params"):
             u["fc"] = {"params": dict(ent["params"])}
+        if ent.get("fcb_proxy") is not None:
+            u["fcb_proxy"] = bool(ent["fcb_proxy"])
         cfg = dict(ent.get("config") or {})
         # SITL tlogs feed distance_to / no_sep_violation / the realtime
         # speed-up check - enable on units that run de_mavlink

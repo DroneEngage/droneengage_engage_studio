@@ -81,6 +81,8 @@
             "description": "extra modules on top of the class block (P5-08 stubs)"},
           "params": {"type": "object",
             "description": "extra SITL params (fc.params)"},
+          "fcb_proxy": {"type": "boolean",
+            "description": "run the fcb MAVLink proxy between de_mavlink and SITL (SL-0008; enables the fcb_cut/fcb_stall/fcb_corrupt faults)"},
           "config": {"type": "object",
             "description": "per-module config overlay (sim unit config:)"},
           "account": {"type": "object", "additionalProperties": false,

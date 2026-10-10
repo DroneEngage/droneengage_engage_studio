@@ -18,8 +18,10 @@
 #               module's working directory (run/<unit>/<module>/)
 #   set         defaults applied before the block overlays (blocks may change them)
 #   wire        applied after the block overlays (blocks cannot break these);
-#               "{fcb_port}" / "{pilot_port}" / "{sysid}" / "{comm_port}" /
-#               "{port}" / "{unit}" are filled per unit
+#               "{fcb_port}" / "{fcb_connect_port}" / "{pilot_port}" /
+#               "{sysid}" / "{comm_port}" / "{port}" / "{unit}" are filled
+#               per unit ({fcb_connect_port} = the fcb proxy's listen port
+#               on units running one - SL-0008 - else fcb_port)
 #   ready_re    journal regex (since boot) that marks the module ready;
 #   ready_log_re  same, but matched against logs/<module>.log (stdout)
 #               instead of the de_comm journal;
@@ -38,7 +40,9 @@ de_mavlink:
     tlog_enabled: false
     logger_enabled: false
   wire:
-    fcb_connection_uri: {ip: "127.0.0.1", port: "{fcb_port}", type: tcp}
+    # SL-0008: {fcb_connect_port} is the fcb proxy's port on units that
+    # run one (fcb_proxy: true), the SITL fcb port otherwise
+    fcb_connection_uri: {ip: "127.0.0.1", port: "{fcb_connect_port}", type: tcp}
   ready_re: "nav adapter hello"
 
 de_camera:
