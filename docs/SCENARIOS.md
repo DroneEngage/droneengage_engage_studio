@@ -240,8 +240,9 @@ GATE-PASS only when the verifier blocks with exactly those findings.
 ## `world:` — seeded truth (optional)
 
 `worlds/*.yaml` define entities, motion, obstacles, transmitters,
-clutter, environment (sun/wind/visibility), camera/SDR/precland sensor
-models. A `world:` drives the `stub_*` modules (`modules:` entries on
+clutter, environment (sun/wind/visibility/ambient temperature) and
+camera/SDR/precland sensor models — entities may carry `temp_c` for the
+thermal camera's contrast estimate (see `engine/world.py`'s header). A `world:` drives the `stub_*` modules (`modules:` entries on
 fleet units), feeds `truth.jsonl`, and powers the truth/coverage/
 detection assertions. `render:` (`viewer|cameras|physics|full`,
 `headless`) adds the world stream + Mavlink3DMap.
