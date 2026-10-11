@@ -1,3 +1,5 @@
+# Runbook: sims/copters3_closed.md
+#
 # Three quad copters in a closed environment (P4A-10 scenario 4): no
 # GPS on any SITL (SIM_GPSx_ENABLE 0, the FC flies on the SIM AHRS -
 # AHRS_EKF_TYPE 10), the fleet server stamps a clock that is 3 h wrong

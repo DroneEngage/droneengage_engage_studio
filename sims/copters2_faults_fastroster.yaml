@@ -1,3 +1,5 @@
+# Runbook: sims/copters2_faults_fastroster.md
+#
 # copters2 on the fake server with a faster roster cadence:
 # sv_roster_hz 1 + sv_peer_lost_s 8 -> a cut unit turns LOST ~8-10 s
 # after silence instead of ~30 s, so the P4A-11 peer_lost pair test does

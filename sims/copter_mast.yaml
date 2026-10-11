@@ -1,3 +1,5 @@
+# Runbook: sims/copter_mast.md
+#
 # One quad copter plus a comm-only static unit ("SDR mast") on the real
 # droneengage_server - the TASK-P4A-11 acceptance-9 fleet: a flying role
 # next to a static sensor-lane role. mast1 has no FC, never arms and is

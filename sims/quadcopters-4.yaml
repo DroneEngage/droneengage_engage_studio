@@ -1,4 +1,6 @@
-# Personal sim: ONE quadcopter box - ArduCopter SITL (raw binary over TCP,
+# Runbook: sims/quadcopters-4.md
+#
+# Personal sim: FOUR quadcopter boxes - ArduCopter SITL (raw binary over TCP,
 # like sitl_tcp.sh) + de_comm + de_mavlink - on YOUR OWN server stack.
 #
 # Start your servers first (servers/sh_start_servers.sh): authenticator on

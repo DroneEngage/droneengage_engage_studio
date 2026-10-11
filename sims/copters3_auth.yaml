@@ -1,3 +1,5 @@
+# Runbook: sims/copters3_auth.md
+#
 # Same fleet through the full login path: droneengage_authenticator (single
 # account) + droneengage_server; every de_comm and the GCS bridge log in.
 version: 1

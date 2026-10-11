@@ -1,3 +1,5 @@
+# Runbook: sims/plane.md
+#
 # Personal sim: ONE fixed-wing box - ArduPlane SITL + de_comm + de_mavlink -
 # on YOUR OWN server stack (servers/sh_start_servers.sh).
 # See quadcopter.yaml for the external-server fields. Runs in parallel with

@@ -1,3 +1,5 @@
+# Runbook: sims/copter_and_cameras.md
+#
 # Camera fleet: a camera copter and a fixed camera post (needs the
 # de_camera binary + a V4L2 device; see blocks/copter_camera).
 version: 1

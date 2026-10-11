@@ -40,7 +40,9 @@ is now the only simulation/testing location.
     run_scenario.py           compat shim -> the same engine as ./sim run
     sim.local.env.example     per-machine paths -> copy to sim.local.env (gitignored)
     blocks/<name>/            block.yaml + optional <module>.json / sitl.parm overlays
-    sims/*.yaml               fleets of blocks (+ server type)
+    sims/*.yaml               fleets of blocks (+ server type); each has a
+                              sims/<name>.md runbook (setup, run, teardown,
+                              ports) - keep the pair when adding a sim
     tests/**/*.yaml           AUTOMATED cases - what CI/nightly runs: legacy
                               sim+steps+assert files plus the de.scenario/1
                               library in area subdirs (p4a/, faults/, verify/ ...)

@@ -1,3 +1,5 @@
+# Runbook: sims/copters3.md
+#
 # Three quad copters on the real droneengage_server (local mode, no
 # authenticator). The default fleet for mission / supervisor tests.
 version: 1

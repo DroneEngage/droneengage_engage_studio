@@ -1,3 +1,5 @@
+# Runbook: sims/copters3_static_faults.md
+#
 # Three quad copters plus a de_comm-only static unit, on the fake server:
 # seeded per-link loss / delay / cut plus the clock-offset control. The
 # fleet for the P4A-09 two-phase deploy test (the watcher role needs a

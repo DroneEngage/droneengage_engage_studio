@@ -1,3 +1,5 @@
+# Runbook: sims/quadcopter.md
+#
 # Personal sim: ONE quadcopter box - ArduCopter SITL (raw binary over TCP,
 # like sitl_tcp.sh) + de_comm + de_mavlink - on YOUR OWN server stack.
 #

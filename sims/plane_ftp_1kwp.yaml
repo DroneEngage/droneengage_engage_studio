@@ -1,0 +1,17 @@
+# Runbook: sims/plane_ftp_1kwp.md (same base name, next to this file).
+#
+# FTP mission-read demo: ONE ArduPlane SITL + de_comm + de_mavlink on a
+# spawned real server (local_server_enabled, no authenticator). Push
+# packages/plan_survey_1001wp.json (takeoff + 1001 wp + RTL) with
+# `./sim ctl deploy`, open `./sim ctl web`, then R-WP on the GCS mission
+# panel - de_mavlink reads @MISSION/mission.dat over MAVLink FTP and the
+# Read buttons show live progress. BRD_SD_MISSION=32 raises SITL mission
+# storage past the ~655-item 16 kB default (same as tests/capacity).
+# slot_base 95 keeps ports disjoint from the developer's own stacks.
+version: 1
+slot_base: 95
+server:
+  type: real
+  auth: false
+units:
+  - {block: plane, name: wptest, fc: {params: {BRD_SD_MISSION: 32}}}

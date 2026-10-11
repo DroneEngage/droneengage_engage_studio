@@ -1,3 +1,5 @@
+# Runbook: sims/rover.md
+#
 # Personal sim: ONE rover box - ArduRover SITL + de_comm + de_mavlink - on
 # YOUR OWN server stack (servers/sh_start_servers.sh).
 # See quadcopter.yaml for the external-server fields. Runs in parallel with
