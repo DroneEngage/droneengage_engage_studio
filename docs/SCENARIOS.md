@@ -470,6 +470,11 @@ stress the GCS display path with uncontrolled traffic.
 - SITL needs ~1–2 min for GPS/EKF; `arm` waits for it, but plan the
   timeline (`deploy` before `arm`, `mode: GUIDED` before a nav deploy).
 - `on:` is a YAML 1.1 boolean key — write it bare, the loader fixes it.
+- Journal `re:` patterns (wait_journal, on:, journal_count, ...) match
+  only the `<KIND> <msg>` text — the `<ts> <engine> <mission> <seq>`
+  header fields are never searched. To wait on mission progress use a
+  msg-level anchor (an `ACTION`/`EMIT`/`fc` line at that seq), not a
+  header shape like `RUNNING <mission> <seq>` — that can never match.
 - Each run writes `var/results/<utc>/<name>/`: journals, logs, tlog,
   operator.log, truth.jsonl, samples.jsonl, verify.json, summary.json,
   junit.xml.

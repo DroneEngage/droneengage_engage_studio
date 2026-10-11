@@ -32,8 +32,13 @@ timeline:
   # LOITER pauses the nav lane only - the sensor lane must keep running
   - {t: 40, fault: mode, unit: c1, mode: LOITER}
   - {t: 45, do: wait_journal, unit: c1, re: "paused", timeout: 60}
+  # rf_watch repeats with repeat_min_s: 20 - the hear gate only re-arms
+  # ~20 s after the first emit, so a single fixed fire can land while no
+  # gate is waiting; re-fire until the second emit is journaled
   - {t: 50, do: fire, event: sdr.signal, unit: c1,
-     payload: {pos: [-35.3640, 149.1660], conf: 0.8}}
+     payload: {pos: [-35.3640, 149.1660], conf: 0.8},
+     until: {re: "S: rf_watch emit rf\\.hit", count: 2, tries: 8,
+             every_s: 15}}
   - {t: 55, do: wait_journal, unit: c1,
      re: "S: rf_watch emit rf\\.hit", timeout: 60}
 assert:

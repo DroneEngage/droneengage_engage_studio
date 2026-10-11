@@ -26,8 +26,10 @@ timeline:
   - {t: 15, do: wait_journal, unit: c1, re: "RUN run .* started",
      timeout: 60}
   # anchor the crash to real mission progress - SITL bring-up varies, so
-  # a fixed t: can land the kill before the mission even leaves home
-  - {t: 20, do: wait_journal, unit: c1, re: "RUNNING main 2",
+  # a fixed t: can land the kill before the mission even leaves home.
+  # journal re: matches KIND+msg only (not the RUNNING/main/seq header),
+  # so the anchor is the seq-2 row's own emit line
+  - {t: 20, do: wait_journal, unit: c1, re: "emit x\\.started",
      timeout: 120}
   - {t: 30, fault: module_kill, unit: c1, module: de_mavlink}
   - {t: 36, fault: restart, unit: c1, proc: de_mavlink}
