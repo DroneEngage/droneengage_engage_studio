@@ -194,6 +194,30 @@ def col_bold(s):   return col("1", s)      # key values: names, pids
 def col_dim(s):    return col("2", s)      # progress noise
 
 
+def print_usage(doc):
+    """A module __doc__ printed as CLI help, colorized on a tty: the
+    command in green, its <params>/[flags] in yellow, the description in
+    white. Shared by `sim` and `ctl` so both help screens look alike."""
+    if not sys.stdout.isatty():
+        print(doc)
+        return
+    green, yellow, white, reset = \
+        "\033[32m", "\033[33m", "\033[37m", "\033[0m"
+    param_rx = re.compile(r"<[^>]*>|\[[^\]]*\]|\.\.\.")
+    for line in doc.splitlines():
+        # a usage row is "  <cmd><2+ spaces><description>"; a command
+        # filling the column has no description on its own line. Anything
+        # else (headers, wrapped descriptions, blanks) prints plain white
+        m = re.match(r"^(  \S.*?)(?:( {2,})(\S.*))?$", line)
+        if not m:
+            print(white + line + reset if line.strip() else line)
+            continue
+        cmd, pad, desc = m.group(1), m.group(2), m.group(3)
+        cmd = param_rx.sub(yellow + r"\g<0>" + green, cmd)
+        print(green + cmd + reset
+              + (pad + white + desc + reset if desc else ""))
+
+
 # ---------------------------------------------------------------- json/yaml
 
 def strip_comments(text):

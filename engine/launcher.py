@@ -350,6 +350,13 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
           + (simlib.col_yellow(
              "\nSITL needs ~1-2 min for GPS/EKF before `arm` succeeds.")
              if any(u["fc"] for u in m["units"]) else ""))
+    # the GCS deep links - always printed so `ctl web --print` is not
+    # needed just to grab them
+    print("webclient: " + simlib.col_cyan(simlib.webclient_url(m)))
+    # a second GCS needs its own senderID - same-party connections kick
+    # each other off the comm server
+    print("planning:  " + simlib.col_cyan(
+        simlib.webclient_url(m, "/planning", "GCSPLN_" + name)))
     return m
 
 
@@ -386,6 +393,11 @@ def ensure(sim_src, timeout=180, world_stream=False, exclusive=True):
                 print("render viewer: " + simlib.col("1;36",
                       simlib.render_viewer_url(render, world_stream)),
                       flush=True)
+            print("webclient: "
+                  + simlib.col_cyan(simlib.webclient_url(m)))
+            print("planning:  "
+                  + simlib.col_cyan(simlib.webclient_url(
+                      m, "/planning", "GCSPLN_" + sim["name"])))
             return m
         if alive:
             print(simlib.col_yellow(

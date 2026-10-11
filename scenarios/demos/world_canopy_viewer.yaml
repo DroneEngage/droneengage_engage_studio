@@ -1,3 +1,5 @@
+# Runbook: scenarios/demos/world_canopy_viewer.md
+#
 # demos/world_canopy_viewer - forest search, watched live in 3D: one
 # copter sweeps a forest; the hiker in the open is found, the one inside
 # the hut must stay hidden, and coverage / POD are graded at the end.

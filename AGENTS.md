@@ -47,6 +47,8 @@ is now the only simulation/testing location.
                               sim+steps+assert files plus the de.scenario/1
                               library in area subdirs (p4a/, faults/, verify/ ...)
     scenarios/**/*.yaml       HUMAN-run scenarios: demos/, examples/, user files
+                              - each yaml pairs with a <name>.md runbook
+                              (same convention as sims/)
     docs/SCENARIOS.md         the de.scenario/1 authoring reference (LLM-friendly)
     templates/scenario.yaml   what ./sim new scaffolds
     worlds/*.yaml             seeded ground-truth worlds for scenario world:

@@ -1,3 +1,5 @@
+# Runbook: scenarios/examples/link_fault.md
+#
 # examples/link_fault - the smallest useful scenario: one static unit on
 # the fake server gets its link severed for 20 s. The link monitor must
 # see the unit drop offline and come back. No FC, no operation - this is

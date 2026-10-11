@@ -9,6 +9,10 @@ demos/       showcase runs - viewers, render farm, things to look at
 examples/    small, commented starter files - copy one and edit
 ```
 
+Every scenario yaml has a `<name>.md` runbook next to it (what it does,
+how to run it, what to watch); the yaml's header points at it. Keep the
+pair when adding a scenario — same convention as `../sims/`.
+
 Run any file with the usual commands:
 
 ```bash

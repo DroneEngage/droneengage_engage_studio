@@ -1778,7 +1778,7 @@ def main(argv):
     while argv and argv[0] in ("-s", "--sim"):
         CTX, argv = argv[1], argv[2:]
     if not argv:
-        print(__doc__)
+        simlib.print_usage(__doc__)
         return
     c, a = argv[0], argv[1:]
 
@@ -2274,7 +2274,7 @@ def main(argv):
         if not ok:
             sys.exit(1)
     else:
-        print(__doc__)
+        simlib.print_usage(__doc__)
         sys.exit(1)
 
 

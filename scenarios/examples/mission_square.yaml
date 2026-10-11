@@ -1,3 +1,5 @@
+# Runbook: scenarios/examples/mission_square.md
+#
 # examples/mission_square - the smallest end-to-end flight: one copter
 # on the REAL comm server is deployed the copter_square package over the
 # wire, armed, started, and must journal "mission main completed". This

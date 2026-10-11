@@ -1,3 +1,5 @@
+# Runbook: scenarios/examples/unexpected_restart.md
+#
 # unexpected_restart: a NEGATIVE example. `do: kill` stops de_comm
 # without a fault: window around it - the no_unexpected_restart
 # invariant must FAIL the run. Use it to check the invariant fires;
