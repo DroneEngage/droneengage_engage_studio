@@ -54,6 +54,10 @@ class OperatorBot:
         self._pending = {}            # party -> {req: {kind, first_seen}}
         self._targets = {}            # tid -> {cls, first_seen, decided}
         self._event_targets = {}      # event name -> wm class (deploy pkgs)
+        # B4-02: event name -> accepted detector labels
+        # (fleet.event_target_classes); present => membership replaces
+        # the equality-to-target gate in _on_frame
+        self._event_target_classes = {}
         self._op_oh = ""              # deploy's operation hash (1090 oh)
         self._awaited = []            # [(deadline, pred, act) pending decisions]
         self._ev_seq = {}             # run -> last seq the bot used (1090)
@@ -208,10 +212,17 @@ class OperatorBot:
                 # here or a mismatched detection books a candidate tid
                 # the world model never creates - the confirm then lands
                 # on a dead tid and the real target stays undecided.
+                # B4-02: a declared classes list replaces the equality
+                # test - the envelope label must be a member (the same
+                # rule wmDetectionFromEvent applies).
                 env_cls = p.get("class")
-                if (det_cls and isinstance(env_cls, str)
-                        and env_cls != det_cls):
-                    return
+                labels = self._event_target_classes.get(name)
+                if det_cls and isinstance(env_cls, str):
+                    if labels is not None:
+                        if env_cls not in labels:
+                            return
+                    elif env_cls != det_cls:
+                        return
                 # 1078 `b` (or `t`) carries the normalized {x,y,w,h}
                 # detection box - a dict for best-object, a list for
                 # multi-target payloads
@@ -505,6 +516,14 @@ class OperatorBot:
                     or {}).items():
                 if isinstance(ev_cls, str):
                     self._event_targets.setdefault(ev_name, ev_cls)
+            # B4-02: the accepted-label lists ride beside event_targets
+            for ev_name, ev_labels in (
+                    (pkg.get("fleet") or {}).get("event_target_classes")
+                    or {}).items():
+                if (isinstance(ev_labels, list)
+                        and all(isinstance(x, str) for x in ev_labels)):
+                    self._event_target_classes.setdefault(
+                        ev_name, ev_labels)
             ohs.append(pkg.get("op_hash", ""))
             if not op:
                 op = pkg.get("op", "")

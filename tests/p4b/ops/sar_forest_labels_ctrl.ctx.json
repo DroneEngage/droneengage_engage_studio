@@ -1,0 +1,34 @@
+{
+    "_note": "B4-02 CAP-008 control ctx: cam_scout binds scout1, a stub_ai_box unit whose class_labels map reports persons as 'human' - the visual_tracker.start class enum [human,car,phone] contains no 'person', so the op's plain detect.detected target=person (no classes) triggers the CAP-008 'dropped' warning at verify time. The same advert satisfies the SAR op's camera/visual_tracker CAP-001 checks.",
+    "binding": { "cam_scout": ["scout1"] },
+    "registries": {
+        "scout1": {
+            "caps": {
+                "camera": {
+                    "ch": "c1", "module": "stub_ai_box", "ver": "1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "camera", "module": "stub_ai_box", "ver": "1.0",
+                        "actions": { "capture": {}, "record": { "params": { "on": { "type": "bool" } } } },
+                        "events": { "captured": {} }
+                    }
+                },
+                "visual_tracker": {
+                    "ch": "c1", "module": "stub_ai_box", "ver": "1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "visual_tracker", "module": "stub_ai_box", "ver": "1.0",
+                        "actions": {
+                            "start": { "params": { "class": { "type": "enum",
+                                "values": ["human", "car", "phone"] } } },
+                            "track": { "params": { "x": { "type": "number" }, "y": { "type": "number" },
+                                "w": { "type": "number" }, "h": { "type": "number" } } },
+                            "untrack": {}
+                        },
+                        "events": {},
+                        "state": { "tracking": { "type": "bool" } }
+                    }
+                }
+            },
+            "state": {}, "t": 0
+        }
+    }
+}

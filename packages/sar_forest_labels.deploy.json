@@ -1,0 +1,33 @@
+{
+  "op": "sar_forest_labels",
+  "oh": "sha256:9cd16f1d0045757413db9538c6db5b99cacc1e084767c8102a71b285c0240fac",
+  "opgraph": "sar_forest_labels.opgraph.json",
+  "roles": {
+    "cam_scout": {
+      "pkg": "sar_forest_labels_cam_scout.pkg.json",
+      "units": [
+        "scout1"
+      ]
+    },
+    "sdr_scout": {
+      "pkg": "sar_forest_labels_sdr_scout.pkg.json",
+      "units": [
+        "sdr1"
+      ]
+    },
+    "searcher": {
+      "pkg": "sar_forest_labels_searcher.pkg.json",
+      "units": [
+        "s1",
+        "s2",
+        "s3"
+      ]
+    },
+    "ambulance": {
+      "pkg": "sar_forest_labels_ambulance.pkg.json",
+      "units": [
+        "amb1"
+      ]
+    }
+  }
+}

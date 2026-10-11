@@ -22,6 +22,16 @@ is restored by `--legacy-box`, a unit `config.stub_ai_box.legacy_box` or
 the world's `sensors.camera.legacy_box` - the negative-control rerun of
 p4b10_k uses it to show the pre-B4-01 W5 fail-open.
 
+B4-02: the detector's LABEL for an entity cls can differ from the cls
+itself - a person-detecting model can report the string "human" while
+the op's target class stays "person". `class_labels` remaps cls -> label
+(world `sensors.camera.class_labels`, per-unit override
+`config.stub_ai_box.class_labels`); boxes then carry the label as
+`class_name` (and `class_id` indexes the label list, which is also what
+the 1077 class list and the visual_tracker.start class enum report) so
+the op's detect decl `classes: [...]` is what accepts them - p4b10_l.
+
+
 Every emitted box also lands a {"type":"detection", tid, cls, ...} row
 in var/run/<sim>/truth.jsonl (tid "clutter" for the false positives the
 clutter model injects) - detection_precision counts them.
@@ -157,6 +167,16 @@ class StubAIBox(StubBase):
         # is never projected as a box
         self.classes = ([c for c in self.world.classes() if c != "pad"]
                         if self.world else ["object"])
+        # B4-02: class_labels maps an entity cls -> the detector label
+        # the model actually reports ("person" -> "human"). World-wide
+        # under sensors.camera.class_labels, per-unit override
+        # config.stub_ai_box.class_labels. Truth cls stays untouched -
+        # only what goes on the wire (class_name, 1077 list, advert
+        # enum) carries the label.
+        label_map = dict(cam.get("class_labels") or {})
+        label_map.update(self.cfg.get("class_labels") or {})
+        self.label_map = label_map
+        self.labels = [self.label_map.get(c, c) for c in self.classes]
         # B4-01: class_id/class_name on the 1078 box; any of these turns
         # them off (the negative-control rerun needs the legacy shape)
         self.legacy_box = bool("--legacy-box" in argv
@@ -199,6 +219,13 @@ class StubAIBox(StubBase):
             self.log.log("UNTRACK", {}, ms=self.clock_ms())
             self.state({"tracking": False})
             return {"tracking": False}, None
+        if ns == "visual_tracker" and act == "start":
+            # B4-02: start(class) picks the detection label set - the
+            # stub keeps reporting every class regardless (the world
+            # camera is the only gate) but logs the selection
+            self.log.log("START", {"class": (params or {}).get("class")},
+                         ms=self.clock_ms())
+            return {"started": (params or {}).get("class")}, None
         return None, f"unknown action '{ns}.{act}'"
 
     # -------------------------------------------------------- databus out
@@ -219,8 +246,24 @@ class StubAIBox(StubBase):
     def status(self):
         self.emit(TYPE_AndruavMessage_AI_Recognition_STATUS,
                   {"a": AI_STATUS_ENABLED})
+        # B4-02: the 1077 class list carries the detector LABELS
+        # (class_id on the 1078 box indexes this list)
         self.emit(TYPE_AndruavMessage_AI_Recognition_STATUS,
-                  {"a": AI_STATUS_CLASS_LIST, "c": list(self.classes)})
+                  {"a": AI_STATUS_CLASS_LIST, "c": list(self.labels)})
+
+    def adverts(self):
+        """The two serialized de.cap/1 adverts. The tracker one is
+        dynamic: start.class is the enum of labels this model reports
+        (B4-02) - what CAP-008 reads off a live registry."""
+        tracker = __import__("copy").deepcopy(ADVERT_TRACKER)
+        tracker["actions"]["start"] = {
+            "desc": "Start detection reporting for a class",
+            "params": {"class": {"type": "enum",
+                                 "values": list(self.labels)}},
+            "timeout_s": 10,
+        }
+        return [__import__("json").dumps(ADVERT_CAMERA),
+                __import__("json").dumps(tracker)]
 
     def on_message(self, message, length, jMsg):
         super().on_message(message, length, jMsg)
@@ -368,7 +411,7 @@ class StubAIBox(StubBase):
                "conf": conf, "tm": self._tm_us()}
         if not self.legacy_box:
             box["class_id"] = self.classes.index(cls)
-            box["class_name"] = cls
+            box["class_name"] = self.label_map.get(cls, cls)
         self.emit(TYPE_AndruavMessage_AI_Recognition_TargetLocation,
                   {"b": box})
         self.truth.append({"src": "ai", "tid": tid, "cls": cls,
@@ -478,7 +521,7 @@ class StubAIBox(StubBase):
                 cl_cls = cl["cls"]
                 box["class_id"] = (self.classes.index(cl_cls)
                                    if cl_cls in self.classes else -1)
-                box["class_name"] = cl_cls
+                box["class_name"] = self.label_map.get(cl_cls, cl_cls)
             self.emit(TYPE_AndruavMessage_AI_Recognition_TargetLocation,
                       {"b": box})
             row.update({"u": round(u, 4), "v": round(v, 4),
@@ -493,8 +536,7 @@ def main(argv):
         s.log.log("SELFTEST", {"poses": s.selftest}, ms=0)
         s.run_selftest()
         return 0
-    s.connect(adverts=[__import__("json").dumps(ADVERT_CAMERA),
-                       __import__("json").dumps(ADVERT_TRACKER)],
+    s.connect(adverts=s.adverts(),
               msg_filter=[TYPE_AndruavMessage_AI_Recognition_ACTION])
     s.status()
     s.run()
