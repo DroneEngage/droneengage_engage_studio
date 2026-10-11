@@ -1378,6 +1378,8 @@ def gen_unit(u, sim, catalog):
     if not u["fc"]:
         p = u["position"]
         cfg["location"] = {
+            # TASK-SU-06: an FC-less unit IS the declared static object
+            "static": True,
             "lat": int(round(p["lat"] * 1e7)), "lng": int(round(p["lng"] * 1e7)),
             "alt_abs": int(p["alt"] * 1000), "alt_rel": 0,
             "heading": p["yaw"], "acc_mm": 1000,

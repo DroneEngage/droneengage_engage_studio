@@ -320,6 +320,8 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `mission_items` | `unit`, `equals`/`at_least`/`at_most` | FC mission count, serial0 read-back |
 | `mission_pull` | `unit`, `secs`, bounds | the GCS 501→1027 plan read-back a WebClient draws; last chunk `i=999` required |
 | `roster_value` | `unit`, `key`, `equals`/`…` | roster field |
+| `roster_pos_near` | `unit`, `lat`, `lng`, `max_m` | last roster `pos` within `max_m` of a reference point (a held position never jumped) |
+| `roster_field_absent` | `unit`, `field` | last roster frame omits the field entirely (compact-form rule); `roster_value` SKIPs a missing field, this one requires it |
 | `operator_log_count` | `re`, bounds | the bot's decisions |
 | `clock_spread` | `unit`, `max_ms` (100) or `min_ms` | spread of the units' latest CLOCK `fleet_minus_unix_ms`; `min_ms` proves a `clock_step` landed |
 | `distance_to` | `unit`, `re`, `truth`, `min_m`/`max_m` | world truth geometry |
