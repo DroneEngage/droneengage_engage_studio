@@ -1803,6 +1803,35 @@ def v4l2_label_map(sysfs_root="/sys/class/video4linux"):
     return out
 
 
+def _chromium_proc(sim, rdir, url):
+    # --use-angle=gl-egl is the headless GPU path (SwiftShader fallback
+    # needs --enable-unsafe-swiftshader); --enable-logging puts the
+    # page's console in the proc log. --use-gl=egl is NOT valid on
+    # Chrome 150+ (egl-gles2 is not an allowed implementation)
+    _render_script(sim, "chromium", rdir,
+                   "'%s' --headless=new --use-angle=gl-egl "
+                   "--enable-unsafe-swiftshader "
+                   "--enable-logging=stderr "
+                   "--disable-background-timer-throttling "
+                   "--disable-renderer-backgrounding "
+                   "--user-data-dir='%s/chrome' --no-first-run "
+                   "'%s'" % (CHROMIUM_BIN, rdir, url))
+
+
+def _physics_render_procs(sim, render, rdir):
+    """P5-16: render.mode physics runs the world page in a headless
+    Chromium (?render=physics) with no cameras, sink or probes - the
+    page's physics rig reads the world stream and MAVLink fan-out and
+    posts payload_landed / collision events back."""
+    url = ("http://127.0.0.1:%d/index_4w.html"
+           "?world=ws://127.0.0.1:%d&mavlink=ws://127.0.0.1:%d"
+           "&render=physics"
+           % (render["web_port"], render["stream_port"],
+              render["mav_ws_port"]))
+    _chromium_proc(sim, rdir, url)
+    return ["chromium"]
+
+
 def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
     """P5-15: render.mode cameras|full adds the frame farm on top of the
     viewer procs: render_sink.js demuxes the binary WS frames into one
@@ -1853,18 +1882,7 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
            "&render=cameras&sink=ws://127.0.0.1:%d"
            % (render["web_port"], render["stream_port"],
               render["mav_ws_port"], render["sink_port"]))
-    # --use-angle=gl-egl is the headless GPU path (SwiftShader fallback
-    # needs --enable-unsafe-swiftshader); --enable-logging puts the
-    # page's console in the proc log. --use-gl=egl is NOT valid on
-    # Chrome 150+ (egl-gles2 is not an allowed implementation)
-    _render_script(sim, "chromium", rdir,
-                   "'%s' --headless=new --use-angle=gl-egl "
-                   "--enable-unsafe-swiftshader "
-                   "--enable-logging=stderr "
-                   "--disable-background-timer-throttling "
-                   "--disable-renderer-backgrounding "
-                   "--user-data-dir='%s/chrome' --no-first-run "
-                   "'%s'" % (CHROMIUM_BIN, rdir, url))
+    _chromium_proc(sim, rdir, url)
     probe = os.path.join(ENGINE_DIR, "render_probe.py")
     for m in mapping:
         _render_script(
@@ -1879,7 +1897,8 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
 
 
 def gen_render(sim):
-    """P5-14 D7: render.mode viewer|cameras|full (and not headless)
+    """P5-14 D7: render.mode viewer|cameras|physics|full (and not headless,
+    except physics, which always needs the page)
     launches Mavlink3DMap: the UDP->WebSocket bridge bound to
     render.mav_port serving MAVLink on ws render.mav_ws_port, and a
     vite dev server on render.web_port. cameras|full adds the P5-15
@@ -1888,8 +1907,9 @@ def gen_render(sim):
     in the node cmdline so pid_is_ours/`sim down` treat them like every
     other process."""
     render = sim.get("render") or {}
-    if not render or render["mode"] not in ("viewer", "cameras", "full") \
-            or render["headless"]:
+    if not render or render["mode"] not in ("viewer", "cameras", "physics",
+                                            "full") \
+            or (render["headless"] and render["mode"] != "physics"):
         return []
     m3d = MAVLINK3DMAP_DIR
     bridge = os.path.join(m3d, "backend", "src", "udp2websocket.js")
@@ -1926,6 +1946,8 @@ def gen_render(sim):
     if render["mode"] in ("cameras", "full"):
         procs += _camera_render_procs(sim, render, rdir, marker, m3d,
                                       vite_js)
+    if render["mode"] == "physics":
+        procs += _physics_render_procs(sim, render, rdir)
     return procs
 
 

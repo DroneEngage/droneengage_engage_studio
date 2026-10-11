@@ -1251,5 +1251,74 @@ class TInvariants(unittest.TestCase):
         self.assertEqual(run(spec, j)["status"], "PASS")
 
 
+class PhysicsChecks(unittest.TestCase):
+    """P5-16: payload_landed / drop_drift / no_collision read the
+    src: physics event rows (pure, no SITL)."""
+
+    def _run(self, name, args, rows):
+        d = tempfile.mkdtemp()
+        try:
+            f = os.path.join(d, "truth.jsonl")
+            with open(f, "w") as fh:
+                for r in rows:
+                    fh.write(json.dumps(r) + "\n")
+            c = ctx({}, file=os.path.join(d, "s.yaml"), results_dir=d)[0]
+            fn = {"payload_landed": checks._payload_landed,
+                  "drop_drift": checks._drop_drift,
+                  "no_collision": checks._no_collision}[name]
+            return fn(name, args, c)
+        finally:
+            shutil.rmtree(d)
+
+    LAND = {"type": "event", "kind": "payload_landed", "src": "physics",
+            "unit": "u1", "lat": -35.0, "lng": 149.0001, "alt_m": 0.0,
+            "hit": "ground", "impact_mps": 4.0, "fall_s": 2.5,
+            "t_ms": 100000,
+            "release": {"lat": -35.0, "lng": 149.0}}
+    PERSON = {"src": "world", "tid": "p1", "cls": "person",
+              "lat": -35.0, "lng": 149.00009, "t_ms": 100000}
+
+    def test_payload_landed_distance(self):
+        r = self._run("payload_landed", {"truth": "p1", "max_m": 10},
+                      [self.PERSON, self.LAND])
+        self.assertEqual(r["status"], "PASS", r)
+        r = self._run("payload_landed", {"truth": "p1", "max_m": 0.5},
+                      [self.PERSON, self.LAND])
+        self.assertEqual(r["status"], "FAIL", r)
+
+    def test_payload_landed_hit_and_missing(self):
+        r = self._run("payload_landed", {"pos": [-35.0, 149.0001],
+                                         "max_m": 5, "hit": "canopy:c1"},
+                      [self.LAND])
+        self.assertEqual(r["status"], "FAIL", r)
+        r = self._run("payload_landed", {"pos": [-35.0, 149.0001],
+                                         "max_m": 5}, [])
+        self.assertEqual(r["status"], "FAIL", r)
+
+    def test_drop_drift(self):
+        r = self._run("drop_drift", {"unit": "u1", "max_m": 20},
+                      [self.LAND])
+        self.assertEqual(r["status"], "PASS", r)
+        r = self._run("drop_drift", {"unit": "u1", "max_m": 5},
+                      [self.LAND])
+        self.assertEqual(r["status"], "FAIL", r)
+
+    def test_no_collision(self):
+        col = {"type": "event", "kind": "collision", "src": "physics",
+               "unit": "u1", "with": "hut_1", "t_ms": 5}
+        self.assertEqual(self._run("no_collision", {}, [])["status"],
+                         "PASS")
+        self.assertEqual(self._run("no_collision", {}, [col])["status"],
+                         "FAIL")
+        self.assertEqual(
+            self._run("no_collision", {"unit": "u2"}, [col])["status"],
+            "PASS")
+        a = {"expect_collision": True}
+        self.assertEqual(self._run("no_collision", a, [col])["status"],
+                         "PASS")
+        self.assertEqual(self._run("no_collision", a, [])["status"],
+                         "FAIL")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -51,6 +51,8 @@ MAX_DETECTIONS = 40             # recent-detection marker cap
 # to know which unit owns the lens)
 CAMERA_MODULES = ("stub_ai_box", "de_camera")
 PAYLOAD_MODULES = ("stub_payload",)
+# blocks whose FC drives a real gripper servo (the physics rig watches it)
+PAYLOAD_BLOCKS = ("copter_gripper",)
 
 
 def hello_frame(world, manifest, epoch_ms):
@@ -64,8 +66,12 @@ def hello_frame(world, manifest, epoch_ms):
             cam = dict(world.sensors["camera"])
             cam["fps"] = TICK_HZ
             row["camera"] = cam
-        if any(m in u["modules"] for m in PAYLOAD_MODULES):
-            row["payload"] = dict(world.sensors.get("payload") or {})
+        pay = dict(world.sensors.get("payload") or {})
+        if any(m in u["modules"] for m in PAYLOAD_MODULES) \
+                or u["block"] in PAYLOAD_BLOCKS:
+            row["payload"] = pay
+        if u["fc"] and pay.get("collision_radius_m") is not None:
+            row["collision_radius_m"] = pay["collision_radius_m"]
         units.append(row)
     return {"t": "hello", "schema": SCHEMA,
             "sim": manifest["name"], "seed": world.seed,

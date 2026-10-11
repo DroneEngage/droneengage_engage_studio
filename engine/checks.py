@@ -190,6 +190,114 @@ def _unit_pos_at(ctx, unit_name, t_ms):
     return best[1] if best else None
 
 
+# ------------------------------------------------------------ physics (P5-16)
+# payload_landed / drop_drift / no_collision read the src: physics event rows
+# the world page's physics rig posts through the world stream (D7/D8), plus
+# the stub's payload_drop row as the RELEASE record.
+
+def _physics_events(rows, kind, unit=None):
+    out = [r for r in rows if r.get("type") == "event"
+           and r.get("kind") == kind
+           and (unit is None or r.get("unit") == unit)]
+    return sorted(out, key=_row_t)
+
+
+def _landed_for(a, ctx, name):
+    rows, src = _truth_rows(ctx, a.get("truth_file"))
+    if rows is None:
+        return None, None, None, _r(name, "SKIP", None,
+                                    "no truth source (run truth.jsonl)")
+    unit = a.get("unit")
+    ev = _physics_events(rows, "payload_landed", unit)
+    if not ev:
+        return rows, src, None, _r(
+            name, "FAIL", None,
+            f"no payload_landed event"
+            f"{' for ' + str(unit) if unit else ''} in "
+            f"{os.path.basename(src)} (physics rig not running, or the "
+            "payload never came to rest)")
+    return rows, src, ev[0], None
+
+
+def _payload_landed(name, a, ctx):
+    rows, src, ev, err = _landed_for(a, ctx, name)
+    if err:
+        return err
+    hit_want = a.get("hit")
+    if hit_want is not None and ev.get("hit") != hit_want:
+        return _r(name, "FAIL", ev.get("hit"),
+                  f"payload hit {ev.get('hit')!r}, wanted {hit_want!r} "
+                  f"(landed {ev['lat']:.6f},{ev['lng']:.6f})")
+    imp_max = a.get("max_impact_mps")
+    if imp_max is not None and ev.get("impact_mps", 0.0) > imp_max:
+        return _r(name, "FAIL", round(ev["impact_mps"], 2),
+                  f"impact {ev['impact_mps']:.2f} m/s > {imp_max}")
+    if "pos" in a:
+        ref = (float(a["pos"][0]), float(a["pos"][1]))
+        ref_src = "pos"
+    else:
+        tids = a["truth"] if isinstance(a["truth"], list) else [a["truth"]]
+        tol = a.get("truth_tol_ms", DEFAULT_TRUTH_TOL_MS)
+        t = _row_t(ev)
+        cands = [c for tid in tids
+                 for c in [_truth_at(rows, tid, t, tol)] if c is not None]
+        if not cands:
+            return _r(name, "SKIP", None,
+                      f"no truth row for {tids!r} near the landing in "
+                      f"{os.path.basename(src)}")
+        c = min(cands, key=lambda r: _haversine(ev["lat"], ev["lng"],
+                                                r["lat"], _lng(r)))
+        ref = (c["lat"], _lng(c))
+        ref_src = _row_tid(c)
+    d = _haversine(ev["lat"], ev["lng"], ref[0], ref[1])
+    mx = a.get("max_m")
+    good = mx is None or d <= mx
+    return _r(name, "PASS" if good else "FAIL", round(d, 1),
+              f"landed {d:.1f} m from {ref_src} (max {mx}), hit "
+              f"{ev.get('hit')}, impact {ev.get('impact_mps', 0.0):.2f} "
+              f"m/s, fall {ev.get('fall_s', 0.0):.2f} s")
+
+
+def _drop_drift(name, a, ctx):
+    rows, src, ev, err = _landed_for(a, ctx, name)
+    if err:
+        return err
+    rel = ev.get("release")
+    if isinstance(rel, dict) and rel.get("lat") is not None:
+        r0 = (rel["lat"], _lng(rel))
+    else:
+        drops = [r for r in rows if r.get("cls") == "payload_drop"
+                 and (a.get("unit") is None
+                      or r.get("unit") == a.get("unit"))]
+        if not drops:
+            return _r(name, "SKIP", None, "no release record")
+        r0 = (drops[0]["lat"], _lng(drops[0]))
+    d = _haversine(r0[0], r0[1], ev["lat"], ev["lng"])
+    mx = a.get("max_m")
+    good = mx is None or d <= mx
+    return _r(name, "PASS" if good else "FAIL", round(d, 1),
+              f"release -> landing {d:.1f} m (max {mx}), fall "
+              f"{ev.get('fall_s', 0.0):.2f} s")
+
+
+def _no_collision(name, a, ctx):
+    rows, src = _truth_rows(ctx, a.get("truth_file"))
+    if rows is None:
+        return _r(name, "SKIP", None, "no truth source (run truth.jsonl)")
+    unit = a.get("unit")
+    if unit in (None, "all"):
+        unit = None
+    ev = _physics_events(rows, "collision", unit)
+    if a.get("expect_collision"):
+        # negative control: the flight is MEANT to hit the obstacle
+        return _r(name, "PASS" if ev else "FAIL", len(ev),
+                  f"negative control: {len(ev)} collision(s) expected >= 1")
+    if ev:
+        w = ", ".join(f"{e.get('unit')}:{e.get('with')}" for e in ev[:5])
+        return _r(name, "FAIL", len(ev), f"{len(ev)} collision(s): {w}")
+    return _r(name, "PASS", 0, "no collision events")
+
+
 # ------------------------------------------------------ mission baseline
 
 def mission_download(u, timeout=15):
@@ -2009,6 +2117,9 @@ DISPATCH = {
     "clock_spread": _clock_spread,
     "mission_current": _mission_current,
     "distance_to": _distance_to,
+    "payload_landed": _payload_landed,
+    "drop_drift": _drop_drift,
+    "no_collision": _no_collision,
     "no_sep_violation": _no_sep_violation,
     "coverage_complete": _coverage_complete,
     "pod_mean": _pod_mean,

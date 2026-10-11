@@ -1,0 +1,13 @@
+{
+  "op": "collision_roof",
+  "oh": "sha256:d1215c0c73e9ee95f6ae2b400acc59790894f3190578ba9bd912627c1f14b211",
+  "opgraph": "collision_roof.opgraph.json",
+  "roles": {
+    "flyer": {
+      "pkg": "collision_roof_flyer.pkg.json",
+      "units": [
+        "cam1"
+      ]
+    }
+  }
+}

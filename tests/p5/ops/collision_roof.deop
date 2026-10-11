@@ -1,0 +1,29 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "collision_roof",
+    "comment": "TASK-P5-16 negative control: takeoff to 3 m AGL then a waypoint over the centre of hut_1 (a 4 m building SITL knows nothing about). The flight completes; the physics rig must report the collision.",
+
+    "roles": {
+        "flyer": { "count": 1, "vehicle": "copter" }
+    },
+
+    "events": {},
+
+    "missions": {
+        "flyer": {
+            "main": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "takeoff", "nav": "takeoff", "alt": 3 },
+                    { "id": "over", "nav": "wp",
+                      "pos": [-35.363082, 149.165457, 3] },
+                    { "id": "hold", "nav": "loiter",
+                      "pos": [-35.363082, 149.165457, 3],
+                      "unlim": true }
+                ]
+            }
+        }
+    }
+}

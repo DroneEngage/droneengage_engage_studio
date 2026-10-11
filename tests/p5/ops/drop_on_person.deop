@@ -1,0 +1,37 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "drop_on_person",
+    "comment": "TASK-P5-16: one copter climbs to 30 m, flies to person_open (N 20, E 75 of home) and releases the payload on arrival; the physics rig turns the gripper release into a falling body and reports where it lands. The release rides auto_with_veto (SAF-020): it fires 5 s after arrival unless the operator vetoes - the point is the drop physics.",
+
+    "roles": {
+        "dropper": { "count": 1, "vehicle": "copter", "requires": ["payload"] }
+    },
+
+    "events": {
+        "payload.released": {}
+    },
+
+    "missions": {
+        "dropper": {
+            "main": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "takeoff", "nav": "takeoff", "alt": 30 },
+                    { "id": "over", "nav": "wp",
+                      "pos": [-35.363082, 149.166063, 30] },
+                    { "id": "drop", "nav": "loiter",
+                      "pos": [-35.363082, 149.166063, 30], "time": 20,
+                      "actions": [
+                          { "on": "start", "do": "payload.release",
+                            "approval": { "auto_with_veto": 5 } }
+                      ] },
+                    { "id": "hold", "nav": "loiter",
+                      "pos": [-35.363082, 149.166063, 30],
+                      "unlim": true }
+                ]
+            }
+        }
+    }
+}

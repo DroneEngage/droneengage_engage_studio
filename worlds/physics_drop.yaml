@@ -1,0 +1,23 @@
+# physics_drop - the P5-16 delivery world (de.world/1).
+#
+# person_open stands at N 20, E 75 of the SITL home on open ground (same
+# spot as forest_canopy's). A 1 kg / 0.2 m sphere released from 30 m
+# falls ~2.6 s; with this wind it drifts ~2 m (a dense payload barely
+# feels the wind), so a release over the person lands well inside 10 m.
+# environment.wind reaches SITL (SIM_WIND_*) and the payload drag alike.
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_open, cls: person, pos: [-35.363082, 149.166063],
+     size_m: 0.5}
+environment:
+  wind: {speed_mps: 6, dir_deg: 270, gust_mps: 1, turb: 0}
+sensors:
+  payload:
+    mass_kg: 1.0
+    shape: sphere
+    size_m: 0.2
+    cd: 0.47
+    servo: 9
+    release_pwm: 1100            # GRIP_RELEASE (blocks/copter_gripper)
+    collision_radius_m: 0.5

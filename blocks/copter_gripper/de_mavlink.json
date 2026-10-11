@@ -1,0 +1,5 @@
+{
+    // P3-05: payload.release through the FC gripper (DO_GRIPPER)
+    "payload_provider": "fc_gripper",
+    "gripper_instance": 1
+}

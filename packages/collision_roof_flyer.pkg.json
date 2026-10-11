@@ -1,0 +1,157 @@
+{
+  "schema": "de.package/2.2",
+  "op": "collision_roof",
+  "op_hash": "sha256:d1215c0c73e9ee95f6ae2b400acc59790894f3190578ba9bd912627c1f14b211",
+  "role": "flyer",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [],
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        3
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.363082,
+        149.165457,
+        3
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        -35.363082,
+        149.165457,
+        3
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        300,
+        0,
+        0,
+        0,
+        -35.363082,
+        149.165457,
+        3
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        -35.363082,
+        149.165457,
+        3
+      ]
+    }
+  ],
+  "missions": {
+    "main": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "segment": {
+        "start": 1,
+        "end": 6
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 300,
+        "then": "rtl"
+      }
+    }
+  },
+  "manifest": [
+    {
+      "seq": 1,
+      "mission": "main",
+      "step": "takeoff",
+      "kind": "nav.takeoff"
+    },
+    {
+      "seq": 2,
+      "mission": "main",
+      "step": "over",
+      "kind": "nav.wp"
+    },
+    {
+      "seq": 3,
+      "mission": "main",
+      "step": "hold",
+      "kind": "nav.loiter"
+    },
+    {
+      "seq": 4,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.hold"
+    },
+    {
+      "seq": 5,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.contingency"
+    },
+    {
+      "seq": 6,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.guard"
+    }
+  ],
+  "events": {},
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "flyer": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {}
+  },
+  "hash": "sha256:ebfb6e5388e702bca3170601d599ca195073c0e1b2fd26825afc35b28b38130c"
+}

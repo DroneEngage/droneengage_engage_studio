@@ -1,0 +1,188 @@
+{
+  "schema": "de.package/2.2",
+  "op": "drop_on_person",
+  "op_hash": "sha256:3f55a1885e2cef5a7a89a84d91397c694b1d2502d03ccb38b234e0e33f2aa154",
+  "role": "dropper",
+  "vehicle": {
+    "type": "copter"
+  },
+  "requires": [
+    "payload"
+  ],
+  "fc_items": [
+    {
+      "c": 22,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        30
+      ]
+    },
+    {
+      "c": 16,
+      "ft": 3,
+      "mv": [
+        0,
+        5,
+        0,
+        0,
+        -35.363082,
+        149.166063,
+        30
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        20,
+        0,
+        0,
+        0,
+        -35.363082,
+        149.166063,
+        30
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        -35.363082,
+        149.166063,
+        30
+      ]
+    },
+    {
+      "c": 19,
+      "ft": 3,
+      "mv": [
+        300,
+        0,
+        0,
+        0,
+        -35.363082,
+        149.166063,
+        30
+      ]
+    },
+    {
+      "c": 20,
+      "ft": 2,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "c": 17,
+      "ft": 3,
+      "mv": [
+        0,
+        0,
+        0,
+        0,
+        -35.363082,
+        149.166063,
+        30
+      ]
+    }
+  ],
+  "missions": {
+    "main": {
+      "trigger": {
+        "type": "op.start"
+      },
+      "priority": 0,
+      "segment": {
+        "start": 1,
+        "end": 7
+      },
+      "end_state": "hold",
+      "end_backstop": {
+        "timeout": 300,
+        "then": "rtl"
+      }
+    }
+  },
+  "manifest": [
+    {
+      "seq": 1,
+      "mission": "main",
+      "step": "takeoff",
+      "kind": "nav.takeoff"
+    },
+    {
+      "seq": 2,
+      "mission": "main",
+      "step": "over",
+      "kind": "nav.wp"
+    },
+    {
+      "seq": 3,
+      "mission": "main",
+      "step": "drop",
+      "kind": "nav.loiter"
+    },
+    {
+      "at_seq": 3,
+      "on": "start",
+      "mission": "main",
+      "step": "drop",
+      "kind": "action",
+      "do": "payload.release"
+    },
+    {
+      "seq": 4,
+      "mission": "main",
+      "step": "hold",
+      "kind": "nav.loiter"
+    },
+    {
+      "seq": 5,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.hold"
+    },
+    {
+      "seq": 6,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.contingency"
+    },
+    {
+      "seq": 7,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.guard"
+    }
+  ],
+  "events": {},
+  "handlers": {},
+  "fleet": {
+    "roles": {
+      "dropper": {
+        "count": 1
+      }
+    },
+    "phases": [],
+    "event_ttl": {
+      "payload.released": 300
+    }
+  },
+  "hash": "sha256:70a7458d300ecbdbcbccf2b977efa4669f01b7738b992a14578a14d5d767e075"
+}

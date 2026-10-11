@@ -323,6 +323,9 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `operator_log_count` | `re`, bounds | the bot's decisions |
 | `clock_spread` | `unit`, `max_ms` (100) or `min_ms` | spread of the units' latest CLOCK `fleet_minus_unix_ms`; `min_ms` proves a `clock_step` landed |
 | `distance_to` | `unit`, `re`, `truth`, `min_m`/`max_m` | world truth geometry |
+| `payload_landed` | `truth`\|`pos`, `max_m`, `max_impact_mps`, `hit`, `unit` | landing point (src: physics event) vs truth / a fixed point; a `hit` mismatch fails with the reason |
+| `drop_drift` | `unit`, `max_m` | release -> landing distance |
+| `no_collision` | `unit` (all), `expect_collision` | zero `collision` events (building prism / canopy band); `expect_collision: true` inverts it for a negative control |
 | `coverage_complete` / `pod_mean` / `pod_at` | `area`, `cell_m`, `min` | coverage grading |
 | `detection_recall` / `detection_precision` | `src`, `match_m`, bounds | who was found |
 | `time_to_detect` | `max_s` | first find latency |

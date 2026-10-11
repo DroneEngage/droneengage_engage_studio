@@ -1,0 +1,16 @@
+# physics_roof - the P5-16 negative-control world (de.world/1).
+#
+# hut_1 (building, 0-4 m) is a 12 x 12 m footprint centred N 20, E 20 of
+# the SITL home (-35.363262, 149.165237), clear of the takeoff point: a
+# copter flown at 3 m AGL over its centre is inside the roof volume -
+# the `collision` event the assertion must see.
+version: 1
+origin: [-35.363262, 149.165237]
+entities: []
+obstacles:
+  - {id: hut_1, kind: building,
+     poly: [[-35.363136, 149.165391], [-35.363028, 149.165391],
+            [-35.363028, 149.165523], [-35.363136, 149.165523]],
+     height_m: 4, rf_loss_db: 12}
+sensors:
+  payload: {collision_radius_m: 0.5}

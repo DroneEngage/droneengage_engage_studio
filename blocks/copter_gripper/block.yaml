@@ -1,0 +1,8 @@
+description: |
+  Copter with the FC gripper as its payload provider (P5-16): de_mavlink
+  advertises "payload" through MAV_CMD_DO_GRIPPER, SITL drives the
+  gripper on servo 9 (SERVO9_FUNCTION 28, GRIP_ENABLE 1). With a render
+  mode that runs the world page (render.mode physics|full) the viewer's
+  physics rig watches that servo (world sensors.payload.servo /
+  release_pwm) and spawns the physical payload on the PWM transition.
+extends: copter

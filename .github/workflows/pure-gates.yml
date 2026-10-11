@@ -71,6 +71,11 @@ jobs:
           python3 engine/test_render.py
           python3 stubs/test_golden.py
 
+      # P5-16: Mavlink3DMap's physics core selftest in plain Node; skips
+      # itself here (no Mavlink3DMap checkout) and runs locally / nightly
+      - name: physics selftest
+        run: python3 engine/test_physics_selftest.py
+
       - name: library folders non-empty
         run: |
           for d in p0 p2 su p4a faults closed_env verify precland; do

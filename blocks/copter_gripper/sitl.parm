@@ -1,0 +1,7 @@
+# P5-16: the gripper the physics rig watches. GRIP_ENABLE only takes
+# effect at boot - it must ride the --defaults overlay.
+GRIP_ENABLE      1
+GRIP_TYPE        1     # servo gripper
+SERVO9_FUNCTION  28    # gripper
+GRIP_GRAB        1900  # servo PWMs pinned: the physics rig fires on
+GRIP_RELEASE     1100  # arrival at world sensors.payload.release_pwm
