@@ -1,0 +1,33 @@
+# stub_sdr's sensor contract (SL-0030, docs/SENSORS.md). The stub reads
+# it from <stub_dir>/<stem>.sensor.yaml; world.sensors.sdr keys override
+# the model defaults at run time.
+sensor:
+  key: sdr                       # world.sensors.<key> overrides model:
+  truth:
+    pose: true                   # needs the unit pose feed (SITL serial5
+                                 # on FC units, 9102 on statics)
+    field: tx_dbm                # world entities with a tx_dbm emit
+  model:
+    ref_power_dbm: -30.0         # radius calibration (the world loader
+                                 # re-bases it onto the strongest tx_dbm)
+    path_loss_n: 2.7             # log-distance exponent
+    debounce_sweeps: 3           # consecutive same-bin hits to fire
+    throttle_s: 3.0              # min seconds between fires on one bin
+    rise_db: 6.0                 # rssi rise that beats the throttle
+    dwell_ms: 500                # default scan dwell per band
+    noise_db: 3.0                # gaussian noise floor sigma
+    bin_hz: 25000                # spectrum bin width
+    sweep_s: 2.0                 # seconds per full sweep
+    rf_precip_db_per_km: 0.0     # extra loss while the world precip is on
+    radius_min_m: 50.0           # estimate_radius_m clamps
+    radius_max_m: 2000.0
+    freq_hz: 869000000.0         # emitter freq when the entity omits one
+    threshold_dbm: -95.0         # world-side default scan floor
+  output:
+    kind: events                 # de.cap/1 capability events
+    ns: sdr
+    emits: [sdr.signal]          # {freq, rssi_dbm, pos, radius_m, snr_db}
+    state: [scanning, f_start, f_end, peak_dbm, peak_freq]
+    actions: [scan, stop]
+    truth_rows: signal           # truth.jsonl rows: {type: detection,
+                                 #  src: sdr, tid, rssi_dbm, loss_db}

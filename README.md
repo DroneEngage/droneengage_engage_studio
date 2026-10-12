@@ -19,7 +19,9 @@ packages/   operations   - hand-written ops the tests deploy
                          (a .deop source compiles on demand into
                          var/build/packages/<key>/)
 templates/  scaffold     - the file ./sim new copies
-docs/       authoring    - SCENARIOS.md: the de.scenario/1 reference
+docs/       authoring    - SCENARIOS.md: the de.scenario/1 reference;
+                         SENSORS.md: the world-driven sensor contract
+                         (./sim new --sensor <name>)
 wiki/       user docs    - USER_GUIDE.md: the plain-English guide
 ```
 

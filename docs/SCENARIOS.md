@@ -356,6 +356,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `no_collision` | `unit` (all), `expect_collision` | zero `collision` events (building prism / canopy band); `expect_collision: true` inverts it for a negative control |
 | `coverage_complete` / `pod_mean` / `pod_at` | `area`, `cell_m`, `min` | coverage grading |
 | `detection_recall` / `detection_precision` | `src`, `match_m`, bounds | who was found |
+| `sensor_error` | `src`, `unit`, `truth_file`, `truth_tol_ms`, `mean_le`, `p95_le`, `max_le`, `min_count` | sensor-vs-truth position error over the stub's detection rows (SL-0030): for every `{type:"detection", src}` row, the distance to the truth entity's position at that time; bounds `mean_le`/`p95_le`/`max_le` metres (each optional), `min_count` rows required |
 | `time_to_detect` | `max_s` | first find latency |
 | `clock_spread` / `mission_current` / `journal_consistent` / `final_state` / `fc_items_unchanged_without_cause` / `no_fc_command_to_static` / `max_latency` / `stub_deterministic` / `signals_in_range` / `visible_px` / `render_latency` / `no_sep_violation` / `detection_precision_render` | see `engine/checks.py` `DISPATCH` |
 

@@ -1,0 +1,20 @@
+# @NAME@ - brings the @NAME@ sensor block up on a static probe unit
+# over the forest_a world and asserts the sensor's reports track the
+# truth (sensor_error reads the stub's truth.jsonl rows back against
+# the entity positions). A PASS means the sensor model, its catalog
+# registration and the world wiring are all live.
+version: 1
+name: @NAME@
+transport: fake
+world: @REL@worlds/forest_a.yaml
+settle_s: 20
+teardown: none
+fleet:
+  - {id: probe, cls: @NAME@, at: {north_m: 0, east_m: 0}}
+timeline:
+  - {t: 0, do: wait_online, unit: probe, timeout: 90}
+  - {t: 90, do: wait, seconds: 30}
+assert:
+  - sensor_error: {src: @NAME@, unit: probe, mean_le: 5,
+                   p95_le: 10, min_count: 5}
+  - proc_alive: {unit: probe, proc: stub_@NAME@}

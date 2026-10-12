@@ -52,6 +52,10 @@ is now the only simulation/testing location.
     docs/SCENARIOS.md         the de.scenario/1 authoring reference (LLM-friendly)
     docs/MACHINE_API.md       --json output shapes + the run's RESULT/summary.json
                               contract (agents: read this before scraping text)
+    docs/SENSORS.md           the SL-0030 sensor contract: a world-driven
+                              sensor is one blocks/<name>/ folder (block +
+                              catalog fragment + <stub>.sensor.yaml +
+                              stub_<name>.py); ./sim new --sensor scaffolds
     templates/scenario.yaml   what ./sim new scaffolds
     worlds/*.yaml             seeded ground-truth worlds for scenario world:
     packages/*.json           hand-written DE packages (compiled

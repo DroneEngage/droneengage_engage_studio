@@ -1,0 +1,15 @@
+# The block's own catalog fragment (SL-0030): simlib.load_catalog()
+# merges blocks/<name>/catalog.yaml, so a new sensor module registers
+# here - one folder, no modules/catalog.yaml edit. Bare relative
+# bin/template paths resolve inside this directory; `stub: true` gets
+# the world `stub:` config injected on world: scenarios.
+stub_@NAME@:
+  repo: droneengage_simulation_land
+  bin: stub_@NAME@.py
+  template: stub.json
+  port_base: 53000          # pick a base clear of modules/catalog.yaml
+                            # (62000 + 10k is de_comm itself)
+  start_delay: 3
+  stub: true
+  # pose: true              # uncomment if this sensor rides an FC unit
+  local: {file: stub_@NAME@.local}

@@ -174,13 +174,10 @@ class T(unittest.TestCase):
                     self.assertFalse(k.startswith("SR4_"), k)
                     self.assertFalse(k.startswith("MAV4_"), k)
                     self.assertFalse(k.startswith("SERIAL4_"), k)
-        # the sim hash is generated from the unit specs only, so a
-        # headless sim hashes exactly like a pre-P5-13 one
-        import hashlib
-        want = hashlib.sha256(json.dumps(
-            [off["server"], off["home"], off["units"]],
-            sort_keys=True).encode()).hexdigest()[:16]
-        self.assertEqual(off["hash"], want)
+        # the sim hash is generated from the unit specs (+ the --module
+        # overrides in force - none here), so a headless sim hashes
+        # exactly like a pre-P5-13 one
+        self.assertEqual(off["hash"], simlib.sim_hash(off, {}))
 
     def test_slot_blocks_do_not_collide(self):
         a = _sim(render={"mode": "viewer"}, slot_base=10)

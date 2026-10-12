@@ -42,8 +42,11 @@
                                    render: {mode: viewer})
   ./sim list [scenarios|tests|sims]        catalog: files + one-line
                                    descriptions (default: scenarios+tests)
-  ./sim new <name>                 scaffold scenarios/<name>.yaml from
-                                   templates/scenario.yaml
+  ./sim new <name> [--sensor]     scaffold scenarios/<name>.yaml from
+                                   templates/scenario.yaml; --sensor
+                                   also writes blocks/<name>/ a
+                                   world-driven sensor stub + contract
+                                   (docs/SENSORS.md)
   ./sim validate <file.yaml>       schema + referenced-file check, starts
                                    nothing
   ./sim verbs [--json]            the de.scenario/1 verb registry: every
@@ -105,6 +108,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -220,6 +224,29 @@ def _module_overrides(a):
             rest.append(a[i])
             i += 1
     return rest, mods
+
+
+def _scaffold_sensor(name):
+    """./sim new --sensor: blocks/<name>/ from _template_sensor - the
+    block, its catalog fragment (which load_catalog merges - no
+    modules/catalog.yaml edit), the sensor.yaml contract and the
+    world-driven stub itself. @NAME@ is substituted in file contents
+    and names."""
+    src = os.path.join(simlib.SIM_ROOT, "blocks", "_template_sensor")
+    dst = os.path.join(simlib.SIM_ROOT, "blocks", name)
+    if os.path.exists(dst):
+        sys.exit(f"{dst} already exists")
+    shutil.copytree(src, dst)
+    for f in os.listdir(dst):
+        fpath = os.path.join(dst, f)
+        txt = open(fpath).read().replace("@NAME@", name)
+        os.remove(fpath)
+        nf = os.path.join(dst, f.replace("@NAME@", name))
+        open(nf, "w").write(txt)
+        os.chmod(nf, 0o755 if nf.endswith(".py") else 0o644)
+    print(f"wrote {os.path.relpath(dst, simlib.SIM_ROOT)}/ - a"
+          " world-driven sensor block; the model lives in"
+          f" stub_{name}.py, the contract in sensor.yaml")
 
 
 def _cli_flags(argv):
@@ -484,20 +511,28 @@ def main(argv):
                         one = _one_liner(f)
                         print(f"  {rel:52s} {one[:80]}")
         elif c == "new":
+            sensor = "--sensor" in a
             names = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ())
+            bad = _bad_flags(a, ("--sensor",))
             ok_name = len(names) == 1 and \
                 re.fullmatch(r"[\w-]+(/[\w-]+)*", names[0])
             if bad or not ok_name:
-                sys.exit("usage: ./sim new <name> - word chars"
-                         " (a/b nests under scenarios/)"
+                sys.exit("usage: ./sim new <name> [--sensor] - word chars"
+                         " (a/b nests under scenarios/; --sensor also"
+                         " scaffolds blocks/<name>/ a world-driven"
+                         " sensor stub)"
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
+            if sensor and "/" in names[0]:
+                sys.exit("--sensor names a new block dir - no '/'")
             dst = os.path.join(simlib.SIM_ROOT, "scenarios",
                                names[0] + ".yaml")
             if os.path.exists(dst):
                 sys.exit(f"{dst} already exists")
+            if sensor:
+                _scaffold_sensor(names[0])
             tpl = open(os.path.join(simlib.SIM_ROOT, "templates",
-                                    "scenario.yaml")).read()
+                                    "scenario_sensor.yaml" if sensor
+                                    else "scenario.yaml")).read()
             # @REL@ = repo-root prefix for the file's depth under
             # scenarios/ (scenarios/x.yaml -> ../, scenarios/a/b.yaml
             # -> ../../)

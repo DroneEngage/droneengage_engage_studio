@@ -675,6 +675,12 @@ class World:
         # drop model - the engine itself does not read it yet)
         self.sensors = {"camera": cam, "sdr": sdr, "precland": precland,
                         "payload": dict(sensors.get("payload") or {})}
+        # SL-0030: any other sensors.<name> block passes through as the
+        # sensor's model params - a contract-declared sensor reads
+        # world.sensors[its key] with no engine edit
+        for k, v in sensors.items():
+            if k not in self.sensors:
+                self.sensors[k] = dict(v) if isinstance(v, dict) else v
         for e in self.entities:
             if e.cls != "pad":
                 continue
@@ -1673,8 +1679,9 @@ def rng(seed, *parts):
 
 # --------------------------------------------------------- sim wiring
 
-STUB_MODULES = ("stub_ai_box", "stub_sdr", "stub_payload",
-                "stub_precland")
+# a catalog module is a world-driven stub when its spec carries
+# `stub: true` (SL-0030 - a block's catalog.yaml registers its sensor
+# module the same way, no engine edit)
 
 
 def unit_modules(entry):
@@ -1725,8 +1732,8 @@ def prepare_sim(scn, world):
                              if (has_fc and any(
                                  catalog.get(m, {}).get("pose")
                                  for m in mods)) else 0}
-        for m in STUB_MODULES:
-            if m in mods:
+        for m in mods:
+            if catalog.get(m, {}).get("stub"):
                 cfg[m] = simlib.deep_merge(cfg.get(m) or {}, {"stub": stub})
         if "stub_ai_box" in mods or "de_yolo_ai" in mods:
             # P5-15: de_yolo_ai emits real 1078 boxes through the same

@@ -1,0 +1,22 @@
+# The @NAME@ sensor contract (SL-0030, docs/SENSORS.md). The stub loads
+# the file named after itself - <stem>.sensor.yaml in the same dir.
+# world.sensors.@NAME@ in the scenario's world file overrides every
+# model: default below.
+sensor:
+  key: @NAME@                    # world.sensors.<key>
+  truth:
+    pose: true                   # read the unit pose feed
+    # cls: person                # watch only entities of these classes
+    # field: tx_dbm              # ...or entities that carry a field
+  model:
+    rate_hz: 2.0                 # reports per second
+    range_m: 150.0               # entities further than this are unseen
+    noise_m: 1.5                 # gaussian position error sigma (m)
+    p_drop: 0.0                  # per-report drop probability (seeded)
+  output:
+    kind: events                 # de.cap/1 events on ns @NAME@
+    ns: @NAME@
+    emits: [@NAME@.range]        # {tid, range_m, pos}
+    truth_rows: range            # truth.jsonl {type: detection, src:
+                                 #  @NAME@, tid, cls, lat, lng} - what
+                                 #  the sensor_error check reads

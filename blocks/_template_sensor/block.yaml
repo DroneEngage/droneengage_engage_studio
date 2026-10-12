@@ -1,0 +1,7 @@
+description: |
+  Static unit (no FC) running the world-driven @NAME@ sensor stub -
+  de.cap events on the @NAME@ namespace plus truth.jsonl detection
+  rows. Swap `extends: comm_only` for `copter` (and add `pose: true`
+  to the catalog fragment) when the sensor rides a vehicle.
+extends: comm_only
+add_modules: [stub_@NAME@]

@@ -293,10 +293,33 @@ def write_text(path, text, mode=None):
 # ---------------------------------------------------------------- catalog
 
 def load_catalog():
+    """modules/catalog.yaml plus every blocks/<name>/catalog.yaml (SL-0030:
+    a sensor block carries its own module definition, so a new sensor is
+    one folder - no global catalog edit). Bare relative bin/template
+    paths in a block fragment resolve inside the block dir; a block
+    module name colliding with a global one is an error."""
     cat = load_yaml(os.path.join(MODULES_DIR, "catalog.yaml"))
     for name in ("de_comm", "sitl"):
         if name in cat:
             raise SimError(f"catalog.yaml: '{name}' is built in, remove it")
+    for d in list_blocks():
+        frag_path = os.path.join(BLOCKS_DIR, d, "catalog.yaml")
+        if not os.path.isfile(frag_path):
+            continue
+        frag = load_yaml(frag_path) or {}
+        for name, spec in frag.items():
+            if name in cat:
+                raise SimError(
+                    f"blocks/{d}/catalog.yaml: module {name!r} already "
+                    "defined in modules/catalog.yaml")
+            spec = dict(spec)
+            for k in ("bin", "template"):
+                v = spec.get(k)
+                if v and not os.path.isabs(v):
+                    cand = os.path.join("blocks", d, v)
+                    if os.path.isfile(os.path.join(SIM_ROOT, cand)):
+                        spec[k] = cand
+            cat[name] = spec
     return cat
 
 
@@ -384,8 +407,11 @@ def module_template(spec):
 def list_blocks():
     if not os.path.isdir(BLOCKS_DIR):
         return []
+    # a "_" dir is a scaffold template (blocks/_template_sensor/), not a
+    # usable block - ./sim new --sensor copies it
     return sorted(d for d in os.listdir(BLOCKS_DIR)
-                  if os.path.isfile(os.path.join(BLOCKS_DIR, d, "block.yaml")))
+                  if not d.startswith("_") and
+                  os.path.isfile(os.path.join(BLOCKS_DIR, d, "block.yaml")))
 
 
 def load_block(name, _chain=()):
@@ -1554,6 +1580,10 @@ def gen_unit(u, sim, catalog):
             "lat": int(round(p["lat"] * 1e7)), "lng": int(round(p["lng"] * 1e7)),
             "alt_abs": int(p["alt"] * 1000), "alt_rel": 0,
             "heading": p["yaw"], "acc_mm": 1000,
+            # TASK-SU-06: de_comm only projects the configured location
+            # into the 1 Hz static 9102 when the object declares itself
+            # fixed - every no-FC sim unit is one (mast/relay/GCS node)
+            "static": True,
         }
     cdir = os.path.join(udir, "de_comm")
     comm_cfg = os.path.join(cdir, "de_comm.config.json")

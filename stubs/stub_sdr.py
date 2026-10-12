@@ -97,12 +97,14 @@ ADVERT = {
 }
 
 
-def estimate_radius_m(rssi_dbm, ref_power_dbm, path_loss_n):
+def estimate_radius_m(rssi_dbm, ref_power_dbm, path_loss_n,
+                      radius_min_m=RADIUS_MIN_M,
+                      radius_max_m=RADIUS_MAX_M):
     """sdrEstimateRadiusM - free-space path-loss inversion, clamped."""
     if path_loss_n <= 0.0:
-        return RADIUS_MAX_M
+        return radius_max_m
     d = 10.0 ** ((ref_power_dbm - rssi_dbm) / (10.0 * path_loss_n))
-    return min(RADIUS_MAX_M, max(RADIUS_MIN_M, d))
+    return min(radius_max_m, max(radius_min_m, d))
 
 
 class Detector:
@@ -164,19 +166,28 @@ class StubSDR(StubBase):
 
     def __init__(self, argv):
         super().__init__(argv, "stub_sdr")
+        # SL-0030: the model params come from the contract beside this
+        # file (stub_sdr.sensor.yaml), world.sensors.sdr overrides them;
+        # signal_detect config (injected by the world loader) stays
+        # authoritative where it exists - unchanged precedence
+        m = self.sensor_params()
         sd = self.cfg.get("signal_detect") or {}
-        self.ref_power_dbm = float(sd.get("ref_power_dbm", REF_POWER_DBM))
-        self.path_loss_n = float(sd.get("path_loss_n", PATH_LOSS_N))
-        self.debounce_sweeps = int(sd.get("debounce_sweeps",
-                                          DEBOUNCE_SWEEPS))
+        self.ref_power_dbm = float(sd.get(
+            "ref_power_dbm", m.get("ref_power_dbm", REF_POWER_DBM)))
+        self.path_loss_n = float(sd.get(
+            "path_loss_n", m.get("path_loss_n", PATH_LOSS_N)))
+        self.debounce_sweeps = int(sd.get(
+            "debounce_sweeps", m.get("debounce_sweeps", DEBOUNCE_SWEEPS)))
         self.dwell_ms = int((self.cfg.get("sdr_scan") or {})
-                            .get("dwell_ms", DWELL_MS))
-        sdr = (self.world.sensors["sdr"] if self.world
-               else dict(world_mod.SDR_DEFAULTS))
-        self.noise_db = float(sdr.get("noise_db", 3.0))
-        self.bin_hz = float(sdr.get("bin_hz", 25000.0))
-        self.sweep_s = float(sdr.get("sweep_s", 2.0))
+                            .get("dwell_ms", m.get("dwell_ms", DWELL_MS)))
+        self._radius_min_m = float(m.get("radius_min_m", RADIUS_MIN_M))
+        self._radius_max_m = float(m.get("radius_max_m", RADIUS_MAX_M))
+        self.noise_db = float(m.get("noise_db", 3.0))
+        self.bin_hz = float(m.get("bin_hz", 25000.0))
+        self.sweep_s = float(m.get("sweep_s", 2.0))
         self.detector = Detector()
+        self.detector.throttle_s = float(m.get("throttle_s", THROTTLE_S))
+        self.detector.rise_db = float(m.get("rise_db", RISE_DB))
         self.scan = None               # {f_start, f_end, threshold_dbm}
         self.peak_dbm = 0.0
         self.peak_freq = 0.0
@@ -271,7 +282,7 @@ class StubSDR(StubBase):
         # rf_db_per_m per metre inside the band + rf_loss_db per
         # building crossed)
         owner = {}                       # bin -> (rssi, tid, loss_db)
-        for e in self.world.rf_entities():
+        for e in self.truth_entities():  # contract: field tx_dbm
             f = e.freq_hz if e.freq_hz is not None else \
                 float(self.world.sensors["sdr"]["freq_hz"])
             if not (f_start <= f <= f_end):
@@ -304,7 +315,8 @@ class StubSDR(StubBase):
                     "pos": [pose["lat"], pose["lng"],
                             round(pose["alt_m"], 1)],
                     "radius_m": round(estimate_radius_m(
-                        rssi, self.ref_power_dbm, self.path_loss_n), 0),
+                        rssi, self.ref_power_dbm, self.path_loss_n,
+                        self._radius_min_m, self._radius_max_m), 0),
                     "snr_db": round(snr, 1)})
         self.state({"peak_dbm": self.peak_dbm,
                     "peak_freq": self.peak_freq})

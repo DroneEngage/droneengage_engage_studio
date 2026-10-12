@@ -149,9 +149,11 @@ de_gpio:
 # ---------------------------------------------------------------- P5-08
 # World-driven stub sensor modules (stubs/*.py in this repo). A scenario
 # with `world:` injects the world path + seed as config "stub" per unit
-# (engine/world.py). `pose` marks modules that read the vehicle pose on a
-# dedicated SITL serial5 (tcp:5 -> 5765+10k); on static units all stubs
-# fall back to the intermodule 9102 location feed.
+# (engine/world.py) for every module flagged `stub: true`. `pose` marks
+# modules that read the vehicle pose on a dedicated SITL serial5 (tcp:5
+# -> 5765+10k); on static units all stubs fall back to the intermodule
+# 9102 location feed. SL-0030: a block may register its own sensor the
+# same way via blocks/<name>/catalog.yaml.
 
 stub_ai_box:
   repo: droneengage_simulation_land
@@ -159,6 +161,7 @@ stub_ai_box:
   template: stub.json
   port_base: 58000
   start_delay: 5
+  stub: true
   pose: true
   local: {file: stub_ai_box.local}
 
@@ -168,6 +171,7 @@ stub_sdr:
   template: stub.json
   port_base: 59000
   start_delay: 3
+  stub: true
   local: {file: stub_sdr.local}
 
 stub_payload:
@@ -176,6 +180,7 @@ stub_payload:
   template: stub.json
   port_base: 60000
   start_delay: 3
+  stub: true
   local: {file: stub_payload.local}
 
 # PL-08: the world-driven precision-landing stub. Same wire surface and
@@ -188,6 +193,7 @@ stub_precland:
   template: stub.json
   port_base: 55000
   start_delay: 3
+  stub: true
   pose: true
   local: {file: stub_precland.local}
 

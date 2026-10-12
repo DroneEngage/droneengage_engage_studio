@@ -459,6 +459,12 @@ VERBS = [
     V("signals_in_range", "check", opt=["unit", "truth", "re", "max_m", "min_count"],
       doc="SDR signals the stub reported in range",
       eg="{signals_in_range: {min: 1}}"),
+    V("sensor_error", "check",
+      opt=["src", "unit", "truth_file", "truth_tol_ms", "mean_le",
+           "p95_le", "max_le", "min_count"],
+      doc="sensor-vs-truth position error stats (mean/p95/max m) into "
+          "summary.json",
+      eg="{sensor_error: {src: demo_range, mean_le: 5, p95_le: 10}}"),
     V("journal_consistent", "check", opt=["unit", "re", "min_count"],
       doc="journal invariants hold across the run",
       eg="{journal_consistent: {unit: all}}"),

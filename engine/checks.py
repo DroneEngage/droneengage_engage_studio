@@ -740,6 +740,65 @@ def _signals_in_range(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", total, "; ".join(bits))
 
 
+def _pctl(xs, q):
+    if not xs:
+        return None
+    xs = sorted(xs)
+    return xs[min(len(xs) - 1, max(0, int(math.ceil(q * len(xs))) - 1))]
+
+
+def _sensor_error(name, a, ctx):
+    """SL-0030 sensor-vs-truth gate: for every detection row of `src`
+    (optionally `unit`) that reports a position, the distance to the
+    truth entity's position at that time. Bounds: mean_le / p95_le /
+    max_le (metres, each optional - a missing bound is unchecked),
+    min_count detections required so silence can't pass. The stat block
+    lands in summary.json either way."""
+    rows, src = _truth_rows(ctx, a.get("truth_file"))
+    if rows is None:
+        return _r(name, "SKIP", None, "no truth source (run truth.jsonl)")
+    tol = a.get("truth_tol_ms", DEFAULT_TRUTH_TOL_MS)
+    want_src = a.get("src")
+    units = {u["name"] for u in _units(a, ctx)} if a.get("unit") else None
+    errs, skipped = [], 0
+    for r in rows:
+        if r.get("type") != "detection":
+            continue
+        if want_src and r.get("src") != want_src:
+            continue
+        if units is not None and r.get("unit") not in units:
+            continue
+        tid = _row_tid(r)
+        if not tid or tid == "clutter" or r.get("lat") is None:
+            skipped += 1
+            continue
+        tr = _truth_at(rows, tid, _row_t(r), tol)
+        if tr is None:
+            skipped += 1
+            continue
+        errs.append(_haversine(r["lat"], _lng(r), tr["lat"], _lng(tr)))
+    n = len(errs)
+    if n == 0:
+        return _r(name, "SKIP", 0,
+                  f"no {want_src or 'detection'} rows with a matched "
+                  f"truth position ({skipped} unusable)")
+    stats = {"n": n, "mean_m": round(sum(errs) / n, 2),
+             "p95_m": round(_pctl(errs, 0.95), 2),
+             "max_m": round(max(errs), 2)}
+    ok = True
+    for key, stat in (("mean_le", "mean_m"), ("p95_le", "p95_m"),
+                      ("max_le", "max_m")):
+        if a.get(key) is not None and stats[stat] > float(a[key]):
+            ok = False
+    need = int(a.get("min_count", 1))
+    if n < need:
+        ok = False
+    bits = (f"src={want_src or '*'}: " +
+            " ".join(f"{k}={v}" for k, v in stats.items()) +
+            (f" (min_count {need})" if n < need else ""))
+    return _r(name, "PASS" if ok else "FAIL", stats["mean_m"], bits)
+
+
 # no_sep_violation: the planner layers units exactly min_vsep_m apart, and
 # AMSL readings of units on different home spots differ by a cm or so
 # (82 m over one home vs 76 m over another read 5.99 m) - still the layer
@@ -2132,6 +2191,7 @@ DISPATCH = {
     "time_to_detect": _time_to_detect,
     "stub_deterministic": _stub_deterministic,
     "signals_in_range": _signals_in_range,
+    "sensor_error": _sensor_error,
     "journal_consistent": _journal_consistent,
     "final_state": _final_state,
     "fc_items_unchanged_without_cause": _fc_items_unchanged,

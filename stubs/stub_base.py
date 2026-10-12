@@ -297,6 +297,11 @@ class StubBase:
                 self.run_dir, "world_overrides.jsonl"))
         self.pose_feed = PoseFeed(self.pose_port,
                                   sysid=int(spec.get("sysid", 1)))
+        # SL-0030 sensor contract: <stub_dir>/<stem>.sensor.yaml (or the
+        # injected stub.contract path) declares the truth inputs, the
+        # model defaults (world.sensors.<key> overrides them) and the
+        # output seam - see docs/SENSORS.md
+        self.contract = self._load_contract(spec)
         self.module = None
         self.facade = None
         self._vt_ms = None          # virtual clock under --selftest
@@ -306,6 +311,56 @@ class StubBase:
 
     def _quit(self, *_a):
         self.exit_me = True
+
+    # ---------------------------------------------------- sensor contract
+
+    def _load_contract(self, spec):
+        """{} or the contract dict from <stub>.sensor.yaml beside the
+        stub file (spec["contract"] overrides the path - the world
+        injector does not set it; a non-stub launch can)."""
+        path = spec.get("contract")
+        if not path:
+            stub_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            stem = os.path.splitext(os.path.basename(sys.argv[0]))[0]
+            for cand in (os.path.join(stub_dir, stem + ".sensor.yaml"),
+                         os.path.join(stub_dir, "sensor.yaml")):
+                if os.path.isfile(cand):
+                    path = cand
+                    break
+        if not path or not os.path.isfile(path):
+            return {}
+        return simlib.load_yaml(path) or {}
+
+    def sensor_key(self):
+        """The world.sensors key this contract reads."""
+        return (self.contract.get("sensor") or {}).get("key")
+
+    def sensor_params(self):
+        """contract.model merged under world.sensors[<key>] - the world
+        file always wins over the shipped defaults."""
+        s = self.contract.get("sensor") or {}
+        model = dict(s.get("model") or {})
+        key = s.get("key")
+        if key and self.world is not None:
+            model.update(self.world.sensors.get(key) or {})
+        return model
+
+    def truth_entities(self):
+        """The world entities this sensor reads, per contract.truth:
+        `cls` (one name or a list) and/or `field` (an entity attribute
+        that must be set - e.g. tx_dbm). No contract = every entity."""
+        if self.world is None:
+            return []
+        t = (self.contract.get("sensor") or {}).get("truth") or {}
+        ents = list(self.world.entities)
+        cls = t.get("cls")
+        if cls:
+            want = {cls} if isinstance(cls, str) else set(cls)
+            ents = [e for e in ents if e.cls in want]
+        field = t.get("field")
+        if field:
+            ents = [e for e in ents if getattr(e, field, None) is not None]
+        return ents
 
     # ----------------------------------------------------------- databus
 
