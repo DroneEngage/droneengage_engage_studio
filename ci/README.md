@@ -4,7 +4,7 @@ Two layers, split by what the machine can do:
 
 | layer | file | runner | what it needs |
 |---|---|---|---|
-| pure gates | `check_library.py`, `check_verify_ops.py` + `.github/workflows/pure-gates.yml` | GitHub-hosted | python3 + pip, node + webclient repo (verify ops) |
+| pure gates | `check_library.py`, `check_verify_ops.py`, `check_verbs.py` + `.github/workflows/pure-gates.yml` | GitHub-hosted | python3 + pip, node + webclient repo (verify ops) |
 | scenario suite | `run_suite.py` + `.github/workflows/nightly-sitl.yml` | self-hosted `linux sitl` | the full workspace + SITL |
 
 Nothing in the pure layer starts a sim, a server, or SITL. Anything
@@ -20,6 +20,15 @@ Runs `tools/verify_wrap.js` on every `*.op.json` /
 else must verify clean. This is the push-time form of the deploy gate -
 the same scenarios prove the full runner path nightly (GATE-PASS
 verdicts).
+
+## check_verbs.py
+
+    python3 ci/check_verbs.py
+
+The verb-registry gate (SL-0024): every `do:` step, `fault:` kind and
+`assert:` name used under `tests/`/`scenarios/` must exist in
+`engine/registry.py`, and every registry verb must appear in
+`docs/SCENARIOS.md`. Exit 1 on any gap.
 
 ## run_suite.py
 

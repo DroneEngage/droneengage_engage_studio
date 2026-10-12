@@ -129,6 +129,25 @@ Exits non-zero with text when the file has no `chaos:` block.
 `status` is `ok` | `missing` | `optional`. Exit `1` when any required
 item is missing.
 
+## `./sim verbs --json`
+
+The de.scenario/1 verb registry (engine/registry.py) — every `do:`
+step, `do:` probe, `fault:` kind and `assert:` check:
+
+```json
+{"verbs": [{"name": "wait_journal", "kind": "probe",
+            "args": {"required": ["unit", "re"],
+                     "optional": ["timeout", "any"]},
+            "doc": "block until the unit's journal matches re ...",
+            "example": "{t: 15, do: wait_journal, unit: c1, re: '...'}"}]}
+```
+
+`kind` is `step` | `probe` | `fault` | `check`. `./sim validate`
+rejects a `do:`/`fault:`/`assert:` name missing from this list, and a
+known verb's missing-required or unknown args (the error names the
+verb and its expected args). `ci/check_verbs.py` asserts every verb
+used under `tests/`+`scenarios/` is registered and documented.
+
 ## `./sim run <file.yaml>` — the `RESULT` line + summary.json
 
 A run's **last stdout line** is always:

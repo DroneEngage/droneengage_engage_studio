@@ -6,6 +6,9 @@
 #                     every packages/*.json parses
 #   library counts    fails loudly if a library folder is empty so a
 #                     bad checkout can never look green
+#   verb registry     check_verbs.py: every do:/fault:/assert: name
+#                     used under tests//scenarios is registered +
+#                     documented (SL-0024)
 #   verify ops        check_verify_ops.py: tests/verify ops must be
 #                     blocked by the webclient verifier with exactly the
 #                     declared expect_rules; every other op under
@@ -48,6 +51,12 @@ jobs:
 
       - name: library check
         run: python3 ci/check_library.py
+
+      # SL-0024 verb registry: every do:/fault:/assert: name used under
+      # tests//scenarios is registered, and every registry verb is in
+      # docs/SCENARIOS.md
+      - name: verb registry check
+        run: python3 ci/check_verbs.py
 
       # the assertion engine, journal reader, operator-bot reply ring and
       # port allocation; stubs/test_stubs.py skips itself without the

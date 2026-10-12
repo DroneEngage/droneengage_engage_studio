@@ -46,6 +46,10 @@
                                    templates/scenario.yaml
   ./sim validate <file.yaml>       schema + referenced-file check, starts
                                    nothing
+  ./sim verbs [--json]            the de.scenario/1 verb registry: every
+                                   do: step, do: probe, fault: kind and
+                                   assert: check with its args, a
+                                   one-line doc and an example
   ./sim doctor [sim.yaml] [--json]  machine-readiness check: one
                                    OK/MISSING/OPTIONAL line per item with a
                                    fix line; a sim file scopes what is
@@ -92,8 +96,9 @@ Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 docs/SCENARIOS.md is the authoring reference. See README.md.
 
 Machine output: show, sims, status (and ./sim ctl status), list,
-validate, expand and doctor take --json (docs/MACHINE_API.md). A run's
-last line is `RESULT <dir>/summary.json` - the run's full report.
+validate, expand, doctor and verbs take --json (docs/MACHINE_API.md).
+A run's last line is `RESULT <dir>/summary.json` - the run's full
+report.
 """
 
 import glob
@@ -580,6 +585,37 @@ def main(argv):
         elif c == "doctor":
             import doctor
             return doctor.main(a)
+        elif c == "verbs":
+            import registry
+            bad = _bad_flags(a, ("--json",))
+            if bad:
+                sys.exit("usage: ./sim verbs [--json]"
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+            if "--json" in a:
+                print(json.dumps({"verbs": [
+                    {"name": v["name"], "kind": v["kind"],
+                     "args": {"required": v["req"],
+                              "optional": v["opt"]},
+                     "doc": v["doc"], "example": v["eg"]}
+                    for v in registry.VERBS]}, indent=1))
+            else:
+                w = max(len(v["name"]) for v in registry.VERBS)
+                groups = (("step", "do: steps (act on the fleet)"),
+                          ("probe", "do: probes (observe only)"),
+                          ("fault", "fault: kinds"),
+                          ("check", "assert: checks"))
+                for kind, title in groups:
+                    print(title)
+                    for v in registry.by_kind(kind):
+                        args = ", ".join(
+                            [f"<{a}>" for a in v["req"]] +
+                            [f"[{a}]" for a in v["opt"]])
+                        print(f"  {v['name']:{w}}  {v['doc']}")
+                        if args:
+                            print(f"  {'':{w}}  args: {args}")
+                        if v["eg"]:
+                            print(f"  {'':{w}}  eg:   {v['eg']}")
+                    print()
         elif c == "clean":
             import clean
             return clean.main(a)

@@ -191,6 +191,13 @@ def _do(step, scn, ctx):
     # (a world-entity trigger has none - the step must name its own)
     if "on" in step and "unit" not in a and step["on"].get("unit"):
         a["unit"] = step["on"]["unit"]
+    import registry
+    if registry.lookup(name, "do") is None:
+        # _validate already gates this; belt-and-braces for steps a
+        # caller builds without loading through scenario.py
+        print(f"  unknown step {name!r} (catalog: ./sim verbs)",
+              flush=True)
+        return False
     bot = ctx["bot"]
     if name in ("deploy", "prepare"):
         op = a.get("operation") or a.get("package") or scn.get("operation")
@@ -421,6 +428,11 @@ def _rc_pump(ctx, u, chans, dur_s):
 
 def _fault(step, scn, ctx):
     kind = step["fault"]
+    import registry
+    if registry.lookup(kind, "fault") is None:
+        print(f"  unknown fault {kind!r} (catalog: ./sim verbs)",
+              flush=True)
+        return False
     a = _step_args(step)
     if "on" in step and "unit" not in a and step["on"].get("unit"):
         a["unit"] = step["on"]["unit"]

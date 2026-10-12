@@ -420,5 +420,13 @@ def run_step(step, t, marks):
         # under `min`.
         return run_ctl("beacon", unit, arg.get("seconds", 5),
                        arg.get("min", 1))
-    print(f"unknown step {name!r}", flush=True)
+    import registry
+    v = registry.lookup(name, "do")
+    if v is not None:
+        # registered but not (yet) dispatchable here - say what it wants
+        print(f"unknown step {name!r} (registry args: "
+              f"{', '.join(v['req'] + v['opt'])})", flush=True)
+    else:
+        print(f"unknown step {name!r} (catalog: ./sim verbs)",
+              flush=True)
     return False

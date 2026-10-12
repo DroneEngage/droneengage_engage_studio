@@ -110,14 +110,15 @@ FC_PRESETS = {
 }
 
 # every kind scenario_runner._fault implements
-FAULT_KINDS = ("link_cut", "loss", "delay", "gcs_disconnect", "server_down",
-               "kill", "restart", "module_kill", "freeze",
-               "server_clock", "no_time_sync", "rc_override",
-               "mode", "fcb_cut", "fcb_stall", "fcb_corrupt",
-               "link_stall", "link_profile",
-               # SL-0014 OS faults
-               "cpu_starve", "journal_unwritable", "clock_step",
-               "param", "udp_chunks") + tuple(FC_PRESETS)
+def _fault_kinds():
+    """Every `fault:` kind = the registry's fault entries (TASK-21:
+    registry.py is the single list; FC_PRESETS and the link/OS faults
+    are all declared there)."""
+    import registry
+    return tuple(v["name"] for v in registry.by_kind("fault"))
+
+
+FAULT_KINDS = _fault_kinds()
 
 # ------------------------------------------------------- chaos: (TASK-10)
 #
@@ -427,27 +428,59 @@ def _validate(raw, path, sim_spec=None):
             if bad:
                 raise simlib.SimError(
                     f"{path}: fleet {ent.get('id')}: unknown keys {sorted(bad)}")
-    # a typo in an assertion name or fault kind must fail HERE, not after
-    # a ten-minute fleet run ("unknown assertion" is only seen at the end)
+    # a typo in a verb name or arg must fail HERE, not after a
+    # ten-minute fleet run ("unknown assertion" is only seen at the end).
+    # Every name/arg set goes through the registry (TASK-21 / SL-0024).
     import checks
+    import registry
     for i, asr in enumerate(raw.get("assert", [])):
         if not isinstance(asr, dict) or len(asr) != 1:
             raise simlib.SimError(
                 f"{path}: assert[{i}] must be a single {{name: args}} mapping")
         nm = next(iter(asr))
-        if nm not in checks.DISPATCH:
+        v = registry.lookup(nm, "check")
+        if v is None:
             raise simlib.SimError(
-                f"{path}: assert[{i}] unknown assertion {nm!r} "
-                f"(known: {', '.join(sorted(checks.DISPATCH))})")
+                f"{path}: assert[{i}] unknown assertion {nm!r} (known: "
+                f"{', '.join(a['name'] for a in registry.by_kind('check'))})")
+        err = registry.check_args(
+            v, asr[nm] if isinstance(asr[nm], dict) else {})
+        if err:
+            raise simlib.SimError(f"{path}: assert[{i}] {err}")
     for i, step in enumerate(raw.get("timeline", [])):
-        if "fault" in step and step["fault"] not in FAULT_KINDS:
+        if not isinstance(step, dict):
             raise simlib.SimError(
-                f"{path}: timeline[{i}] unknown fault {step['fault']!r} "
-                f"(known: {', '.join(FAULT_KINDS)})")
-        if step.get("fault") == "param" and not step.get("set"):
-            raise simlib.SimError(
-                f"{path}: timeline[{i}] fault param needs a non-empty "
-                "set: {NAME: value, ...}")
+                f"{path}: timeline[{i}] must be a mapping")
+        if "fault" in step:
+            v = registry.lookup(step["fault"], "fault")
+            if v is None:
+                raise simlib.SimError(
+                    f"{path}: timeline[{i}] unknown fault "
+                    f"{step['fault']!r} (known: "
+                    f"{', '.join(FAULT_KINDS)})")
+            args = {k: x for k, x in step.items()
+                    if k not in ("t", "on", "fault", "once",
+                                 "dur_s", "seconds")}
+            err = registry.check_args(v, args)
+            if err:
+                raise simlib.SimError(f"{path}: timeline[{i}] {err}")
+            if step["fault"] == "param" and not step.get("set"):
+                raise simlib.SimError(
+                    f"{path}: timeline[{i}] fault param needs a non-empty "
+                    "set: {NAME: value, ...}")
+        if "do" in step:
+            v = registry.lookup(step["do"], "do")
+            if v is None:
+                raise simlib.SimError(
+                    f"{path}: timeline[{i}] unknown step "
+                    f"{step['do']!r} (known: " +
+                    ", ".join(a["name"] for a in registry.VERBS
+                              if a["kind"] in ("step", "probe")) + ")")
+            args = {k: x for k, x in step.items()
+                    if k not in ("t", "on", "do", "fault", "once")}
+            err = registry.check_args(v, args)
+            if err:
+                raise simlib.SimError(f"{path}: timeline[{i}] {err}")
     for i, step in enumerate(raw.get("timeline", [])):
         if ("t" in step) == ("on" in step):
             raise simlib.SimError(

@@ -104,6 +104,12 @@ name. `static`/`comm_only` run no SITL. Unit `id` is the name used by
 
 ## `timeline:` — what happens when
 
+Every `do:` step, `fault:` kind and `assert:` check is declared once in
+`engine/registry.py` (name, args, doc, example) — `./sim verbs` prints
+the catalog, `./sim verbs --json` the machine form, and `./sim
+validate` refuses an unknown verb or a wrong arg naming the expected
+list. The tables below are the same verbs grouped for reading.
+
 Each step is exactly one of:
 
 ```yaml
@@ -171,6 +177,11 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `link` | `unit`, `set` — raw link-model sub-line(s), e.g. `set: "ge 0.05 0.2 0 90 stall"` or `set: ["loss_tx 0", "loss_rx 100"]`; fake transport, or real+`link_proxy` (loss* subs stay fake-only) |
 | `write_file` | `unit`, `module`, `path`, `json`, `also: []` (`delay_ms`) |
 | `udp_chunks` | `unit`, `module`, `drop_pct`, `reorder`, `dup_pct`, `seed` — knobs on the unit's chunk proxy (needs `udp_proxy:` on the unit) |
+| `beacon` | `unit`, `seconds` (5), `min` (1) — count the unit's mt=1004 presence beacons on a fresh GCS listen; bounded comms evidence inside a fault window |
+| `cpu_starve` / `cpu_unstarve` | `unit`, `proc`\|`module`, `duty_pct`, `cycle_ms`, `dur_s` — SIGSTOP/SIGCONT duty cycle (SL-0014) |
+| `journal_unwritable` / `journal_writable` | `unit` — the journal dir goes read-only / is restored (SL-0014) |
+| `clock_step` | `unit`, `offset_s` — step a `faketime: true` unit's de_comm clock (SL-0014) |
+| `fcb_cut` / `fcb_stall` / `fcb_corrupt` / `fcb_drop` / `fcb_inject` / `fcb_clear` / `fcb_stats` | `unit`, `seconds`/`ms`/`drop_pct`/`flip_pct`/`msgid`/`hex` — one-shot fcb-proxy faults + rule/counter probes (need `fcb_proxy: true`) |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
 ### `fault:` kinds
