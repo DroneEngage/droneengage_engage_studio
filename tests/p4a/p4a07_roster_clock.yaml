@@ -20,7 +20,7 @@
 version: 1
 name: p4a07_roster_clock
 transport: {type: fake, seed: 1337}
-operation: ../../packages/fleet_scout.json
+operation: ../../packages/p4a05.deploy.json
 fleet:
   - {id: copter1, cls: copter}
   - {id: copter2, cls: copter}
@@ -29,11 +29,9 @@ timeline:
   - {t: 0, do: stop}
   - {t: 0, do: clear}
   - {t: 0, do: mode, unit: all, mode: GUIDED}
-  - {t: 0, do: deploy, package: "../../packages/fleet_scout.json", unit: 1}
-  - {t: 0, do: deploy, package: "../../packages/fleet_worker.json", unit: 2}
-  - {t: 0, do: deploy, package: "../../packages/fleet_worker.json", unit: 3}
+  - {t: 0, do: deploy}
   - {t: 0, do: arm, unit: all}
-  - {t: 0, do: start}
+  - {t: 0, do: opstart}
   # 1: every unit's roster reaches a GCS listener inside one period
   - {t: 0, do: roster_peers, seconds: 12, count: 3}
   - {t: 0, do: wait, seconds: 5}
