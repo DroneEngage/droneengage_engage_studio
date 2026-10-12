@@ -658,6 +658,7 @@ def _fault(step, scn, ctx):
         if ok and dur:
             _schedule(ctx, float(dur), runner.run_ctl, "fcb_clear", unit)
             _restore_at(float(dur))
+        return ok
     if kind == "cpu_starve":
         # SL-0014: SIGSTOP/SIGCONT duty cycle - the proc keeps its pid
         # and sockets but gets (100-duty_pct)% of each cycle_ms window.
