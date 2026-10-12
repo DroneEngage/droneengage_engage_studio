@@ -37,6 +37,10 @@
                                    templates/scenario.yaml
   ./sim validate <file.yaml>       schema + referenced-file check, starts
                                    nothing
+  ./sim doctor [sim.yaml] [--json]  machine-readiness check: one
+                                   OK/MISSING/OPTIONAL line per item with a
+                                   fix line; a sim file scopes what is
+                                   required to what that sim needs
   ./sim expand <file.yaml> [--seed N]
                                    print the chaos: schedule a run would
                                    execute (concrete fault steps inlined;
@@ -451,6 +455,9 @@ def main(argv):
             files = [os.path.join(d, f) for f in sorted(os.listdir(d))
                      if proc is None or f == proc + ".log"]
             subprocess.call(["tail", "-n", "40"] + files)
+        elif c == "doctor":
+            import doctor
+            return doctor.main(a)
         elif c == "clean":
             import clean
             return clean.main(a)

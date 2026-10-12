@@ -65,6 +65,13 @@ live somewhere unusual, extra binaries (camera, GPIO, precision
 landing), the 3D viewer path, and login accounts for your own servers.
 The file is git-ignored, so it stays yours.
 
+Now run `./sim doctor` once. It prints one OK / MISSING / OPTIONAL line
+per thing the sim needs — binaries, repos, Python packages, ports —
+and for every MISSING line it tells you the one command that fixes it.
+`./sim doctor sims/<name>.yaml` checks only what that sim actually
+needs (e.g. no camera checks for a copters-only sim). When every line
+is OK or OPTIONAL, you are ready.
+
 ---
 
 ## 4. Try it in 5 minutes

@@ -32,6 +32,15 @@ DroneEngage checkouts), `ARDUPILOT_DIR`, and per-repo or per-binary
 overrides (`DE_MAVLINK_DIR`, `DE_CAMERA_BIN`, `NODE`, ...). An environment
 variable with the same name wins over the file.
 
+Then check the machine:
+
+```bash
+./sim doctor                          # one OK/MISSING/OPTIONAL line per item,
+                                      # each MISS with a fix line; exit 1 on gaps
+./sim doctor sims/quadcopter.yaml     # same, scoped to what that sim needs
+./sim doctor --json                   # machine-readable [{item,status,detail,fix}]
+```
+
 The machine also needs:
 
 - ArduPilot SITL built (`./waf configure --board sitl && ./waf copter plane rover`).
