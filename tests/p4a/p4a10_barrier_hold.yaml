@@ -6,22 +6,28 @@
 # and every unit falls through to its gate contingency (RTL) - the
 # documented "hold until the FC backstop" path.
 version: 1
-sim: ../../sims/copters3_faults_fastroster.yaml
+name: p4a10_barrier_hold
+transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a10_searcher_hold.deploy.json
-steps:
-  - stop
-  - clear
-  - reset: all
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
-  - wait: 10
-  - link_cut: {unit: 1, seconds: 300}
+fleet:
+  - {id: copter1, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}
+  - {id: copter2, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}
+  - {id: copter3, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: reset, unit: all}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
+  - {t: 0, do: wait, seconds: 10}
+  - {t: 0, fault: link_cut, unit: 1, dur_s: 300}
   # gate entered ~35-50 s in; the 75 s loiter then ends -> contingency
-  - wait_journal: {unit: 2, re: "timed out -> rtl", timeout: 240}
-  - wait_journal: {unit: 3, re: "timed out -> rtl", timeout: 60}
-  - wait_journal: {unit: 1, re: "timed out -> rtl", timeout: 90}
+  - {t: 0, do: wait_journal, unit: 2, re: "timed out -> rtl", timeout: 240}
+  - {t: 0, do: wait_journal, unit: 3, re: "timed out -> rtl", timeout: 60}
+  - {t: 0, do: wait_journal, unit: 1, re: "timed out -> rtl", timeout: 90}
+settle_s: 0
 assert:
   - journal_count: {unit: all, re: "emit staging.ready", equals: 1}
   # no cond release anywhere - the lost party stayed required

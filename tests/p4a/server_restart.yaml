@@ -2,20 +2,26 @@
 # supervisor journals comm-line changes only then) every unit must journal
 # the line going offline and online again, and still take a new deploy.
 version: 1
-sim: ../../sims/copters3.yaml
+name: server_restart
+transport: real
 operation: ../../packages/copter_square.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - kill: {unit: server, proc: de_server}
-  - wait_journal: {unit: all, re: "comm line offline", timeout: 40}
-  - wait: 5
-  - server_up
-  - wait_journal: {unit: all, re: "comm line online", timeout: 60}
-  - clear
-  - deploy                 # the GCS bridge reconnected by itself
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, fault: kill, unit: server, proc: de_server}
+  - {t: 0, do: wait_journal, unit: all, re: "comm line offline", timeout: 40}
+  - {t: 0, do: wait, seconds: 5}
+  - {t: 0, do: server_up}
+  - {t: 0, do: wait_journal, unit: all, re: "comm line online", timeout: 60}
+  - {t: 0, do: clear}
+  - {t: 0, do: deploy}     # the GCS bridge reconnected by itself
+settle_s: 0
 assert:
   - journal_order: {unit: all, first: "comm line offline", then: "comm line online"}
   - journal_count: {unit: all, re: "package READY", equals: 2}

@@ -68,7 +68,9 @@ for f in yamls:
     if not head.lstrip().startswith("#"):
         fail("hdr", f, "missing header comment")
     if scenario.is_legacy_spec(raw):
-        continue                    # legacy tests validate via runner
+        fail("schema", f, "`sim:`+`steps:` is the removed legacy format "
+             "(SL-0020) - rewrite as de.scenario/1")
+        continue
     if f.startswith(os.path.join(ROOT, "sims") + os.sep):
         continue                    # sims/*.yaml are fleet specs, not
                                     # de.scenario/1 - resolved by ./sim show

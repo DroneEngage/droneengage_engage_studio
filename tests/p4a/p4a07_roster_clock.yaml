@@ -18,34 +18,40 @@
 # anchored on seq 5 start) so the scenario decides WHEN the emit lands -
 # it must fall inside copter3's stale window, not after lost.
 version: 1
-sim: ../../sims/copters3_faults.yaml
+name: p4a07_roster_clock
+transport: {type: fake, seed: 1337}
 operation: ../../packages/fleet_scout.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy: {package: "../../packages/fleet_scout.json", unit: 1}
-  - deploy: {package: "../../packages/fleet_worker.json", unit: 2}
-  - deploy: {package: "../../packages/fleet_worker.json", unit: 3}
-  - arm: all
-  - start
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy, package: "../../packages/fleet_scout.json", unit: 1}
+  - {t: 0, do: deploy, package: "../../packages/fleet_worker.json", unit: 2}
+  - {t: 0, do: deploy, package: "../../packages/fleet_worker.json", unit: 3}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: start}
   # 1: every unit's roster reaches a GCS listener inside one period
-  - roster_peers: {seconds: 12, count: 3}
-  - wait: 5
+  - {t: 0, do: roster_peers, seconds: 12, count: 3}
+  - {t: 0, do: wait, seconds: 5}
   # 2: cut copter3; wait for stale on copter1, then emit while stale
-  - link_cut: {unit: 3, seconds: 70}
-  - wait_journal: {unit: 1, re: "ROSTER copter3 stale", timeout: 30}
-  - fire: {event: go.now, unit: 1}
+  - {t: 0, fault: link_cut, unit: 3, dur_s: 70}
+  - {t: 0, do: wait_journal, unit: 1, re: "ROSTER copter3 stale", timeout: 30}
+  - {t: 0, do: fire, event: go.now, unit: 1}
   # copter2 (still linked) gets the emit live and activates "work"
-  - wait_journal: {unit: 2, re: "activating mission work", timeout: 60}
+  - {t: 0, do: wait_journal, unit: 2, re: "activating mission work", timeout: 60}
   # copter3's silence ages out: lost ~30 s after the last roster
-  - wait_journal: {unit: 1, re: "ROSTER copter3 lost", timeout: 40}
-  - wait_journal: {unit: 1, re: "ROSTER copter3 back", timeout: 70}
+  - {t: 0, do: wait_journal, unit: 1, re: "ROSTER copter3 lost", timeout: 40}
+  - {t: 0, do: wait_journal, unit: 1, re: "ROSTER copter3 back", timeout: 70}
   # catch-up delivers the pending copy; copter3 activates "work"
-  - wait_journal: {unit: 3, re: "activating mission work", timeout: 90}
-  - wait: 5
-  - links
+  - {t: 0, do: wait_journal, unit: 3, re: "activating mission work", timeout: 90}
+  - {t: 0, do: wait, seconds: 5}
+  - {t: 0, do: links}
 
+settle_s: 0
 assert:
   # 1: tq=2 on every unit
   - journal_count: {unit: all, re: "CLOCK.*tq=2", at_least: 1}
@@ -60,8 +66,7 @@ assert:
   - journal_count: {unit: 1, re: "event sys\\.peer_lost latched", at_least: 1}
   - journal_count: {unit: 1, re: "event sys\\.peer_back latched", at_least: 1}
   # stale -> lost: 30 s lost minus 15 s stale = ~15 s at 0.2 Hz
-  - journal_time_delta: {u1: 1, re1: "ROSTER copter3 stale", u2: 1,
-                         re2: "ROSTER copter3 lost", min_s: 10, max_s: 20}
+  - journal_time_delta: {u1: 1, re1: "ROSTER copter3 stale", u2: 1, re2: "ROSTER copter3 lost", min_s: 10, max_s: 20}
   # the emit happened exactly once; copter2 live, copter3 via catch-up
   - journal_count: {unit: 1, re: "BUS_OUT.*n=area\\.clear", equals: 1}
   - journal_count: {unit: 2, re: "BUS_IN.*n=area\\.clear", equals: 1}

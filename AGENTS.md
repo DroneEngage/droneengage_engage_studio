@@ -43,9 +43,9 @@ is now the only simulation/testing location.
     sims/*.yaml               fleets of blocks (+ server type); each has a
                               sims/<name>.md runbook (setup, run, teardown,
                               ports) - keep the pair when adding a sim
-    tests/**/*.yaml           AUTOMATED cases - what CI/nightly runs: legacy
-                              sim+steps+assert files plus the de.scenario/1
-                              library in area subdirs (p4a/, faults/, verify/ ...)
+    tests/**/*.yaml           AUTOMATED cases - what CI/nightly runs: the
+                              de.scenario/1 library in area subdirs
+                              (p4a/, faults/, verify/ ...)
     scenarios/**/*.yaml       HUMAN-run scenarios: demos/, examples/, user files
                               - each yaml pairs with a <name>.md runbook
                               (same convention as sims/)
@@ -59,7 +59,7 @@ is now the only simulation/testing location.
     engine/simlib.py          settings, block/sim resolution, ports, config gen, journals, pids
     engine/launcher.py        up / down / ensure (reuse-or-restart)
     engine/ctl.py             operator console (./sim ctl)
-    engine/runner.py          legacy test runner + the step set scenarios reuse
+    engine/runner.py          the `do:` step set + ctl plumbing scenarios reuse
     engine/scenario.py        de.scenario/1 loader (schema: de_scenario.schema.json)
     engine/scenario_runner.py de.scenario/1 runner (./sim run/view on timeline files)
     engine/gcs_bridge.py      persistent GCS session on the real server, control-port protocol
@@ -167,11 +167,12 @@ accepts it, otherwise `file:` in the cwd), `set`, `wire` (placeholders
 to reuse a fleet with a different `server:`.
 
 **New test/scenario → a file (no code)** when existing steps, faults and
-assertions suffice. Prefer the de.scenario/1 form (`fleet:` + `timeline:`,
+assertions suffice. Tests are de.scenario/1 (`fleet:` + `timeline:`,
 docs/SCENARIOS.md) — `./sim new <name>` scaffolds one, `./sim validate`
-checks it. Automated cases go under `tests/<area>/`, human ones under
+checks it; the legacy `sim:`+`steps:` form was removed (SL-0020).
+Automated cases go under `tests/<area>/`, human ones under
 `scenarios/`; every file opens with a `#`-comment "what it proves"
-paragraph (CI enforces it). The legacy `sim:`+`steps:` form still works.
+paragraph (CI enforces it).
 Start mission cases with `stop`, `clear`, `mode: {unit: all, mode: GUIDED}`.
 
 **New step / assertion / ctl command (code):**

@@ -3,15 +3,14 @@
 Everything here is run by CI (`ci/run_suite.py`, `./sim suite`). Files
 for people to run, watch or copy live in `../scenarios/` instead.
 
-## Two file formats
+## File format
 
 | Format | Where | Shape |
 |---|---|---|
-| legacy test | top-level `smoke_copters*.yaml`, `fault_link_loss.yaml`, `mixed_bringup.yaml` | `sim:` + `steps:` (engine/runner.py) |
-| de.scenario/1 | every area folder, plus top-level `distance_to.yaml`, `verify_gate.yaml` | `fleet:` + `timeline:` + `assert:` (engine/scenario_runner.py) |
+| de.scenario/1 | everything in this tree | `fleet:` + `timeline:` + `assert:` (engine/scenario_runner.py) |
 
-`./sim run` dispatches on the shape, so both run the same way. New tests
-should use de.scenario/1 (see `../docs/SCENARIOS.md`).
+All tests are de.scenario/1 (see `../docs/SCENARIOS.md`); the old
+`sim:` + `steps:` format has been removed.
 
 ## Area folders
 

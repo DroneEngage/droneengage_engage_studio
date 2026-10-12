@@ -6,30 +6,34 @@
 # Both should land ARRIVE_ERR within a few seconds of T. The "no nav
 # speed" fallback journal must NOT appear (spd was delivered by 6541).
 version: 1
-sim: ../../sims/copters2_slot30.yaml
+name: p4a10_arrive
+transport: real
+slot_base: 30
 operation: ../../packages/p4a10_arrive.deploy.json
-steps:
-  - stop
-  - clear
-  - reset: all
-  - wait: 30
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
-  - wait_journal: {unit: 2, re: "gate g released by arrive_at", timeout: 180}
-  - wait_journal: {unit: 1, re: "gate g released by arrive_at", timeout: 120}
-  - wait_journal: {unit: 1, re: "ARRIVE_ERR", timeout: 120}
-  - wait_journal: {unit: 2, re: "ARRIVE_ERR", timeout: 90}
+fleet:
+  - {id: copter1, cls: copter, config: {de_comm: {sv_accel_s: 8}}}
+  - {id: copter2, cls: copter, config: {de_comm: {sv_accel_s: 8}}}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: reset, unit: all}
+  - {t: 0, do: wait, seconds: 30}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
+  - {t: 0, do: wait_journal, unit: 2, re: "gate g released by arrive_at", timeout: 180}
+  - {t: 0, do: wait_journal, unit: 1, re: "gate g released by arrive_at", timeout: 120}
+  - {t: 0, do: wait_journal, unit: 1, re: "ARRIVE_ERR", timeout: 120}
+  - {t: 0, do: wait_journal, unit: 2, re: "ARRIVE_ERR", timeout: 90}
+settle_s: 0
 assert:
   - journal_count: {unit: all, re: "gate g released by arrive_at", equals: 1}
   - journal_count: {unit: all, re: "ARRIVE_ERR g [+-][0-9]+\\.[0-9] s", equals: 1}
   # the default-speed path was used (de_mavlink spd), not the fallback
   - journal_count: {unit: all, re: "no nav speed", equals: 0}
   # arrival ~= run start + 240 s (+-4 s band over SITL speed scatter)
-  - journal_time_delta: {u1: 1, re1: "run .* started", u2: 1,
-                         re2: "ARRIVE_ERR", min_s: 235, max_s: 245}
-  - journal_time_delta: {u1: 2, re1: "run .* started", u2: 2,
-                         re2: "ARRIVE_ERR", min_s: 235, max_s: 245}
+  - journal_time_delta: {u1: 1, re1: "run .* started", u2: 1, re2: "ARRIVE_ERR", min_s: 235, max_s: 245}
+  - journal_time_delta: {u1: 2, re1: "run .* started", u2: 2, re2: "ARRIVE_ERR", min_s: 235, max_s: 245}
   - journal_count: {unit: all, re: "timed out", equals: 0}
 teardown: reset

@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """scenario_runner.py - run a de.scenario/1 rehearsal (TASK-P5-07).
 
-`./sim run <file>` dispatches here: a legacy tests/*.yaml (version 1,
-`sim:` + `steps:`) still goes through runner.py unchanged; a scenario
-(`version: 1` + `name:` + `fleet:` + `timeline:`) runs the new path:
+`./sim run <file>` dispatches here: a scenario
+(`version: 1` + `name:` + `fleet:` + `timeline:`) runs:
 
   verify -> fleet up -> operator bot + telemetry on -> timeline
   (t: scheduled + on: journal-triggered steps, faults included) ->
@@ -194,7 +193,7 @@ def _do(step, scn, ctx):
         a["unit"] = step["on"]["unit"]
     bot = ctx["bot"]
     if name in ("deploy", "prepare"):
-        op = a.get("operation") or scn.get("operation")
+        op = a.get("operation") or a.get("package") or scn.get("operation")
         if not op:
             print("  deploy: no operation:", flush=True)
             return False
@@ -212,6 +211,15 @@ def _do(step, scn, ctx):
                     for n, v in a["authorize"].items()}
             return bot.op_deploy(op, float(a.get("timeout", 60)),
                                  authorize=authorize)
+        # `unit:`/`package:` (one compiled package to one unit, e.g.
+        # P4A-07's scout + workers) is the runner step's own per-unit
+        # binding path; the plain form stays a fleet-wide ctl deploy
+        if a.get("unit") not in (None, "all") or a.get("package"):
+            return runner.run_step(
+                {"deploy": {k: v for k, v in a.items()
+                            if k in ("package", "unit", "vehicle")}},
+                {"__file": scn["file"],
+                 "operation": scn.get("operation")}, ctx["marks"])
         return runner.run_ctl("deploy", op)
     if name == "start":
         # the scenario's own t0: time_to_detect measures from the first
@@ -1139,8 +1147,6 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     (the world stream and the render procs stay live) until Ctrl-C."""
     t_file = os.path.abspath(t_file)
     scn = scenario.load_scenario(t_file, seed=seed)
-    if scn["legacy"]:
-        return runner.run(t_file, keep=keep)
     t0_wall = time.time()
     out = _results_dir(scn)
     os.makedirs(out, exist_ok=True)
@@ -1400,11 +1406,10 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
 
 
 def run(t_file, keep=False, hold=False, seed=1):
-    """`./sim run` dispatcher: legacy tests -> runner.py, scenarios ->
-    the de.scenario/1 engine. hold is scenario-only (a legacy test has
-    no world stream to keep alive). A bare sims/*.yaml file has no
-    steps - it is just ensured up (additive: like ./sim up but
-    hash-reused, it leaves the other live sims alone)."""
+    """`./sim run` dispatcher: scenarios -> the de.scenario/1 engine (a
+    bare sims/*.yaml file has no steps - it is just ensured up, additive
+    like ./sim up but hash-reused, it leaves the other live sims
+    alone)."""
     raw = simlib.load_yaml(os.path.abspath(t_file))
     if scenario.is_sim_spec(raw):
         print(simlib.col_yellow(
@@ -1418,8 +1423,6 @@ def run(t_file, keep=False, hold=False, seed=1):
             print(simlib.col_green("sim is still up")
                   + " - ./sim down to stop it", flush=True)
         return 0
-    if scenario.is_legacy_spec(raw):
-        return runner.run(t_file, keep=keep)
     return run_scenario(t_file, seed=seed, keep=keep, hold=hold)
 
 

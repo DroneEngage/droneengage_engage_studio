@@ -8,41 +8,47 @@
 #  * copter3: after_start_s releases on the mono clock, at_ms stays
 #    unarmed (TIME_GATE_UNARMED) and the FC loiter backstop fires
 version: 1
-sim: ../../sims/copters3_closed.yaml
+name: p4a10_closed
+transport: {type: fake, clock_offset_ms: 10800000, noclock: [copter3], seed: 1337}
+slot_base: 30
 operation: ../../packages/p4a10_closed.deploy.json
-steps:
-  - stop
-  - clear
-  - reset: all
-  - wait: 30
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
-  - wait_journal: {unit: 3, re: "gate g1 released by time_at", timeout: 150}
-  - wait_journal: {unit: 1, re: "gate g released", timeout: 120}
-  - wait_journal: {unit: 3, re: "gate g2 timed out", timeout: 120}
+fleet:
+  - {id: copter1, cls: copter, params: {SIM_GPS1_ENABLE: 0, SIM_GPS2_ENABLE: 0, GPS1_TYPE: 0, GPS2_TYPE: 0, AHRS_EKF_TYPE: 10}}
+  - {id: copter2, cls: copter, params: {SIM_GPS1_ENABLE: 0, SIM_GPS2_ENABLE: 0, GPS1_TYPE: 0, GPS2_TYPE: 0, AHRS_EKF_TYPE: 10}}
+  - {id: copter3, cls: copter, params: {SIM_GPS1_ENABLE: 0, SIM_GPS2_ENABLE: 0, GPS1_TYPE: 0, GPS2_TYPE: 0, AHRS_EKF_TYPE: 10}}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: reset, unit: all}
+  - {t: 0, do: wait, seconds: 30}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
+  - {t: 0, do: wait_journal, unit: 3, re: "gate g1 released by time_at", timeout: 150}
+  - {t: 0, do: wait_journal, unit: 1, re: "gate g released", timeout: 120}
+  - {t: 0, do: wait_journal, unit: 3, re: "gate g2 timed out", timeout: 120}
+settle_s: 0
 assert:
   # closed environment: GPS time never arrived on any unit
   - journal_count: {unit: all, re: "gps_ms=", equals: 0}
   # the 3 h server skew is absorbed into the fleet clock on synced units
-  - journal_count: {unit: 1, re: "fleet_minus_unix_ms=10[78][0-9]{5}", min: 1}
-  - journal_count: {unit: 2, re: "fleet_minus_unix_ms=10[78][0-9]{5}", min: 1}
+  - journal_count: {unit: 1, re: "fleet_minus_unix_ms=10[78][0-9]{5}", at_least: 1}
+  - journal_count: {unit: 2, re: "fleet_minus_unix_ms=10[78][0-9]{5}", at_least: 1}
   # copter3 never synced; copter1/2 did
   - journal_count: {unit: 3, re: "CLOCK tq=2", equals: 0}
-  - journal_count: {unit: 1, re: "CLOCK tq=2", min: 1}
-  - journal_count: {unit: 2, re: "CLOCK tq=2", min: 1}
+  - journal_count: {unit: 1, re: "CLOCK tq=2", at_least: 1}
+  - journal_count: {unit: 2, re: "CLOCK tq=2", at_least: 1}
   # barrier released on both synced units within 1 s of each other
   - journal_count: {unit: 1, re: "gate g released", equals: 1}
   - journal_count: {unit: 2, re: "gate g released", equals: 1}
-  - journal_time_delta: {u1: 1, re1: "gate g released",
-                         u2: 2, re2: "gate g released", min_s: 0, max_s: 1}
+  - journal_time_delta: {u1: 1, re1: "gate g released", u2: 2, re2: "gate g released", min_s: 0, max_s: 1}
   - journal_count: {unit: 1, re: "timed out", equals: 0}
   - journal_count: {unit: 2, re: "timed out", equals: 0}
   # copter3: mono time gate works; the absolute fleet gate cannot arm and
   # the FC backstop (loiter expiry) takes over
   - journal_count: {unit: 3, re: "gate g1 released by time_at", equals: 1}
-  - journal_count: {unit: 3, re: "TIME_GATE_UNARMED", min: 1}
+  - journal_count: {unit: 3, re: "TIME_GATE_UNARMED", at_least: 1}
   - journal_count: {unit: 3, re: "gate g2 released", equals: 0}
   - journal_count: {unit: 3, re: "gate g2 timed out", equals: 1}
 teardown: reset

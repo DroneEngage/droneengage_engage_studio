@@ -7,32 +7,38 @@
 # the server is back a TTL-valid event still delivers exactly once and a
 # peer that finished stays finished.
 version: 1
-sim: ../../sims/copters3_faults.yaml
+name: p4a11_comm_lost
+transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a05.deploy.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
   # rosters (sv_roster_hz 0.2 -> one per 5 s) teach the scout its
   # recipients before the outage
-  - wait: 15
+  - {t: 0, do: wait, seconds: 15}
   # the server dies mid-run: no roster, no events, no op control for 60 s
-  - kill: {unit: server, proc: fake_server}
-  - wait_journal: {unit: all, re: "comm line offline", timeout: 40}
-  - wait_journal: {unit: all, re: "handler comm_lost fired", timeout: 60}
-  - wait: 50                      # ~65 s total outage
-  - server_up
-  - wait_journal: {unit: all, re: "comm line online", timeout: 120}
-  - wait: 15                      # rosters + the bus settle again
+  - {t: 0, fault: kill, unit: server, proc: fake_server}
+  - {t: 0, do: wait_journal, unit: all, re: "comm line offline", timeout: 40}
+  - {t: 0, do: wait_journal, unit: all, re: "handler comm_lost fired", timeout: 60}
+  - {t: 0, do: wait, seconds: 50} # ~65 s total outage
+  - {t: 0, do: server_up}
+  - {t: 0, do: wait_journal, unit: all, re: "comm line online", timeout: 120}
+  - {t: 0, do: wait, seconds: 15} # rosters + the bus settle again
   # recovery: a fresh emit must still arrive once per worker
-  - fire: {event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
-  - wait_journal: {unit: 2, re: "activating mission work", timeout: 90}
-  - wait_journal: {unit: 3, re: "activating mission work", timeout: 60}
-  - wait: 5
-  - opabort
+  - {t: 0, do: fire, event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
+  - {t: 0, do: wait_journal, unit: 2, re: "activating mission work", timeout: 90}
+  - {t: 0, do: wait_journal, unit: 3, re: "activating mission work", timeout: 60}
+  - {t: 0, do: wait, seconds: 5}
+  - {t: 0, do: opabort}
+settle_s: 0
 assert:
   # comm line fell and came back on every unit
   - journal_order: {unit: all, first: "comm line offline", then: "comm line online"}

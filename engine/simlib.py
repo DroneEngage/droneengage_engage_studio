@@ -8,8 +8,7 @@ Three layers, all data:
                        module. Blocks can `extends:` another block.
   sims/<name>.yaml     a simulation: blocks composed into a fleet
                        (count, names, placement, per-unit overrides).
-  tests/**/*.yaml      automated test cases: legacy sim+steps+assertions
-                       (runner.py) and the de.scenario/1 library
+  tests/**/*.yaml      automated test cases: the de.scenario/1 library
                        (engine/scenario_runner.py) - what CI runs.
   scenarios/**/*.yaml  human-run scenarios: demos, examples, anything a
                        user kicks off by hand (same engines).

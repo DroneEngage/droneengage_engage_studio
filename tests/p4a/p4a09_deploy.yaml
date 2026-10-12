@@ -8,75 +8,63 @@
 # under a 3h-skewed server clock with a synchronized fleet START (all
 # "run started" lines within 0.2 s) and the scout->worker event chain.
 version: 1
-sim: ../../sims/copters3_static_faults.yaml
+name: p4a09_deploy
+transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a09.deploy.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+  - {id: static1, cls: comm_only, at: {north_m: -30}}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
 
   # ---- phase 1: bind + PREPARE; every bound unit answers ready
-  - deploy
-  - opstatus: {seconds: 8}
+  - {t: 0, do: deploy}
+  - {t: 0, do: opstatus, seconds: 8}
 
   # ---- negative probes (no side effects on the bound state)
   # a START for a run nobody prepared -> fail "wrong run"
-  - opmsg: {tg: copter2, seconds: 5,
-            ms: {a: start, run: stale-run-1},
-            expect: 'fail.*wrong run'}
+  - {t: 0, do: opmsg, tg: copter2, seconds: 5, ms: {a: start, run: stale-run-1}, expect: 'fail.*wrong run'}
   # a PREPARE whose bind role disagrees with the package role -> "wrong role"
-  - opmsg: {tg: copter1, seconds: 5,
-            ms: {a: prepare, op: p4a09_two_phase,
-                 oh: "sha256:2d2fc4c5cf2e7e65e50bc71a2da6f9c50257102cd59144a3e145fe5dda6e5225",
-                 run: probe-wrong-role, bind: {copter1: scout},
-                 pkg: "{PKG:p4a09_worker.json}",
-                 hash: "{HASH:p4a09_worker.json}"},
-            expect: 'fail.*wrong role'}
+  - {t: 0, do: opmsg, tg: copter1, seconds: 5, ms: {a: prepare, op: p4a09_two_phase, oh: "sha256:2d2fc4c5cf2e7e65e50bc71a2da6f9c50257102cd59144a3e145fe5dda6e5225",
+      run: probe-wrong-role, bind: {copter1: scout}, pkg: "{PKG:p4a09_worker.json}", hash: "{HASH:p4a09_worker.json}"}, expect: 'fail.*wrong role'}
   # a static-role package on a copter -> "package is for static"
-  - opmsg: {tg: copter1, seconds: 5,
-            ms: {a: prepare, op: p4a09_two_phase,
-                 oh: "sha256:2d2fc4c5cf2e7e65e50bc71a2da6f9c50257102cd59144a3e145fe5dda6e5225",
-                 run: probe-wrong-vehicle, bind: {copter1: watcher},
-                 pkg: "{PKG:p4a09_watcher.json}",
-                 hash: "{HASH:p4a09_watcher.json}"},
-            expect: 'fail.*package is for static'}
+  - {t: 0, do: opmsg, tg: copter1, seconds: 5, ms: {a: prepare, op: p4a09_two_phase, oh: "sha256:2d2fc4c5cf2e7e65e50bc71a2da6f9c50257102cd59144a3e145fe5dda6e5225",
+      run: probe-wrong-vehicle, bind: {copter1: watcher}, pkg: "{PKG:p4a09_watcher.json}", hash: "{HASH:p4a09_watcher.json}"}, expect: 'fail.*package
+      is for static'}
   # the Phase-2 1086 start is refused on a fleet package
-  - opmsg: {tg: copter1, mt: 1086, seconds: 5,
-            ms: {a: start},
-            expect: 'fleet package: start via DE_OP_CONTROL'}
+  - {t: 0, do: opmsg, tg: copter1, mt: 1086, seconds: 5, ms: {a: start}, expect: 'fleet package: start via DE_OP_CONTROL'}
   # START while the copters are disarmed -> "not armed" ...
-  - opmsg: {tg: copter2, seconds: 5,
-            ms: {a: start, run: "{OP_RUN}", start_in_ms: 0},
-            expect: 'fail.*not armed'}
+  - {t: 0, do: opmsg, tg: copter2, seconds: 5, ms: {a: start, run: "{OP_RUN}", start_in_ms: 0}, expect: 'fail.*not armed'}
   # ... but the sensor watcher needs no FC/arm: it starts at once
-  - opmsg: {tg: static1, seconds: 5,
-            ms: {a: start, run: "{OP_RUN}", start_in_ms: 0},
-            expect: '"a": "started"'}
+  - {t: 0, do: opmsg, tg: static1, seconds: 5, ms: {a: start, run: "{OP_RUN}", start_in_ms: 0}, expect: '"a": "started"'}
 
   # ---- ABORT clears prepared/scheduled/running state everywhere
-  - opabort
+  - {t: 0, do: opabort}
 
   # ---- phase 2: same exercise on a server clock 3 h wrong - the fleet
   # clock absorbs the skew, so the coordinated start is unaffected
-  - clock_offset: {ms: 10800000}
-  - wait: 15                       # let the skewed clock sync to all units
-  - deploy
-  - arm: all
-  - opstart                        # t_start = fleet now + 5 s
-  - wait_journal: {unit: 2, re: "activating mission work", timeout: 300}
-  - wait_journal: {unit: 3, re: "activating mission work", timeout: 120}
-  - opstatus: {seconds: 8}
-  - opabort
+  - {t: 0, do: clock_offset, ms: 10800000}
+  - {t: 0, do: wait, seconds: 15}  # let the skewed clock sync to all units
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}            # t_start = fleet now + 5 s
+  - {t: 0, do: wait_journal, unit: 2, re: "activating mission work", timeout: 300}
+  - {t: 0, do: wait_journal, unit: 3, re: "activating mission work", timeout: 120}
+  - {t: 0, do: opstatus, seconds: 8}
+  - {t: 0, do: opabort}
 
+settle_s: 0
 assert:
   # both deploys bound all four units (probe PREPAREs journal nothing)
   - journal_count: {unit: all, re: "PREPARE .* READY", equals: 2}
   # the synchronized fleet START: the three copters' run-start lines are
   # within 0.2 s of each other even with the server clock 3 h off
-  - journal_time_delta: {u1: 1, re1: "run .* started", u2: 2,
-                         re2: "run .* started", max_s: 0.2}
-  - journal_time_delta: {u1: 1, re1: "run .* started", u2: 3,
-                         re2: "run .* started", max_s: 0.2}
+  - journal_time_delta: {u1: 1, re1: "run .* started", u2: 2, re2: "run .* started", max_s: 0.2}
+  - journal_time_delta: {u1: 1, re1: "run .* started", u2: 3, re2: "run .* started", max_s: 0.2}
   # the watcher started twice: once unarmed in the probe, once on fleet t_start
   - journal_count: {unit: static1, re: "RUN run .* started", equals: 2}
   # the chain still works under the bound roster: the workers' event

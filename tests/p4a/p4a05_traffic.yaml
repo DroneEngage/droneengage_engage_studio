@@ -1,24 +1,30 @@
 # TASK-P4A-05 scenario 4: no loss. One event costs ~1 + N messages: the
 # broadcast plus one ack per worker - no retransmit, no catch-up copy.
 version: 1
-sim: ../../sims/copters3.yaml
+name: p4a05_traffic
+transport: real
 operation: ../../packages/p4a05.deploy.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
   # rosters (sv_roster_hz 0.2 -> one per 5 s) teach the scout its
   # recipients before the emit
-  - wait: 15
-  - fire: {event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
-  - wait_journal: {unit: 1, re: "DELIVERED.*n=area\\.clear", timeout: 30}
-  - wait: 15
+  - {t: 0, do: wait, seconds: 15}
+  - {t: 0, do: fire, event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
+  - {t: 0, do: wait_journal, unit: 1, re: "DELIVERED.*n=area\\.clear", timeout: 30}
+  - {t: 0, do: wait, seconds: 15}
 
-  - opabort
+  - {t: 0, do: opabort}
 
+settle_s: 0
 assert:
   - journal_count: {unit: 1, re: "BUS_RETRY", equals: 0}
   - journal_count: {unit: 1, re: "^DELIVERED.*n=area\\.clear", equals: 1}

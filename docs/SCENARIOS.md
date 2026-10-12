@@ -12,7 +12,7 @@ Where files live:
 |---|---|
 | `scenarios/` | human-run scenarios — demos, experiments, your own work |
 | `tests/` | automated cases — what CI/nightly runs; keep deterministic |
-| `sims/` | reusable fleet definitions (legacy `sim:` tests reference these) |
+| `sims/` | reusable fleet definitions for `./sim up`/`./sim show` |
 | `blocks/` | unit types (`copter`, `plane`, `rover`, `comm_only`, `copter_camera`, …) — `./sim blocks` lists them |
 | `worlds/` | seeded ground-truth worlds for `world:` |
 | `packages/` | compiled operations referenced by `operation:` |
@@ -504,11 +504,3 @@ assert:
   - proc_alive: {unit: c1, proc: de_comm}
 teardown: land
 ```
-
-## Legacy `sim:`+`steps:` tests (tests/ flat files)
-
-The older format — `{version: 1, sim: <sims file>, operation, steps:
-[...], assert: [...], teardown}` — still runs through `./sim run`.
-`steps` entries are the runner steps above (bare name or `{name: args}`);
-`assert` is the same assertion set. New work should use the scenario
-format (it carries its own fleet — no sims/ file needed).

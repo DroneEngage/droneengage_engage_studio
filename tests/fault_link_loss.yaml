@@ -3,21 +3,27 @@
 # via its ping watchdog, fire comm_lost once, keep flying and come back
 # only after the cut. (Port of Phase-4A fault_link_loss.yaml.)
 version: 1
-sim: ../sims/copters3_faults.yaml
+name: fault_link_loss
+transport: {type: fake, seed: 1337}
 operation: ../packages/copter_square.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - start
-  - loss: {unit: copter2, percent: 40}
-  - link_cut: {unit: copter3, seconds: 45}
-  - wait_journal: {unit: copter3, re: "comm line offline", timeout: 30}
-  - wait_journal: {unit: copter3, re: "comm line online", timeout: 90}
-  - link_clear: all
-  - wait_journal: {unit: all, re: "mission main completed", timeout: 300}
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: start}
+  - {t: 0, fault: loss, unit: copter2, percent: 40}
+  - {t: 0, fault: link_cut, unit: copter3, dur_s: 45}
+  - {t: 0, do: wait_journal, unit: copter3, re: "comm line offline", timeout: 30}
+  - {t: 0, do: wait_journal, unit: copter3, re: "comm line online", timeout: 90}
+  - {t: 0, do: link_clear, unit: all}
+  - {t: 0, do: wait_journal, unit: all, re: "mission main completed", timeout: 300}
+settle_s: 0
 assert:
   - journal_count: {unit: all, re: "mission main completed", at_least: 1}
   - journal_order: {unit: copter3, first: "comm line offline", then: "comm line online"}

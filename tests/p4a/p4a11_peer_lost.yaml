@@ -7,24 +7,29 @@
 # (handler:peer_lost). The handler is latched once per run - when the
 # link comes back (ROSTER ... back) it must NOT fire again.
 version: 1
-sim: ../../sims/copters2_faults_fastroster.yaml
+name: p4a11_peer_lost
+transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a11_pair.deploy.json
-steps:
-  - stop
-  - clear
-  - reset: all
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
-  - wait: 10                      # rosters already flow from READY; the
+fleet:
+  - {id: copter1, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}
+  - {id: copter2, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: reset, unit: all}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
+  - {t: 0, do: wait, seconds: 10} # rosters already flow from READY; the
                                 # cut lands mid-leg, before any emit
-  - link_cut: {unit: copter2, seconds: 120}
-  - wait_journal: {unit: copter1, re: "ROSTER copter2 lost", timeout: 60}
-  - wait_journal: {unit: copter1, re: "handler peer_lost fired", timeout: 60}
-  - wait_journal: {unit: copter1, re: "NavMode confirmed", timeout: 90}
+  - {t: 0, fault: link_cut, unit: copter2, dur_s: 120}
+  - {t: 0, do: wait_journal, unit: copter1, re: "ROSTER copter2 lost", timeout: 60}
+  - {t: 0, do: wait_journal, unit: copter1, re: "handler peer_lost fired", timeout: 60}
+  - {t: 0, do: wait_journal, unit: copter1, re: "NavMode confirmed", timeout: 90}
   # the cut side sees its own peer go silent and fires the same handler
-  - wait_journal: {unit: copter2, re: "handler peer_lost fired", timeout: 60}
+  - {t: 0, do: wait_journal, unit: copter2, re: "handler peer_lost fired", timeout: 60}
+settle_s: 0
 assert:
   # each unit declared the other LOST exactly once
   - journal_count: {unit: copter1, re: "ROSTER copter2 lost", equals: 1}
@@ -33,10 +38,8 @@ assert:
   # the handler ran exactly once per unit and drove both to rtl
   - journal_count: {unit: all, re: "handler peer_lost fired.*-> rtl", equals: 1}
   - journal_count: {unit: all, re: "paused \\(handler:peer_lost\\)", equals: 1}
-  - journal_order: {unit: copter1, first: "ROSTER copter2 lost",
-                   then: "handler peer_lost fired"}
-  - journal_order: {unit: copter1, first: "handler peer_lost fired",
-                   then: "NavMode confirmed"}
+  - journal_order: {unit: copter1, first: "ROSTER copter2 lost", then: "handler peer_lost fired"}
+  - journal_order: {unit: copter1, first: "handler peer_lost fired", then: "NavMode confirmed"}
   - journal_count: {unit: all, re: "NavMode confirmed", at_least: 1}
   # the gate's rtl backstop never ran - the handler beat it
   - journal_count: {unit: all, re: "timed out", equals: 0}

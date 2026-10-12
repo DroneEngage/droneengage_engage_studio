@@ -7,30 +7,35 @@
 # side copter1 sees 2+3 LOST, so its own emit satisfies its gate too -
 # it departs alone, later.
 version: 1
-sim: ../../sims/copters3_faults_fastroster.yaml
+name: p4a10_barrier_lost
+transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a10_searcher.deploy.json
-steps:
-  - stop
-  - clear
-  - reset: all
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
-  - wait: 10                     # rosters already flow from READY; the
+fleet:
+  - {id: copter1, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}
+  - {id: copter2, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}
+  - {id: copter3, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: reset, unit: all}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
+  - {t: 0, do: wait, seconds: 10} # rosters already flow from READY; the
                                  # cut lands mid-leg, before any emit
-  - link_cut: {unit: 1, seconds: 300}   # the far unit goes silent mid-leg
-  - wait_journal: {unit: 2, re: "gate g released by cond", timeout: 180}
-  - wait_journal: {unit: 3, re: "gate g released by cond", timeout: 60}
-  - wait_journal: {unit: 1, re: "gate g released by cond", timeout: 120}
+  - {t: 0, fault: link_cut, unit: 1, dur_s: 300} # the far unit goes silent mid-leg
+  - {t: 0, do: wait_journal, unit: 2, re: "gate g released by cond", timeout: 180}
+  - {t: 0, do: wait_journal, unit: 3, re: "gate g released by cond", timeout: 60}
+  - {t: 0, do: wait_journal, unit: 1, re: "gate g released by cond", timeout: 120}
+settle_s: 0
 assert:
   - journal_count: {unit: all, re: "emit staging.ready", equals: 1}
   - journal_count: {unit: all, re: "gate g released by cond", equals: 1}
   # the surviving pair released only after copter1 was declared LOST
   - journal_order: {unit: 2, first: "ROSTER .* lost", then: "gate g released"}
   - journal_order: {unit: 3, first: "ROSTER .* lost", then: "gate g released"}
-  - journal_time_delta: {u1: 2, re1: "gate g released",
-                         u2: 3, re2: "gate g released", max_s: 8}
+  - journal_time_delta: {u1: 2, re1: "gate g released", u2: 3, re2: "gate g released", max_s: 8}
   # nobody took the contingency
   - journal_count: {unit: all, re: "timed out", equals: 0}
 teardown: reset

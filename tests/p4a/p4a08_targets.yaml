@@ -10,39 +10,44 @@
 # "detect" sensor mission re-emits the payload as the fleet event
 # target.fire (a real 1090: acks, retries, catch-up all apply).
 version: 1
-sim: ../../sims/copters3.yaml
+name: p4a08_targets
+transport: real
 operation: ../../packages/p4a08.deploy.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
-  - wait: 15
-  - fire: {event: det.go, unit: 1,
-           until: {re: "BUS_OUT.*n=target\\.fire", count: 1},
-           payload: {pos: [-35.3600, 149.16500], unc_m: 20, conf: 0.7}}
-  - fire: {event: det.go, unit: 2,
-           until: {re: "BUS_OUT.*n=target\\.fire", count: 1},
-           payload: {pos: [-35.3600, 149.16511], unc_m: 20, conf: 0.6}}
-  - wait_journal: {unit: 1, re: "WM_NEW", timeout: 30}
-  - wait_journal: {unit: 2, re: "WM_NEW", timeout: 30}
-  - wait_journal: {unit: 3, re: "WM_NEW", timeout: 30}
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
+  - {t: 0, do: wait, seconds: 15}
+  - {t: 0, do: fire, event: det.go, unit: 1, until: {re: "BUS_OUT.*n=target\\.fire", count: 1}, payload: {pos: [-35.3600, 149.16500], unc_m: 
+        20, conf: 0.7}}
+  - {t: 0, do: fire, event: det.go, unit: 2, until: {re: "BUS_OUT.*n=target\\.fire", count: 1}, payload: {pos: [-35.3600, 149.16511], unc_m: 
+        20, conf: 0.6}}
+  - {t: 0, do: wait_journal, unit: 1, re: "WM_NEW", timeout: 30}
+  - {t: 0, do: wait_journal, unit: 2, re: "WM_NEW", timeout: 30}
+  - {t: 0, do: wait_journal, unit: 3, re: "WM_NEW", timeout: 30}
   # two roster periods: every unit sees every other unit's digest
-  - wait: 15
+  - {t: 0, do: wait, seconds: 15}
   # 3: operator confirm (t > 0 any value; q 1)
-  - send: '{"ty":"i","mt":1093,"tg":"_AGN_","ms":{"v":1,"run":"{RUN}","ops":[{"o":"state","tid":"{WM_TID:1}","st":"confirmed","t":1,"by":"GCS_FLEET","q":1}]}}'
-  - wait_journal: {unit: 1, re: "WM_STATE .* confirmed", timeout: 30}
-  - wait_journal: {unit: 2, re: "WM_STATE .* confirmed", timeout: 30}
-  - wait_journal: {unit: 3, re: "WM_STATE .* confirmed", timeout: 30}
-  - wait_journal: {unit: 1, re: "activating mission engage", timeout: 60}
-  - wait_journal: {unit: 2, re: "activating mission engage", timeout: 60}
-  - wait_journal: {unit: 3, re: "activating mission engage", timeout: 60}
-  - wait: 15
+  - {t: 0, do: send, ty: i, mt: 1093, tg: _AGN_, ms: {v: 1, run: '{RUN}', ops: [{o: state, tid: '{WM_TID:1}', st: confirmed, t: 1, by: 
+              GCS_FLEET, q: 1}]}}
+  - {t: 0, do: wait_journal, unit: 1, re: "WM_STATE .* confirmed", timeout: 30}
+  - {t: 0, do: wait_journal, unit: 2, re: "WM_STATE .* confirmed", timeout: 30}
+  - {t: 0, do: wait_journal, unit: 3, re: "WM_STATE .* confirmed", timeout: 30}
+  - {t: 0, do: wait_journal, unit: 1, re: "activating mission engage", timeout: 60}
+  - {t: 0, do: wait_journal, unit: 2, re: "activating mission engage", timeout: 60}
+  - {t: 0, do: wait_journal, unit: 3, re: "activating mission engage", timeout: 60}
+  - {t: 0, do: wait, seconds: 15}
 
-  - opabort
+  - {t: 0, do: opabort}
 
+settle_s: 0
 assert:
   # both detections were published as fleet events
   - journal_count: {unit: 1, re: "BUS_OUT.*n=target\\.fire", equals: 1}

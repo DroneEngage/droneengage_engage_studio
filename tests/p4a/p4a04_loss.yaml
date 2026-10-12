@@ -6,24 +6,30 @@
 # activation (dup suppression) and the scout's local BUS_OUT.
 # Ported to the two-phase deploy: a roles spec + opstart (P4A-09).
 version: 1
-sim: ../../sims/copters3_faults.yaml
+name: p4a04_loss
+transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a04.deploy.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
   # the acceptance is event delivery under loss; opstart's 1094
   # replies must not race a 30%-lossy link
-  - loss: {unit: all, percent: 30}
+  - {t: 0, fault: loss, unit: all, percent: 30}
   # the scout reaches w1 and emits at ~30 s into the run; 90 s leaves
   # slack for the lossy links - a missed copy just stays undelivered
-  - wait: 90
-  - link_clear: {unit: all}
-  - opabort
+  - {t: 0, do: wait, seconds: 90}
+  - {t: 0, do: link_clear, unit: all}
+  - {t: 0, do: opabort}
 
+settle_s: 0
 assert:
   # the emit itself is local-first: the scout journals BUS_OUT even if
   # the wire copy dies on a lossy link

@@ -7,34 +7,48 @@
 # in p4a04_loss.yaml (acceptance 2 - it only records the loss rate).
 # Ported to the two-phase deploy: a roles spec + opstart (P4A-09).
 version: 1
-sim: ../../sims/copters3_faults.yaml
+name: p4a04_static_chain
+transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a04.deploy.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
   # the scout reaches w1 -> emit publishes area.clear on the bus ->
   # both workers activate "work" exactly once
-  - wait_journal: {unit: 2, re: "activating mission work", timeout: 300}
-  - wait_journal: {unit: 3, re: "activating mission work", timeout: 300}
+  - {t: 0, do: wait_journal, unit: 2, re: "activating mission work", timeout: 300}
+  - {t: 0, do: wait_journal, unit: 3, re: "activating mission work", timeout: 300}
 
   # ---- acceptance 3: replay. The same 1090 twice; the second is a dup
   # (silent - the dup counter moves, no BUS_IN). sd=src=probe1 is a
   # well-formed foreign sender, seq 1 (a fresh source delivers in order)
-  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"probe1","ms":{"v":1,"op":"static_chain","oh":"sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0","run":"{RUN}","id":"replay-0001","src":"probe1","role":"worker","seq":1,"t":0,"age":0,"ttl":300,"n":"chain.probe","p":{"k":1}}}'
-  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"probe1","ms":{"v":1,"op":"static_chain","oh":"sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0","run":"{RUN}","id":"replay-0001","src":"probe1","role":"worker","seq":1,"t":0,"age":0,"ttl":300,"n":"chain.probe","p":{"k":1}}}'
+  - {t: 0, do: send, ty: i, mt: 1090, tg: _AGN_, sd: probe1, ms: {v: 1, op: static_chain, oh: 
+        sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0, run: '{RUN}', id: replay-0001, src: probe1, role: worker, 
+        seq: 1, t: 0, age: 0, ttl: 300, n: chain.probe, p: {k: 1}}}
+  - {t: 0, do: send, ty: i, mt: 1090, tg: _AGN_, sd: probe1, ms: {v: 1, op: static_chain, oh: 
+        sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0, run: '{RUN}', id: replay-0001, src: probe1, role: worker, 
+        seq: 1, t: 0, age: 0, ttl: 300, n: chain.probe, p: {k: 1}}}
 
   # ---- acceptance 4: an event for a dead/old run drops "other run"
-  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"probe1","ms":{"v":1,"op":"static_chain","oh":"sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0","run":"stale-run-1","id":"stale-0001","src":"probe1","role":"worker","seq":2,"t":0,"age":0,"ttl":300,"n":"chain.probe","p":{}}}'
+  - {t: 0, do: send, ty: i, mt: 1090, tg: _AGN_, sd: probe1, ms: {v: 1, op: static_chain, oh: 
+        sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0, run: stale-run-1, id: stale-0001, src: probe1, role: worker,
+      seq: 2, t: 0, age: 0, ttl: 300, n: chain.probe, p: {}}}
 
   # ---- acceptance 5: forged sender - envelope src != stamped sd
-  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"mallory","ms":{"v":1,"op":"static_chain","oh":"sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0","run":"{RUN}","id":"forge-0001","src":"probe1","role":"worker","seq":3,"t":0,"age":0,"ttl":300,"n":"chain.probe","p":{}}}'
-  - wait: 3
-  - opabort
+  - {t: 0, do: send, ty: i, mt: 1090, tg: _AGN_, sd: mallory, ms: {v: 1, op: static_chain, oh: 
+        sha256:f67797dbedceeea4caeaf6de98bf1aa2bcb385019651da4da117936bed5221f0, run: '{RUN}', id: forge-0001, src: probe1, role: worker, 
+        seq: 3, t: 0, age: 0, ttl: 300, n: chain.probe, p: {}}}
+  - {t: 0, do: wait, seconds: 3}
+  - {t: 0, do: opabort}
 
+settle_s: 0
 assert:
   # the scout emitted once; the workers did not emit at all
   - journal_count: {unit: 1, re: "BUS_OUT.*n=area\\.clear", equals: 1}

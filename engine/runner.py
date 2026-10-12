@@ -1,123 +1,108 @@
 #!/usr/bin/env python3
-"""runner.py - run a test (`./sim run tests/<name>.yaml`).
+"""runner.py - the `do:` step set and ctl plumbing for de.scenario/1.
 
-A test names the sim it needs and the steps + assertions to run on it.
-The sim is reused when it is already up with the same hash and every
-process alive; otherwise it is brought up fresh. Several tests can share
-one sim file - that is the point of sims: a reusable fleet setup.
+scenario_runner executes a scenario's timeline; every `do:` name it does
+not handle itself lands in `run_step` below (one {name: args} mapping,
+the step's `do:` key plus its other keys as args). `run_ctl` shells one
+`./sim ctl` command against the run's pinned sim.
 
-    version: 1
-    description: ...
-    sim: ../sims/three_copters.yaml      # or an inline sim {server, units}
-    operation: ../packages/pkg.json      # default package for `deploy`
-    binding: {copter1: scout}            # optional deploy binding
-    steps:
-      - deploy                           # or {deploy: {package: p, unit: 2}}
-      - arm: all
-      - start
-      - wait_journal: {unit: 2, re: "mission main completed", timeout: 300}
-      - wait_log: {unit: 2, module: de_precland, re: "EVENT_OUT",
-                   timeout: 30}              # the same block over
-                                             # logs/<module>.log (module
-                                             # stdout - never journaled)
-      - fire: {event: area.clear, payload: {x: 1}, unit: all}
-      - fire: {event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
-                                         # re-fire until the unit journals it
-      - opstart                          # P4A-09 fleet START (1094); the
-                                         # operation must be a roles spec
-      - opabort                          # P4A-09 fleet ABORT
-      - opstatus: {seconds: 8}           # P4A-09 status poll
-      - opmsg: {tg: copter1, ms: {...}, expect: "re"}   # 1094 probe
-      - reboot: {unit: 1}                # de_comm restart under a fresh
-                                         # boot id (pending TTL signals
-                                         # drop, sticky facts survive)
-      - loss: {unit: all, percent: 30}   # message loss: server type fake
-                                         # only (link faults otherwise
-                                         # work on `server: {type: real,
-                                         # link_proxy: true}` too)
-      - link_cut: {unit: 1, seconds: 20}
-      - link: {unit: 1, set: "stall 30"} # SL-0007 raw link-model knobs;
-                                         # set: ["loss_tx 0", "loss_rx 100"]
-                                         # sends several sub-lines;
-                                         # loss* knobs are fake-only
-      - beacon: {unit: 1, seconds: 10, min: 3}   # count the unit's 1004
-                                         # presence beacons on a fresh GCS
-                                         # listen (SL-0007)
-      - kill: {unit: 1, proc: de_comm}   # unit: server, proc: de_server
-      - restart: {unit: 1, proc: de_comm}
-      - freeze: {unit: 1, proc: de_mavlink, dur_s: 30}   # SIGSTOP - a hang,
-      - unfreeze: {unit: 1, proc: de_mavlink}            # not a crash
-      - fcb_cut: {unit: 1, seconds: 20}      # SL-0008 fcb proxy faults -
-      - fcb_stall: {unit: 1, ms: 5000}       # needs `fcb_proxy: true` on
-      - fcb_corrupt: {unit: 1, byte_drop_pct: 1, bit_flip_pct: 0, seed: 7}
+Step args (the `do:` item's extra keys, shown as {name: args}):
+
+      deploy                            # or {deploy: {package: p, unit: 2}}
+      arm: all
+      start
+      wait_journal: {unit: 2, re: "mission main completed", timeout: 300}
+      wait_log: {unit: 2, module: de_precland, re: "EVENT_OUT",
+                 timeout: 30}               # the same block over
+                                            # logs/<module>.log (module
+                                            # stdout - never journaled)
+      fire: {event: area.clear, payload: {x: 1}, unit: all}
+      fire: {event: go.now, unit: 1, until: "BUS_OUT.*n=area\\.clear"}
+                                            # re-fire until the unit
+                                            # journals it
+      opstart                           # P4A-09 fleet START (1094); the
+                                        # operation must be a roles spec
+      opabort                           # P4A-09 fleet ABORT
+      opstatus: {seconds: 8}            # P4A-09 status poll
+      opmsg: {tg: copter1, ms: {...}, expect: "re"}   # 1094 probe
+      reboot: {unit: 1}                 # de_comm restart under a fresh
+                                        # boot id (pending TTL signals
+                                        # drop, sticky facts survive)
+      loss: {unit: all, percent: 30}    # message loss: server type fake
+                                        # only (link faults otherwise
+                                        # work on `server: {type: real,
+                                        # link_proxy: true}` too)
+      link_cut: {unit: 1, seconds: 20}
+      link: {unit: 1, set: "stall 30"}  # SL-0007 raw link-model knobs;
+                                        # set: ["loss_tx 0", "loss_rx 100"]
+                                        # sends several sub-lines;
+                                        # loss* knobs are fake-only
+      beacon: {unit: 1, seconds: 10, min: 3}   # count the unit's 1004
+                                        # presence beacons on a fresh GCS
+                                        # listen (SL-0007)
+      kill: {unit: 1, proc: de_comm}    # unit: server, proc: de_server
+      restart: {unit: 1, proc: de_comm}
+      freeze: {unit: 1, proc: de_mavlink, dur_s: 30}   # SIGSTOP - a hang,
+      unfreeze: {unit: 1, proc: de_mavlink}            # not a crash
+      fcb_cut: {unit: 1, seconds: 20}      # SL-0008 fcb proxy faults -
+      fcb_stall: {unit: 1, ms: 5000}       # needs `fcb_proxy: true` on
+      fcb_corrupt: {unit: 1, byte_drop_pct: 1, bit_flip_pct: 0, seed: 7}
                                            # the unit/sim; any transport
-      - fcb_drop: {unit: 1, msgid: 30, percent: 50}   # one msgid only
-      - fcb_inject: {unit: 1, hex: "fe0900..."}   # raw MAVLink bytes ->
+      fcb_drop: {unit: 1, msgid: 30, percent: 50}   # one msgid only
+      fcb_inject: {unit: 1, hex: "fe0900..."}   # raw MAVLink bytes ->
                                            # de_mavlink (TASK-14 ADS-B hook)
-      - fcb_clear / fcb_stats: {unit: 1}     # remove rules / counters
-      - cpu_starve: {unit: 1, proc: de_mavlink, duty_pct: 80,  # SL-0014:
-                     dur_s: 60, cycle_ms: 1000}       # SIGSTOP/SIGCONT duty
-      - cpu_unstarve: {unit: 1, proc: de_mavlink}     # cycle; dur_s bounds it
-      - journal_unwritable: {unit: 1, dur_s: 30}      # journal dir RO,
-      - journal_writable: {unit: 1}                   # auto-restored on down
-      - clock_step: {unit: 1, offset_s: 3600}         # libfaketime step on a
-                                                    # `faketime: true` unit
-      - reset: 1                         # SITL back to home, disarmed
-      - mode: {unit: 1, mode: RTL}
-      - takeoff: {unit: 1, alt: 10}      # NAV_TAKEOFF (arm GUIDED first)
-      - param: {unit: 1, name: SIM_BATT_VOLTAGE, value: 10.5}
-      - param_get: {unit: 1, name: SIM_BATT_VOLTAGE}
-      - wait_online: 60                  # every unit seen by the GCS
-      - wait: 10
-      - write_file: {unit: 1, module: de_gpio, path: gpio_inputs.json,
-                     json: {"17": 1}}      # JSON into var/run/<unit>/<module>/;
+      fcb_clear / fcb_stats: {unit: 1}     # remove rules / counters
+      cpu_starve: {unit: 1, proc: de_mavlink, duty_pct: 80,  # SL-0014:
+                  dur_s: 60, cycle_ms: 1000}       # SIGSTOP/SIGCONT duty
+      cpu_unstarve: {unit: 1, proc: de_mavlink}     # cycle; dur_s bounds it
+      journal_unwritable: {unit: 1, dur_s: 30}      # journal dir RO,
+      journal_writable: {unit: 1}                   # auto-restored on down
+      clock_step: {unit: 1, offset_s: 3600}         # libfaketime step on a
+                                                  # `faketime: true` unit
+      reset: 1                          # SITL back to home, disarmed
+      mode: {unit: 1, mode: RTL}
+      takeoff: {unit: 1, alt: 10}       # NAV_TAKEOFF (arm GUIDED first)
+      param: {unit: 1, name: SIM_BATT_VOLTAGE, value: 10.5}
+      param_get: {unit: 1, name: SIM_BATT_VOLTAGE}
+      wait_online: 60                   # every unit seen by the GCS
+      wait: 10
+      write_file: {unit: 1, module: de_gpio, path: gpio_inputs.json,
+                   json: {"17": 1}}       # JSON into var/run/<unit>/<module>/;
                                           # also: [{path, json, delay_ms?}, ...]
                                           # writes more files in the same ctl
                                           # call; delay_ms sleeps N ms first
                                           # (a +N marker inside the call)
-      - udp_chunks: {unit: 1, module: de_mavlink, drop_pct: 5,
-                     reorder: 3, dup_pct: 10, seed: 1}
+      udp_chunks: {unit: 1, module: de_mavlink, drop_pct: 5,
+                   reorder: 3, dup_pct: 10, seed: 1}
                                           # SL-0010: knobs on the unit's
                                           # module<->de_comm chunk proxy
                                           # (needs udp_proxy: on the unit)
-    assert:
-      - journal_count: {unit: all, re: "EVENT_IN area.clear", equals: 1}
-      - journal_order: {unit: 1, first: "A re", then: "B re"}
-      - journal_time_delta: {u1: 1, re1: "A", u2: 2, re2: "B", max_s: 5}
-      - mission_current: {unit: 1, seq: 4}
-    teardown: land                       # land (default) | reset | none
 
-de.scenario/1 files (tests/**/*.yaml, scenarios/**/*.yaml -
-engine/scenario_runner.py)
-add the truth/world assertions of engine/checks.py on top of these:
-distance_to, detection_precision, detection_recall (P5-10: who was
-found, who correctly stayed hidden), time_to_detect (P5-10: seconds
-from the world epoch to the first find), signals_in_range,
+de.scenario/1 assertions (engine/checks.py) cover journal_count,
+journal_order, journal_time_delta, mission_current and the truth/world
+assertions: distance_to, detection_precision, detection_recall (P5-10:
+who was found, who correctly stayed hidden), time_to_detect (P5-10:
+seconds from the world epoch to the first find), signals_in_range,
 coverage_complete, stub_deterministic, ... - the full list and the
 per-assertion arguments live in the checks.py docstring.
 
 `unit:` takes what ctl takes: a name, 1-based position, block:<b>, a comma
 list or all (`vehicle:` / `v1` / `v2` are accepted as aliases).
 
-A failing step stops the step list; assertions still run and are reported,
-and the test exits non-zero. Journals, logs, the test and the sim manifest
-are saved under var/results/<timestamp>-<test>/.
+A failing step stops the scenario's timeline; assertions still run and
+are reported, and the run exits non-zero.
 """
 
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
 
-import yaml
-
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import simlib
 import ctl
-import launcher
 
 CTL = os.path.join(simlib.ENGINE_DIR, "ctl.py")
 
@@ -437,105 +422,3 @@ def run_step(step, t, marks):
                        arg.get("min", 1))
     print(f"unknown step {name!r}", flush=True)
     return False
-
-
-# ------------------------------------------------------------------ asserts
-
-def check_assertion(a, m, marks, t_file=None):
-    """Legacy assertion -> bool. ONE implementation: checks.py (the same
-    code the de.scenario/1 runner uses), so a fix there fixes both. SKIP
-    is not a failure here, but is printed as such."""
-    import checks
-    ctx = {"manifest": m, "sim": m["name"], "marks": marks,
-           "file": t_file or "", "results_dir": None,
-           "telemetry": None, "bot": None, "baseline": None,
-           "link_events": {}, "operator_log": None}
-    r = checks.check_assertion(a, ctx)
-    val = "" if r["value"] is None else f" value={r['value']}"
-    print(f"    [{r['status']}] {r['name']}:{val} {r['detail']}")
-    return r["status"] != "FAIL"
-
-
-# ------------------------------------------------------------------ main
-
-def collect_results(t_file, m):
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    name = os.path.splitext(os.path.basename(t_file))[0]
-    out = os.path.join(simlib.RESULTS_DIR, f"{ts}-{name}")
-    for u in m["units"]:
-        for sub in ("journal", "logs"):
-            d = os.path.join(simlib.unit_dir(u), sub)
-            if os.path.isdir(d):
-                shutil.copytree(d, os.path.join(out, u["name"], sub),
-                                dirs_exist_ok=True)
-    srv = os.path.join(simlib.server_dir(m["name"]), "logs")
-    if os.path.isdir(srv):
-        shutil.copytree(srv, os.path.join(out, "server"),
-                        dirs_exist_ok=True)
-    shutil.copy(t_file, out)
-    shutil.copy(simlib.manifest_path(m["name"]), out)
-    return out
-
-
-def load_test(t_file):
-    t = yaml.safe_load(open(t_file)) or {}
-    if t.get("version", 1) != 1:
-        sys.exit("unsupported test version")
-    if "sim" not in t:
-        sys.exit("test: `sim:` is required (a sim file path or an inline sim)")
-    t["__file"] = t_file
-    sim = t["sim"]
-    t["__sim"] = os.path.join(os.path.dirname(t_file), sim) if isinstance(sim, str) else sim
-    return t
-
-
-def run(t_file, keep=False):
-    global SIM_NAME
-    t_file = os.path.abspath(t_file)
-    t = load_test(t_file)
-    m = launcher.ensure(t["__sim"])
-    ctl.CTX = SIM_NAME = m["name"]
-    fake = m.get("server", {}).get("type") == "fake"
-    # a previous test that died mid-way may have left link faults applied
-    # (the fake server's links{}, or the SL-0009 per-unit link proxies)
-    link_capable = fake or any(u.get("link_proxy") for u in m["units"])
-    if link_capable:
-        run_ctl("link_clear", "all")
-    # journal assertions only see lines appended after this point
-    marks = {u["name"]: simlib.journal_mark(u) for u in m["units"]}
-    if os.path.isfile(ctl.deployed_file()):
-        os.unlink(ctl.deployed_file())
-    ok = True
-    for step in t.get("steps", []):
-        if not run_step(step, t, marks):
-            print(f"STEP FAILED: {step} - skipping the remaining steps", flush=True)
-            ok = False
-            break
-
-    print("\n== assertions ==")
-    results = []
-    for a in t.get("assert", []):
-        r = check_assertion(a, m, marks, t_file)
-        results.append(r)
-        print(f"  [{'PASS' if r else 'FAIL'}] {list(a)[0]}: {list(a.values())[0]}")
-
-    # faults never leak into the next test (pass, fail or broken-off step)
-    if link_capable:
-        run_ctl("link_clear", "all")
-
-    td = "none" if keep else t.get("teardown", "land")
-    if td in ("land", "reset"):
-        print(f"\n== teardown: stop + {td} ==", flush=True)
-        run_ctl("stop")
-        if ctl.with_fc(m["units"]) and not run_ctl(td, "all"):
-            print("TEARDOWN FAILED: not every vehicle is down + disarmed", flush=True)
-            ok = False
-    elif td != "none":
-        print(f"unknown teardown {td!r} (use land | reset | none)", flush=True)
-        ok = False
-
-    out = collect_results(t_file, m)
-    n_ok = sum(results)
-    print(f"\n{n_ok}/{len(results)} assertions passed"
-          + ("" if ok else " (a step or the teardown failed)") + f"\nresults: {out}")
-    return 0 if ok and all(results) else 1

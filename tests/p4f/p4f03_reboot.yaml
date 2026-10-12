@@ -6,33 +6,37 @@
 # returns, the fact reaches it (resumed retry or peer replay); ping never
 # does.
 version: 1
-sim: ../../sims/copters3_faults.yaml
+name: p4f03_reboot
+transport: {type: fake, seed: 1337}
 operation: ../../packages/p4f03.deploy.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
-  - wait: 15
-  - fire: {event: mk.scan, unit: 1, until: "BUS_OUT.*n=scan\\.begin"}
-  - wait_journal: {unit: 3, re: "gate seen waits found\\.it", timeout: 30}
-  - link_cut: {unit: 3, seconds: 100}
-  - wait: 2
-  - fire: {event: mk.sig, unit: 1, until: "BUS_OUT.*n=ping"}
-  - fire: {event: mk.fact, unit: 1,
-           payload: {pos: [-35.363, 149.166, 0], conf: 0.9},
-           until: "BUS_OUT.*n=found\\.it"}
-  - wait: 5                          # both pend for copter3
-  - reboot: {unit: 1}                # new boot id + de_comm restart
-  - wait_journal: {unit: 1, re: "package restored", timeout: 60}
-  - wait_journal: {unit: 3, re: "comm line online", timeout: 120}
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
+  - {t: 0, do: wait, seconds: 15}
+  - {t: 0, do: fire, event: mk.scan, unit: 1, until: "BUS_OUT.*n=scan\\.begin"}
+  - {t: 0, do: wait_journal, unit: 3, re: "gate seen waits found\\.it", timeout: 30}
+  - {t: 0, fault: link_cut, unit: 3, dur_s: 100}
+  - {t: 0, do: wait, seconds: 2}
+  - {t: 0, do: fire, event: mk.sig, unit: 1, until: "BUS_OUT.*n=ping"}
+  - {t: 0, do: fire, event: mk.fact, unit: 1, payload: {pos: [-35.363, 149.166, 0], conf: 0.9}, until: "BUS_OUT.*n=found\\.it"}
+  - {t: 0, do: wait, seconds: 5}     # both pend for copter3
+  - {t: 0, do: reboot, unit: 1}      # new boot id + de_comm restart
+  - {t: 0, do: wait_journal, unit: 1, re: "package restored", timeout: 60}
+  - {t: 0, do: wait_journal, unit: 3, re: "comm line online", timeout: 120}
   # copter3 catches up - the fact only, the signal is gone for good
-  - wait_journal: {unit: 3, re: "gate seen released", timeout: 120}
-  - wait: 10
-  - opabort
+  - {t: 0, do: wait_journal, unit: 3, re: "gate seen released", timeout: 120}
+  - {t: 0, do: wait, seconds: 10}
+  - {t: 0, do: opabort}
 
+settle_s: 0
 assert:
   # a new boot drops pending TTL signals - journaled at restore
   - journal_count: {unit: 1, re: "UNDELIVERED.*why=reboot", at_least: 1}

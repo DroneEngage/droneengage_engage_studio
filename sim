@@ -151,11 +151,8 @@ def _validate_file(f):
         if scenario_mod.is_sim_spec(raw):
             simlib.load_sim(f)
         elif scenario_mod.is_legacy_spec(raw):
-            if isinstance(raw.get("sim"), str):
-                exists("sim", raw["sim"])
-            exists("operation", raw.get("operation"))
-            if not isinstance(raw.get("steps"), list):
-                problems.append("steps: must be a list")
+            problems.append("`sim:`+`steps:` is the removed legacy format "
+                            "(SL-0020) - rewrite as de.scenario/1")
         else:
             scn = scenario_mod.load_scenario(f, seed=1, probe_ports=False)
             exists("operation", raw.get("operation"))
@@ -328,7 +325,7 @@ def main(argv):
                 sys.exit("usage: ./sim run <file.yaml> [--seed N] "
                          "[--keep] [--hold|--view]"
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
-            # legacy tests -> runner.py, de.scenario/1 -> the P5-07 engine
+            # every test/scenario file is de.scenario/1 -> the P5-07 engine
             return scenario_runner.run(files[0], keep="--keep" in a,
                                        hold=bool({"--hold", "--view"}
                                                  & set(a)), seed=seed)

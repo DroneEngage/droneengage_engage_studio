@@ -7,25 +7,31 @@
 # times. on_timeout "rtl" is the FC-side contingency (LOITER_TIME 240 s
 # falls through to a c20 RTL item) - it should never fire.
 version: 1
-sim: ../../sims/copters3.yaml
+name: p4a10_barrier
+transport: real
 operation: ../../packages/p4a10.deploy.json
-steps:
-  - stop
-  - clear
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
   # power-cycle so every unit starts at its sim home - the staging legs
   # (and therefore the emit spread) depend on where the fleet parked
-  - reset: all
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
+  - {t: 0, do: reset, unit: all}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
   # nearest unit emits first, farthest last; the barrier must hold the
   # early arrivals until s1's emit lands
-  - wait_journal: {unit: 3, re: "emit staging.ready", timeout: 200}
-  - wait_journal: {unit: 1, re: "emit staging.ready", timeout: 300}
-  - wait_journal: {unit: 1, re: "gate g released by cond", timeout: 60}
-  - wait_journal: {unit: 2, re: "gate g released by cond", timeout: 60}
-  - wait_journal: {unit: 3, re: "gate g released by cond", timeout: 60}
+  - {t: 0, do: wait_journal, unit: 3, re: "emit staging.ready", timeout: 200}
+  - {t: 0, do: wait_journal, unit: 1, re: "emit staging.ready", timeout: 300}
+  - {t: 0, do: wait_journal, unit: 1, re: "gate g released by cond", timeout: 60}
+  - {t: 0, do: wait_journal, unit: 2, re: "gate g released by cond", timeout: 60}
+  - {t: 0, do: wait_journal, unit: 3, re: "gate g released by cond", timeout: 60}
+settle_s: 0
 assert:
   # every unit emitted exactly once and released exactly once, emit
   # strictly before the release in its own journal
@@ -37,15 +43,11 @@ assert:
   # the barrier is real: the emits land ~10+ s apart (staging legs are
   # very different lengths) and the earliest emitter (unit 3) still
   # waited - its emit sits well before its own release
-  - journal_time_delta: {u1: 3, re1: "emit staging.ready",
-                         u2: 1, re2: "emit staging.ready", min_s: 8}
-  - journal_time_delta: {u1: 3, re1: "emit staging.ready",
-                         u2: 3, re2: "gate g released", min_s: 10}
+  - journal_time_delta: {u1: 3, re1: "emit staging.ready", u2: 1, re2: "emit staging.ready", min_s: 8}
+  - journal_time_delta: {u1: 3, re1: "emit staging.ready", u2: 3, re2: "gate g released", min_s: 10}
   # ... and all three releases clustered around the last emit
-  - journal_time_delta: {u1: 1, re1: "gate g released",
-                         u2: 2, re2: "gate g released", max_s: 8}
-  - journal_time_delta: {u1: 1, re1: "gate g released",
-                         u2: 3, re2: "gate g released", max_s: 8}
+  - journal_time_delta: {u1: 1, re1: "gate g released", u2: 2, re2: "gate g released", max_s: 8}
+  - journal_time_delta: {u1: 1, re1: "gate g released", u2: 3, re2: "gate g released", max_s: 8}
   # no unit took the contingency path
   - journal_count: {unit: all, re: "timed out", equals: 0}
 teardown: reset

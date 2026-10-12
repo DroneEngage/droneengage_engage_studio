@@ -251,16 +251,15 @@ live sim before starting anything.
 
 ## Tests - the automated library
 
-`tests/` holds everything automation runs: the flat legacy files
-(`sim:` + `steps:`) and the `de.scenario/1` library in its area
-subdirectories (`faults/`, `p4a/`, `verify/`, `world`/p5, ...). The
-nightly suite is `./sim suite tests` (a.k.a. `ci/run_suite.py --roots
+`tests/` holds everything automation runs: the `de.scenario/1` library in
+its area subdirectories (`faults/`, `p4a/`, `verify/`, `world`/p5, ...).
+The nightly suite is `./sim suite tests` (a.k.a. `ci/run_suite.py --roots
 tests`); `ci/check_library.py` validates every file on push.
 
-See the docstring in `engine/runner.py` for every step and assertion. In
-short:
+See the docstring in `engine/runner.py` for every `do:` step and
+`docs/SCENARIOS.md` for the format. In short:
 
-- **steps:** `deploy`, `arm`, `start`, `stop`, `clear`, `fire`, `mode`,
+- **`do:` steps:** `deploy`, `arm`, `start`, `stop`, `clear`, `fire`, `mode`,
   `land`, `reset`, `wait`, `wait_journal`, `wait_log`, `wait_online`,
   `wait_ready`,
   `kill` / `restart` / `freeze` / `unfreeze` (also `unit: server`;
@@ -288,7 +287,7 @@ short:
   `roles` map - see `packages/p4a05.deploy.json`), `deploy` runs the
   two-phase DE_OP_CONTROL (1094) PREPARE per role, and the run goes up
   with `opstart` / down with `opabort` (`opstatus`, `opmsg` for probes).
-  A fleet package refuses the legacy `start`;
+  A fleet package refuses the plain `start`;
 - **step tokens** (`send`/`opmsg`): `{RUN}`, `{OP_RUN}`, `{PKG:<file>}`,
   `{HASH:<file>}` (paths resolve under `packages/` too), `{WM_TID:<unit>}`;
 - **assertions:** `journal_count`, `module_log_count` (same bounds over
@@ -330,9 +329,6 @@ operation, operator policy, scripted timeline, faults, assertions:
 ```
 
 (`run_scenario.py` still works - a shim over the same engine.)
-
-Legacy `sim:` + `steps:` files keep running unchanged through
-`./sim run` - the same dispatcher picks the engine by file shape.
 
 Format (strict - unknown keys fail against
 `engine/de_scenario.schema.json`):
@@ -478,7 +474,7 @@ Format (strict - unknown keys fail against
   `time_to_detect` (P5-10: seconds from the `start` step - the world
   epoch when none ran - to the first find, `max_s:`;
   realtime-sensitive), `signals_in_range`,
-  `stub_deterministic` to the legacy assertion set.
+  `stub_deterministic` to the journal assertion set.
   Run-wide invariants (SL-0011): a 1 Hz sampler records every tracked
   process's pid/RSS/fds into `results/samples.jsonl`;
   `no_unexpected_restart` (pid changes only inside `fault:` kill/

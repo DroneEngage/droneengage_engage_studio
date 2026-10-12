@@ -1,17 +1,23 @@
 # Same as smoke_copters, through the authenticator login path.
 version: 1
-sim: ../sims/copters3_auth.yaml
+name: smoke_copters_auth
+transport: {type: real, auth: true, account: {user: sim@sim.droneengage.com, code: sim1234}}
 operation: ../packages/copter_square.json
-steps:
-  - stop                # reset leftover runs when the sim is reused (the
-  - clear               # engine stays RUNNING after "mission ... completed")
-  - mode: {unit: all, mode: GUIDED}   # de_mavlink refuses nav loads in AUTO
-  - deploy
-  - arm: all
-  - start
-  - wait_journal: {unit: 1, re: "mission main completed", timeout: 300}
-  - wait_journal: {unit: 2, re: "mission main completed", timeout: 300}
-  - wait_journal: {unit: 3, re: "mission main completed", timeout: 300}
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}    # reset leftover runs when the sim is reused (the
+  - {t: 0, do: clear}   # engine stays RUNNING after "mission ... completed")
+  - {t: 0, do: mode, unit: all, mode: GUIDED} # de_mavlink refuses nav loads in AUTO
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: start}
+  - {t: 0, do: wait_journal, unit: 1, re: "mission main completed", timeout: 300}
+  - {t: 0, do: wait_journal, unit: 2, re: "mission main completed", timeout: 300}
+  - {t: 0, do: wait_journal, unit: 3, re: "mission main completed", timeout: 300}
+settle_s: 0
 assert:
   - journal_count: {unit: all, re: "RUN run .* started", equals: 1}
   - journal_count: {unit: all, re: "mission main completed", equals: 1}

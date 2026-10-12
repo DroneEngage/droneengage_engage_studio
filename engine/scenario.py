@@ -53,10 +53,6 @@ at least one run-wide invariant assertion (validate enforces all three).
 The expansion is printed, written to var/results/<run>/expanded.yaml
 (`./sim expand` prints it without running) and reruns as an ordinary
 scenario - a failing seed becomes a fixed regression file.
-
-A legacy tests/*.yaml file (version 1, `sim:` + `steps:`) loads as
-{legacy: True} unchanged - the scenario runner executes the same steps
-through the P4A-03 machinery and adds the new results layout.
 """
 
 import copy
@@ -364,8 +360,9 @@ def expanded_text(scn):
 
 
 def is_legacy_spec(raw):
-    """A P4A-03 test file: version 1 with sim:/steps: and no scenario
-    keys. Runs unchanged through the new runner."""
+    """The removed `sim:` + `steps:` test format (P4A-03; SL-0020). Kept
+    only so callers can give a clear refusal instead of a schema error:
+    every repo test is de.scenario/1 now."""
     return isinstance(raw, dict) and "steps" in raw and \
         "timeline" not in raw and "fleet" not in raw
 
@@ -605,16 +602,16 @@ def load_scenario(path, seed=None, probe_ports=True):
     base = os.path.dirname(path)
     _yaml_bool_keys(raw)
     if is_legacy_spec(raw):
-        return {"legacy": True, "file": path, "test": raw,
-                "name": os.path.splitext(os.path.basename(path))[0],
-                "seed": seed or 1}
+        raise simlib.SimError(
+            f"{path}: `sim:` + `steps:` is the removed legacy test format "
+            "(SL-0020) - rewrite the file as de.scenario/1 "
+            "(docs/SCENARIOS.md)")
     _validate(raw, path)
     home = tuple(raw.get("home", simlib.HOME))
     if len(home) == 3:
         home = home + (simlib.HOME[3],)
     seed = int(seed if seed is not None else raw.get("seed", 1))
     scn = {
-        "legacy": False,
         "file": path,
         "name": raw["name"],
         "description": raw.get("description", ""),

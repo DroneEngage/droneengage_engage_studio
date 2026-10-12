@@ -3,24 +3,32 @@
 # while really coming from an unknown party is dropped at the sender check
 # (BUS_DROP why=sender mismatch) and releases nothing.
 version: 1
-sim: ../../sims/copters3_faults.yaml
+name: p4f03_spoof
+transport: {type: fake, seed: 1337}
 operation: ../../packages/p4f03.deploy.json
-steps:
-  - stop
-  - clear
-  - mode: {unit: all, mode: GUIDED}
-  - deploy
-  - arm: all
-  - opstart
-  - wait: 15
-  - fire: {event: mk.scan, unit: 1, until: "BUS_OUT.*n=scan\\.begin"}
-  - wait_journal: {unit: 2, re: "gate seen waits found\\.it", timeout: 30}
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: copter2, cls: copter}
+  - {id: copter3, cls: copter}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED}
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: opstart}
+  - {t: 0, do: wait, seconds: 15}
+  - {t: 0, do: fire, event: mk.scan, unit: 1, until: "BUS_OUT.*n=scan\\.begin"}
+  - {t: 0, do: wait_journal, unit: 2, re: "gate seen waits found\\.it", timeout: 30}
   # forged relay: the wire sender is rogue1 but rl claims copter2 -
   # rl != sd -> dropped before it can feed the fact store
-  - send: '{"ty":"i","mt":1090,"tg":"_AGN_","sd":"rogue1","ms":{"v":1,"op":"p4f03_fact","oh":"sha256:1497ed795a109d90fc4b4d28d78639fdaa88623e2b2d8e9ad1dde453b9cf1913","run":"{OP_RUN}","id":"forge-rl-0001","src":"copter1","rl":"copter2","seq":77,"t":0,"age":0,"ttl":86400,"st":1,"fq":9,"n":"found.it","p":{"pos":[-35.363,149.166,0],"conf":0.9}}}'
-  - wait: 10
-  - opabort
+  - {t: 0, do: send, ty: i, mt: 1090, tg: _AGN_, sd: rogue1, ms: {v: 1, op: p4f03_fact, oh: 
+        sha256:1497ed795a109d90fc4b4d28d78639fdaa88623e2b2d8e9ad1dde453b9cf1913, run: '{OP_RUN}', id: forge-rl-0001, src: copter1, rl: 
+        copter2, seq: 77, t: 0, age: 0, ttl: 86400, st: 1, fq: 9, n: found.it, p: {pos: [-35.363, 149.166, 0], conf: 0.9}}}
+  - {t: 0, do: wait, seconds: 10}
+  - {t: 0, do: opabort}
 
+settle_s: 0
 assert:
   - journal_count: {unit: 2, re: "BUS_DROP.*sender mismatch", at_least: 1}
   # the forged fact never landed
