@@ -50,6 +50,8 @@ is now the only simulation/testing location.
                               - each yaml pairs with a <name>.md runbook
                               (same convention as sims/)
     docs/SCENARIOS.md         the de.scenario/1 authoring reference (LLM-friendly)
+    docs/MACHINE_API.md       --json output shapes + the run's RESULT/summary.json
+                              contract (agents: read this before scraping text)
     templates/scenario.yaml   what ./sim new scaffolds
     worlds/*.yaml             seeded ground-truth worlds for scenario world:
     packages/*.json           compiled DE packages used by tests
@@ -107,6 +109,9 @@ is now the only simulation/testing location.
 - Exit code 0 = every step and assertion passed. Read the printed
   PASS/FAIL lines and `var/results/<ts>-<test>/` (journals + logs), not just the
   exit code.
+- Machine consumers: every read-only command takes `--json`, and a run's
+  last stdout line is `RESULT <dir>/summary.json` — shapes and exit-code
+  meanings are in `docs/MACHINE_API.md`. Never scrape the human text.
 - Before claiming a change works, run the relevant test(s) and quote the
   `N/M assertions passed` line.
 

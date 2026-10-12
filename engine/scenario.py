@@ -334,11 +334,10 @@ def _merge_timeline(timeline, chaos_steps):
     return timed + [s for s in timeline if "t" not in s]
 
 
-def expanded_text(scn):
-    """The chaos-expanded scenario as a standalone de.scenario/1 file:
-    chaos: removed, the drawn steps inlined into timeline:, file-relative
-    paths absolutized (expanded.yaml lives under var/results/). A failing
-    seed's expansion reruns as a fixed regression."""
+def expanded_spec(scn):
+    """The chaos-expanded scenario as a de.scenario/1 dict: chaos:
+    removed, the drawn steps inlined into timeline:, file-relative
+    paths absolutized."""
     exp = copy.deepcopy(scn["raw"])
     exp.pop("chaos", None)
     exp["seed"] = scn["seed"]
@@ -352,6 +351,15 @@ def expanded_text(scn):
             and not os.path.isabs(verify["cli"]):
         verify["cli"] = os.path.abspath(
             os.path.join(os.path.dirname(scn["file"]), verify["cli"]))
+    return exp
+
+
+def expanded_text(scn):
+    """The chaos-expanded scenario as a standalone de.scenario/1 file:
+    chaos: removed, the drawn steps inlined into timeline:, file-relative
+    paths absolutized (expanded.yaml lives under var/results/). A failing
+    seed's expansion reruns as a fixed regression."""
+    exp = expanded_spec(scn)
     return (f"# {scn['name']} seed {scn['seed']} - the chaos: schedule "
             "expanded into a fixed de.scenario/1 file\n"
             f"# source: {scn['file']}\n"

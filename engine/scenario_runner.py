@@ -1401,7 +1401,10 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     _junit(scn["name"], results, wall, os.path.join(out, "junit.xml"))
     print(f"\n{n_pass} PASS, {n_fail} FAIL, {n_skip} SKIP"
           + ("" if ok else " (a step or the teardown failed)")
-          + f"\nresults: {out}", flush=True)
+          + f"\nresults: {out}"
+          # the stable machine contract (docs/MACHINE_API.md): the last
+          # line is always the run's summary.json path
+          + f"\nRESULT {os.path.join(out, 'summary.json')}", flush=True)
     return 0 if ok and n_fail == 0 else 1
 
 

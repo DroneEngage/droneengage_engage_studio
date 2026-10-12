@@ -1,0 +1,161 @@
+# MACHINE_API.md — `--json` output contract
+
+Agent-facing machine interface for `sim`. Every read-only command takes
+`--json` and emits one JSON document on stdout (nothing else). Without
+`--json` the human output is unchanged. `json.tool` / `jq` parse every
+document below.
+
+General rules:
+
+- Objects use snake_case keys; `null` = the field does not apply
+  (e.g. a unit with `fc: null` has no SITL).
+- Ports and pids are integers; a `null` pid means that process is DOWN.
+- Usage/schema errors still print text and exit non-zero — they are not
+  JSON. Exit codes are listed per command; `0` = the answer is in the
+  JSON body.
+
+## `./sim show <sim.yaml> --json`
+
+The resolved sim — the same data `./sim show` prints as text:
+
+```json
+{
+  "file": "sims/copters3.yaml",
+  "name": "copters3",
+  "server": {"type": "real", "auth": false, "port": 62008,
+             "control_port": 62009, "auth_port": 62018,
+             "auth_s2s_port": 62019, "ip": "127.0.0.1",
+             "auth_ip": "127.0.0.1", "gcs_party": "GCS_FLEET"},
+  "slot_base": 10,
+  "speedup": 1.0,
+  "units": [
+    {"name": "copter1", "block": "copter",
+     "fc": {"vehicle": "copter", "model": "quad", "sysid": 10,
+            "pilot_port": 5860, "fcb_port": 7760, "...": "..."},
+     "modules": ["de_comm", "de_mavlink"],
+     "ports": {"de_comm": 62010, "de_mavlink": 63010},
+     "account": "unit1_or_null",
+     "position": {"lat": ..., "lng": ...}}
+  ]
+}
+```
+
+`fc` is `null` for units with no flight controller. Exit 0, or non-zero
+with a `SimError` text when the sim does not resolve.
+
+## `./sim sims --json`
+
+Every generated sim (live or downed):
+
+```json
+{"sims": [{"name": "copters3", "units": 3, "server_type": "real",
+           "procs_alive": 0}]}
+```
+
+Empty list when nothing was generated. Always exit 0.
+
+## `./sim status [live|all] --json` / `./sim ctl status --json`
+
+Live sims (or all known sims with `all`), process state included:
+
+```json
+{"sims": [
+  {"name": "smoke_copters", "sim_file": "sims/copters3.yaml",
+   "sim_hash": "84d4157c13874177", "live": true,
+   "server": {"type": "real", "auth": false, "port": 62008,
+              "control_port": 62009, "auth_port": 62018, "up": true},
+   "procs": {"server.de_server": 240366, "server.gcs_bridge": 240377},
+   "units": [
+     {"name": "copter1", "block": "copter", "fc": {"...": "..."},
+      "udp": 62010,
+      "procs": {"sitl": 240388, "de_comm": 240389,
+                "de_mavlink": 240397}}],
+   "online": ["copter1", "copter2"],
+   "webclient": "https://localhost:3000/...",
+   "planning": "https://localhost:3000/planning?..."}
+]}
+```
+
+- `online`, `webclient`, `planning` appear only while the sim's server
+  proc is alive (`server.up`).
+- An `external` server adds `server.conn` (`"external <ip>:<port> via
+  auth <ip>:<port>"`).
+- No live sims: `{"sims": [], "downed": <n>}`; nothing generated at all:
+  `{"sims": []}`. Always exit 0.
+
+## `./sim list [roots...] --json`
+
+The scenario/test/sim catalog:
+
+```json
+{"roots": [
+  {"root": "scenarios",
+   "files": [{"file": "scenarios/examples/link_fault.yaml",
+              "description": "Runbook: ..."}]}]}
+```
+
+`roots` defaults to `scenarios` + `tests`. Always exit 0.
+
+## `./sim validate <file.yaml> --json`
+
+```json
+{"file": "tests/p4a/p4a08_targets.yaml", "ok": true, "problems": []}
+```
+
+`problems` lists every finding (`ok: false`); exit code is `1` when
+problems exist — the JSON is still printed first, so parse it before
+checking the exit code.
+
+## `./sim expand <file.yaml> [--seed N] --json`
+
+The chaos-expanded scenario as a `de.scenario/1` object (the human
+mode's yaml text, structured):
+
+```json
+{"file": "tests/soak/soak_copters3.yaml", "name": "soak_copters3",
+ "seed": 1,
+ "expanded": {"version": 1, "name": "...", "timeline": [...]}}
+```
+
+Exits non-zero with text when the file has no `chaos:` block.
+
+## `./sim doctor [sim.yaml] --json`
+
+```json
+[{"item": "de_comm", "status": "ok",
+  "detail": "/path/bin/de_comm", "fix": ""}]
+```
+
+`status` is `ok` | `missing` | `optional`. Exit `1` when any required
+item is missing.
+
+## `./sim run <file.yaml>` — the `RESULT` line + summary.json
+
+A run's **last stdout line** is always:
+
+```
+RESULT /abs/path/var/results/<ts>-<name>/summary.json
+```
+
+That file is the full run report:
+
+```json
+{"scenario": "smoke_copters", "file": "...yaml", "seed": 1,
+ "started_utc": "2026-10-12T15:48:10Z", "wall_s": 240.1,
+ "commits": {"droneengage_simulation_land": "...", "...": "..."},
+ "speedup": {...}, "speedup_requested": 1,
+ "realtime": {"required": false, "ok": true, "note": ""},
+ "step_ok": true,
+ "assertions": [{"name": "journal_count ...", "status": "PASS",
+                 "value": ..., "detail": "..."}],
+ "counts": {"pass": 8, "fail": 0, "skip": 0},
+ "exit": 0}
+```
+
+- `assertions[].status` is `PASS` | `FAIL` | `SKIP`; `value`/`detail`
+  are the measured value and explanation (may be `null`/`""`).
+- `exit` mirrors the process exit code: `0` = every step and assertion
+  passed. The directory also holds `junit.xml`, per-unit journals and
+  logs.
+- `./sim suite` writes the same `summary.json` per run plus a junit
+  report under `var/results/nightly/`.

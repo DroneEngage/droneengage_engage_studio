@@ -75,6 +75,10 @@ Global flags for show/up/run/view/suite/validate:
 Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 (automated cases) and scenarios/ (human-run demos + examples).
 docs/SCENARIOS.md is the authoring reference. See README.md.
+
+Machine output: show, sims, status (and ./sim ctl status), list,
+validate, expand and doctor take --json (docs/MACHINE_API.md). A run's
+last line is `RESULT <dir>/summary.json` - the run's full report.
 """
 
 import glob
@@ -257,12 +261,31 @@ def main(argv):
             simlib.validate_block(b, simlib.load_catalog())
             print(json.dumps(b, indent=2))
         elif c == "show":
+            json_out = "--json" in a
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ())
+            bad = _bad_flags(a, ("--json",))
             if bad or len(files) != 1:
-                sys.exit("usage: ./sim show <sim.yaml>"
+                sys.exit("usage: ./sim show <sim.yaml> [--json]"
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
             sim = simlib.load_sim(files[0])
+            if json_out:
+                srv = sim["server"]
+                print(json.dumps({
+                    "file": files[0], "name": sim["name"],
+                    "server": {k: srv[k] for k in
+                               ("type", "auth", "port", "control_port",
+                                "auth_port", "auth_s2s_port", "ip",
+                                "auth_ip", "gcs_party") if k in srv},
+                    "slot_base": sim["slot_base"],
+                    "speedup": sim["speedup"],
+                    "units": [{"name": u["name"], "block": u["block"],
+                               "fc": u["fc"], "modules": u["modules"],
+                               "ports": u["ports"],
+                               "account": (u.get("account") or {})
+                               .get("user"),
+                               "position": u["position"]}
+                              for u in sim["units"]]}, indent=1))
+                return
             srv = sim["server"]
             print(f"server {srv['type']}{' +auth' if srv['auth'] else ''}: "
                   f"wss {srv['port']} control {srv['control_port']}"
@@ -296,15 +319,29 @@ def main(argv):
                          + f" - unknown {' '.join(bad)}")
             launcher.down(None if not names or "--all" in a else names[0])
         elif c == "sims":
+            json_out = "--json" in a
+            bad = _bad_flags(a, ("--json",))
+            if bad:
+                sys.exit("usage: ./sim sims [--json]"
+                         + f" - unknown {' '.join(bad)}")
             names = simlib.sim_names()
-            if not names:
+            if json_out:
+                print(json.dumps({"sims": [
+                    {"name": n,
+                     "units": len(simlib.load_manifest(n)["units"]),
+                     "server_type":
+                         simlib.load_manifest(n)["server"]["type"],
+                     "procs_alive": len(simlib.read_pids(n))}
+                    for n in names]}, indent=1))
+            elif not names:
                 print("no sim generated - ./sim up <sim.yaml>")
-            for n in names:
-                m = simlib.load_manifest(n)
-                srv = m["server"]
-                print(f"{n:16s} {len(m['units'])} unit(s)  "
-                      f"server {srv['type']}  "
-                      f"{len(simlib.read_pids(n))} proc(s) alive")
+            else:
+                for n in names:
+                    m = simlib.load_manifest(n)
+                    srv = m["server"]
+                    print(f"{n:16s} {len(m['units'])} unit(s)  "
+                          f"server {srv['type']}  "
+                          f"{len(simlib.read_pids(n))} proc(s) alive")
         elif c == "status":
             import ctl
             ctl.main(["status"] + a)
@@ -355,21 +392,36 @@ def main(argv):
                   + (["--keep"] if keep else [])
             return subprocess.call(cmd, cwd=simlib.SIM_ROOT)
         elif c == "list":
+            json_out = "--json" in a
             roots = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ())
+            bad = _bad_flags(a, ("--json",))
             if bad or any(r not in ("scenarios", "tests", "sims")
                           for r in roots):
-                sys.exit("usage: ./sim list [scenarios|tests|sims] ..."
+                sys.exit("usage: ./sim list [--json] "
+                         "[scenarios|tests|sims] ..."
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
-            for root in roots or ["scenarios", "tests"]:
-                d = os.path.join(simlib.SIM_ROOT, root)
-                files = sorted(glob.glob(os.path.join(d, "**", "*.yaml"),
-                                         recursive=True))
-                print(f"{root}/  ({len(files)} files)")
-                for f in files:
-                    rel = os.path.relpath(f, simlib.SIM_ROOT)
-                    one = _one_liner(f)
-                    print(f"  {rel:52s} {one[:80]}")
+            if json_out:
+                print(json.dumps({"roots": [
+                    {"root": root,
+                     "files": [
+                         {"file": os.path.relpath(f, simlib.SIM_ROOT),
+                          "description": _one_liner(f)[:80]}
+                         for f in sorted(glob.glob(
+                             os.path.join(simlib.SIM_ROOT, root,
+                                          "**", "*.yaml"),
+                             recursive=True))]}
+                    for root in roots or ["scenarios", "tests"]]},
+                                 indent=1))
+            else:
+                for root in roots or ["scenarios", "tests"]:
+                    d = os.path.join(simlib.SIM_ROOT, root)
+                    files = sorted(glob.glob(
+                        os.path.join(d, "**", "*.yaml"), recursive=True))
+                    print(f"{root}/  ({len(files)} files)")
+                    for f in files:
+                        rel = os.path.relpath(f, simlib.SIM_ROOT)
+                        one = _one_liner(f)
+                        print(f"  {rel:52s} {one[:80]}")
         elif c == "new":
             names = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, ())
@@ -398,12 +450,18 @@ def main(argv):
             print(f"wrote {rel} - edit the header + fleet/timeline, then:")
             print(f"  ./sim validate {rel} && ./sim run {rel}")
         elif c == "validate":
+            json_out = "--json" in a
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ())
+            bad = _bad_flags(a, ("--json",))
             if bad or len(files) != 1:
-                sys.exit("usage: ./sim validate <file.yaml>"
+                sys.exit("usage: ./sim validate <file.yaml> [--json]"
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
             problems = _validate_file(files[0])
+            if json_out:
+                print(json.dumps({"file": files[0],
+                                  "ok": not problems,
+                                  "problems": problems}, indent=1))
+                sys.exit(0 if not problems else 1)
             if problems:
                 for p in problems:
                     print(simlib.col_red("not ok") + f"  {p}")
@@ -419,15 +477,23 @@ def main(argv):
                 seed = int(a[i + 1])
                 del a[i:i + 2]
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ())
+            bad = _bad_flags(a, ("--json",))
             if bad or len(files) != 1:
-                sys.exit("usage: ./sim expand <file.yaml> [--seed N]"
+                sys.exit("usage: ./sim expand <file.yaml> [--seed N] "
+                         "[--json]"
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
             scn = scenario_mod.load_scenario(files[0], seed=seed,
                                              probe_ports=False)
             if not scn.get("expanded"):
                 sys.exit(f"{files[0]}: no chaos: block to expand")
-            sys.stdout.write(scenario_mod.expanded_text(scn))
+            if "--json" in a:
+                print(json.dumps(
+                    {"file": files[0], "name": scn["name"],
+                     "seed": scn["seed"],
+                     "expanded": scenario_mod.expanded_spec(scn)},
+                    indent=1))
+            else:
+                sys.stdout.write(scenario_mod.expanded_text(scn))
         elif c == "view":
             import scenario_runner
             files = [x for x in a if not x.startswith("-")]

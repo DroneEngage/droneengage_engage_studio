@@ -1699,17 +1699,58 @@ def cmd_web(name=None, open_browser=True, planning=False):
             print(f"xdg-open failed: {e} - open the URL above by hand")
 
 
-def cmd_status(scope="live"):
+def _sim_status_json(name, m, pids, srv_up):
+    """One sim's status as a JSON-safe dict (the `status --json` shape -
+    docs/MACHINE_API.md)."""
+    srv = m["server"]
+    out = {"name": name, "sim_file": m.get("sim_file"),
+           "sim_hash": m["sim_hash"],
+           "live": bool(pids),
+           "server": {"type": srv["type"], "auth": srv["auth"],
+                      "port": srv["port"],
+                      "control_port": srv["control_port"],
+                      "auth_port": srv.get("auth_port"),
+                      "up": srv_up},
+           "procs": {},
+           "units": []}
+    if srv["type"] == "external":
+        out["server"]["conn"] = f"external {srv['ip']}:{srv['port']}" \
+            + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
+               if srv["auth"] else "")
+    for p in m["server_procs"]:
+        out["procs"][f"server.{p}"] = pids.get(f"server.{p}")
+    for u in m["units"]:
+        ud = {"name": u["name"], "block": u["block"],
+              "fc": u["fc"], "udp": u["ports"]["de_comm"],
+              "procs": {p: pids.get(f"{u['name']}.{p}")
+                        for p in simlib.procs_of(u)}}
+        out["units"].append(ud)
+    if srv_up:
+        out["online"] = sorted(online_parties(name))
+        out["webclient"] = simlib.webclient_url(m)
+        out["planning"] = simlib.webclient_url(
+            m, "/planning", "GCSPLN_" + name)
+    return out
+
+
+def cmd_status(scope="live", json_out=False):
     mans = manifests()
+    if json_out and not mans:
+        print(json.dumps({"sims": []}, indent=1))
+        return
     if not mans:
         print("no sim generated - ./sim up <sim.yaml>")
         return
     dead = set(mans) - set(simlib.live_sim_names())
     if scope != "all":
         mans = {n: m for n, m in mans.items() if n not in dead}
+    if json_out and not mans:
+        print(json.dumps({"sims": [], "downed": len(dead)}, indent=1))
+        return
     if not mans:
         print(f"no live sim ({len(dead)} downed - `status all` shows them)")
         return
+    sims_json = []
     for name, m in mans.items():
         srv = m["server"]
         pids = simlib.read_pids(name)
@@ -1720,6 +1761,9 @@ def cmd_status(scope="live"):
         ws_proc = "fake_server" if srv["type"] == "fake" else "de_server"
         srv_up = srv["type"] == "external" \
             or bool(pids.get(f"server.{ws_proc}"))
+        if json_out:
+            sims_json.append(_sim_status_json(name, m, pids, srv_up))
+            continue
         print(f"sim {simlib.col_bold(name)}"
               + ("" if pids else " " + simlib.col_red("(down)"))
               + f" ({m.get('sim_file') or '-'}, {m['sim_hash']})")
@@ -1770,6 +1814,8 @@ def cmd_status(scope="live"):
         else:
             print("  (server down - `sim down` frees nothing here; "
                   "`sim clean` removes the leftover run dir)")
+    if json_out:
+        print(json.dumps({"sims": sims_json}, indent=1))
 
 
 def main(argv):
@@ -1783,10 +1829,12 @@ def main(argv):
     c, a = argv[0], argv[1:]
 
     if c == "status":
+        json_out = "--json" in a
+        a = [x for x in a if x != "--json"]
         scope = a[0] if a else "live"
         if scope not in ("live", "all") or len(a) > 1:
-            sys.exit("usage: status [live|all]")
-        cmd_status(scope)
+            sys.exit("usage: status [live|all] [--json]")
+        cmd_status(scope, json_out=json_out)
     elif c == "web":
         names = [x for x in a if not x.startswith("-")]
         cmd_web(names[0] if names else None, "--print" not in a,
