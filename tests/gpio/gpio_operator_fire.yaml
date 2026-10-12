@@ -14,7 +14,7 @@
 version: 1
 name: gpio_operator_fire
 transport: fake
-operation: ../../packages/gpio_fire.deploy.json
+operation: ops/gpio_fire.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

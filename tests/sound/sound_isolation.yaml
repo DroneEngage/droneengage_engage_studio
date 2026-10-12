@@ -9,7 +9,7 @@
 version: 1
 name: sound_isolation
 transport: fake
-operation: ../../packages/snd_isolate.deploy.json
+operation: ops/snd_isolate.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

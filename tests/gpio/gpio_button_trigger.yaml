@@ -11,7 +11,7 @@
 version: 1
 name: gpio_button_trigger
 transport: fake
-operation: ../../packages/gpio_button.deploy.json
+operation: ops/gpio_button.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

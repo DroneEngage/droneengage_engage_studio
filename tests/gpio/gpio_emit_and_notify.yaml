@@ -15,7 +15,7 @@
 version: 1
 name: gpio_emit_and_notify
 transport: fake
-operation: ../../packages/gpio_probe.deploy.json
+operation: ops/gpio_probe.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

@@ -8,7 +8,7 @@
 version: 1
 name: pl_plan_gate_stabilized
 transport: fake
-operation: ../../../packages/pl_gate_stabilized.deploy.json
+operation: ops/pl_gate_stabilized.deop
 verify: {cli: ../../../tools/verify_wrap.js}
 settle_s: 10
 fleet:

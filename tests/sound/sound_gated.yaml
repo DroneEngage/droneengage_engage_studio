@@ -11,7 +11,7 @@
 version: 1
 name: sound_gated
 transport: fake
-operation: ../../packages/snd_gated.deploy.json
+operation: ops/snd_gated.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

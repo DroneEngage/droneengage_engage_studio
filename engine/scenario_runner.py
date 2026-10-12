@@ -206,6 +206,16 @@ def _do(step, scn, ctx):
             return False
         op = op if os.path.isabs(op) else os.path.join(
             os.path.dirname(scn["file"]), op)
+        if op.endswith(".deop"):
+            # TASK-23: the run-start build already compiled the
+            # scenario's own op; a step-level operation: override builds
+            # on demand here (the scenario fleet supplies the role
+            # binding for ctx-less ops)
+            if op == scn.get("operation"):
+                op = scn.get("operation_spec") or op
+            if op.endswith(".deop"):
+                import opbuild
+                op = opbuild.build_deop(op, scn.get("fleet"))
         if ctl._is_deploy_spec(op):
             bot.log("DEPLOY", f"spec {os.path.basename(op)}")
             # P4F-07: `authorize: {unit: {valid_for_s, max_launches}}` on
@@ -1160,6 +1170,14 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     (the world stream and the render procs stay live) until Ctrl-C."""
     t_file = os.path.abspath(t_file)
     scn = scenario.load_scenario(t_file, seed=seed)
+    if (scn.get("operation") or "").endswith(".deop"):
+        # TASK-23: compile the source on demand BEFORE the first step -
+        # scn["operation"] stays the .deop (verify:/send {PKG:} use it)
+        # and the build also refreshes the by-name/ links those {PKG:}
+        # tokens resolve against
+        import opbuild
+        scn["operation_spec"] = opbuild.build_deop(
+            scn["operation"], scn.get("fleet"))
     t0_wall = time.time()
     out = _results_dir(scn)
     os.makedirs(out, exist_ok=True)

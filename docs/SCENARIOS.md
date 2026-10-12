@@ -15,7 +15,7 @@ Where files live:
 | `sims/` | reusable fleet definitions for `./sim up`/`./sim show` |
 | `blocks/` | unit types (`copter`, `plane`, `rover`, `comm_only`, `copter_camera`, …) — `./sim blocks` lists them |
 | `worlds/` | seeded ground-truth worlds for `world:` |
-| `packages/` | compiled operations referenced by `operation:` |
+| `packages/` | hand-written/plain operations referenced by `operation:` (compiled outputs of in-repo `.deop` sources are NOT committed — the runner compiles them on demand into `var/build/packages/<key>/`) |
 | `tools/` | `verify_wrap.js` (the verify gate CLI) |
 
 Commands:
@@ -47,7 +47,11 @@ transport: fake                # fake | real | {type: real, link_proxy: true}
 home: [lat, lng, alt, yaw]     # optional fleet home (defaults to SITL home)
 slot_base: 40                  # optional; default is derived from the seed
 world: ../../worlds/forest_a.yaml        # optional seeded world (stubs)
-operation: ../../packages/x.deploy.json  # optional; what `do: deploy` sends
+operation: ops/x.deop                  # optional; what `do: deploy` sends -
+                               # a .deop source compiles on demand into
+                               # var/build/packages/<key>/ (its .ctx.json
+                               # sidecar supplies binding+caps+fleet hints;
+                               # a packages/*.json spec/package deploys as-is)
 verify: {cli: ../../tools/verify_wrap.js}        # optional pre-deploy gate
 settle_s: 20                   # quiet seconds after the last timeline step
 teardown: land                 # land (default) | reset | none

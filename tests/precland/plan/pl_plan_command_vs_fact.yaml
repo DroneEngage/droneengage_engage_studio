@@ -8,7 +8,7 @@
 version: 1
 name: pl_plan_command_vs_fact
 transport: fake
-operation: ../../../packages/pl_command_vs_fact.deploy.json
+operation: ops/pl_command_vs_fact.deop
 verify: {cli: ../../../tools/verify_wrap.js}
 settle_s: 10
 fleet:

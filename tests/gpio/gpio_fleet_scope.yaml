@@ -7,7 +7,7 @@
 version: 1
 name: gpio_fleet_scope
 transport: fake
-operation: ../../packages/gpio_scope.deploy.json
+operation: ops/gpio_scope.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

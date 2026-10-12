@@ -15,7 +15,9 @@ sims/       fleets       - blocks composed: names, counts, placement, server
 tests/      test cases   - the automated library CI runs (steps + asserts)
 scenarios/  human runs   - demos + examples a person drives by hand
 worlds/     ground truth - seeded worlds scenarios can load
-packages/   operations   - compiled ops the tests deploy
+packages/   operations   - hand-written ops the tests deploy
+                         (a .deop source compiles on demand into
+                         var/build/packages/<key>/)
 templates/  scaffold     - the file ./sim new copies
 docs/       authoring    - SCENARIOS.md: the de.scenario/1 reference
 wiki/       user docs    - USER_GUIDE.md: the plain-English guide
@@ -300,13 +302,22 @@ See the docstring in `engine/runner.py` for every `do:` step and
   `precland_scene.json`; `also: [{path, json, delay_ms?}]`
   writes extra files inside the same call — an entry with `delay_ms`
   sleeps N ms before its write, keeping the order);
+- **`.deop` operations (TASK-23):** `operation:` may name a
+  de.operation/2 source (`ops/x.deop`) - the runner compiles it
+  on demand with tools/compile_op.js into
+  `var/build/packages/<key>/` (source+compiler+ctx hash; edits
+  recompile, unchanged runs reuse). Its `<x>.ctx.json` sidecar
+  supplies the binding + capability registry; without one the
+  binding derives from the fleet (`role:` tags, then fleet order)
+  and the dir's single `*.unit.caps.json` feeds --caps;
 - **fleet ops (P4A-09):** when `operation:` names a deploy spec (a top-level
   `roles` map - see `packages/p4a05.deploy.json`), `deploy` runs the
   two-phase DE_OP_CONTROL (1094) PREPARE per role, and the run goes up
   with `opstart` / down with `opabort` (`opstatus`, `opmsg` for probes).
   A fleet package refuses the plain `start`;
 - **step tokens** (`send`/`opmsg`): `{RUN}`, `{OP_RUN}`, `{PKG:<file>}`,
-  `{HASH:<file>}` (paths resolve under `packages/` too), `{WM_TID:<unit>}`;
+  `{HASH:<file>}` (paths resolve under `packages/` and the
+  on-demand build's `var/build/packages/by-name/`), `{WM_TID:<unit>}`;
 - **assertions:** `journal_count`, `module_log_count` (same bounds over
   `logs/<module>.log` - module stdout, for facts that never reach the
   journal like de_precland's `EVENT_OUT` lines), `journal_order`,

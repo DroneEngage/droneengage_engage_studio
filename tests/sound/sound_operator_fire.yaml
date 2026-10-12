@@ -12,7 +12,7 @@
 version: 1
 name: sound_operator_fire
 transport: fake
-operation: ../../packages/snd_fire.deploy.json
+operation: ops/snd_fire.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

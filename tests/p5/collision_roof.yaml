@@ -10,7 +10,7 @@ name: collision_roof
 seed: 1
 transport: fake
 world: ../../worlds/physics_roof.yaml
-operation: ../../packages/collision_roof.deploy.json
+operation: ops/collision_roof.deop
 render: {mode: physics, headless: true}
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 15

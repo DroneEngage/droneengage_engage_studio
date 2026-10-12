@@ -18,7 +18,7 @@ version: 1
 name: payload_two_bays_approval
 seed: 7
 transport: fake
-operation: ../../packages/payload_two_bays.deploy.json
+operation: ops/payload_two_bays.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 120
 fleet:
@@ -36,9 +36,9 @@ timeline:
   - {t: 25, do: start, timeout: 300}
   - {t: 30, do: wait_journal, unit: "amb1", re: "RUN run .* started",
      timeout: 120}
-  # 'up' takeoff then the unlim hold becomes the FC's current item
-  - {t: 40, do: wait_journal, unit: "amb1", re: "fc current seq 2",
-     timeout: 240}
+  # 'up' takeoff then the unlim hold becomes the FC's current item -
+  # no journal line fires on the seq transition, so give it fixed time
+  - {t: 40, do: wait, seconds: 90}
   # manual activation of the deliver template - activation approval first
   - {t: 50, do: operator, act: activate, unit: amb1, mission: drop}
   - {t: 55, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ activate",

@@ -54,7 +54,10 @@ is now the only simulation/testing location.
                               contract (agents: read this before scraping text)
     templates/scenario.yaml   what ./sim new scaffolds
     worlds/*.yaml             seeded ground-truth worlds for scenario world:
-    packages/*.json           compiled DE packages used by tests
+    packages/*.json           hand-written DE packages (compiled
+                            outputs of in-repo .deop sources are
+                            NOT committed - the runner compiles them
+                            on demand into var/build/packages/)
     tools/                    support CLIs (verify_wrap.js, compile_op.js, ...)
     modules/catalog.yaml      how each DE module is launched + wired
     modules/templates/        base de_comm config, common/copter SITL parms

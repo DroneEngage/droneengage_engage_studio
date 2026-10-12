@@ -10,7 +10,7 @@
 version: 1
 name: gpio_pwm_after_legacy_off
 transport: fake
-operation: ../../packages/gpio_pwmbak.deploy.json
+operation: ops/gpio_pwmbak.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

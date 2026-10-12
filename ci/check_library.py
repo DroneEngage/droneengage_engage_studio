@@ -92,6 +92,31 @@ for f in sorted(glob.glob(os.path.join(ROOT, "packages", "*.json")) +
     except Exception as e:
         fail("json", f, str(e))
 
+# ---- no committed compile_op.js output with an in-repo .deop (SL-0026)
+# the runner compiles a referenced .deop on demand into
+# var/build/packages/ - a committed twin only drifts from its source
+deop_ops = set()
+for f in glob.glob(os.path.join(ROOT, "tests", "**", "*.deop"),
+                   recursive=True) + \
+         glob.glob(os.path.join(ROOT, "scenarios", "**", "*.deop"),
+                   recursive=True):
+    deop_ops.add(os.path.basename(f)[:-len(".deop")])
+    try:
+        d = json.loads(simlib.strip_comments(open(f).read()))
+        if isinstance(d.get("op"), str):
+            deop_ops.add(d["op"])
+    except Exception:
+        pass
+for f in sorted(glob.glob(os.path.join(ROOT, "packages", "*.json"))):
+    try:
+        d = json.load(open(f))
+    except Exception:
+        continue
+    if isinstance(d, dict) and d.get("op") in deop_ops:
+        fail("pkg", f,
+             f"compiled output of in-repo .deop {d['op']!r} - delete it "
+             "(the runner compiles it on demand)")
+
 for line in bad:
     print("FAIL", line)
 print(f"{len(yamls)} yaml, "

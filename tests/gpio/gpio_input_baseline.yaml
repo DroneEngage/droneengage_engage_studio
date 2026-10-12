@@ -10,7 +10,7 @@
 version: 1
 name: gpio_input_baseline
 transport: fake
-operation: ../../packages/gpio_baseline.deploy.json
+operation: ops/gpio_baseline.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

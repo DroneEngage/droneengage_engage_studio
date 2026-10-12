@@ -16,7 +16,7 @@ name: drop_on_person
 seed: 1
 transport: fake
 world: ../../worlds/physics_drop.yaml
-operation: ../../packages/drop_on_person.deploy.json
+operation: ops/drop_on_person.deop
 render: {mode: physics, headless: true}
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 30

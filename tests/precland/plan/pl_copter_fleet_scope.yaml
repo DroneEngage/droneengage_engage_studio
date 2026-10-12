@@ -13,7 +13,7 @@ version: 1
 name: pl_copter_fleet_scope
 transport: fake
 world: ../../../worlds/pad_field.yaml
-operation: ../../../packages/pl_copter_fleet.deploy.json
+operation: ops/pl_copter_fleet.deop
 verify: {cli: ../../../tools/verify_wrap.js}
 settle_s: 15
 fleet:

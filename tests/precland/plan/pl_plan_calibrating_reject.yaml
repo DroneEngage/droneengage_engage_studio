@@ -9,7 +9,7 @@
 version: 1
 name: pl_plan_calibrating_reject
 transport: fake
-operation: ../../../packages/pl_calibrating_reject.deploy.json
+operation: ops/pl_calibrating_reject.deop
 verify: {cli: ../../../tools/verify_wrap.js}
 settle_s: 10
 fleet:

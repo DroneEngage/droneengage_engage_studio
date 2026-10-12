@@ -1,5 +1,5 @@
 {
-  "_note": "GF-07 ctx: role 'node' binds node_a + node_b - each registry entry is the serialized 1089 caps view (gpio.unit.caps.json) so gpio.* events resolve against the advert.",
+  "_note": "GF-07 ctx: role 'node' binds node_a + node_b - each registry entry is the serialized 1089 caps view (gpio.unit.caps.json) so gpio.* events resolve against the advert. fleet:false keeps the package de.package/2.1 (unit-local emits, GF-07) - opbuild defaults --fleet on.",
   "binding": {
     "node": [
       "node_a",
@@ -513,5 +513,6 @@
       "state": {},
       "t": 0
     }
-  }
+  },
+  "fleet": false
 }

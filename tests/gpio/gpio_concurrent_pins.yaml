@@ -6,7 +6,7 @@
 version: 1
 name: gpio_concurrent_pins
 transport: fake
-operation: ../../packages/gpio_concurrent_pins.deploy.json
+operation: ops/gpio_concurrent_pins.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

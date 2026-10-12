@@ -15,7 +15,7 @@ version: 1
 name: camera_capture_event
 transport: fake
 world: ../../worlds/forest_canopy.yaml
-operation: ../../packages/camera_capture.deploy.json
+operation: ops/camera_capture.deop
 render: {mode: cameras, headless: false}
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20

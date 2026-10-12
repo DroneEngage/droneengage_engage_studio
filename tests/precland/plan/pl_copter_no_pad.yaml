@@ -9,7 +9,7 @@ version: 1
 name: pl_copter_no_pad
 transport: fake
 world: ../../../worlds/pad_none.yaml
-operation: ../../../packages/pl_copter_land.deploy.json
+operation: ops/pl_copter_land.deop
 verify: {cli: ../../../tools/verify_wrap.js}
 settle_s: 15
 fleet:

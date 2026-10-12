@@ -10,7 +10,7 @@
 version: 1
 name: gpio_pulse_override
 transport: fake
-operation: ../../packages/gpio_pulse.deploy.json
+operation: ops/gpio_pulse.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

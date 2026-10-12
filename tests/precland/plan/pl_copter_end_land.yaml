@@ -9,7 +9,7 @@ version: 1
 name: pl_copter_end_land
 transport: fake
 world: ../../../worlds/pad_field_ref.yaml
-operation: ../../../packages/pl_copter_end.deploy.json
+operation: ops/pl_copter_end.deop
 verify: {cli: ../../../tools/verify_wrap.js}
 settle_s: 30
 fleet:

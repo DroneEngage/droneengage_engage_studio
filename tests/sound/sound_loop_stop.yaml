@@ -13,7 +13,7 @@
 version: 1
 name: sound_loop_stop
 transport: fake
-operation: ../../packages/snd_loop.deploy.json
+operation: ops/snd_loop.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

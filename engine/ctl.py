@@ -1287,9 +1287,12 @@ def _op_parties():
 
 def _pkg_path(p):
     """A {PKG:}/{HASH:} token path: as given, relative to the sim root,
-    or bare inside packages/."""
+    bare inside packages/, or bare inside var/build/packages/by-name/
+    (on-demand .deop compiles, SL-0026)."""
     for cand in (p, os.path.join(simlib.SIM_ROOT, p),
-                 os.path.join(simlib.SIM_ROOT, "packages", p)):
+                 os.path.join(simlib.SIM_ROOT, "packages", p),
+                 os.path.join(simlib.VAR_DIR, "build", "packages",
+                              "by-name", p)):
         if os.path.isfile(cand):
             return cand
     sys.exit(f"no such package file: {p!r}")

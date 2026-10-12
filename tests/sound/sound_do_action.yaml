@@ -11,7 +11,7 @@
 version: 1
 name: sound_do_action
 transport: fake
-operation: ../../packages/snd_actions.deploy.json
+operation: ops/snd_actions.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

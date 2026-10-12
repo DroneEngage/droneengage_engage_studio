@@ -13,7 +13,7 @@
 version: 1
 name: payload_emit_ignored
 transport: fake
-operation: ../../packages/payload_emit_ignored.deploy.json
+operation: ops/payload_emit_ignored.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 25
 fleet:

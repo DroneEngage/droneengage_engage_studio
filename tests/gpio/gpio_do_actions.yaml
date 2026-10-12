@@ -8,7 +8,7 @@
 version: 1
 name: gpio_do_actions
 transport: fake
-operation: ../../packages/gpio_actions.deploy.json
+operation: ops/gpio_actions.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

@@ -18,7 +18,7 @@
 version: 1
 name: gpio_payload_pin_guard
 transport: fake
-operation: ../../packages/gpio_guard.deploy.json
+operation: ops/gpio_guard.deop
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 30
 fleet:
