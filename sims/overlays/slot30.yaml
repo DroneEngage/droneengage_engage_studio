@@ -1,0 +1,7 @@
+# slot_base 30 (pilot ports 6060+): used when the developer's own SITL
+# sessions hold the default 5760+10k ports. Widens the arrive accel
+# allowance (sv_accel_s 8): the default 3 s covers only spin-up; SITL
+# copters also decelerate ~5 s on waypoint approach at 10 m/s.
+version: 1
+slot_base: 30
+config: {de_comm: {sv_accel_s: 8}}

@@ -464,11 +464,17 @@ def validate_block(b, catalog):
 SERVER_TYPES = ("real", "fake", "external")
 
 
-def load_sim(path_or_spec, base_dir=None):
+def load_sim(path_or_spec, base_dir=None, overlays=None):
     """Load a sim file (or an inline dict) and expand it into concrete units.
     Returns {name, server{}, home, slot_base, units[], hash}. The name -
-    the sim file's stem or an explicit `name:` - owns var/run/<name>/."""
+    the sim file's stem or an explicit `name:` - owns var/run/<name>/. An
+    unnamed spec gets each applied overlay appended (copters3 --with
+    faults -> copters3_faults), so variants keep their own var/run dir
+    and a changed overlay set always changes the hash."""
     spec, src = _sim_spec(path_or_spec, base_dir)
+    applied = []
+    for ov in _spec_overlays(spec, overlays):
+        spec = _apply_overlay(spec, ov, applied)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
                            "slot_base", "units", "render", "speedup",
                            "fcb_proxy"}
@@ -478,6 +484,11 @@ def load_sim(path_or_spec, base_dir=None):
         raise SimError("sim: unsupported version")
     name = spec.get("name") or \
         (os.path.splitext(os.path.basename(src))[0] if src else "sim")
+    if applied and "name" not in spec:
+        # a file/inline spec without its own name takes the variant
+        # suffix (base_overlay1_overlay2) - variants cannot share a
+        # var/run dir and reuse never mixes them
+        name += "_" + "_".join(applied)
     if not re.fullmatch(r"[A-Za-z0-9][\w-]*", name):
         raise SimError(f"sim name {name!r}: letters, digits, _ and - only")
     home = tuple(spec.get("home", HOME))
@@ -636,6 +647,80 @@ def _sim_spec(path_or_spec, base_dir=None, _chain=()):
         return spec, src
     merged, _ = _sim_spec(os.path.join(here, parent), None, _chain)
     return deep_merge(merged, spec), src
+
+
+# ---------------------------------------------------------------- overlays
+# sims/overlays/<name>.yaml - one twist applied on TOP of a resolved sim
+# spec (extends: inherits, an overlay overrides). `./sim <cmd> --with a,b`,
+# SIM_WITH=a,b, a spec's own `with: [a, b]`, or a scenario's
+# `sim: {base: copters3, with: [faults]}` all end up here. A bare name is
+# an overlay file; a path (with a separator or .yaml) is read as given.
+
+OVERLAYS_DIR = os.path.join(SIM_ROOT, "sims", "overlays")
+
+
+def _overlay_path(name):
+    p = name if (os.sep in str(name)
+                 or str(name).endswith((".yaml", ".yml"))) \
+        else os.path.join(OVERLAYS_DIR, str(name) + ".yaml")
+    p = os.path.abspath(p)
+    if not os.path.isfile(p):
+        raise SimError(f"overlay {name!r}: no {p}")
+    return p
+
+
+def _apply_overlay(spec, name, applied, _chain=()):
+    """Merge one overlay onto spec (the overlay wins). Keys:
+    server/home/slot_base/render/speedup/fcb_proxy - deep-merged like
+    extends; units - APPENDED; config - deep-merged into every unit
+    entry's config:; fc - likewise into every fc:; with - more overlays
+    (applied before this one's own keys... no: overlay order = file
+    order, a `with:` inside is applied after its own keys). `applied`
+    collects overlay names for the derived sim name."""
+    path = _overlay_path(name)
+    if path in _chain:
+        raise SimError(f"overlay with loop at {path}")
+    o = dict(load_yaml(path))
+    for drop in ("version", "description", "name"):
+        o.pop(drop, None)
+    nested = o.pop("with", None) or []
+    if isinstance(nested, str):
+        nested = [x.strip() for x in nested.split(",") if x.strip()]
+    units_extra = o.pop("units", None)
+    cfg = o.pop("config", None)
+    fc = o.pop("fc", None)
+    unknown = set(o) - {"server", "home", "slot_base", "render",
+                        "speedup", "fcb_proxy"}
+    if unknown:
+        raise SimError(f"overlay {name!r}: unknown keys {sorted(unknown)}")
+    spec = deep_merge(spec, o)
+    if cfg or fc:
+        for e in spec.get("units") or []:
+            if not isinstance(e, dict):
+                continue
+            if cfg:
+                e["config"] = deep_merge(dict(e.get("config") or {}), cfg)
+            if fc:
+                e["fc"] = deep_merge(dict(e.get("fc") or {}), fc)
+    if units_extra is not None:
+        spec["units"] = list(spec.get("units") or []) + list(units_extra)
+    applied.append(os.path.splitext(os.path.basename(path))[0])
+    for n in nested:
+        spec = _apply_overlay(spec, n, applied, _chain + (path,))
+    return spec
+
+
+def _spec_overlays(spec, overlays):
+    """The overlay list for one load: the spec's own `with:` (file or
+    inline dict), then the explicit arg, else the SIM_WITH env/CLI
+    flag. Later entries win."""
+    own = spec.pop("with", None) or []
+    if isinstance(own, str):
+        own = [x.strip() for x in own.split(",") if x.strip()]
+    rest = overlays if overlays is not None else \
+        [x.strip() for x in str(setting("SIM_WITH", "")).split(",")
+         if x.strip()]
+    return list(own) + list(rest)
 
 
 def load_server(srv, slot_base=None):

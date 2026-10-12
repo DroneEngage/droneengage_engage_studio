@@ -24,4 +24,4 @@ SITL needs ~1–2 min of GPS/EKF warm-up before `arm` succeeds.
 
 slot_base 40: copter1 sysid 40 (pilot 6160, fcb 8060, de_comm 62400,
 de_mavlink 63400); copter2 +10. Server wss 62008, control 62009. Cannot
-run alongside another slot-40 sim — use copters2_slot30 in that case.
+run alongside another slot-40 sim — use `--with slot30` in that case.

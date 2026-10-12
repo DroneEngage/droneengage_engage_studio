@@ -18,6 +18,8 @@ fail fast.
     fleet:
       - {id: cam1, cls: copter, role: cam_scout, home: [..], modules: [..]}
       - {id: mast, cls: static, role: sdr_mast,  base: [..]}
+    # or, when the fleet already lives in sims/ (SL-0025):
+    # sim: {base: copters3, with: [faults]}   # replaces fleet: + transport:
     operator:                       # the bot's standing policy
       approve: {launch: {after_s: 5}, action: {after_s: 3}}
       confirm: {person: {after_s: 10}}
@@ -165,11 +167,12 @@ def _chaos_entry(ent):
     return None, {}
 
 
-def _fleet_draw_info(raw):
+def _fleet_draw_info(raw, fleet_meta=None):
     """fleet -> {id: {fc, modules}} for the chaos draw: which units a
     kind may hit and which proc names module_kill/freeze can pick."""
     info = {}
-    for ent in raw.get("fleet") or []:
+    for ent in fleet_meta if fleet_meta is not None \
+            else raw.get("fleet") or []:
         b = simlib.load_block(CLS_BLOCK.get(ent["cls"], ent["cls"]))
         mods = list(b["modules"]) + [
             m for m in (ent.get("modules") or []) if m not in b["modules"]]
@@ -199,17 +202,21 @@ def _chaos_window(ch, key, default, path):
     return lo, hi
 
 
-def _validate_chaos(raw, path):
+def _validate_chaos(raw, path, fleet_meta=None, transport=None):
     """chaos: semantics the schema cannot express - known kinds the
     transport can serve, at least one drawable unit, a usable window,
     and (TASK-10) a run-wide invariant assertion: an unscripted run is
-    only evidence when an invariant watched it."""
+    only evidence when an invariant watched it. fleet_meta/transport
+    carry a `sim:` file's resolved units/server when there is no
+    fleet:/transport: block."""
     import checks
     ch = raw["chaos"]
     if not isinstance(ch, dict):
         raise simlib.SimError(f"{path}: chaos: must be a mapping")
-    fleet_ids = [e["id"] for e in raw.get("fleet") or []]
-    info = _fleet_draw_info(raw)
+    fleet_ids = [e["id"] for e in
+                 (fleet_meta if fleet_meta is not None
+                  else raw.get("fleet") or [])]
+    info = _fleet_draw_info(raw, fleet_meta)
     if not ch.get("faults"):
         raise simlib.SimError(
             f"{path}: chaos.faults must list at least one fault kind")
@@ -219,7 +226,7 @@ def _validate_chaos(raw, path):
         raise simlib.SimError(
             f"{path}: chaos.units {unknown} not in the fleet "
             f"({', '.join(fleet_ids)})")
-    t = raw.get("transport", "real")
+    t = transport if transport is not None else raw.get("transport", "real")
     ttype = t.get("type") if isinstance(t, dict) else t
     fc_units = [u for u in units if info[u]["fc"]]
     for i, ent in enumerate(ch.get("faults") or []):
@@ -261,7 +268,7 @@ def _validate_chaos(raw, path):
             " - an unscripted run proves nothing without one")
 
 
-def expand_chaos(raw, seed):
+def expand_chaos(raw, seed, fleet_meta=None):
     """chaos: -> concrete timeline fault steps, drawn on a private
     random.Random(seed) stream at load time. Overlapping windows of the
     same unit+kind are never drawn (scripted fault: steps pre-mark
@@ -269,8 +276,9 @@ def expand_chaos(raw, seed):
     ch = raw["chaos"]
     rng = random.Random(seed)
     pool = [_chaos_entry(ent) for ent in ch["faults"]]
-    info = _fleet_draw_info(raw)
-    fleet_ids = [e["id"] for e in raw["fleet"]]
+    info = _fleet_draw_info(raw, fleet_meta)
+    fleet_ids = [e["id"] for e in
+                 (fleet_meta if fleet_meta is not None else raw["fleet"])]
     units = [str(u) for u in (ch.get("units") or fleet_ids)]
     every_lo, every_hi = _chaos_window(ch, "every_s", CHAOS_EVERY_S,
                                        "<expansion>")
@@ -383,7 +391,11 @@ def is_sim_spec(raw):
         "steps" not in raw and "timeline" not in raw and "fleet" not in raw
 
 
-def _validate(raw, path):
+def _validate(raw, path, sim_spec=None):
+    """sim_spec is the resolved `sim:` file's spec (with units already
+    flattened) when the scenario names a sim instead of writing a
+    fleet: - the fleet-derived checks (clock_step faketime, chaos unit
+    draw) then read the sim's units."""
     try:
         import jsonschema
     except ImportError:
@@ -405,6 +417,10 @@ def _validate(raw, path):
         for req in schema["required"]:
             if req not in raw:
                 raise simlib.SimError(f"{path}: missing required key {req!r}")
+        if not raw.get("fleet") and raw.get("sim") is None:
+            raise simlib.SimError(
+                f"{path}: needs `fleet:` or `sim:` (the sims/ file the "
+                "fleet comes from)")
         for ent in raw.get("fleet", []):
             bad = set(ent) - set(schema["properties"]["fleet"]["items"]
                                  ["properties"])
@@ -442,7 +458,9 @@ def _validate(raw, path):
     # SL-0014: clock_step needs libfaketime on this machine AND the
     # target unit booted under it (`faketime: true` - there is no
     # retroactive LD_PRELOAD). Fail at validate, not mid-run.
-    fleet_by = {str(ent.get("id")): ent for ent in raw.get("fleet", [])}
+    fleet_by = ({n: e for n, _b, e in _spec_unit_entries(sim_spec)}
+                if sim_spec is not None else
+                {str(ent.get("id")): ent for ent in raw.get("fleet", [])})
     clock_steps = [s for s in raw.get("timeline", [])
                    if s.get("fault") == "clock_step"]
     if clock_steps or any(ent.get("faketime") for ent in fleet_by.values()):
@@ -462,7 +480,12 @@ def _validate(raw, path):
                     "in its fleet entry - de_comm must launch under "
                     "libfaketime")
     if "chaos" in raw:
-        _validate_chaos(raw, path)
+        meta = ([{"id": n, "cls": b, "modules": e.get("add_modules")}
+                 for n, b, e in _spec_unit_entries(sim_spec)]
+                if sim_spec is not None else None)
+        ttype = ((sim_spec.get("server") or {}).get("type", "real")
+                 if sim_spec is not None else None)
+        _validate_chaos(raw, path, fleet_meta=meta, transport=ttype)
 
 
 def _absolute_to_at(home, pos):
@@ -591,6 +614,73 @@ def _inject_udp_proxies(units, timeline, path):
                 "runs that module")
 
 
+def _str_list(v):
+    """None | "a,b" | [a, b] -> [a, b] - the overlay-list shape the
+    sim:`with:` key shares with a spec's own `with:`."""
+    if isinstance(v, str):
+        return [x.strip() for x in v.split(",") if x.strip()]
+    return list(v or [])
+
+
+def _spec_unit_entries(spec):
+    """sim spec units: -> [(name, block, entry)] with `count:` flattened
+    to per-unit copies of the entry (same expansion load_sim does:
+    base1..baseN, `at:` offsets spaced SPACING_M*i). The entries are new
+    dicts - a named sim flattens once and keeps them as its units:."""
+    out = []
+    for ent in spec.get("units") or []:
+        if isinstance(ent, str):
+            ent = {"block": ent}
+        ent = dict(ent)
+        b = ent.get("block")
+        cnt = ent.pop("count", None)
+        base_n = ent.get("name", b)
+        if cnt is None:
+            ent.setdefault("name", base_n)
+            out.append((ent["name"], b, ent))
+        else:
+            for i in range(1, int(cnt) + 1):
+                eu = dict(ent)
+                eu["name"] = f"{base_n}{i}"
+                if "at" in ent:
+                    eu["at"] = dict(ent["at"])
+                    eu["at"]["north_m"] = eu["at"].get("north_m", 0) + \
+                        simlib.SPACING_M * (i - 1)
+                out.append((eu["name"], b, eu))
+    return out
+
+
+def _named_sim_spec(sel, base, path):
+    """scenario `sim:` -> a sim spec dict. `sim:` is a sims/ name or a
+    path relative to the scenario ({base: x, with: [...]} also works);
+    the file's own `with:` applies first, the sim: `with:` on top, and
+    a CLI --with on top of both at load_sim time. `count:` is flattened
+    so step unit: selectors and fault injection address real units."""
+    if isinstance(sel, str):
+        sel = {"base": sel}
+    if not isinstance(sel, dict) or not isinstance(sel.get("base"), str):
+        raise simlib.SimError(
+            f"{path}: `sim:` needs a sims/ name or "
+            "{base: <name|path>, with: [...]}")
+    bad = set(sel) - {"base", "with"}
+    if bad:
+        raise simlib.SimError(
+            f"{path}: sim: unknown keys {sorted(bad)} (base, with)")
+    p = sel["base"]
+    if os.sep not in p and not p.endswith((".yaml", ".yml")):
+        p = os.path.join(simlib.SIM_ROOT, "sims", p + ".yaml")
+    elif not os.path.isabs(p):
+        p = os.path.join(base, p)
+    if not os.path.isfile(p):
+        raise simlib.SimError(f"{path}: sim: no sim file {p}")
+    spec, _src = simlib._sim_spec(p)
+    applied = []
+    for ov in _str_list(spec.pop("with", None)) + _str_list(sel.get("with")):
+        spec = simlib._apply_overlay(spec, ov, applied)
+    spec["units"] = [e for _n, _b, e in _spec_unit_entries(spec)]
+    return spec
+
+
 def _yaml_bool_keys(raw):
     """YAML 1.1 parses the bare key `on:` as True (yes/no/on/off are
     booleans). The format says `on:` - rename it back before
@@ -614,7 +704,23 @@ def load_scenario(path, seed=None, probe_ports=True):
             f"{path}: `sim:` + `steps:` is the removed legacy test format "
             "(SL-0020) - rewrite the file as de.scenario/1 "
             "(docs/SCENARIOS.md)")
-    _validate(raw, path)
+    named_spec = None
+    if raw.get("sim") is not None:
+        if raw.get("fleet") or raw.get("transport"):
+            raise simlib.SimError(
+                f"{path}: `sim:` already names the fleet file - "
+                "drop `fleet:`/`transport:` (a `sim:` scenario tunes "
+                "the server inside the sim file or an overlay)")
+        named_spec = _named_sim_spec(raw["sim"], base, path)
+        # chaos draws and step unit: selectors need the expanded unit
+        # names up front (the sim file may use count:) - same shape as
+        # a fleet: entry ({id, cls, modules})
+        fleet_meta = [{"id": n, "cls": b,
+                       "modules": e.get("add_modules") or []}
+                      for n, b, e in _spec_unit_entries(named_spec)]
+    else:
+        fleet_meta = raw["fleet"]
+    _validate(raw, path, named_spec)
     home = tuple(raw.get("home", simlib.HOME))
     if len(home) == 3:
         home = home + (simlib.HOME[3],)
@@ -625,13 +731,15 @@ def load_scenario(path, seed=None, probe_ports=True):
         "description": raw.get("description", ""),
         "seed": seed,
         "realtime": bool(raw.get("realtime", False)),
-        "transport": raw.get("transport", "real"),
+        "transport": ((named_spec.get("server") or {}).get("type", "real")
+                     if named_spec is not None
+                     else raw.get("transport", "real")),
         "world": (os.path.abspath(os.path.join(base, raw["world"]))
                   if isinstance(raw.get("world"), str) else None),
         "operation": (os.path.join(base, raw["operation"])
                       if raw.get("operation") else None),
         "verify": raw.get("verify"),
-        "fleet": raw["fleet"],
+        "fleet": fleet_meta,
         "operator": raw.get("operator") or {},
         "timeline": raw.get("timeline", []),
         "assert": raw.get("assert", []),
@@ -643,18 +751,46 @@ def load_scenario(path, seed=None, probe_ports=True):
     # TASK-10: a chaos: block expands here - at load time, on the run's
     # effective seed - into ordinary timeline steps
     if raw.get("chaos"):
-        scn["chaos_steps"] = expand_chaos(raw, seed)
+        scn["chaos_steps"] = expand_chaos(raw, seed, fleet_meta)
         scn["timeline"] = _merge_timeline(scn["timeline"],
                                           scn["chaos_steps"])
     else:
         scn["chaos_steps"] = []
     scn["expanded"] = bool(raw.get("chaos"))
-    units = _fleet_units(scn, home)
+    if named_spec is not None:
+        # the sim file's own units (count: already flattened); scenario
+        # fault injection lands on the same entries the sim expands
+        units = named_spec["units"]
+    else:
+        units = _fleet_units(scn, home)
     _inject_udp_proxies(units, scn["timeline"], path)
     # one port block per run: the scenario may pin slot_base, else it is
     # derived from the seed so --seeds runs never share ports (a parallel
     # `sim up` would still refuse a clash)
     def sim_at(sb):
+        if named_spec is not None:
+            s = copy.deepcopy(named_spec)
+            s["name"] = re.sub(r"[^\w-]", "_", scn["name"])
+            s["slot_base"] = sb
+            srv = dict(s.get("server") or {})
+            srv.setdefault("port", simlib.SERVER_PORT + sb)
+            # the fake server and link proxies seed from the run seed
+            # like _server_spec - a `sim:` file with neither stays as
+            # the file wrote it
+            if "seed" not in srv and \
+                    (srv.get("type") == "fake" or srv.get("link_proxy")):
+                srv["seed"] = seed
+            s["server"] = srv
+            # an explicit scenario home:/render: wins over the file's
+            if raw.get("home") is not None:
+                s["home"] = list(home)
+            else:
+                s.setdefault("home", list(home))
+            if raw.get("render") is not None:
+                s["render"] = raw["render"]
+            if scn["realtime"]:
+                s["speedup"] = 1
+            return s
         return {
             "version": 1,
             "name": re.sub(r"[^\w-]", "_", scn["name"]),
@@ -668,6 +804,11 @@ def load_scenario(path, seed=None, probe_ports=True):
 
     if raw.get("slot_base"):
         scn["sim"] = sim_at(int(raw["slot_base"]))
+    elif named_spec is not None and \
+            named_spec.get("slot_base") is not None:
+        # a named sim's own pin (e.g. the closed/slot30 overlays put the
+        # fleet clear of the developer's SITL) wins over the seed pick
+        scn["sim"] = sim_at(int(named_spec["slot_base"]))
     elif probe_ports:
         scn["sim"] = _host_free_sim(sim_at, _seed_slot_bases(seed, units))
     else:

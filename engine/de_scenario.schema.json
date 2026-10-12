@@ -3,7 +3,8 @@
   "$id": "https://droneengage/de.scenario/1",
   "title": "de.scenario/1 - Phase-5 scenario (TASK-P5-07)",
   "type": "object",
-  "required": ["version", "name", "fleet", "timeline"],
+  "required": ["version", "name", "timeline"],
+  "anyOf": [{"required": ["fleet"]}, {"required": ["sim"]}],
   "additionalProperties": false,
   "properties": {
     "version": {"const": 1},
@@ -14,6 +15,19 @@
       "description": "timing asserts need SITL speed-up 1 (V9); SKIP visibly otherwise"},
     "allow_all_skip": {"type": "boolean", "default": false,
       "description": "accept a run whose every assertion SKIPped (otherwise it fails: it proved nothing)"},
+    "sim": {
+      "description": "SL-0025: the fleet comes from a sims/ file instead of fleet:/transport: - a bare name (copters3), a path relative to the scenario, or {base: <name|path>, with: [overlay, ...]}",
+      "oneOf": [
+        {"type": "string"},
+        {"type": "object",
+         "required": ["base"],
+         "additionalProperties": false,
+         "properties": {
+           "base": {"type": "string"},
+           "with": {"type": ["string", "array"],
+                    "items": {"type": "string"}}}}
+      ]
+    },
     "transport": {
       "description": "fake | real, or a sim server: block",
       "oneOf": [

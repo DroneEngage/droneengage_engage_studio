@@ -178,7 +178,11 @@ accepts it, otherwise `file:` in the cwd), `set`, `wire` (placeholders
 
 **New fleet → a sim (no code).** `units:` entries take `block`, `name`,
 `count` (→ name1..nameN), `at`, `config`, `fc`. Use `extends: other.yaml`
-to reuse a fleet with a different `server:`.
+to reuse a fleet with a different `server:`. A one-twist variant is an
+overlay, not a new file: `sims/overlays/<name>.yaml` +
+`--with <name>` (see `sims/overlays/README.md`). A scenario takes the
+fleet from a sims file with `sim: {base: copters3, with: [...]}` instead
+of `fleet:`/`transport:`.
 
 **New test/scenario → a file (no code)** when existing steps, faults and
 assertions suffice. Tests are de.scenario/1 (`fleet:` + `timeline:`,

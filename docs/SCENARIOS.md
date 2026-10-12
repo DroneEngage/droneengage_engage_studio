@@ -52,11 +52,24 @@ verify: {cli: ../../tools/verify_wrap.js}        # optional pre-deploy gate
 settle_s: 20                   # quiet seconds after the last timeline step
 teardown: land                 # land (default) | reset | none
 render: {mode: viewer, headless: false}        # optional Mavlink3DMap
-fleet:    [...]                # required
+fleet:    [...]                # required (or `sim:`)
 operator: {...}                # optional standing approve/confirm policy
 timeline: [...]                # required (may be [])
 assert:   [...]                # optional (may be [])
 ```
+
+`sim:` replaces `fleet:`+`transport:` when the fleet already lives in a
+`sims/` file:
+
+```yaml
+sim: copters3                              # sims/copters3.yaml
+sim: {base: copters3, with: [faults]}      # + overlays (see below)
+sim: ../../sims/copters3.yaml              # or a path relative to the file
+```
+
+`with:` lists `sims/overlays/<name>.yaml` twists applied on top of the
+sim file (file order wins). An explicit `home:`/`render:` still
+overrides; `fleet:`/`transport:` together with `sim:` is an error.
 
 Unknown top-level keys are rejected — the file is validated against
 `engine/de_scenario.schema.json` before anything starts.

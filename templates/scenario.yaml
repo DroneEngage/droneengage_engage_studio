@@ -15,6 +15,9 @@ fleet:                        # cls: copter | plane | rover | static |
                               # comm_only | a blocks/<name>
   - {id: s1, cls: static}
   # - {id: c1, cls: copter, at: {north_m: 0, east_m: 40}}
+# sim: {base: copters3, with: [faults]}     # or take the fleet from a
+                              # sims/ file (+ overlays) - replaces
+                              # fleet:/transport: (drop both then)
 timeline:                     # {t: <seconds>, do: <step>, ...args}
   - {t: 0, do: wait_online, unit: s1, timeout: 60}
   # - {t: 5, fault: link_cut, unit: s1, dur_s: 20}

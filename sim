@@ -80,6 +80,12 @@ Global flags for show/up/run/view/suite/validate:
                                    shifted pick changes the sim hash, so
                                    `run` does a fresh up instead of
                                    reusing (pin a number when iterating)
+  --with <a[,b...]>                sims/overlays/<name>.yaml twists applied
+                                   on top of the sim (server swap, extra
+                                   units, config/fc pushes); each applied
+                                   name appends to the sim name and the
+                                   hash changes, so a variant never reuses
+                                   another variant's warm sim
 
 Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 (automated cases) and scenarios/ (human-run demos + examples).
@@ -220,7 +226,8 @@ def _cli_flags(argv):
     rest, kw, i = [], {}, 0
     while i < len(argv):
         a = argv[i]
-        if a in ("--user", "--password", "--auth-server", "--slot-base"):
+        if a in ("--user", "--password", "--auth-server", "--slot-base",
+                 "--with"):
             if i + 1 >= len(argv):
                 sys.exit(f"{a} needs a value")
             kw[a[2:].replace("-", "_")] = argv[i + 1]
@@ -278,6 +285,10 @@ def main(argv):
                 # load_sim reads through setting() - env propagation
                 # covers the suite's per-test subprocesses too
                 os.environ["SIM_SLOT_BASE_OVERRIDE"] = sb
+            if flags.get("with") is not None:
+                # sims/overlays/<name>.yaml applied on top of the sim
+                # (env propagates to the suite's per-test subprocesses)
+                os.environ["SIM_WITH"] = str(flags["with"])
             auth = {k: v for k, v in flags.items()
                     if k in ("user", "password", "auth_server")}
             if auth and c in ("suite", "validate"):

@@ -1,0 +1,5 @@
+# faster roster cadence on every unit: sv_roster_hz 1 + sv_peer_lost_s 8
+# -> a cut unit turns LOST ~8-10 s after silence instead of ~30 s, so
+# lost-member gate tests do not have to outwait a whole loiter.
+version: 1
+config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}

@@ -1,0 +1,5 @@
+# add a de_comm-only static unit (no FC) - the watcher role for the
+# P4A-09 two-phase deploy tests.
+version: 1
+units:
+  - {block: comm_only, name: static1, at: {north_m: -30}}

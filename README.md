@@ -150,6 +150,14 @@ units:
      account: {user: "{name}@sim.droneengage.com", code: sim1234}}  # own login
 ```
 
+`--with a,b` layers `sims/overlays/<name>.yaml` twists on top of any sim
+(server swap, extra units, config/fc pushes) — the overlay wins, later
+overrides earlier, and every applied name appends to the sim name so a
+variant gets its own `var/run/` dir and never reuses another variant's
+warm sim. A scenario picks a named fleet with `sim: {base: copters3,
+with: [faults]}` instead of a `fleet:` block. See
+[sims/overlays/README.md](sims/overlays/README.md).
+
 A unit's `account:` is its own login on the authenticator (defaults to
 `server.account`); `{name}` expands to the unit name so a `count:` fleet
 gets `quad1@..`, `quad2@..` Every account must exist on the

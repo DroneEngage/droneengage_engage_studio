@@ -1,7 +1,0 @@
-# Runbook: sims/copters3_faults.md
-#
-# Same fleet on the fake server: seeded per-link loss / delay / cut for
-# link-fault tests (the real server cannot inject those).
-version: 1
-extends: copters3.yaml
-server: {type: fake, seed: 1337}
