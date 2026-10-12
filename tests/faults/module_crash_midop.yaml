@@ -27,7 +27,7 @@ timeline:
      timeout: 60}
   # anchor the crash to real mission progress - SITL bring-up varies, so
   # a fixed t: can land the kill before the mission even leaves home
-  - {t: 20, do: wait_journal, unit: c1, re: "RUNNING main 2",
+  - {t: 20, do: wait_journal, unit: c1, re: "ACTION [0-9a-f-]+:1:2",
      timeout: 120}
   - {t: 30, fault: module_kill, unit: c1, module: de_mavlink}
   - {t: 36, fault: restart, unit: c1, proc: de_mavlink}
