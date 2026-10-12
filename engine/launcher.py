@@ -407,8 +407,102 @@ def ensure(sim_src, timeout=180, world_stream=False, exclusive=True):
         else:
             print(simlib.col_dim(f"sim {sim['name']} is down - starting"),
                   flush=True)
+    elif m and _swap_candidate(m, sim) and _sim_alive(m):
+        # identical fleet spec; only the --module binaries differ -
+        # swap just those procs instead of a cold SITL restart
+        try:
+            if _swap_modules(sim, m, timeout, exclusive):
+                return m
+        except simlib.SimError as e:
+            print(simlib.col_yellow(f"module swap failed ({e})"
+                                    " - restarting"), flush=True)
     elif m:
         print(simlib.col_yellow(
             f"sim {sim['name']} spec changed - restarting"), flush=True)
     return up(sim_src, fresh=True, timeout=timeout, exclusive=exclusive,
               world_stream=world_stream)
+
+
+def _swap_candidate(m, sim):
+    """The live manifest is the same fleet under a different --module
+    set: rehashing the new spec with the manifest's stored overrides
+    reproduces its sim_hash exactly - so overrides alone differ."""
+    if not (simlib.module_overrides() or m.get("module_overrides")):
+        return False
+    return m.get("sim_hash") == \
+        simlib.sim_hash(sim, m.get("module_overrides"))
+
+
+def _sim_alive(m):
+    """Every proc the manifest expects is running (a downed manifest is
+    post-mortem state, not a swap target)."""
+    alive = set(simlib.read_pids(m["name"]))
+    need = {f"server.{p}" for p in m["server_procs"]}
+    need |= {f"render.{p}" for p in m.get("render_procs", [])}
+    for u in m["units"]:
+        need |= {f"{u['name']}.{p}" for p in simlib.procs_of(u)}
+    return bool(need) and need <= alive
+
+
+def _swap_modules(sim, m, timeout=60, exclusive=True):
+    """Restart just the --module-overridden procs on the live same-fleet
+    sim: rewrite each affected launch.<proc>.sh at the new binary,
+    restart it, wait for its catalog ready line, adopt the new hash."""
+    new_ov = simlib.module_overrides()
+    old_ov = m.get("module_overrides") or {}
+    changed = sorted(k for k in set(new_ov) | set(old_ov)
+                     if new_ov.get(k) != old_ov.get(k))
+    if not changed:
+        return True
+    if exclusive:
+        # a test owns the machine on the swap path too
+        for other in ([] if _shared() else simlib.live_sim_names()):
+            if other != sim["name"]:
+                down(other, quiet=True)
+    cat = simlib.load_catalog()
+    ctl.CTX = sim["name"]
+    marks = {u["name"]: simlib.journal_mark(u)
+             for u in m["units"]
+             if set(simlib.procs_of(u)) & set(changed)}
+    for u in m["units"]:
+        for mod in set(simlib.procs_of(u)) & set(changed):
+            old_bin = simlib.bin_with_overrides(
+                mod, cat.get(mod), old_ov)
+            new_bin = simlib.resolve_bin(mod, cat.get(mod))
+            if old_bin == new_bin:
+                continue
+            simlib.swap_proc_bin(u, mod, old_bin, new_bin)
+            print(simlib.col_yellow(
+                f"{u['name']}.{mod}: {old_bin} -> {new_bin}"),
+                flush=True)
+            ctl.main(["restart", u["name"], mod])
+    # a restarted module does not re-emit its journal ready_re (de_comm
+    # journals e.g. 'nav adapter hello' once per de_comm process, not per
+    # module connect) - so readiness here = the module's own proc log
+    # showing fresh output since the mark (its catalog ready_log_re when
+    # it has one)
+    t0 = time.time()
+    pending = {(u["name"], mod) for u in m["units"]
+               for mod in set(simlib.procs_of(u)) & set(changed)}
+    byname = {u["name"]: u for u in m["units"]}
+    while pending and time.time() - t0 < 30:
+        for uname, mod in sorted(pending):
+            rx = (cat.get(mod) or {}).get("ready_log_re") or r"\S"
+            if simlib.log_match(byname[uname], mod, rx, marks[uname]):
+                pending.discard((uname, mod))
+        if pending:
+            time.sleep(1)
+    if pending:
+        print(simlib.col_yellow("module swap: no fresh output from "
+              + ", ".join(f"{n}.{p}" for n, p in sorted(pending))
+              + " - continuing anyway"), flush=True)
+    # the s2s reconnect to de_comm (and de_mavlink's FC link) takes a
+    # few seconds past the first log line
+    time.sleep(3)
+    m["sim_hash"] = sim["hash"]
+    m["module_overrides"] = dict(new_ov)
+    simlib.write_json(simlib.manifest_path(sim["name"]), m, indent=2)
+    print(simlib.col_dim(
+        f"sim {sim['name']} module swap done - reusing the warm sim"),
+        flush=True)
+    return True

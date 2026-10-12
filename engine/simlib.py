@@ -313,6 +313,63 @@ def module_bin(name, spec):
     return b if os.path.isabs(b) else os.path.join(module_dir(spec), b)
 
 
+# --module name=path (./sim run|try): per-run binary overrides - the
+# agent-iteration hook ("rebuilt de_mavlink, try it on the warm sim").
+# They feed the sim hash, so a different override never silently reuses a
+# sim running the old binary; ensure() swaps just the overridden procs
+# when the fleet spec itself is unchanged.
+_MODULE_BINS = {}
+
+
+def set_module_overrides(overrides):
+    """Install {module: abs bin path} for this process. Called by the
+    sim CLI before load_sim; {} clears."""
+    global _MODULE_BINS
+    _MODULE_BINS = dict(overrides or {})
+
+
+def module_overrides():
+    return _MODULE_BINS
+
+
+def resolve_bin(name, spec=None):
+    """The binary a proc would launch with NOW: --module override, else
+    the bin_env setting / catalog default (de_comm is built in, not in
+    the catalog)."""
+    if name in _MODULE_BINS:
+        return _MODULE_BINS[name]
+    if name == "de_comm":
+        return DE_COMM_BIN
+    return module_bin(name, spec)
+
+
+def bin_with_overrides(name, spec, overrides):
+    """resolve_bin() as it would have answered with `overrides` installed
+    - the binary a manifest was generated with."""
+    saved = _MODULE_BINS
+    try:
+        globals()["_MODULE_BINS"] = dict(overrides or {})
+        return resolve_bin(name, spec)
+    finally:
+        globals()["_MODULE_BINS"] = saved
+
+
+def swap_proc_bin(u, proc, old_bin, new_bin):
+    """Point a generated launch.<proc>.sh at a different binary (the
+    warm --module swap path): replace the old path token in place. The
+    launch template only ever spells the bin as '<abs path>', so a
+    literal replace is exact."""
+    path = os.path.join(unit_dir(u), f"launch.{proc}.sh")
+    try:
+        text = open(path).read()
+    except OSError as e:
+        raise SimError(f"{u['name']}.{proc}: {e}")
+    if old_bin not in text:
+        raise SimError(f"{u['name']}.{proc}: launch script does not "
+                       f"reference {old_bin}")
+    write_text(path, text.replace(old_bin, new_bin), 0o755)
+
+
 def module_template(spec):
     t = spec["template"]
     for p in (t if os.path.isabs(t) else os.path.join(module_dir(spec), t),
@@ -497,10 +554,18 @@ def load_sim(path_or_spec, base_dir=None):
         if u["name"] in seen:
             raise SimError(f"sim: duplicate unit name {u['name']!r}")
         seen.add(u["name"])
-    sim["hash"] = hashlib.sha256(json.dumps(
-        [sim["server"], sim["home"], sim["units"]],
-        sort_keys=True).encode()).hexdigest()[:16]
+    sim["hash"] = sim_hash(sim, _MODULE_BINS)
     return sim
+
+
+def sim_hash(sim, overrides):
+    """The fleet-identity hash: server + home + resolved units + the
+    --module overrides in force. `ensure` rehashes with the manifest's
+    stored overrides to tell "same fleet, different binaries" apart from
+    a real spec change."""
+    return hashlib.sha256(json.dumps(
+        [sim["server"], sim["home"], sim["units"], overrides or {}],
+        sort_keys=True).encode()).hexdigest()[:16]
 
 
 def _load_sim_free_slot(spec, base_dir):
@@ -1443,7 +1508,8 @@ def gen_unit(u, sim, catalog):
                 ("FAKETIME_TIMESTAMP_FILE", rc),
                 ("FAKETIME_CACHE_DURATION", "2")]
     _launch_script(u, "de_comm", cdir,
-                   f"'{DE_COMM_BIN}' -c '{comm_cfg}' -b '{comm_local}'",
+                   f"'{resolve_bin('de_comm')}' -c '{comm_cfg}'"
+                   f" -b '{comm_local}'",
                    env=tuple(env))
 
     # ---- link proxy (SL-0009) ----
@@ -1526,7 +1592,7 @@ def gen_unit(u, sim, catalog):
                    u["ports"]["de_comm"], u["ports"][m],
                    u["name"], m))
         local = spec.get("local") or {}
-        cmd = f"'{module_bin(m, spec)}' -c '{cfg_path}'"
+        cmd = f"'{resolve_bin(m, spec)}' -c '{cfg_path}'"
         if local:
             lpath = os.path.join(mdir, local["file"])
             write_json(lpath, {"module_key": f"{u['name']}-{m}"}, indent=1)
@@ -1720,7 +1786,7 @@ def gen_server(sim):
 
 
 def binaries_needed(sim, catalog):
-    out = {DE_COMM_BIN}
+    out = {resolve_bin("de_comm")}
     if sim["server"]["type"] == "real":
         out.add(os.path.join(SERVER_REPO, "src", "server.js"))
         if sim["server"]["auth"]:
@@ -1728,7 +1794,7 @@ def binaries_needed(sim, catalog):
     for u in sim["units"]:
         for m in u["modules"]:
             if m != "de_comm":
-                out.add(module_bin(m, catalog[m]))
+                out.add(resolve_bin(m, catalog[m]))
         if u["fc"]:
             out.add(os.path.join(ARDUPILOT_DIR, "build", "sitl", "bin",
                                  FC_KINDS[u["fc"]["vehicle"]]["bin"]))
@@ -1965,6 +2031,7 @@ def generate(sim, sim_file=None):
                 "server_procs": server_procs,
                 "render_procs": render_procs,
                 "render": sim.get("render"),
+                "module_overrides": dict(_MODULE_BINS),
                 "home": sim["home"], "speedup": sim.get("speedup", 1),
                 "units": units}
     write_json(manifest_path(sim["name"]), manifest, indent=2)

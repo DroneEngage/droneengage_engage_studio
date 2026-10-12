@@ -1388,6 +1388,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
                                      time.gmtime(t0_wall)),
         "wall_s": round(wall, 1),
         "commits": _commits(),
+        "module_overrides": dict(simlib.module_overrides()),
         "speedup": speedups,
         "speedup_requested": m.get("speedup", 1),
         "realtime": {"required": scn["realtime"],

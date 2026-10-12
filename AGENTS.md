@@ -86,6 +86,9 @@ is now the only simulation/testing location.
     ./sim blocks                              # what unit types exist
     ./sim show sims/copters3.yaml             # resolved units, ports, positions (no side effects)
     ./sim run tests/smoke_copters.yaml        # up if needed -> steps -> asserts -> teardown
+    ./sim try tests/smoke_copters.yaml --module de_mavlink=$HOME/de_code/droneengage_mavlink/bin/de_ardupilot
+        # the build->try loop: run a scenario against a fresh module build
+        # on the warm sim - only that proc restarts, no SITL warm-up
     ./sim view scenarios/demos/world_canopy_viewer.yaml  # sim + Mavlink3DMap viewer
                                               # (= run --hold) until Ctrl-C
     ./sim ctl status                          # live procs + units seen online by the GCS
@@ -106,6 +109,12 @@ is now the only simulation/testing location.
   back to skip the 1-2 min SITL/EKF warm-up.
 - `./sim run <test> --keep` skips the teardown so you can inspect the fleet
   with `./sim ctl ...`.
+- `./sim try <test> --module <name>=<bin>` is the way to validate a module
+  change: it reruns the scenario against the fresh binary on the warm sim
+  - only that module proc restarts on each unit (no SITL warm-up, no
+  teardown). The override is part of the sim hash and recorded in
+  summary.json; dropping `--module` swaps back to the default build the
+  same way.
 - Exit code 0 = every step and assertion passed. Read the printed
   PASS/FAIL lines and `var/results/<ts>-<test>/` (journals + logs), not just the
   exit code.

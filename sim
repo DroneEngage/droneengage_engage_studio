@@ -17,13 +17,22 @@
                                    --print only shows the URLs
   ./sim ctl [-s <sim>] <cmd> ...   operator console (./sim ctl for help)
   ./sim run <file.yaml> [--seed N] [--keep] [--hold|--view]
+                       [--module <name>=<path>] ...
                                    run a test/scenario (owns the machine:
                                    downs every other sim); --keep skips the
                                    teardown, --hold parks after the timeline
                                    (world stream + Mavlink3DMap viewer live;
                                    the sim's webclient deep links print)
                                    until Ctrl-C. A bare sims/*.yaml just
-                                   comes up (hash-reused, like up)
+                                   comes up (hash-reused, like up).
+                                   --module <name>=<abs path> (repeatable)
+                                   swaps a catalog module / de_comm binary
+                                   for this run only: same fleet spec ->
+                                   just that proc restarts on the warm sim
+  ./sim try <file.yaml> [--module ...]   = run --keep: the build->try loop.
+                                   Rebuilt de_mavlink? Point --module at the
+                                   new bin and the scenario runs against it
+                                   on the warm sim (no SITL warm-up)
   ./sim suite [dir ...] [--seeds 1,2,3] [--keep]
                                    run every yaml under dir(s) once per seed
                                    (default dir: tests) - verdicts + junit
@@ -176,6 +185,32 @@ def _validate_file(f):
     return problems
 
 
+def _module_overrides(a):
+    """Pull every `--module <name>=<abs path>` out of argv (run/try):
+    a catalog module or de_comm binary override for this run only.
+    Validates before anything starts - unknown module or a path that is
+    not an executable file is a usage error."""
+    mods, rest, i = {}, [], 0
+    while i < len(a):
+        if a[i] == "--module":
+            if i + 1 >= len(a) or "=" not in a[i + 1]:
+                sys.exit("--module needs <name>=<abs path>")
+            name, path = a[i + 1].split("=", 1)
+            known = set(simlib.load_catalog()) | {"de_comm"}
+            if name not in known:
+                sys.exit(f"--module: unknown module {name!r} "
+                         f"(catalog: {', '.join(sorted(known))})")
+            if not (os.path.isfile(path) and os.access(path, os.X_OK)):
+                sys.exit(f"--module {name}: {path} is not an "
+                         "executable file")
+            mods[name] = os.path.abspath(path)
+            i += 2
+        else:
+            rest.append(a[i])
+            i += 1
+    return rest, mods
+
+
 def _cli_flags(argv):
     """Pull the global flags out of argv - they may appear anywhere on
     the command line. --user/--password/--auth-server are the sim's login
@@ -224,7 +259,8 @@ def main(argv):
         return 0
     c, a = argv[0], argv[1:]
     try:
-        if c in ("show", "up", "run", "view", "suite", "validate"):
+        if c in ("show", "up", "run", "try", "view", "suite",
+                 "validate"):
             a, flags = _cli_flags(a)
             if flags.get("shared"):
                 # launcher._shared() reads os.environ at call time; the
@@ -351,8 +387,9 @@ def main(argv):
         elif c == "ctl":
             import ctl
             ctl.main(a)
-        elif c == "run":
+        elif c in ("run", "try"):
             import scenario_runner
+            a, mods = _module_overrides(a)
             seed = 1
             if "--seed" in a:
                 i = a.index("--seed")
@@ -363,11 +400,19 @@ def main(argv):
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, ("--keep", "--hold", "--view"))
             if bad or len(files) != 1:
-                sys.exit("usage: ./sim run <file.yaml> [--seed N] "
-                         "[--keep] [--hold|--view]"
+                sys.exit(f"usage: ./sim {c} <file.yaml> [--seed N] "
+                         "[--keep] [--hold|--view] "
+                         "[--module <name>=<path>] ..."
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
+            # `try` is the iteration form of `run`: it always keeps the
+            # sim (no teardown) so the next try lands on a warm fleet
+            keep = "--keep" in a or c == "try"
+            # the override is installed before the sim resolves so it
+            # feeds the hash (same fleet + different bins = swap, not
+            # a silent reuse)
+            simlib.set_module_overrides(mods)
             # every test/scenario file is de.scenario/1 -> the P5-07 engine
-            return scenario_runner.run(files[0], keep="--keep" in a,
+            return scenario_runner.run(files[0], keep=keep,
                                        hold=bool({"--hold", "--view"}
                                                  & set(a)), seed=seed)
         elif c == "suite":
