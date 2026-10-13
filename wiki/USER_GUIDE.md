@@ -109,6 +109,7 @@ Later runs on the same fleet reuse it, so they start faster.
 | `./sim view <file>` | Run a demo **and** open the 3D viewer; stays up until Ctrl-C. |
 | `./sim suite tests` | Run a whole folder of tests (the nightly run). |
 | `./sim new my_demo` | Create a starter scenario file you can edit. |
+| `./sim record <sim> -o <file>` | Record a live WebClient session into a replayable scenario (see §10). |
 | `./sim validate <file>` | Check a file for mistakes — starts nothing. |
 | `./sim logs <unit> <module>` | Tail a unit's log, e.g. `./sim logs copter1 de_comm`. |
 | `./sim down` | Stop all sims. `./sim down copters3` stops just one. |
@@ -272,7 +273,55 @@ Rules of thumb:
 
 ---
 
-## 10. When things go wrong
+## 10. Turn your session into a test — `./sim record`
+
+You just flew a sim by hand in the WebClient — deployed a mission,
+armed, hit start, watched it go. `./sim record` writes *that session*
+down as a scenario file you can replay with `./sim run`:
+
+```bash
+./sim record sims/copters3.yaml -o scenarios/my_recording.yaml
+# ... drive the WebClient (the command prints your deep links) ...
+# Ctrl-C when done -> the scenario + a .md runbook are written
+./sim validate scenarios/my_recording.yaml
+./sim run scenarios/my_recording.yaml      # replays your session
+```
+
+What it captures: every command your WebClient sent, stamped at the
+comm server the moment it arrived. On Ctrl-C those frames become
+timeline steps — deploy/arm/mode/start and friends map to the same
+verbs you'd write by hand (`./sim verbs` lists them); a deploy also
+saves the package it carried next to the yaml. Anything with no verb
+stays in the file as a `# unmapped:` comment so nothing is silently
+lost — the step just doesn't replay until you give it one.
+
+How it works, in one breath: recording adds a tiny capture plugin to
+the *sim's own* comm server config (`command_plugin`, the seam TASK-24
+chose) and restarts it — so it works on `server: {type: real}` sims.
+Two limits to know:
+
+- **`fake` server:** refused — it has no plugin seam.
+- **`external` server (§8, e.g. `sims/quadcopter.yaml`):** the sim
+  doesn't own your server. `record` writes the plugin to
+  `var/run/<sim>/server/record_plugin.js` and prints the one line to
+  add to *your* server's `command_plugin` — restart it and frames start
+  landing. Don't? Then the file comes out empty.
+
+You can also record *around* a scripted run — `--record` on
+`run`/`view` captures whatever you do in the WebClient during the run
+(including its `--hold` park) and writes the file when it ends:
+
+```bash
+./sim run scenarios/my_first.yaml --hold --record scenarios/what_i_did.yaml
+```
+
+The output is a normal scenario — edit it, fill in the `assert:` TODO
+block (the one thing a recording can't guess is *what you were checking
+for*), and commit it like any other test.
+
+---
+
+## 11. When things go wrong
 
 | Symptom | Likely cause / fix |
 |---|---|
@@ -296,7 +345,7 @@ Where to look when debugging:
 
 ---
 
-## 11. Words you'll bump into
+## 12. Words you'll bump into
 
 | Word | Meaning |
 |---|---|
@@ -311,7 +360,7 @@ Where to look when debugging:
 
 ---
 
-## 12. Going deeper
+## 13. Going deeper
 
 - `README.md` — the full technical reference (blocks, config layers,
   ports, extending the engine).

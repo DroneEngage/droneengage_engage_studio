@@ -40,6 +40,13 @@
   ./sim view <scenario.yaml>       one command for sim + Mavlink3DMap viewer:
                                    = run --hold (the scenario needs
                                    render: {mode: viewer})
+  ./sim record <sim|live-sim> -o <file.yaml>
+                                   capture a live webclient session through
+                                   the real server's command_plugin seam and
+                                   write it as a de.scenario/1 scenario (+
+                                   .md runbook stub); --record <file> on
+                                   run/view records the window around a
+                                   scenario run or its --hold
   ./sim list [scenarios|tests|sims]        catalog: files + one-line
                                    descriptions (default: scenarios+tests)
   ./sim new <name> [--sensor]     scaffold scenarios/<name>.yaml from
@@ -299,7 +306,7 @@ def main(argv):
     c, a = argv[0], argv[1:]
     try:
         if c in ("show", "up", "run", "try", "view", "suite",
-                 "validate"):
+                 "validate", "record"):
             a, flags = _cli_flags(a)
             if flags.get("shared"):
                 # launcher._shared() reads os.environ at call time; the
@@ -440,11 +447,18 @@ def main(argv):
                     sys.exit("--seed needs a value")
                 seed = int(a[i + 1])
                 del a[i:i + 2]
+            record = None
+            if "--record" in a:
+                i = a.index("--record")
+                if i + 1 >= len(a):
+                    sys.exit("--record needs an output file")
+                record = a[i + 1]
+                del a[i:i + 2]
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, ("--keep", "--hold", "--view"))
             if bad or len(files) != 1:
                 sys.exit(f"usage: ./sim {c} <file.yaml> [--seed N] "
-                         "[--keep] [--hold|--view] "
+                         "[--keep] [--hold|--view] [--record <file>] "
                          "[--module <name>=<path>] ..."
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
             # `try` is the iteration form of `run`: it always keeps the
@@ -457,7 +471,8 @@ def main(argv):
             # every test/scenario file is de.scenario/1 -> the P5-07 engine
             return scenario_runner.run(files[0], keep=keep,
                                        hold=bool({"--hold", "--view"}
-                                                 & set(a)), seed=seed)
+                                                 & set(a)), seed=seed,
+                                       record=record)
         elif c == "suite":
             # the full suite driver (verdicts, flaky rerun, junit) lives
             # in ci/run_suite.py - forward everything after `--seeds`
@@ -598,14 +613,26 @@ def main(argv):
                     indent=1))
             else:
                 sys.stdout.write(scenario_mod.expanded_text(scn))
+        elif c == "record":
+            import record as record_mod
+            record_mod.main(a)
         elif c == "view":
             import scenario_runner
+            record = None
+            if "--record" in a:
+                i = a.index("--record")
+                if i + 1 >= len(a):
+                    sys.exit("--record needs an output file")
+                record = a[i + 1]
+                del a[i:i + 2]
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, ())
             if bad or len(files) != 1:
-                sys.exit("usage: ./sim view <scenario.yaml>"
+                sys.exit("usage: ./sim view <scenario.yaml> "
+                         "[--record <file>]"
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
-            return scenario_runner.run(files[0], hold=True)
+            return scenario_runner.run(files[0], hold=True,
+                                       record=record)
         elif c == "logs":
             sim_name = None
             if a and a[0] in ("-s", "--sim"):

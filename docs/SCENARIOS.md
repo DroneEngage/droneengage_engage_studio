@@ -533,3 +533,45 @@ assert:
   - proc_alive: {unit: c1, proc: de_comm}
 teardown: land
 ```
+
+## Recording a live session — `./sim record`
+
+Instead of writing the timeline by hand you can *capture* one:
+
+```sh
+./sim record sims/copters3.yaml -o scenarios/my_recording.yaml
+# drive the WebClient, Ctrl-C -> the file is written
+./sim run <file> --record <out.yaml>     # same, around a scenario run
+```
+
+A generated `command_plugin` in the sim's comm server stamps every
+inbound frame pre-routing into `var/run/<sim>/session.jsonl` (the
+TASK-24 seam; `de_server` restarts once so the plugin loads). On
+Ctrl-C the GCS-sourced rows map onto registry verbs and land as the
+scenario's timeline:
+
+| wire frame | step |
+|---|---|
+| `1094 {a:prepare}` x N units | `deploy` + a reconstructed `<name>.deploy.json` spec (pkgs sidecar'd) |
+| `1085` package upload | `deploy` + `<name>.pkg.json` |
+| `1094 {a:start}` / `1086 {a:start}` | `start` |
+| `1094 {a:abort}` | `abort` |
+| `1030` / `1032` | `arm` / `disarm`, `land` |
+| `1031 {a: alt}` | `takeoff alt:` (the ChangeAltitude/climb command) |
+| `1010 {F:9}` etc. | `mode` (F codes map to pymavlink mode names); `F:22`/`F:12` -> `takeoff`/`land` |
+| `1086 {a:stop|pause|resume|clear|activate}` | the same-named verbs (`pause hold:` -> `operator act: pause`) |
+| `1086 {a:fire}` / `1061` | `fire` / `event` |
+| other actionable frames (1033 goto, 1035 yaw, 1040 speed, 1005 commands, 1046/1027/1028/6518 uploads, 1090) | `send` — replayed verbatim; string fields >4 KB become `{PKG:}` sidecars |
+| keepalives/reads (1004, 9005, 9015, 1072/1073, `1005 {C:500|501|505|507|508}`, `1005 {C>=600}` message pulls, `1089 {r:true}`, `1086 status/journal`, `1094 status`) | dropped — reads, not actions |
+| anything else | `# unmapped: <mt> <json>` comment in the timeline — never silently dropped |
+
+`t` offsets are server-stamped seconds from record start. The fleet
+comes from `sim:` (the recorded sim's source file plus any `--with`
+overlays), `operation:` from the captured deploy, `assert:` is a TODO
+block, and a `<name>.md` runbook stub is written beside the yaml.
+
+Limits: `server: {type: fake}` is refused (no plugin seam);
+`server: {type: external}` needs the printed plugin path added to your
+own stack's `command_plugin`. Frames sent by the engine itself (the
+ctl bridge `GCS_FLEET`, the operator bot `GCS_OPERATOR`) are filtered
+out — a recorded run captures only the human's GCS sessions.

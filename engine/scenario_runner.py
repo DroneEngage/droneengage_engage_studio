@@ -1181,10 +1181,15 @@ def _early_result(scn, t_file, out, t0_wall, why):
     return 1
 
 
-def run_scenario(t_file, seed=None, keep=False, hold=False):
+def run_scenario(t_file, seed=None, keep=False, hold=False,
+                 record=None):
     """One de.scenario/1 run -> exit code (0 = every non-SKIP assertion
     passed and no step failed). hold parks the run after the timeline
-    (the world stream and the render procs stay live) until Ctrl-C."""
+    (the world stream and the render procs stay live) until Ctrl-C.
+    record is an output yaml path: the run's webclient actions are
+    captured through the comm server's command_plugin seam (record.py)
+    and written there as a de.scenario/1 file when the timeline/hold
+    ends."""
     t_file = os.path.abspath(t_file)
     scn = scenario.load_scenario(t_file, seed=seed)
     if (scn.get("operation") or "").endswith(".deop"):
@@ -1237,6 +1242,13 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
         return _early_result(scn, t_file, out, t0_wall,
                              f"bring-up failed: {e}")
     ctl.CTX = runner.SIM_NAME = m["name"]
+    rec_t0 = None
+    if record:
+        # --record: arm the command_plugin capture before the bot and
+        # the timeline connect, so a held run's webclient driving lands
+        # in the file (arm() bounces de_server once on a real server)
+        import record as record_mod
+        rec_t0 = record_mod.arm(m)
     ctx = {"manifest": m, "sim": m["name"], "scn": scn,
            "server": m["server"], "bot": None,
            "telemetry": None, "marks": {}, "timers": [], "pumps": [],
@@ -1356,6 +1368,12 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
                     t.function(*t.args, **t.kwargs)
                 except Exception as e:
                     print(f"  fault restore failed: {e}", flush=True)
+        if rec_t0 is not None:
+            try:
+                record_mod.disarm(m)
+                record_mod.finalize(m, rec_t0, record)
+            except Exception as e:
+                print(f"  record finalize failed: {e}", flush=True)
 
     # realtime gate: only when the scenario asked for it
     speedups = {}
@@ -1462,11 +1480,12 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
     return 0 if ok and n_fail == 0 else 1
 
 
-def run(t_file, keep=False, hold=False, seed=1):
+def run(t_file, keep=False, hold=False, seed=1, record=None):
     """`./sim run` dispatcher: scenarios -> the de.scenario/1 engine (a
     bare sims/*.yaml file has no steps - it is just ensured up, additive
     like ./sim up but hash-reused, it leaves the other live sims
-    alone)."""
+    alone). --record <file> captures the parked window's webclient
+    actions into a de.scenario/1 file (record.py)."""
     raw = simlib.load_yaml(os.path.abspath(t_file))
     if scenario.is_sim_spec(raw):
         print(simlib.col_yellow(
@@ -1475,12 +1494,18 @@ def run(t_file, keep=False, hold=False, seed=1):
         # additive like `sim up`: a bare sim is nobody's test - it must
         # not down the other live sims
         m = launcher.ensure(t_file, exclusive=False)
-        if hold:
+        if record:
+            import record as record_mod
+            record_mod.run_held(m, record)
+            print(simlib.col_green("sim is still up")
+                  + " - ./sim down to stop it", flush=True)
+        elif hold:
             _hold(m)
             print(simlib.col_green("sim is still up")
                   + " - ./sim down to stop it", flush=True)
         return 0
-    return run_scenario(t_file, seed=seed, keep=keep, hold=hold)
+    return run_scenario(t_file, seed=seed, keep=keep, hold=hold,
+                        record=record)
 
 
 def run_suite(suite_dir, seeds, keep=False):
