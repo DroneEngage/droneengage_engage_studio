@@ -320,8 +320,14 @@ class StubBase:
         injector does not set it; a non-stub launch can)."""
         path = spec.get("contract")
         if not path:
-            stub_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-            stem = os.path.splitext(os.path.basename(sys.argv[0]))[0]
+            # the subclass's own source file, not sys.argv[0]: a stub
+            # imported in-process (test_golden, model_import) must find
+            # its contract too - without it truth_entities() returns
+            # every entity and the sensor sees non-emitters
+            src = getattr(sys.modules.get(type(self).__module__),
+                          "__file__", None) or sys.argv[0]
+            stub_dir = os.path.dirname(os.path.abspath(src))
+            stem = os.path.splitext(os.path.basename(src))[0]
             for cand in (os.path.join(stub_dir, stem + ".sensor.yaml"),
                          os.path.join(stub_dir, "sensor.yaml")):
                 if os.path.isfile(cand):

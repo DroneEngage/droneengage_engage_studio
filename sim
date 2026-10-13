@@ -581,6 +581,14 @@ def main(argv):
             scn = scenario_mod.load_scenario(files[0], seed=seed,
                                              probe_ports=False)
             if not scn.get("expanded"):
+                if "--json" in a:
+                    print(json.dumps({"file": files[0],
+                                      "name": scn["name"],
+                                      "seed": scn["seed"],
+                                      "expanded": None,
+                                      "error": "no chaos: block to "
+                                               "expand"}, indent=1))
+                    return 1
                 sys.exit(f"{files[0]}: no chaos: block to expand")
             if "--json" in a:
                 print(json.dumps(

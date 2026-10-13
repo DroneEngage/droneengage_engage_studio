@@ -176,5 +176,10 @@ That file is the full run report:
 - `exit` mirrors the process exit code: `0` = every step and assertion
   passed. The directory also holds `junit.xml`, per-unit journals and
   logs.
+- A run that stops before its timeline (verifier failed, sim bring-up
+  failed) still writes `summary.json` with `"exit": 1`, an `"error"`
+  string and empty `assertions`, and still ends with the `RESULT` line.
+  A scenario file that fails to load exits non-zero with no
+  `RESULT` - run `./sim validate --json` first.
 - `./sim suite` writes the same `summary.json` per run plus a junit
   report under `var/results/nightly/`.

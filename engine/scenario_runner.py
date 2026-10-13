@@ -1164,6 +1164,23 @@ def _collect(scn, m, out, results, verify, extra):
 
 # ------------------------------------------------------------------ main
 
+def _early_result(scn, t_file, out, t0_wall, why):
+    """A run that stops before the timeline still honours the machine
+    contract (docs/MACHINE_API.md): a summary.json with the reason and
+    the RESULT line last."""
+    simlib.write_json(os.path.join(out, "summary.json"), {
+        "scenario": scn["name"], "file": t_file, "seed": scn["seed"],
+        "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                     time.gmtime(t0_wall)),
+        "wall_s": round(time.time() - t0_wall, 1),
+        "module_overrides": dict(simlib.module_overrides()),
+        "step_ok": False, "error": why, "assertions": [],
+        "counts": {"pass": 0, "fail": 0, "skip": 0}, "exit": 1,
+    }, indent=2)
+    print(f"\nRESULT {os.path.join(out, 'summary.json')}", flush=True)
+    return 1
+
+
 def run_scenario(t_file, seed=None, keep=False, hold=False):
     """One de.scenario/1 run -> exit code (0 = every non-SKIP assertion
     passed and no step failed). hold parks the run after the timeline
@@ -1211,9 +1228,14 @@ def run_scenario(t_file, seed=None, keep=False, hold=False):
         print("VERIFIER FAILED - scenario stops before deploy", flush=True)
         _collect(scn, {"units": [], "name": scn["name"],
                        "server_procs": []}, out, [], True, [])
-        return 1
+        return _early_result(scn, t_file, out, t0_wall, "verifier failed")
 
-    m = launcher.ensure(scn["sim"], world_stream=(wld is not None))
+    try:
+        m = launcher.ensure(scn["sim"], world_stream=(wld is not None))
+    except Exception as e:
+        print(f"  BRING-UP ERROR: {type(e).__name__}: {e}", flush=True)
+        return _early_result(scn, t_file, out, t0_wall,
+                             f"bring-up failed: {e}")
     ctl.CTX = runner.SIM_NAME = m["name"]
     ctx = {"manifest": m, "sim": m["name"], "scn": scn,
            "server": m["server"], "bot": None,

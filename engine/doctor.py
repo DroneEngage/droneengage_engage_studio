@@ -166,7 +166,7 @@ def gather(sim=None):
                                sim is None or auth_on)
     else:
         # external: the user's own stack - report reachability, never
-        # fail (he starts it when he runs the sim)
+        # fail (the user starts it when running the sim)
         srv = sim["server"]
         host, port = (srv["auth_ip"], srv["auth_port"]) \
             if auth_on else (srv["ip"], srv["port"])
@@ -248,6 +248,14 @@ def gather(sim=None):
                             "attach a camera or run the camera repo's "
                             "create_virtual_videos.sh")
 
+    # libfaketime: `faketime: true` units and the clock_step fault
+    # (SL-0014) - required only by a sim with a faketime unit
+    ft = simlib.faketime_lib()
+    d.check("libfaketime", ft, ft or "not found",
+            "apt install libfaketime, or set SIM_FAKETIME_LIB in "
+            "sim.local.env",
+            bool(sim and any(u.get("faketime") for u in sim["units"])))
+
     # render deps: the frame farm's chromium + ffmpeg (cameras|full);
     # Mavlink3DMap itself is always optional (never a failure)
     needs_farm = bool(sim and render_mode in ("cameras", "full")
@@ -293,6 +301,18 @@ def gather(sim=None):
     return d
 
 
+def _load_target(path):
+    """A sims/ file, or a test/scenario - then the fleet it runs (so
+    `./sim doctor tests/x.yaml` answers "can this machine run x?")."""
+    raw = simlib.load_yaml(path) or {}
+    import scenario
+    if isinstance(raw, dict) and not scenario.is_sim_spec(raw):
+        # probe_ports like `./sim run`: the run picks a free slot, so
+        # the ports row reports that slot, not the default one
+        return simlib.load_sim(scenario.load_scenario(path)["sim"])
+    return simlib.load_sim(path)
+
+
 def main(argv):
     a = list(argv)
     json_out = "--json" in a
@@ -300,10 +320,21 @@ def main(argv):
     files = [x for x in a if not x.startswith("-")]
     bad = [x for x in a if x.startswith("-")]
     if bad or len(files) > 1:
-        sys.exit("usage: ./sim doctor [sim.yaml] [--json]"
+        sys.exit("usage: ./sim doctor [sim.yaml|test.yaml] [--json]"
                  + (f" - unknown {' '.join(bad)}" if bad else ""))
-    sim = simlib.load_sim(files[0]) if files else None
+    sim, load_err = None, None
+    if files:
+        try:
+            sim = _load_target(files[0])
+        except simlib.SimError as e:
+            # e.g. a clock_step test on a machine without libfaketime -
+            # report it as a row (keeps --json parseable), then check
+            # the machine itself
+            load_err = str(e)
     d = gather(sim)
+    if load_err:
+        d.missing(files[0], load_err, "see the message - ./sim validate "
+                  f"{files[0]} shows the same problem")
     if json_out:
         print(json.dumps(d.rows, indent=1))
     else:

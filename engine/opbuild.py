@@ -32,6 +32,25 @@ import simlib
 COMPILE_OP = os.path.join(simlib.SIM_ROOT, "tools", "compile_op.js")
 
 
+def _compiler_fingerprint():
+    """compile_op.js runs the webclient's mission compiler (src/js/core/
+    mission/**): a change there must miss the cache, or a stale package
+    is silently reused. Path + size + mtime per file - no content read."""
+    root = os.path.join(simlib.WEBCLIENT_REPO, "src", "js", "core",
+                        "mission")
+    rows = []
+    for d, _subs, files in os.walk(root):
+        for f in files:
+            p = os.path.join(d, f)
+            try:
+                st = os.stat(p)
+            except OSError:
+                continue
+            rows.append((os.path.relpath(p, root), st.st_size,
+                         st.st_mtime_ns))
+    return json.dumps(sorted(rows)).encode()
+
+
 def _ctx_file(deop):
     return deop[:-len(".deop")] + ".ctx.json"
 
@@ -110,7 +129,7 @@ def build_deop(deop_path, fleet=None):
                 "files beside it - a .ctx.json registries entry must "
                 "pick one")
 
-    argv = ["node", COMPILE_OP, deop_path,
+    argv = [simlib.NODE, COMPILE_OP, deop_path,
             "--pkg-prefix", stem]
     if binding:
         argv += ["--binding", ";".join(
@@ -118,7 +137,7 @@ def build_deop(deop_path, fleet=None):
     if ctx.get("fleet", True):
         argv += ["--fleet"]
     key_src = (open(deop_path, "rb").read() + ctx_raw +
-               open(COMPILE_OP, "rb").read() +
+               open(COMPILE_OP, "rb").read() + _compiler_fingerprint() +
                json.dumps(sorted(argv[3:]), sort_keys=True).encode() +
                (open(caps_file, "rb").read()
                 if caps_file and caps_file != "unit_caps.json" else b""))
@@ -139,7 +158,9 @@ def build_deop(deop_path, fleet=None):
     if caps_file:
         argv += ["--caps", caps_file]
     argv += ["--out-dir", out]
-    r = subprocess.run(argv, cwd=simlib.SIM_ROOT,
+    # pin compile_op.js to the webclient repo the fingerprint read
+    env = dict(os.environ, DE_WEBCLIENT_DIR=simlib.WEBCLIENT_REPO)
+    r = subprocess.run(argv, cwd=simlib.SIM_ROOT, env=env,
                        capture_output=True, text=True)
     if r.returncode != 0 or not os.path.isfile(spec):
         tail = (r.stdout + r.stderr).strip().splitlines()[-8:]
