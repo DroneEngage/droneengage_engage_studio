@@ -15,6 +15,16 @@
                                    webclient deep links for a sim: opens the
                                    browser (planner with --planning);
                                    --print only shows the URLs
+  ./sim studio <sim.yaml> [--world <w>] [--record <file>] [--down]
+                                   the human session in one command: the
+                                   sim up (reuse if warm), the webclient
+                                   planning mode opened in the browser,
+                                   the de.worldstream/1 feed +
+                                   Mavlink3DMap viewer when available
+                                   (studio still runs without it), the
+                                   session recorded through the record
+                                   seam; Ctrl-C finalizes the recording
+                                   and leaves the sim up unless --down
   ./sim ctl [-s <sim>] <cmd> ...   operator console (./sim ctl for help)
   ./sim run <file.yaml> [--seed N] [--keep] [--hold|--view]
                        [--module <name>=<path>] ...
@@ -75,7 +85,7 @@
                                    describe; short SHA + -dirty without
                                    tags)
 
-Login overrides for show/up/run/view (win over the sim yaml and
+Login overrides for show/up/run/view/studio (win over the sim yaml and
 sim.local.env SIM_*_AUTH_*):
   --user <name> --password <code>    the one account every unit and the
                                      GCS bridge log in with (overrides
@@ -83,7 +93,7 @@ sim.local.env SIM_*_AUTH_*):
   --auth-server <host[:port]>        the authenticator (external server
                                      with auth: true only)
 
-Global flags for show/up/run/view/suite/validate:
+Global flags for show/up/run/view/suite/validate/studio:
   --shared                         run/view/suite stay additive next to
                                    live sims instead of downing them
                                    (= SIM_SHARED=1)
@@ -306,7 +316,7 @@ def main(argv):
     c, a = argv[0], argv[1:]
     try:
         if c in ("show", "up", "run", "try", "view", "suite",
-                 "validate", "record"):
+                 "validate", "record", "studio"):
             a, flags = _cli_flags(a)
             if flags.get("shared"):
                 # launcher._shared() reads os.environ at call time; the
@@ -616,6 +626,33 @@ def main(argv):
         elif c == "record":
             import record as record_mod
             record_mod.main(a)
+        elif c == "studio":
+            import launcher
+            world = record = None
+            rest = []
+            i = 0
+            while i < len(a):
+                if a[i] == "--world":
+                    if i + 1 >= len(a):
+                        sys.exit("--world needs a file or worlds/ name")
+                    world = a[i + 1]
+                    i += 2
+                elif a[i] == "--record":
+                    if i + 1 >= len(a):
+                        sys.exit("--record needs an output file")
+                    record = a[i + 1]
+                    i += 2
+                else:
+                    rest.append(a[i])
+                    i += 1
+            files = [x for x in rest if not x.startswith("-")]
+            bad = _bad_flags(rest, ("--down",))
+            if bad or len(files) != 1:
+                sys.exit("usage: ./sim studio <sim.yaml> [--world <w>] "
+                         "[--record <file>] [--down]"
+                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+            launcher.studio(files[0], world=world, record_out=record,
+                            teardown="--down" in rest)
         elif c == "view":
             import scenario_runner
             record = None

@@ -77,6 +77,22 @@ is OK or OPTIONAL, you are ready.
 ## 4. Try it in 5 minutes
 
 ```bash
+./sim studio sims/copters3.yaml     # the human session: fleet + planner + 3D viewer
+```
+
+`studio` is the everyday way to *sit at* a sim. One command brings the
+fleet up (reusing it if it is already running), opens the WebClient
+planner logged into the sim, starts the Mavlink3DMap 3D viewer when it
+is installed (it prints a line and simply skips the viewer when it is
+not), and prints one status block — links, units online, record file —
+then parks until Ctrl-C. The fleet stays up afterwards; add `--down` to
+tear it down on exit, `--world <name>` to seed a world for the viewer
+(`worlds/<name>.yaml`), or `--record <file.yaml>` to write the session
+out as a replayable scenario (see §10).
+
+To watch an automated test run instead:
+
+```bash
 ./sim list                          # see everything you can run
 ./sim run tests/smoke_copters.yaml  # the "hello world": 3 copters fly a square
 ./sim down                          # stop everything when done
@@ -100,6 +116,7 @@ Later runs on the same fleet reuse it, so they start faster.
 | `./sim list` | Show every runnable file with a one-line description. |
 | `./sim blocks` | List the vehicle recipes you can use. |
 | `./sim show sims/copters3.yaml` | Preview a fleet (units, ports) without starting anything. |
+| `./sim studio <sim>` | The human session: fleet up + webclient planner + 3D viewer (+ `--world` / `--record` / `--down`) until Ctrl-C. |
 | `./sim up sims/copters3.yaml` | Start a fleet and leave it running. |
 | `./sim sims` | Which fleets are up and how many processes are alive. |
 | `./sim status` | Live processes + which units the server sees online. |

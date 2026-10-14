@@ -60,6 +60,7 @@ and SITL's TCP ports listen on all interfaces.
 ## Quick start
 
 ```bash
+./sim studio sims/copters3.yaml       # the human session: fleet + planner + 3D viewer
 ./sim list                            # every runnable file + one-line summary
 ./sim run tests/smoke_copters.yaml    # brings the sim up if needed, runs, lands
 ./sim view scenarios/demos/world_canopy_viewer.yaml   # a demo + 3D viewer
@@ -252,6 +253,39 @@ when iterating, use `any` when you don't care.
 `sims/quadcopter.yaml`, `sims/rover.yaml` and `sims/plane.yaml` are
 ready-made single-box personal sims for an external server, on disjoint
 `slot_base`s (50/60/70).
+
+### `./sim studio` - the human session
+
+```bash
+./sim studio sims/copters3.yaml [--world sar_forest] [--record out.yaml] [--down]
+```
+
+One command for sitting at a sim: `ensure` (reuse if warm, additive like
+`up`), then the webclient opened in planning mode (`./sim web
+--planning`), then the render/world side, then the recorder, then one
+status block - deep links, units online, record file - and it parks
+until Ctrl-C.
+
+- **Viewer**: the sim file's `render:` wins; a spec without one gets
+  `render: {mode: viewer}` so Mavlink3DMap (mav_bridge + vite) and the
+  world stream's `stream_port` exist. When `MAVLINK3DMAP_DIR` is missing
+  or incomplete the render spec is downgraded to `headless: true` -
+  the session still runs and prints `viewer: skipped` (studio works
+  without the viewer, per the project rule). Injected/downgraded specs
+  rehash, so they never collide with a plain `./sim up` of the same
+  file.
+- **`--world <path|name>`**: loads `worlds/<name>.yaml` (or the given
+  path), injects it into the spec exactly like a scenario run
+  (`world_mod.prepare_sim`: stub configs, geo_projection, SITL wind),
+  then runs the parked-scenario world wiring minus assertions - epoch,
+  the 1 Hz TruthRecorder (react authority), the ADS-B feeder, and the
+  `de.worldstream/1` feed on `render.stream_port`.
+- **`--record <file.yaml>`**: arms the same `command_plugin` capture as
+  `./sim record` before the browser opens; Ctrl-C finalizes the
+  de.scenario/1 file (+ sidecars/runbook stub).
+- **Exit**: the sim stays up (the world stream, telemetry and recorder
+  die with the process; render procs are pid-tracked so `./sim down`
+  still reaps them). `--down` tears the sim down on exit.
 
 ### Ports (slot k = slot_base + unit index; slot_base defaults to 10)
 

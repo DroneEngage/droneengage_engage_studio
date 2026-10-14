@@ -506,3 +506,261 @@ def _swap_modules(sim, m, timeout=60, exclusive=True):
         f"sim {sim['name']} module swap done - reusing the warm sim"),
         flush=True)
     return True
+
+
+# --------------------------------------------------------------- studio
+
+
+def m3d_ready():
+    """Mavlink3DMap usable on this machine: the udp2websocket bridge
+    script plus a vite.js under the checkout - the same pair gen_render
+    and doctor look for."""
+    m3d = simlib.MAVLINK3DMAP_DIR
+    bridge = os.path.join(m3d, "backend", "src", "udp2websocket.js")
+    vite = next((p for p in (
+            os.path.join(m3d, "node_modules", "vite", "bin", "vite.js"),
+            os.path.join(m3d, "frontend", "node_modules", "vite",
+                         "bin", "vite.js"))
+            if os.path.isfile(p)), None)
+    return os.path.isfile(bridge) and bool(vite)
+
+
+def _studio_world(name_or_path):
+    """--world's value: a path as given, else a worlds/<name>[.yaml]
+    shorthand under the sim root."""
+    if os.path.isfile(name_or_path):
+        return os.path.abspath(name_or_path)
+    for cand in (os.path.join(simlib.SIM_ROOT, "worlds", name_or_path),
+                 os.path.join(simlib.SIM_ROOT, "worlds",
+                              str(name_or_path) + ".yaml")):
+        if os.path.isfile(cand):
+            return cand
+    raise simlib.SimError(
+        f"--world {name_or_path!r}: not a file and no "
+        f"worlds/{name_or_path}.yaml")
+
+
+def _studio_poses(m, tele):
+    """{name: {lat,lng,cls}} for the world's react authority - the
+    scenario runner's _fleet_poses minus the fleet cls table (a sim
+    file has no cls aliases; the block name is it)."""
+    out = {}
+    for u in m["units"]:
+        if u.get("fc"):
+            row = tele.latest(u["name"]) if tele else {}
+            if row.get("lat") is not None:
+                out[u["name"]] = {"lat": row["lat"], "lng": row["lng"],
+                                  "cls": u["block"]}
+        else:
+            p = u.get("position") or {}
+            out[u["name"]] = {"lat": p.get("lat"), "lng": p.get("lng"),
+                              "cls": u["block"]}
+    return out
+
+
+def _studio_spec_name(raw, sim_src):
+    """The name load_sim derives for a file spec, recomputed for the
+    inline dict we hand ensure() (a dict has no filename to stem from):
+    explicit name: wins, else the file stem plus one _overlay suffix
+    per applied overlay - own with: + SIM_WITH, the same list
+    _spec_overlays builds."""
+    if raw.get("name"):
+        return raw["name"]
+    stem = (os.path.splitext(os.path.basename(sim_src))[0]
+            if isinstance(sim_src, str) else "studio")
+    own = raw.get("with") or []
+    if isinstance(own, str):
+        own = [x.strip() for x in own.split(",") if x.strip()]
+    env = [x.strip() for x in
+           str(simlib.setting("SIM_WITH", "")).split(",") if x.strip()]
+    applied = [os.path.splitext(os.path.basename(x))[0]
+               for x in list(own) + env]
+    return stem + ("_" + "_".join(applied) if applied else "")
+
+
+def studio(sim_src, world=None, record_out=None, teardown=False,
+           timeout=180):
+    """`./sim studio` - the human session in one command (SL-0029):
+    bring the sim up (reuse if warm), open the webclient in planning
+    mode, serve the de.worldstream/1 feed + Mavlink3DMap viewer when
+    available (studio still runs without it: the sim file's own
+    render: wins, a spec without one gets {mode: viewer} so the
+    stream's port exists, and a missing Mavlink3DMap just drops the
+    viewer procs - never the session), record the session through
+    record.py's command_plugin seam when --record names a file, and
+    park until Ctrl-C. On exit the recording is finalized and the sim
+    stays up unless teardown (--down).
+
+    `world` is a world file path or a worlds/<name> shorthand - the
+    spec gets the same injection a scenario run does (stub config,
+    geo_projection, SITL wind via world_mod.prepare_sim) and the
+    epoch + truth tick + stream start the same way, minus the
+    assertions.
+    """
+    import world as world_mod
+    import telemetry as telemetry_mod
+
+    seed = 1
+    m3d = m3d_ready()
+    # the raw spec (extends: applied) so world/render injection lands
+    # before unit expansion; untouched specs take the file path
+    # through ensure() unchanged
+    raw, _src = simlib._sim_spec(sim_src, None)
+    spec_edit = False
+    render = raw.get("render")
+    if render is None and (m3d or world):
+        # studio is planner + 3D viewer: a spec that never asked for
+        # one gets the viewer mode - its stream_port is also where a
+        # --world feed is served
+        raw["render"] = {"mode": "viewer"}
+        spec_edit = True
+    elif isinstance(render, dict) and not m3d \
+            and not render.get("headless"):
+        # Mavlink3DMap absent must not break the session: run the
+        # stream without the viewer procs (headless keeps the render
+        # spec's ports, so the sim hash is unchanged)
+        raw["render"] = dict(render, headless=True)
+        spec_edit = True
+    wld = None
+    if world:
+        wpath = _studio_world(world)
+        wld = world_mod.load(wpath, seed)
+        # prepare_sim's pose_port wants the slot the sim will actually
+        # resolve to - the same math load_sim applies ('any' cannot be
+        # known this early, so it falls back to the spec's own)
+        ov = str(os.environ.get("SIM_SLOT_BASE_OVERRIDE") or "")
+        raw["slot_base"] = int(ov) if ov.isdigit() else \
+            int(raw.get("slot_base", simlib.SLOT_BASE))
+        # the same world injection a scenario run gets (stub config,
+        # geo_projection, SITL wind) before the fleet resolves
+        world_mod.prepare_sim({"sim": raw, "world": wpath,
+                               "seed": seed}, wld)
+        spec_edit = True
+
+    if spec_edit:
+        raw.setdefault("name", _studio_spec_name(raw, sim_src))
+        m = ensure(raw, exclusive=False, timeout=timeout,
+                   world_stream=wld is not None)
+        if isinstance(sim_src, str):
+            # the manifest's provenance is still the file, not
+            # 'inline' (record writes it as the scenario's sim: base)
+            src_file = os.path.abspath(sim_src)
+            if m.get("sim_file") != src_file:
+                m["sim_file"] = src_file
+                simlib.write_json(simlib.manifest_path(m["name"]), m,
+                                  indent=2)
+    else:
+        m = ensure(sim_src, exclusive=False, timeout=timeout,
+                   world_stream=wld is not None)
+    name = m["name"]
+    ctl.CTX = name
+
+    tele = recorder = stream = feeder = None
+    if wld is not None:
+        # the parked-scenario world wiring: epoch (the stubs' start
+        # gun), the 1 Hz truth tick = react authority, the ADS-B
+        # feeder, and the de.worldstream/1 feed on stream_port
+        world_mod.clear_run_state(name)
+        epoch_ms = world_mod.write_epoch(name, wpath, seed)
+        tele = telemetry_mod.Telemetry(
+            m["units"], os.path.join(simlib.run_dir(name),
+                                     "telemetry.jsonl"))
+        tele.start()
+        recorder = world_mod.TruthRecorder(
+            wld, epoch_ms, world_mod.truth_path(name),
+            overrides_path=world_mod.overrides_path(name),
+            fleet_poses=lambda: _studio_poses(m, tele))
+        recorder.start()
+        if wld.aircraft():
+            adsb_units = [u for u in m["units"]
+                          if u["fc"] and u["fc"].get("fcb_proxy")]
+            if adsb_units:
+                feeder = world_mod.AdsbFeeder(
+                    wld, epoch_ms, adsb_units, m["home"][2])
+                feeder.start()
+            else:
+                print("  world has cls:aircraft entities but no FC "
+                      "unit runs fcb_proxy - no ADS-B injection",
+                      flush=True)
+        render = m.get("render") or {}
+        if render:
+            if port_busy(render["stream_port"]):
+                print(simlib.col_yellow(
+                    f"world stream port {render['stream_port']} is "
+                    "already bound - the viewer's ?world= feed may be "
+                    "stale"), flush=True)
+            import world_stream
+            stream = world_stream.WorldStream(
+                wld, m, epoch_ms, render["stream_port"],
+                world_mod.truth_path(name),
+                world_stream.log_path(name))
+            stream.start()
+
+    rec_t0 = None
+    record_mod = None
+    if record_out:
+        # arm before the session opens so the first click lands in the
+        # file (arm() bounces de_server once on a real server)
+        import record as record_mod
+        rec_t0 = record_mod.arm(m)
+
+    print(simlib.col_bold(f"\n== studio: {name} - Ctrl-C to finish "
+                          "the session =="), flush=True)
+    # prints the webclient + planning deep links and xdg-opens the
+    # planning one
+    ctl.cmd_web(name, open_browser=True, planning=True)
+    render = m.get("render") or {}
+    if not m3d:
+        print(simlib.col_yellow(
+            "viewer:    skipped - Mavlink3DMap not found (set "
+            "MAVLINK3DMAP_DIR in sim.local.env)"), flush=True)
+    elif render:
+        print("viewer:    " + simlib.col("1;36",
+              simlib.render_viewer_url(render, wld is not None)),
+              flush=True)
+    if wld is not None:
+        print(f"world:     {wpath}", flush=True)
+    online = ", ".join(sorted(ctl.online_parties(name)))
+    print("online:    "
+          + (simlib.col_green(online) if online else "-"), flush=True)
+    if record_out:
+        print("record:    " + simlib.col_cyan(record_out), flush=True)
+    print(simlib.col_dim("--down: sim comes down on exit"
+                         if teardown else "sim stays up on exit"),
+          flush=True)
+
+    def _term(_signum, _frame):
+        raise KeyboardInterrupt
+    signal.signal(signal.SIGTERM, _term)
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("studio released\n", flush=True)
+    finally:
+        if rec_t0 is not None:
+            record_mod.disarm(m)
+            try:
+                n_steps, n_unmapped, n_noise = record_mod.finalize(
+                    m, rec_t0, record_out)
+                print(f"wrote {record_out}: {n_steps} step(s)"
+                      + (f", {n_unmapped} unmapped frame(s) as comments"
+                         if n_unmapped else "")
+                      + f" ({n_noise} routine frames skipped)",
+                      flush=True)
+            except Exception as e:
+                print(f"  record finalize failed: {e}", flush=True)
+        if stream is not None:
+            stream.stop()
+        if feeder is not None:
+            feeder.stop()
+        if recorder is not None:
+            recorder.stop()
+        if tele is not None:
+            tele.stop()
+        if teardown:
+            down(name)
+        else:
+            print(f"sim {simlib.col_bold(name)} is still up - "
+                  f"`./sim down {name}` to stop", flush=True)
+    return m
