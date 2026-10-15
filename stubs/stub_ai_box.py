@@ -80,7 +80,8 @@ from stub_base import (StubBase, ANDRUAV_PROTOCOL_MESSAGE_TYPE,  # noqa: E402
 from messages import (  # noqa: E402
     TYPE_AndruavMessage_AI_OBSERVATIONS,
     TYPE_AndruavMessage_AI_Recognition_ACTION,
-    TYPE_AndruavMessage_AI_Recognition_STATUS)
+    TYPE_AndruavMessage_AI_Recognition_STATUS,
+    TYPE_AndruavMessage_Sync_EventFire)
 import simlib  # noqa: E402
 import geo_projection as gp  # noqa: E402
 
@@ -150,17 +151,75 @@ ADVERT_TRACKER = {
 # SL-0034: the stub plays the detector too - the 'perceive' advert is
 # the de_perceive one (de.cap/1, classes[] is the MP-0214 replacement
 # for the dropped 1077 class list). classes is filled per unit.
+# MP-0215: the namespace is cam-scoped (perceive_<cam_id>, bare
+# 'perceive' only when cam_id is empty - the module's perceiveNamespace
+# mirror) and the advert offers the runtime configure/restore actions a
+# mission 'perceive' step and the operator panel invoke.
+CAP_NAME_MAX_LEN = 32
+
+
+def perceive_namespace(cam_id):
+    """de_perceive perceiveNamespace() mirror: 'perceive' on an empty
+    cam_id, else 'perceive_<cam>' lowercased, non [a-z0-9_] -> '_',
+    capped at CAP_NAME_MAX_LEN."""
+    ns = "perceive"
+    if not cam_id:
+        return ns
+    ns += "_"
+    for c in str(cam_id):
+        if len(ns) >= CAP_NAME_MAX_LEN:
+            break
+        l = c.lower()
+        ns += l if (l.isalnum() and l.isascii()) or l == "_" else "_"
+    return ns
+
+
 ADVERT_PERCEIVE = {
     "schema": "de.cap/1",
-    "ns": "perceive",
+    "ns": "perceive",            # adverts() rewrites to the cam-scoped ns
     "module": "stub_ai_box",
     "ver": "0.1.0",
-    "actions": {},
+    "actions": {
+        "configure": {
+            "desc": "apply a runtime perception override: restrict the "
+                    "reported classes to the given labels and optionally "
+                    "set the confidence gate; an empty classes list "
+                    "pauses reporting (perceive nothing)",
+            "params": {
+                "classes": {"type": "array",
+                            "items": {"type": "string"},
+                            "desc": "class labels to report; "
+                                    "empty = perceive nothing"},
+                "min_conf": {"type": "number", "min": 0.0, "max": 1.0,
+                             "optional": True,
+                             "desc": "track confidence gate; absent "
+                                     "keeps the current value"},
+                "cam": {"type": "string", "optional": True,
+                        "desc": "cam_id routing hint; must match this "
+                                "perceiver when present"},
+            },
+            "timeout_s": 10,
+        },
+        "restore": {
+            "desc": "restore the unit default: every class, the "
+                    "configured confidence gate, the startup "
+                    "detecting state",
+            "params": {
+                "cam": {"type": "string", "optional": True,
+                        "desc": "cam_id routing hint; must match this "
+                                "perceiver when present"},
+            },
+            "timeout_s": 10,
+        },
+    },
     "events": {},
     "state": {
         "cam_id":  {"type": "string"},
         "backend": {"type": "string"},
         "classes": {"type": "array", "items": {"type": "string"}},
+        "detecting": {"type": "bool"},
+        "active_classes": {"type": "array", "items": {"type": "string"}},
+        "min_conf": {"type": "number"},
         "fps":     {"type": "number"},
         "hfov":    {"type": "number"},
     },
@@ -219,6 +278,36 @@ class StubAIBox(StubBase):
         # obs frame identity: cam_id is what de_mavlink's camera
         # registry binds the frame to (unit name by default)
         self.cam_id = str(cam.get("cam_id") or self.unit or "cam")
+        # MP-0215: runtime perception configuration. The unit config
+        # (stub_ai_box.enabled / classes / min_conf) is the unit default
+        # perceive.restore returns to; a configure override scopes the
+        # reported labels at the emit seam (the world still sees a
+        # dropped detection - its truth row reads sent:false,
+        # why:"filtered").
+        dflt_classes = self.cfg.get("classes")
+        if dflt_classes is not None:
+            if not isinstance(dflt_classes, list) or \
+                    any(c not in self.obs_labels for c in dflt_classes):
+                raise simlib.SimError(
+                    f"stub_ai_box: classes {dflt_classes!r} must be a "
+                    f"subset of the detector labels {self.obs_labels}")
+            dflt_classes = [str(c) for c in dflt_classes]
+        self._perceive_defaults = {
+            "reporting": bool(self.cfg.get("enabled", True)),
+            "classes": dflt_classes,
+            "min_conf": float(self.cfg.get("min_conf", 0.0)),
+        }
+        self._reporting = self._perceive_defaults["reporting"]
+        self._perceive_filter = (set(dflt_classes)
+                                 if dflt_classes is not None else None)
+        self._min_conf = self._perceive_defaults["min_conf"]
+        if self._perceive_filter is not None and \
+                not self._perceive_filter:
+            # classes: [] as the configured default = start paused
+            self._reporting = False
+        self._perceive_ns = perceive_namespace(self.cam_id)
+        self._nonce_ring = []            # Sync_EventFire dedupe
+        self._nonce_set = set()
         self._trk_ids = {}               # tid -> stable int trk (run)
         self._frame_obs = []             # obs entries for this frame
         # B4-01: `--legacy-box` restores the pre-obs wire - one 1078
@@ -271,7 +360,118 @@ class StubAIBox(StubBase):
             self.log.log("START", {"class": (params or {}).get("class")},
                          ms=self.clock_ms())
             return {"started": (params or {}).get("class")}, None
+        if ns == self._perceive_ns:
+            if act == "configure":
+                return self._perceive_configure(params, "invoke")
+            if act == "restore":
+                return self._perceive_restore(params, "invoke")
         return None, f"unknown action '{ns}.{act}'"
+
+    # ------------------------------------------------- perceive (MP-0215)
+
+    def _publish_perceive_state(self):
+        if self.facade is not None:
+            self.facade.publish_state(self._perceive_ns,
+                                      self._perceive_state())
+
+    def _perceive_configure(self, params, cause):
+        """perceive.configure - the mission step's invoke AND the
+        operator panel's Sync_EventFire land here. Returns
+        (result, err) like every invoke handler."""
+        params = params or {}
+        cam = params.get("cam")
+        if isinstance(cam, str) and cam and cam != self.cam_id:
+            return None, \
+                f"perceive cam '{cam}' not served by '{self.cam_id}'"
+        classes = params.get("classes")
+        if classes is None:
+            classes = []
+        if not isinstance(classes, list) or \
+                any(not isinstance(c, str) for c in classes):
+            return None, "classes must be an array of strings"
+        unknown = [c for c in classes if c not in self.obs_labels]
+        if unknown:
+            return None, f"unknown class(es): {', '.join(unknown)}"
+        mc = params.get("min_conf")
+        if mc is not None:
+            if not isinstance(mc, (int, float)) or \
+                    isinstance(mc, bool) or not 0.0 <= mc <= 1.0:
+                return None, "min_conf must be a number in [0,1]"
+            self._min_conf = float(mc)
+        if len(classes) == 0:
+            # perceive nothing - reporting paused until the next
+            # configure or a restore
+            self._reporting = False
+            self._perceive_filter = None
+        else:
+            self._reporting = True
+            self._perceive_filter = set(classes)
+        active = sorted(self._perceive_filter or [])
+        print(f"perceive configure ({cause}): classes={active} "
+              f"min_conf={self._min_conf} detecting={self._reporting}",
+              flush=True)
+        self.log.log("PERCEIVE", {"cmd": "configure", "classes": active,
+                     "min_conf": self._min_conf,
+                     "detecting": self._reporting, "cause": cause},
+                     ms=self.clock_ms())
+        self._publish_perceive_state()
+        return {"classes": active, "min_conf": self._min_conf,
+                "detecting": self._reporting}, None
+
+    def _perceive_restore(self, params, cause):
+        """perceive.restore - back to the unit's configured default."""
+        cam = (params or {}).get("cam")
+        if isinstance(cam, str) and cam and cam != self.cam_id:
+            return None, \
+                f"perceive cam '{cam}' not served by '{self.cam_id}'"
+        self._reporting = self._perceive_defaults["reporting"]
+        self._perceive_filter = (
+            set(self._perceive_defaults["classes"])
+            if self._perceive_defaults["classes"] is not None else None)
+        self._min_conf = self._perceive_defaults["min_conf"]
+        print(f"perceive restore ({cause}): detecting={self._reporting} "
+              f"classes={sorted(self._perceive_filter or [])} "
+              f"min_conf={self._min_conf}", flush=True)
+        self.log.log("PERCEIVE", {"cmd": "restore",
+                     "detecting": self._reporting, "cause": cause},
+                     ms=self.clock_ms())
+        self._publish_perceive_state()
+        return {"detecting": self._reporting}, None
+
+    def _on_perceive_event(self, cmd):
+        """A forwarded Sync_EventFire command: {d:'perceive.configure'|
+        'perceive.restore'|'<perceive_ns>.<verb>', ed?, m?, n?}. The
+        bare 'perceive' name rides the same handler as the cam-scoped
+        namespace - de_comm resolves the member at dispatch."""
+        d = cmd.get("d")
+        if not isinstance(d, str) or "." not in d:
+            return
+        ns, _, verb = d.partition(".")
+        if ns not in ("perceive", self._perceive_ns):
+            return
+        if verb not in ("configure", "restore"):
+            return
+        nonce = cmd.get("n")
+        if isinstance(nonce, str):
+            if nonce in self._nonce_set:
+                return
+            self._nonce_set.add(nonce)
+            self._nonce_ring.append(nonce)
+            if len(self._nonce_ring) > 128:
+                self._nonce_set.discard(self._nonce_ring.pop(0))
+        payload = cmd.get("ed")
+        if not isinstance(payload, dict):
+            payload = cmd.get("m")
+        if not isinstance(payload, dict):
+            payload = {}
+        if verb == "restore":
+            _res, err = self._perceive_restore(payload, "event")
+        else:
+            _res, err = self._perceive_configure(payload, "event")
+        if err:
+            print(f"perceive.{verb} event rejected: {err}", flush=True)
+            self.log.log("REJECT", {"tag": f"perceive.{verb}: {err}"},
+                         ms=self.clock_ms())
 
     # -------------------------------------------------------- databus out
 
@@ -299,11 +499,14 @@ class StubAIBox(StubBase):
                       {"a": AI_STATUS_CLASS_LIST, "c": list(self.labels)})
         elif self.facade is not None:
             # MP-0214: live perceive state mirrors the advert
-            self.facade.publish_state("perceive", self._perceive_state())
+            self._publish_perceive_state()
 
     def _perceive_state(self):
         return {"cam_id": self.cam_id, "backend": "sim",
                 "classes": list(self.obs_labels),
+                "detecting": self._reporting,
+                "active_classes": sorted(self._perceive_filter or []),
+                "min_conf": self._min_conf,
                 "fps": float(self.cam["fps_boxes"]),
                 "hfov": float(self.cam["hfov_deg"])}
 
@@ -320,6 +523,7 @@ class StubAIBox(StubBase):
             "timeout_s": 10,
         }
         perceive = __import__("copy").deepcopy(ADVERT_PERCEIVE)
+        perceive["ns"] = self._perceive_ns
         for k, v in self._perceive_state().items():
             perceive["state"][k]["default"] = v
         return [__import__("json").dumps(ADVERT_CAMERA),
@@ -329,14 +533,19 @@ class StubAIBox(StubBase):
     def on_message(self, message, length, jMsg):
         super().on_message(message, length, jMsg)
         try:
-            if jMsg.get(ANDRUAV_PROTOCOL_MESSAGE_TYPE) == \
-                    TYPE_AndruavMessage_AI_Recognition_ACTION:
-                ms = jMsg.get(ANDRUAV_PROTOCOL_MESSAGE_CMD) or {}
+            mt = jMsg.get(ANDRUAV_PROTOCOL_MESSAGE_TYPE)
+            ms = jMsg.get(ANDRUAV_PROTOCOL_MESSAGE_CMD) or {}
+            if mt == TYPE_AndruavMessage_AI_Recognition_ACTION:
                 if ms.get("a") == AI_ACTION_SEARCH and \
                         isinstance(ms.get("i"), list):
                     self._sel = [int(i) for i in ms["i"]]
                     self.log.log("SELECT", {"i": self._sel},
                                  ms=self.clock_ms())
+            elif mt == TYPE_AndruavMessage_Sync_EventFire:
+                # MP-0215: the operator panel's perceive.configure /
+                # perceive.restore fire lands here (forwarded to this
+                # namespace's owner)
+                self._on_perceive_event(ms)
         except Exception:
             pass
 
@@ -347,6 +556,18 @@ class StubAIBox(StubBase):
         self._trk_ids = {}
         self._frame_obs = []
         self._status_next = 0.0
+        # MP-0215: a new run starts on the unit default, not whatever
+        # override the previous run left installed
+        self._reporting = self._perceive_defaults["reporting"]
+        self._perceive_filter = (
+            set(self._perceive_defaults["classes"])
+            if self._perceive_defaults["classes"] is not None else None)
+        self._min_conf = self._perceive_defaults["min_conf"]
+        if self._perceive_filter is not None and \
+                not self._perceive_filter:
+            self._reporting = False
+        self._nonce_ring = []
+        self._nonce_set = set()
 
     def _class_ok(self, cls):
         """A SEARCH selection limits detections to the chosen classes."""
@@ -368,6 +589,11 @@ class StubAIBox(StubBase):
         if frame == self._last_frame:
             return
         self._last_frame = frame
+        if not self._reporting:
+            # MP-0215: paused - perceive.configure classes:[] or the
+            # unit default (stub_ai_box.enabled: false). A paused
+            # detector emits no obs frame at all.
+            return
         pose = self.pose_feed.pose()
         if pose is None:
             return
@@ -478,6 +704,16 @@ class StubAIBox(StubBase):
         bh = min(1.0, size / (2.0 * rng_m *
                               math.tan(math.radians(cam["vfov_deg"]) / 2)))
         conf = round(r.uniform(0.75, 0.99), 3)
+        if conf < self._min_conf:
+            # MP-0215: under the confidence gate - detected, not reported
+            self.truth.append({"src": "ai", "tid": tid, "cls": cls,
+                               "frame": frame, "u": round(u_n, 4),
+                               "v": round(v_n, 4), "lat": lat,
+                               "lng": lng, "alt_m": ealt,
+                               "vis": round(vis, 4), "conf": conf,
+                               "sent": False, "why": "conf"},
+                              ms=self.clock_ms())
+            return
         box = {"x": round(max(0.0, u_n + 0.5 - bw / 2), 4),
                "y": round(max(0.0, v_n + 0.5 - bh / 2), 4),
                "w": round(bw, 4), "h": round(bh, 4),
@@ -486,7 +722,19 @@ class StubAIBox(StubBase):
             self.emit(TYPE_AI_TARGET_LOCATION_LEGACY,
                       {"b": box})
         else:
-            self._frame_obs.append(self._obs_entry(tid, cls, box, t_s))
+            entry = self._obs_entry(tid, cls, box, t_s)
+            if entry is None:
+                # MP-0215: the perceive class filter dropped the label
+                # at the emit seam - the world saw it, the wire didn't
+                self.truth.append({"src": "ai", "tid": tid, "cls": cls,
+                                   "frame": frame, "u": round(u_n, 4),
+                                   "v": round(v_n, 4), "lat": lat,
+                                   "lng": lng, "alt_m": ealt,
+                                   "vis": round(vis, 4), "conf": conf,
+                                   "sent": False, "why": "filtered"},
+                                  ms=self.clock_ms())
+                return
+            self._frame_obs.append(entry)
         self.truth.append({"src": "ai", "tid": tid, "cls": cls,
                            "frame": frame, "u": round(u_n, 4),
                            "v": round(v_n, 4), "lat": lat, "lng": lng,
@@ -528,6 +776,11 @@ class StubAIBox(StubBase):
                     else "coldspot")
         else:
             wire = self.label_map.get(cls, cls)
+        # MP-0215: perceive.configure's label filter drops the entry at
+        # the reporting seam (the caller records it sent:false)
+        if self._perceive_filter is not None and \
+                wire not in self._perceive_filter:
+            return None
         entry = {}
         if tid is not None:
             entry["trk"] = self._trk_for(tid)
@@ -622,20 +875,28 @@ class StubAIBox(StubBase):
             bw = min(1.0, 0.5 / (2.0 * rng_m * fn))
             bh = min(1.0, 0.5 / (2.0 * rng_m * fv))
             conf = round(r.uniform(0.4, 0.7), 3)
+            if conf < self._min_conf:
+                continue          # MP-0215: under the confidence gate
             box = {"x": round(max(0.0, u + 0.5 - bw / 2), 4),
                    "y": round(max(0.0, v + 0.5 - bh / 2), 4),
                    "w": round(bw, 4), "h": round(bh, 4),
                    "conf": conf, "tm": self._tm_us()}
+            entry = None
             if self.legacy_box:
                 self.emit(
                     TYPE_AI_TARGET_LOCATION_LEGACY,
                     {"b": box})
             else:
-                self._frame_obs.append(
-                    self._obs_entry(None, cl["cls"], box, t_s))
+                entry = self._obs_entry(None, cl["cls"], box, t_s)
             row.update({"u": round(u, 4), "v": round(v, 4),
                         "conf": conf})
+            if entry is None and not self.legacy_box:
+                # MP-0215: perceive filter dropped the clutter label
+                row["sent"] = False
+                row["why"] = "filtered"
             self.truth.append(row, ms=self.clock_ms())
+            if entry is not None:
+                self._frame_obs.append(entry)
 
 
 def main(argv):
@@ -646,7 +907,8 @@ def main(argv):
         s.run_selftest()
         return 0
     s.connect(adverts=s.adverts(),
-              msg_filter=[TYPE_AndruavMessage_AI_Recognition_ACTION])
+              msg_filter=[TYPE_AndruavMessage_AI_Recognition_ACTION,
+                          TYPE_AndruavMessage_Sync_EventFire])
     s.status()
     s.run()
     return 0
