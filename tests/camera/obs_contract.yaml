@@ -1,0 +1,31 @@
+# camera/obs_contract - SL-0034 acceptance: a static mast running
+# stub_ai_box emits one obs frame (mt 6546) per camera frame, every
+# detection an entry {trk, cls, cls_id, conf, box[x,y,w,h] top-left
+# [0..1]} under cam_id - the contract the de_mavlink projector consumes.
+# The world gives the 4 m nadir mast two people and a car fully in
+# frame at p_detect 1 (no detect_cls, no SEARCH), so every frame
+# reports the same {car, person, person} multiset and the per-entity
+# trk ids stay stable for the run. stub_deterministic re-runs the same
+# scenario in-process twice on the mast poses and byte-compares the
+# stub logs.
+version: 1
+name: obs_contract
+seed: 7
+transport: fake
+world: ../../worlds/obs_contract.yaml
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: cam1, cls: static, modules: [stub_ai_box],
+     base: [-35.363262, 149.165237, 584, 0]}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 10, do: wait, seconds: 30}
+  - {t: 45, do: stop}
+assert:
+  - obs_frames: {unit: cam1, min_frames: 20,
+                 cls: [car, person, person], trk_stable: true}
+  - stub_deterministic: {module: stub_ai_box, unit: cam1,
+                         poses: ../../worlds/pose_obs_mast.jsonl,
+                         dur_s: 20}
+teardown: none

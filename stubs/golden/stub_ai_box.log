@@ -1,122 +1,92 @@
 0 SELFTEST {"poses": "worlds/pose_cam1.jsonl"}
 0 SEND {"mt": 1077, "ms": {"a": 2}}
-0 SEND {"mt": 1077, "ms": {"a": 4, "c": ["person", "phone"]}}
+0 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 0, "obs": []}}
+500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 500000, "obs": []}}
+1000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 1000000, "obs": []}}
+1500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 1500000, "obs": []}}
+2000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 2000000, "obs": []}}
+2500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 2500000, "obs": []}}
+3000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 3000000, "obs": []}}
+3500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 3500000, "obs": []}}
+4000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 4000000, "obs": []}}
+4500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 4500000, "obs": []}}
 5000 SEND {"mt": 1077, "ms": {"a": 2}}
-5000 SEND {"mt": 1077, "ms": {"a": 4, "c": ["person", "phone"]}}
-7500 SEND {"mt": 1078, "ms": {"b": {"x": 0.0304, "y": 0.9437, "w": 0.0049, "h": 0.0065, "conf": 0.908, "tm": 7500000, "class_id": 1, "class_name": "phone"}}}
-8000 SEND {"mt": 1078, "ms": {"b": {"x": 0.0544, "y": 0.9571, "w": 0.0108, "h": 0.0144, "conf": 0.854, "tm": 8000000, "class_id": 0, "class_name": "person"}}}
-8000 SEND {"mt": 1078, "ms": {"b": {"x": 0.1017, "y": 0.893, "w": 0.0044, "h": 0.0059, "conf": 0.879, "tm": 8000000, "class_id": 1, "class_name": "phone"}}}
-8500 SEND {"mt": 1078, "ms": {"b": {"x": 0.0791, "y": 0.9401, "w": 0.0109, "h": 0.0144, "conf": 0.833, "tm": 8500000, "class_id": 0, "class_name": "person"}}}
-8500 SEND {"mt": 1078, "ms": {"b": {"x": 0.1071, "y": 0.8631, "w": 0.0045, "h": 0.0059, "conf": 0.911, "tm": 8500000, "class_id": 1, "class_name": "phone"}}}
-9000 SEND {"mt": 1078, "ms": {"b": {"x": 0.1164, "y": 0.892, "w": 0.01, "h": 0.0133, "conf": 0.968, "tm": 9000000, "class_id": 0, "class_name": "person"}}}
-9500 SEND {"mt": 1078, "ms": {"b": {"x": 0.1232, "y": 0.8826, "w": 0.0101, "h": 0.0134, "conf": 0.971, "tm": 9500000, "class_id": 0, "class_name": "person"}}}
-9500 SEND {"mt": 1078, "ms": {"b": {"x": 0.1555, "y": 0.8345, "w": 0.0041, "h": 0.0055, "conf": 0.918, "tm": 9500000, "class_id": 1, "class_name": "phone"}}}
+5000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 5000000, "obs": []}}
+5500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 5500000, "obs": []}}
+6000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 6000000, "obs": []}}
+6500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 6500000, "obs": []}}
+7000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 7000000, "obs": []}}
+7500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 7500000, "obs": [{"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.908, "box": [0.0304, 0.9437, 0.0049, 0.0065]}]}}
+8000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 8000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.854, "box": [0.0544, 0.9571, 0.0108, 0.0144]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.879, "box": [0.1017, 0.893, 0.0044, 0.0059]}]}}
+8500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 8500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.833, "box": [0.0791, 0.9401, 0.0109, 0.0144]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.911, "box": [0.1071, 0.8631, 0.0045, 0.0059]}]}}
+9000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 9000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.968, "box": [0.1164, 0.892, 0.01, 0.0133]}]}}
+9500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 9500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.971, "box": [0.1232, 0.8826, 0.0101, 0.0134]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.918, "box": [0.1555, 0.8345, 0.0041, 0.0055]}]}}
 10000 SEND {"mt": 1077, "ms": {"a": 2}}
-10000 SEND {"mt": 1077, "ms": {"a": 4, "c": ["person", "phone"]}}
-10000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2003, "y": 0.7664, "w": 0.0038, "h": 0.005, "conf": 0.851, "tm": 10000000, "class_id": 1, "class_name": "phone"}}}
-10500 SEND {"mt": 1078, "ms": {"b": {"x": 0.1833, "y": 0.8373, "w": 0.0093, "h": 0.0124, "conf": 0.918, "tm": 10500000, "class_id": 0, "class_name": "person"}}}
-10500 SEND {"mt": 1078, "ms": {"b": {"x": 0.207, "y": 0.7767, "w": 0.0038, "h": 0.0051, "conf": 0.769, "tm": 10500000, "class_id": 1, "class_name": "phone"}}}
-11000 SEND {"mt": 1078, "ms": {"b": {"x": 0.1932, "y": 0.8274, "w": 0.0094, "h": 0.0124, "conf": 0.774, "tm": 11000000, "class_id": 0, "class_name": "person"}}}
-11500 SEND {"mt": 1078, "ms": {"b": {"x": 0.226, "y": 0.7694, "w": 0.0038, "h": 0.0051, "conf": 0.891, "tm": 11500000, "class_id": 1, "class_name": "phone"}}}
-12000 SEND {"mt": 1078, "ms": {"b": {"x": 0.1909, "y": 0.8051, "w": 0.0094, "h": 0.0125, "conf": 0.864, "tm": 12000000, "class_id": 0, "class_name": "person"}}}
-13000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2017, "y": 0.8111, "w": 0.0095, "h": 0.0126, "conf": 0.933, "tm": 13000000, "class_id": 0, "class_name": "person"}}}
-14000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2176, "y": 0.7783, "w": 0.0095, "h": 0.0127, "conf": 0.931, "tm": 14000000, "class_id": 0, "class_name": "person"}}}
-14000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2362, "y": 0.7126, "w": 0.0039, "h": 0.0052, "conf": 0.975, "tm": 14000000, "class_id": 1, "class_name": "phone"}}}
-14500 SEND {"mt": 1078, "ms": {"b": {"x": 0.2135, "y": 0.773, "w": 0.0096, "h": 0.0127, "conf": 0.95, "tm": 14500000, "class_id": 0, "class_name": "person"}}}
-14500 SEND {"mt": 1078, "ms": {"b": {"x": 0.2434, "y": 0.703, "w": 0.0039, "h": 0.0052, "conf": 0.843, "tm": 14500000, "class_id": 1, "class_name": "phone"}}}
+10000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 10000000, "obs": [{"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.851, "box": [0.2003, 0.7664, 0.0038, 0.005]}]}}
+10500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 10500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.918, "box": [0.1833, 0.8373, 0.0093, 0.0124]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.769, "box": [0.207, 0.7767, 0.0038, 0.0051]}]}}
+11000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 11000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.774, "box": [0.1932, 0.8274, 0.0094, 0.0124]}]}}
+11500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 11500000, "obs": [{"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.891, "box": [0.226, 0.7694, 0.0038, 0.0051]}]}}
+12000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 12000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.864, "box": [0.1909, 0.8051, 0.0094, 0.0125]}]}}
+12500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 12500000, "obs": []}}
+13000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 13000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.933, "box": [0.2017, 0.8111, 0.0095, 0.0126]}]}}
+13500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 13500000, "obs": []}}
+14000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 14000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.931, "box": [0.2176, 0.7783, 0.0095, 0.0127]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.975, "box": [0.2362, 0.7126, 0.0039, 0.0052]}]}}
+14500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 14500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.95, "box": [0.2135, 0.773, 0.0096, 0.0127]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.843, "box": [0.2434, 0.703, 0.0039, 0.0052]}]}}
 15000 SEND {"mt": 1077, "ms": {"a": 2}}
-15000 SEND {"mt": 1077, "ms": {"a": 4, "c": ["person", "phone"]}}
-15000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2555, "y": 0.7125, "w": 0.0039, "h": 0.0052, "conf": 0.862, "tm": 15000000, "class_id": 1, "class_name": "phone"}}}
-15500 SEND {"mt": 1078, "ms": {"b": {"x": 0.2261, "y": 0.7707, "w": 0.0096, "h": 0.0128, "conf": 0.989, "tm": 15500000, "class_id": 0, "class_name": "person"}}}
-15500 SEND {"mt": 1078, "ms": {"b": {"x": 0.2516, "y": 0.7053, "w": 0.0039, "h": 0.0052, "conf": 0.969, "tm": 15500000, "class_id": 1, "class_name": "phone"}}}
-16000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2417, "y": 0.7703, "w": 0.0097, "h": 0.0128, "conf": 0.864, "tm": 16000000, "class_id": 0, "class_name": "person"}}}
-16000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2663, "y": 0.7074, "w": 0.0039, "h": 0.0052, "conf": 0.819, "tm": 16000000, "class_id": 1, "class_name": "phone"}}}
-17000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2814, "y": 0.6877, "w": 0.0039, "h": 0.0052, "conf": 0.787, "tm": 17000000, "class_id": 1, "class_name": "phone"}}}
-17500 SEND {"mt": 1078, "ms": {"b": {"x": 0.2537, "y": 0.7332, "w": 0.0097, "h": 0.013, "conf": 0.799, "tm": 17500000, "class_id": 0, "class_name": "person"}}}
-17500 SEND {"mt": 1078, "ms": {"b": {"x": 0.2875, "y": 0.6813, "w": 0.004, "h": 0.0053, "conf": 0.969, "tm": 17500000, "class_id": 1, "class_name": "phone"}}}
-18000 SEND {"mt": 1078, "ms": {"b": {"x": 0.257, "y": 0.7197, "w": 0.0098, "h": 0.013, "conf": 0.952, "tm": 18000000, "class_id": 0, "class_name": "person"}}}
-18000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2779, "y": 0.6597, "w": 0.004, "h": 0.0053, "conf": 0.974, "tm": 18000000, "class_id": 1, "class_name": "phone"}}}
-18500 SEND {"mt": 1078, "ms": {"b": {"x": 0.2673, "y": 0.7161, "w": 0.0098, "h": 0.013, "conf": 0.867, "tm": 18500000, "class_id": 0, "class_name": "person"}}}
-19000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2685, "y": 0.7118, "w": 0.0098, "h": 0.0131, "conf": 0.888, "tm": 19000000, "class_id": 0, "class_name": "person"}}}
-19000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2965, "y": 0.6438, "w": 0.004, "h": 0.0053, "conf": 0.75, "tm": 19000000, "class_id": 1, "class_name": "phone"}}}
-19500 SEND {"mt": 1078, "ms": {"b": {"x": 0.2879, "y": 0.6781, "w": 0.004, "h": 0.0053, "conf": 0.889, "tm": 19500000, "class_id": 1, "class_name": "phone"}}}
+15000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 15000000, "obs": [{"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.862, "box": [0.2555, 0.7125, 0.0039, 0.0052]}]}}
+15500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 15500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.989, "box": [0.2261, 0.7707, 0.0096, 0.0128]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.969, "box": [0.2516, 0.7053, 0.0039, 0.0052]}]}}
+16000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 16000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.864, "box": [0.2417, 0.7703, 0.0097, 0.0128]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.819, "box": [0.2663, 0.7074, 0.0039, 0.0052]}]}}
+16500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 16500000, "obs": []}}
+17000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 17000000, "obs": [{"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.787, "box": [0.2814, 0.6877, 0.0039, 0.0052]}]}}
+17500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 17500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.799, "box": [0.2537, 0.7332, 0.0097, 0.013]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.969, "box": [0.2875, 0.6813, 0.004, 0.0053]}]}}
+18000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 18000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.952, "box": [0.257, 0.7197, 0.0098, 0.013]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.974, "box": [0.2779, 0.6597, 0.004, 0.0053]}]}}
+18500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 18500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.867, "box": [0.2673, 0.7161, 0.0098, 0.013]}]}}
+19000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 19000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.888, "box": [0.2685, 0.7118, 0.0098, 0.0131]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.75, "box": [0.2965, 0.6438, 0.004, 0.0053]}]}}
+19500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 19500000, "obs": [{"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.889, "box": [0.2879, 0.6781, 0.004, 0.0053]}]}}
 20000 SEND {"mt": 1077, "ms": {"a": 2}}
-20000 SEND {"mt": 1077, "ms": {"a": 4, "c": ["person", "phone"]}}
-20000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2904, "y": 0.6896, "w": 0.0099, "h": 0.0131, "conf": 0.784, "tm": 20000000, "class_id": 0, "class_name": "person"}}}
-20000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3079, "y": 0.667, "w": 0.004, "h": 0.0053, "conf": 0.937, "tm": 20000000, "class_id": 1, "class_name": "phone"}}}
-20500 SEND {"mt": 1078, "ms": {"b": {"x": 0.283, "y": 0.6705, "w": 0.0099, "h": 0.0132, "conf": 0.784, "tm": 20500000, "class_id": 0, "class_name": "person"}}}
-21000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2878, "y": 0.6891, "w": 0.0099, "h": 0.0132, "conf": 0.89, "tm": 21000000, "class_id": 0, "class_name": "person"}}}
-21000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3137, "y": 0.6284, "w": 0.004, "h": 0.0053, "conf": 0.763, "tm": 21000000, "class_id": 1, "class_name": "phone"}}}
-21500 SEND {"mt": 1078, "ms": {"b": {"x": 0.2956, "y": 0.6887, "w": 0.0099, "h": 0.0132, "conf": 0.982, "tm": 21500000, "class_id": 0, "class_name": "person"}}}
-21500 SEND {"mt": 1078, "ms": {"b": {"x": 0.3145, "y": 0.6386, "w": 0.004, "h": 0.0054, "conf": 0.894, "tm": 21500000, "class_id": 1, "class_name": "phone"}}}
-22000 SEND {"mt": 1078, "ms": {"b": {"x": 0.2967, "y": 0.6833, "w": 0.01, "h": 0.0133, "conf": 0.829, "tm": 22000000, "class_id": 0, "class_name": "person"}}}
-22500 SEND {"mt": 1078, "ms": {"b": {"x": 0.3254, "y": 0.6072, "w": 0.004, "h": 0.0054, "conf": 0.886, "tm": 22500000, "class_id": 1, "class_name": "phone"}}}
-23000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3158, "y": 0.6614, "w": 0.01, "h": 0.0133, "conf": 0.855, "tm": 23000000, "class_id": 0, "class_name": "person"}}}
-23000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3383, "y": 0.5894, "w": 0.004, "h": 0.0054, "conf": 0.771, "tm": 23000000, "class_id": 1, "class_name": "phone"}}}
-24000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3248, "y": 0.6476, "w": 0.0101, "h": 0.0134, "conf": 0.863, "tm": 24000000, "class_id": 0, "class_name": "person"}}}
-24000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3411, "y": 0.604, "w": 0.0041, "h": 0.0054, "conf": 0.905, "tm": 24000000, "class_id": 1, "class_name": "phone"}}}
-24500 SEND {"mt": 1078, "ms": {"b": {"x": 0.3378, "y": 0.6378, "w": 0.0101, "h": 0.0134, "conf": 0.932, "tm": 24500000, "class_id": 0, "class_name": "person"}}}
+20000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 20000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.784, "box": [0.2904, 0.6896, 0.0099, 0.0131]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.937, "box": [0.3079, 0.667, 0.004, 0.0053]}]}}
+20500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 20500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.784, "box": [0.283, 0.6705, 0.0099, 0.0132]}]}}
+21000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 21000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.89, "box": [0.2878, 0.6891, 0.0099, 0.0132]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.763, "box": [0.3137, 0.6284, 0.004, 0.0053]}]}}
+21500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 21500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.982, "box": [0.2956, 0.6887, 0.0099, 0.0132]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.894, "box": [0.3145, 0.6386, 0.004, 0.0054]}]}}
+22000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 22000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.829, "box": [0.2967, 0.6833, 0.01, 0.0133]}]}}
+22500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 22500000, "obs": [{"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.886, "box": [0.3254, 0.6072, 0.004, 0.0054]}]}}
+23000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 23000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.855, "box": [0.3158, 0.6614, 0.01, 0.0133]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.771, "box": [0.3383, 0.5894, 0.004, 0.0054]}]}}
+23500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 23500000, "obs": []}}
+24000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 24000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.863, "box": [0.3248, 0.6476, 0.0101, 0.0134]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.905, "box": [0.3411, 0.604, 0.0041, 0.0054]}]}}
+24500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 24500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.932, "box": [0.3378, 0.6378, 0.0101, 0.0134]}]}}
 25000 SEND {"mt": 1077, "ms": {"a": 2}}
-25000 SEND {"mt": 1077, "ms": {"a": 4, "c": ["person", "phone"]}}
-25000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3482, "y": 0.631, "w": 0.0101, "h": 0.0134, "conf": 0.975, "tm": 25000000, "class_id": 0, "class_name": "person"}}}
-25000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3607, "y": 0.5901, "w": 0.0041, "h": 0.0054, "conf": 0.822, "tm": 25000000, "class_id": 1, "class_name": "phone"}}}
-25500 SEND {"mt": 1078, "ms": {"b": {"x": 0.334, "y": 0.6164, "w": 0.0101, "h": 0.0134, "conf": 0.957, "tm": 25500000, "class_id": 0, "class_name": "person"}}}
-25500 SEND {"mt": 1078, "ms": {"b": {"x": 0.3655, "y": 0.5679, "w": 0.0041, "h": 0.0054, "conf": 0.858, "tm": 25500000, "class_id": 1, "class_name": "phone"}}}
-26000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3514, "y": 0.6358, "w": 0.0101, "h": 0.0135, "conf": 0.975, "tm": 26000000, "class_id": 0, "class_name": "person"}}}
-26000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3685, "y": 0.5939, "w": 0.0041, "h": 0.0054, "conf": 0.79, "tm": 26000000, "class_id": 1, "class_name": "phone"}}}
-26500 SEND {"mt": 1078, "ms": {"b": {"x": 0.3557, "y": 0.6168, "w": 0.0101, "h": 0.0135, "conf": 0.781, "tm": 26500000, "class_id": 0, "class_name": "person"}}}
-27000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3568, "y": 0.6182, "w": 0.0102, "h": 0.0135, "conf": 0.912, "tm": 27000000, "class_id": 0, "class_name": "person"}}}
-27500 SEND {"mt": 1078, "ms": {"b": {"x": 0.386, "y": 0.5658, "w": 0.0041, "h": 0.0055, "conf": 0.937, "tm": 27500000, "class_id": 1, "class_name": "phone"}}}
-28000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3778, "y": 0.586, "w": 0.0102, "h": 0.0136, "conf": 0.908, "tm": 28000000, "class_id": 0, "class_name": "person"}}}
-28000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3896, "y": 0.5559, "w": 0.0041, "h": 0.0055, "conf": 0.773, "tm": 28000000, "class_id": 1, "class_name": "phone"}}}
-28500 SEND {"mt": 1078, "ms": {"b": {"x": 0.3694, "y": 0.5813, "w": 0.0102, "h": 0.0136, "conf": 0.786, "tm": 28500000, "class_id": 0, "class_name": "person"}}}
-29000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3789, "y": 0.5677, "w": 0.0102, "h": 0.0136, "conf": 0.761, "tm": 29000000, "class_id": 0, "class_name": "person"}}}
-29000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3981, "y": 0.5334, "w": 0.0041, "h": 0.0055, "conf": 0.966, "tm": 29000000, "class_id": 1, "class_name": "phone"}}}
-29500 SEND {"mt": 1078, "ms": {"b": {"x": 0.386, "y": 0.5792, "w": 0.0102, "h": 0.0136, "conf": 0.816, "tm": 29500000, "class_id": 0, "class_name": "person"}}}
-29500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4072, "y": 0.5286, "w": 0.0041, "h": 0.0055, "conf": 0.888, "tm": 29500000, "class_id": 1, "class_name": "phone"}}}
+25000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 25000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.975, "box": [0.3482, 0.631, 0.0101, 0.0134]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.822, "box": [0.3607, 0.5901, 0.0041, 0.0054]}]}}
+25500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 25500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.957, "box": [0.334, 0.6164, 0.0101, 0.0134]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.858, "box": [0.3655, 0.5679, 0.0041, 0.0054]}]}}
+26000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 26000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.975, "box": [0.3514, 0.6358, 0.0101, 0.0135]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.79, "box": [0.3685, 0.5939, 0.0041, 0.0054]}]}}
+26500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 26500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.781, "box": [0.3557, 0.6168, 0.0101, 0.0135]}]}}
+27000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 27000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.912, "box": [0.3568, 0.6182, 0.0102, 0.0135]}]}}
+27500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 27500000, "obs": [{"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.937, "box": [0.386, 0.5658, 0.0041, 0.0055]}]}}
+28000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 28000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.908, "box": [0.3778, 0.586, 0.0102, 0.0136]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.773, "box": [0.3896, 0.5559, 0.0041, 0.0055]}]}}
+28500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 28500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.786, "box": [0.3694, 0.5813, 0.0102, 0.0136]}]}}
+29000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 29000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.761, "box": [0.3789, 0.5677, 0.0102, 0.0136]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.966, "box": [0.3981, 0.5334, 0.0041, 0.0055]}]}}
+29500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 29500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.816, "box": [0.386, 0.5792, 0.0102, 0.0136]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.888, "box": [0.4072, 0.5286, 0.0041, 0.0055]}]}}
 30000 SEND {"mt": 1077, "ms": {"a": 2}}
-30000 SEND {"mt": 1077, "ms": {"a": 4, "c": ["person", "phone"]}}
-30000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3995, "y": 0.5674, "w": 0.0103, "h": 0.0136, "conf": 0.904, "tm": 30000000, "class_id": 0, "class_name": "person"}}}
-30000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4051, "y": 0.5138, "w": 0.0041, "h": 0.0055, "conf": 0.865, "tm": 30000000, "class_id": 1, "class_name": "phone"}}}
-30500 SEND {"mt": 1078, "ms": {"b": {"x": 0.3982, "y": 0.5796, "w": 0.0103, "h": 0.0136, "conf": 0.914, "tm": 30500000, "class_id": 0, "class_name": "person"}}}
-30500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4081, "y": 0.4935, "w": 0.0041, "h": 0.0055, "conf": 0.968, "tm": 30500000, "class_id": 1, "class_name": "phone"}}}
-31000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3974, "y": 0.5513, "w": 0.0103, "h": 0.0137, "conf": 0.915, "tm": 31000000, "class_id": 0, "class_name": "person"}}}
-31000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4076, "y": 0.5076, "w": 0.0041, "h": 0.0055, "conf": 0.766, "tm": 31000000, "class_id": 1, "class_name": "phone"}}}
-31500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4039, "y": 0.5548, "w": 0.0103, "h": 0.0137, "conf": 0.808, "tm": 31500000, "class_id": 0, "class_name": "person"}}}
-32000 SEND {"mt": 1078, "ms": {"b": {"x": 0.3991, "y": 0.565, "w": 0.0103, "h": 0.0137, "conf": 0.786, "tm": 32000000, "class_id": 0, "class_name": "person"}}}
-32000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4348, "y": 0.4964, "w": 0.0041, "h": 0.0055, "conf": 0.892, "tm": 32000000, "class_id": 1, "class_name": "phone"}}}
-32500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4104, "y": 0.534, "w": 0.0103, "h": 0.0137, "conf": 0.904, "tm": 32500000, "class_id": 0, "class_name": "person"}}}
-32500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4461, "y": 0.5001, "w": 0.0041, "h": 0.0055, "conf": 0.914, "tm": 32500000, "class_id": 1, "class_name": "phone"}}}
-33000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4317, "y": 0.4767, "w": 0.0041, "h": 0.0055, "conf": 0.969, "tm": 33000000, "class_id": 1, "class_name": "phone"}}}
-33500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4198, "y": 0.5193, "w": 0.0103, "h": 0.0137, "conf": 0.866, "tm": 33500000, "class_id": 0, "class_name": "person"}}}
-33500 SEND {"mt": 1078, "ms": {"b": {"x": 0.448, "y": 0.4605, "w": 0.0041, "h": 0.0055, "conf": 0.756, "tm": 33500000, "class_id": 1, "class_name": "phone"}}}
-34000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4377, "y": 0.5108, "w": 0.0103, "h": 0.0137, "conf": 0.827, "tm": 34000000, "class_id": 0, "class_name": "person"}}}
-34000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4589, "y": 0.4883, "w": 0.0041, "h": 0.0055, "conf": 0.972, "tm": 34000000, "class_id": 1, "class_name": "phone"}}}
-34500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4435, "y": 0.4838, "w": 0.0103, "h": 0.0137, "conf": 0.891, "tm": 34500000, "class_id": 0, "class_name": "person"}}}
-34500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4509, "y": 0.4656, "w": 0.0041, "h": 0.0055, "conf": 0.931, "tm": 34500000, "class_id": 1, "class_name": "phone"}}}
+30000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 30000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.904, "box": [0.3995, 0.5674, 0.0103, 0.0136]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.865, "box": [0.4051, 0.5138, 0.0041, 0.0055]}]}}
+30500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 30500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.914, "box": [0.3982, 0.5796, 0.0103, 0.0136]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.968, "box": [0.4081, 0.4935, 0.0041, 0.0055]}]}}
+31000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 31000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.915, "box": [0.3974, 0.5513, 0.0103, 0.0137]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.766, "box": [0.4076, 0.5076, 0.0041, 0.0055]}]}}
+31500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 31500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.808, "box": [0.4039, 0.5548, 0.0103, 0.0137]}]}}
+32000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 32000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.786, "box": [0.3991, 0.565, 0.0103, 0.0137]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.892, "box": [0.4348, 0.4964, 0.0041, 0.0055]}]}}
+32500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 32500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.904, "box": [0.4104, 0.534, 0.0103, 0.0137]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.914, "box": [0.4461, 0.5001, 0.0041, 0.0055]}]}}
+33000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 33000000, "obs": [{"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.969, "box": [0.4317, 0.4767, 0.0041, 0.0055]}]}}
+33500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 33500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.866, "box": [0.4198, 0.5193, 0.0103, 0.0137]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.756, "box": [0.448, 0.4605, 0.0041, 0.0055]}]}}
+34000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 34000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.827, "box": [0.4377, 0.5108, 0.0103, 0.0137]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.972, "box": [0.4589, 0.4883, 0.0041, 0.0055]}]}}
+34500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 34500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.891, "box": [0.4435, 0.4838, 0.0103, 0.0137]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.931, "box": [0.4509, 0.4656, 0.0041, 0.0055]}]}}
 35000 SEND {"mt": 1077, "ms": {"a": 2}}
-35000 SEND {"mt": 1077, "ms": {"a": 4, "c": ["person", "phone"]}}
-35000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4503, "y": 0.4915, "w": 0.0103, "h": 0.0137, "conf": 0.909, "tm": 35000000, "class_id": 0, "class_name": "person"}}}
-35000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4615, "y": 0.4527, "w": 0.0041, "h": 0.0055, "conf": 0.799, "tm": 35000000, "class_id": 1, "class_name": "phone"}}}
-35500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4378, "y": 0.5111, "w": 0.0103, "h": 0.0138, "conf": 0.783, "tm": 35500000, "class_id": 0, "class_name": "person"}}}
-35500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4738, "y": 0.449, "w": 0.0041, "h": 0.0055, "conf": 0.957, "tm": 35500000, "class_id": 1, "class_name": "phone"}}}
-36000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4495, "y": 0.4953, "w": 0.0103, "h": 0.0138, "conf": 0.815, "tm": 36000000, "class_id": 0, "class_name": "person"}}}
-36000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4677, "y": 0.4361, "w": 0.0041, "h": 0.0055, "conf": 0.784, "tm": 36000000, "class_id": 1, "class_name": "phone"}}}
-36500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4628, "y": 0.4793, "w": 0.0103, "h": 0.0138, "conf": 0.844, "tm": 36500000, "class_id": 0, "class_name": "person"}}}
-36500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4817, "y": 0.444, "w": 0.0041, "h": 0.0055, "conf": 0.914, "tm": 36500000, "class_id": 1, "class_name": "phone"}}}
-37000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4551, "y": 0.4713, "w": 0.0104, "h": 0.0138, "conf": 0.974, "tm": 37000000, "class_id": 0, "class_name": "person"}}}
-37000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4871, "y": 0.4427, "w": 0.0041, "h": 0.0055, "conf": 0.798, "tm": 37000000, "class_id": 1, "class_name": "phone"}}}
-37500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4607, "y": 0.4777, "w": 0.0104, "h": 0.0138, "conf": 0.989, "tm": 37500000, "class_id": 0, "class_name": "person"}}}
-37500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4894, "y": 0.4221, "w": 0.0041, "h": 0.0055, "conf": 0.88, "tm": 37500000, "class_id": 1, "class_name": "phone"}}}
-38000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4644, "y": 0.4753, "w": 0.0104, "h": 0.0138, "conf": 0.949, "tm": 38000000, "class_id": 0, "class_name": "person"}}}
-38000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4919, "y": 0.4051, "w": 0.0041, "h": 0.0055, "conf": 0.857, "tm": 38000000, "class_id": 1, "class_name": "phone"}}}
-38500 SEND {"mt": 1078, "ms": {"b": {"x": 0.4789, "y": 0.4493, "w": 0.0104, "h": 0.0138, "conf": 0.774, "tm": 38500000, "class_id": 0, "class_name": "person"}}}
-38500 SEND {"mt": 1078, "ms": {"b": {"x": 0.5025, "y": 0.4175, "w": 0.0041, "h": 0.0055, "conf": 0.946, "tm": 38500000, "class_id": 1, "class_name": "phone"}}}
-39000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4817, "y": 0.4733, "w": 0.0104, "h": 0.0138, "conf": 0.923, "tm": 39000000, "class_id": 0, "class_name": "person"}}}
-39000 SEND {"mt": 1078, "ms": {"b": {"x": 0.5016, "y": 0.4117, "w": 0.0041, "h": 0.0055, "conf": 0.885, "tm": 39000000, "class_id": 1, "class_name": "phone"}}}
-39500 SEND {"mt": 1078, "ms": {"b": {"x": 0.495, "y": 0.4468, "w": 0.0104, "h": 0.0138, "conf": 0.842, "tm": 39500000, "class_id": 0, "class_name": "person"}}}
-39500 SEND {"mt": 1078, "ms": {"b": {"x": 0.5044, "y": 0.3679, "w": 0.0041, "h": 0.0055, "conf": 0.784, "tm": 39500000, "class_id": 1, "class_name": "phone"}}}
+35000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 35000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.909, "box": [0.4503, 0.4915, 0.0103, 0.0137]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.799, "box": [0.4615, 0.4527, 0.0041, 0.0055]}]}}
+35500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 35500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.783, "box": [0.4378, 0.5111, 0.0103, 0.0138]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.957, "box": [0.4738, 0.449, 0.0041, 0.0055]}]}}
+36000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 36000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.815, "box": [0.4495, 0.4953, 0.0103, 0.0138]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.784, "box": [0.4677, 0.4361, 0.0041, 0.0055]}]}}
+36500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 36500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.844, "box": [0.4628, 0.4793, 0.0103, 0.0138]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.914, "box": [0.4817, 0.444, 0.0041, 0.0055]}]}}
+37000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 37000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.974, "box": [0.4551, 0.4713, 0.0104, 0.0138]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.798, "box": [0.4871, 0.4427, 0.0041, 0.0055]}]}}
+37500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 37500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.989, "box": [0.4607, 0.4777, 0.0104, 0.0138]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.88, "box": [0.4894, 0.4221, 0.0041, 0.0055]}]}}
+38000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 38000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.949, "box": [0.4644, 0.4753, 0.0104, 0.0138]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.857, "box": [0.4919, 0.4051, 0.0041, 0.0055]}]}}
+38500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 38500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.774, "box": [0.4789, 0.4493, 0.0104, 0.0138]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.946, "box": [0.5025, 0.4175, 0.0041, 0.0055]}]}}
+39000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 39000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.923, "box": [0.4817, 0.4733, 0.0104, 0.0138]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.885, "box": [0.5016, 0.4117, 0.0041, 0.0055]}]}}
+39500 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 39500000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.842, "box": [0.495, 0.4468, 0.0104, 0.0138]}, {"trk": 1, "cls": "phone", "cls_id": 1, "conf": 0.784, "box": [0.5044, 0.3679, 0.0041, 0.0055]}]}}
 40000 SEND {"mt": 1077, "ms": {"a": 2}}
-40000 SEND {"mt": 1077, "ms": {"a": 4, "c": ["person", "phone"]}}
-40000 SEND {"mt": 1078, "ms": {"b": {"x": 0.4801, "y": 0.428, "w": 0.0103, "h": 0.0138, "conf": 0.928, "tm": 40000000, "class_id": 0, "class_name": "person"}}}
+40000 SEND {"mt": 6546, "ms": {"cam_id": "st1", "tm_capture": 40000000, "obs": [{"trk": 2, "cls": "person", "cls_id": 0, "conf": 0.928, "box": [0.4801, 0.428, 0.0103, 0.0138]}]}}
 40000 END {"frames": 801}

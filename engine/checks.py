@@ -38,6 +38,9 @@ Journal assertions keep the runner.py semantics (same helpers, same
                          ran - to the first find)
   - stub determinism:    stub_deterministic - two same-seed --selftest
                          replays must produce byte-identical stub logs
+  - stub SEND log:       obs_frames - var/run/<sim>/stubs/<unit>.log
+                         mt-6546 rows: the SL-0034 obs contract
+                         (cls multiset per frame, stable trk, attrs)
   - 1087 status (bot):   final_state
   - MAVLink mission:     fc_items_unchanged_without_cause, mission_items
                          (count on the FC), mission_pull (the GCS 1027
@@ -75,7 +78,7 @@ UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
                 "mission_items", "mission_pull",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
-                "detection_recall", "status_field"}
+                "detection_recall", "status_field", "obs_frames"}
 
 DEFAULT_TRUTH_TOL_MS = 10000      # truth row must be this close in time
 
@@ -1364,6 +1367,95 @@ def _stub_deterministic(name, a, ctx):
               f"({'identical' if same else 'DIFFERS'})")
 
 
+def _obs_frames(name, a, ctx):
+    """SL-0034: a camera stub's emitted observation frames - the SEND
+    rows with mt 6546 in var/run/<sim>/stubs/<unit>.log (rows after the
+    last RUN reset only). One frame per camera tick; every entry must
+    carry cls, a conf in [0,1] and a top-left [0..1] box. With the
+    world's p_detect at 1 a static scene repeats the same obs set every
+    frame, so `cls:` is the exact cls multiset EVERY frame must report.
+    a: {unit,
+        min_frames: n     - at least this many 6546 frames (default 1)
+        cls: [...]        - exact cls multiset every frame must carry
+        trk_stable: true  - entries keep one distinct trk set across
+                            every frame
+        attrs: {field: {min, max}}
+                        - each entry's attrs[field] inside the bounds}"""
+    us = _units(a, ctx)
+    unit = us[0]["name"] if len(us) == 1 else str(a.get("unit") or "")
+    path = os.path.join(simlib.run_dir(ctx["sim"]), "stubs",
+                        f"{unit}.log")
+    if not os.path.isfile(path):
+        return _r(name, "SKIP", None, f"no stub log {unit}.log")
+    frames = []
+    for ln in open(path, errors="replace"):
+        try:
+            ms_s, kind, payload = ln.split(" ", 2)
+            row_ms, obj = int(ms_s), json.loads(payload)
+        except (ValueError, json.JSONDecodeError):
+            continue
+        if kind == "RUN" and obj.get("reset"):
+            frames = []                # frames after the last reset only
+        elif kind == "SEND" and obj.get("mt") == 6546:
+            frames.append((row_ms, obj.get("ms") or {}))
+    if len(frames) < int(a.get("min_frames", 1)):
+        return _r(name, "FAIL", len(frames),
+                  f"{unit}: {len(frames)} obs frames "
+                  f"(min {a.get('min_frames', 1)})")
+    want = (sorted(a["cls"]) if a.get("cls") is not None else None)
+    attr_spec = a.get("attrs") or {}
+    trk_sets = []
+    for row_ms, fr in frames:
+        if not fr.get("cam_id"):
+            return _r(name, "FAIL", None, "obs frame without cam_id")
+        if not isinstance(fr.get("tm_capture"), int):
+            return _r(name, "FAIL", None, "obs frame without tm_capture")
+        obs = fr.get("obs")
+        if not isinstance(obs, list):
+            return _r(name, "FAIL", None, "obs frame's obs not a list")
+        if want is not None and \
+                sorted(o.get("cls") for o in obs) != want:
+            return _r(name, "FAIL", len(frames),
+                      f"frame@{row_ms} cls {sorted(o.get('cls') for o in obs)}"
+                      f" != {want}")
+        trks = []
+        for o in obs:
+            box = o.get("box")
+            if not (isinstance(box, list) and len(box) == 4
+                    and all(isinstance(v, (int, float)) for v in box)
+                    and all(0.0 <= v <= 1.0 for v in box)
+                    and box[2] > 0 and box[3] > 0):
+                return _r(name, "FAIL", None,
+                          f"bad obs box {box!r} (top-left [0..1] "
+                          "x,y,w,h expected)")
+            if not (0.0 <= float(o.get("conf", -1)) <= 1.0):
+                return _r(name, "FAIL", None,
+                          f"obs conf {o.get('conf')!r} outside [0,1]")
+            if not isinstance(o.get("cls"), str):
+                return _r(name, "FAIL", None, "obs entry without cls")
+            trks.append(o.get("trk"))
+            for fld, bounds in attr_spec.items():
+                v = (o.get("attrs") or {}).get(fld)
+                if not isinstance(v, (int, float)) or \
+                        ("min" in bounds and v < bounds["min"]) or \
+                        ("max" in bounds and v > bounds["max"]):
+                    return _r(name, "FAIL", None,
+                              f"obs attrs.{fld} {v!r} outside {bounds}")
+        trk_sets.append(tuple(sorted(t for t in trks if t is not None)))
+    if a.get("trk_stable"):
+        if len(trk_sets[0]) != len(set(trk_sets[0])):
+            return _r(name, "FAIL", None,
+                      f"trk ids not distinct within a frame: "
+                      f"{trk_sets[0]}")
+        if any(s != trk_sets[0] for s in trk_sets):
+            return _r(name, "FAIL", None,
+                      "trk set changed between frames "
+                      f"({trk_sets[0]} -> {trk_sets[-1]})")
+    return _r(name, "PASS", len(frames),
+              f"{unit}: {len(frames)} obs frames, "
+              f"{len(frames[-1][1].get('obs') or [])} entries in the last")
+
+
 def _final_state(name, a, ctx):
     bot = ctx.get("bot")
     tele = ctx.get("telemetry")
@@ -2033,10 +2125,12 @@ def _iou(b1, b2):
 
 
 def _detection_precision_render(name, a, ctx):
-    """P5-15: of the 1078 boxes the real chain reported (bot world-model
-    targets carrying `box`), the fraction matching an ID-pass box of the
-    same unit's temporally-nearest visibility frame at IoU >= `iou`
-    (default 0.3). `unit:` narrows to one camera unit's reports."""
+    """P5-15: of the detection boxes the real chain reported (bot
+    world-model targets carrying `box` - the obs entry's box since
+    SL-0034, the 1078 `b` before), the fraction matching an ID-pass box
+    of the same unit's temporally-nearest visibility frame at IoU >=
+    `iou` (default 0.3). `unit:` narrows to one camera unit's
+    reports."""
     iou_min = float(a.get("iou", 0.3))
     rows, src = _truth_rows(ctx, a.get("truth_file"))
     if rows is None:
@@ -2060,7 +2154,7 @@ def _detection_precision_render(name, a, ctx):
         targets = [tg for tg in targets if tg.get("src") == a["unit"]]
     if not targets:
         return _r(name, "SKIP", None,
-                  "no bot targets carry a 1078 box")
+                  "no bot targets carry a detection box")
     matched = 0
     for tg in targets:
         vrows = vis.get(tg.get("src")) or []
@@ -2077,7 +2171,7 @@ def _detection_precision_render(name, a, ctx):
     lo = a.get("min")
     good = True if lo is None else prec >= float(lo)
     return _r(name, "PASS" if good else "FAIL", round(prec, 3),
-              f"{matched}/{len(targets)} 1078 boxes matched the ID pass "
+              f"{matched}/{len(targets)} boxes matched the ID pass "
               f"(iou {iou_min:g}, min {lo})")
 
 
@@ -2190,6 +2284,7 @@ DISPATCH = {
     "visible_px": _visible_px,
     "time_to_detect": _time_to_detect,
     "stub_deterministic": _stub_deterministic,
+    "obs_frames": _obs_frames,
     "signals_in_range": _signals_in_range,
     "sensor_error": _sensor_error,
     "journal_consistent": _journal_consistent,

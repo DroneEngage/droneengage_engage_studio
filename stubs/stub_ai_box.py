@@ -2,34 +2,46 @@
 """stub_ai_box.py - a world-driven AI box (TASK-P5-08).
 
 What a real camera-AI module does: it looks at the world through the
-unit's camera, finds objects and reports the best target's normalized
-box as TYPE_AndruavMessage_AI_Recognition_TargetLocation (1078), with a
-class list + status over AI_Recognition_STATUS (1077) and honoring a
-SEARCH class selection on AI_Recognition_ACTION (1076).
+unit's camera, finds objects and reports them as an observation frame -
+TYPE_AndruavMessage_AI_OBSERVATIONS (6546), one per camera frame, every
+visible entity an entry with cls / cls_id / conf / trk / top-left [0..1]
+box (SL-0034; it replaced the 1078 best-box wire the deleted
+de_yolo_generic_rknn-era path spoke). Status still rides
+AI_Recognition_STATUS (1077, enabled state only - the class list moved
+to the 'perceive' advert, MP-0214) and a SEARCH class selection on
+AI_Recognition_ACTION (1076) is honored.
 
 This stub does exactly that - against the de.world/1 truth. Every
 fps_boxes frame it takes the unit's pose (SITL serial5 attitude +
 position on FC units, the 9102 intermodule feed on statics), projects
 each visible entity into the camera frame with the geo_projection port,
 rolls the seeded detection probability (nadir vs frame-edge), adds the
-modelled pixel noise and sends the 1078. `tm` is the monotonic-us stamp
-the de_mavlink pose ring buffer indexes - the real path from box to
-detect.detected runs unchanged.
+modelled pixel noise and sends the obs frame. `tm_capture` is the
+monotonic-us stamp the de_mavlink pose ring buffer indexes - the real
+path from box to detect.detected runs unchanged. `trk` is a stable
+per-entity id for the run (first-detection order, deterministic per
+seed); cam_id defaults to the unit name (world sensors.camera.cam_id
+overrides).
 
-B4-01: boxes carry the detector's `class_id` (index into the stub's 1077
-class list) and `class_name` (the entity's cls, verbatim). A legacy box
-is restored by `--legacy-box`, a unit `config.stub_ai_box.legacy_box` or
-the world's `sensors.camera.legacy_box` - the negative-control rerun of
-p4b10_k uses it to show the pre-B4-01 W5 fail-open.
+Thermal (camera_kind: thermal, TASK-13): a detected entity is reported
+as cls "hotspot" (temp_c >= ambient) or "coldspot" (below) with
+attrs.temp_c - the de_ir_camera vocabulary - instead of its entity
+label; cls_id is omitted since the thermal pair is not a class_names
+index.
+
+B4-01 legacy: `--legacy-box`, a unit `config.stub_ai_box.legacy_box` or
+the world's `sensors.camera.legacy_box` restores the pre-obs wire - one
+1078 TargetLocation {"b": box} per detection, no class fields, no obs
+frames. The negative-control rerun of p4b10_k uses it.
 
 B4-02: the detector's LABEL for an entity cls can differ from the cls
 itself - a person-detecting model can report the string "human" while
 the op's target class stays "person". `class_labels` remaps cls -> label
 (world `sensors.camera.class_labels`, per-unit override
-`config.stub_ai_box.class_labels`); boxes then carry the label as
-`class_name` (and `class_id` indexes the label list, which is also what
-the 1077 class list and the visual_tracker.start class enum report) so
-the op's detect decl `classes: [...]` is what accepts them - p4b10_l.
+`config.stub_ai_box.class_labels`); obs entries then carry the label as
+`cls` (and `cls_id` indexes the label list, which is also what the
+visual_tracker.start class enum and the 'perceive' advert classes report)
+so the op's detect decl `classes: [...]` is what accepts them - p4b10_l.
 
 
 Every emitted box also lands a {"type":"detection", tid, cls, ...} row
@@ -66,15 +78,18 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from stub_base import (StubBase, ANDRUAV_PROTOCOL_MESSAGE_TYPE,  # noqa: E402
                        ANDRUAV_PROTOCOL_MESSAGE_CMD)
 from messages import (  # noqa: E402
+    TYPE_AndruavMessage_AI_OBSERVATIONS,
     TYPE_AndruavMessage_AI_Recognition_ACTION,
-    TYPE_AndruavMessage_AI_Recognition_STATUS,
-    TYPE_AndruavMessage_AI_Recognition_TargetLocation)
+    TYPE_AndruavMessage_AI_Recognition_STATUS)
 import simlib  # noqa: E402
 import geo_projection as gp  # noqa: E402
 
 AI_STATUS_ENABLED = 2
-AI_STATUS_CLASS_LIST = 4
+AI_STATUS_CLASS_LIST = 4       # legacy wire only (--legacy-box)
 AI_ACTION_SEARCH = 1
+# the pre-obs TargetLocation type - gone from the databus constants
+# since the projector stopped consuming it; --legacy-box still speaks it
+TYPE_AI_TARGET_LOCATION_LEGACY = 1078
 
 # the stub plays the whole detection chain on the unit: the camera that
 # frames the world plus the tracker the mission may hand a box to - one
@@ -132,6 +147,25 @@ ADVERT_TRACKER = {
     "state": {"tracking": {"type": "bool"}},
 }
 
+# SL-0034: the stub plays the detector too - the 'perceive' advert is
+# the de_perceive one (de.cap/1, classes[] is the MP-0214 replacement
+# for the dropped 1077 class list). classes is filled per unit.
+ADVERT_PERCEIVE = {
+    "schema": "de.cap/1",
+    "ns": "perceive",
+    "module": "stub_ai_box",
+    "ver": "0.1.0",
+    "actions": {},
+    "events": {},
+    "state": {
+        "cam_id":  {"type": "string"},
+        "backend": {"type": "string"},
+        "classes": {"type": "array", "items": {"type": "string"}},
+        "fps":     {"type": "number"},
+        "hfov":    {"type": "number"},
+    },
+}
+
 
 class StubAIBox(StubBase):
     MODULE_CLASS = "gen"
@@ -177,8 +211,19 @@ class StubAIBox(StubBase):
         label_map.update(self.cfg.get("class_labels") or {})
         self.label_map = label_map
         self.labels = [self.label_map.get(c, c) for c in self.classes]
-        # B4-01: class_id/class_name on the 1078 box; any of these turns
-        # them off (the negative-control rerun needs the legacy shape)
+        # SL-0034: the wire cls table cls_id indexes and the 'perceive'
+        # advert reports - the detector labels on rgb, the de_ir_camera
+        # vocabulary on thermal
+        self.obs_labels = (["hotspot", "coldspot"]
+                           if self.cam_kind == "thermal" else self.labels)
+        # obs frame identity: cam_id is what de_mavlink's camera
+        # registry binds the frame to (unit name by default)
+        self.cam_id = str(cam.get("cam_id") or self.unit or "cam")
+        self._trk_ids = {}               # tid -> stable int trk (run)
+        self._frame_obs = []             # obs entries for this frame
+        # B4-01: `--legacy-box` restores the pre-obs wire - one 1078
+        # TargetLocation per detection, no class fields, no obs frames
+        # (the negative-control rerun needs the legacy shape)
         self.legacy_box = bool("--legacy-box" in argv
                                or self.cfg.get("legacy_box")
                                or cam.get("legacy_box"))
@@ -246,15 +291,27 @@ class StubAIBox(StubBase):
     def status(self):
         self.emit(TYPE_AndruavMessage_AI_Recognition_STATUS,
                   {"a": AI_STATUS_ENABLED})
-        # B4-02: the 1077 class list carries the detector LABELS
-        # (class_id on the 1078 box indexes this list)
-        self.emit(TYPE_AndruavMessage_AI_Recognition_STATUS,
-                  {"a": AI_STATUS_CLASS_LIST, "c": list(self.labels)})
+        if self.legacy_box:
+            # the pre-obs wire pair: the class list the 1078 box's
+            # class_id indexed (SL-0034 dropped it - the 'perceive'
+            # advert carries classes now)
+            self.emit(TYPE_AndruavMessage_AI_Recognition_STATUS,
+                      {"a": AI_STATUS_CLASS_LIST, "c": list(self.labels)})
+        elif self.facade is not None:
+            # MP-0214: live perceive state mirrors the advert
+            self.facade.publish_state("perceive", self._perceive_state())
+
+    def _perceive_state(self):
+        return {"cam_id": self.cam_id, "backend": "sim",
+                "classes": list(self.obs_labels),
+                "fps": float(self.cam["fps_boxes"]),
+                "hfov": float(self.cam["hfov_deg"])}
 
     def adverts(self):
-        """The two serialized de.cap/1 adverts. The tracker one is
-        dynamic: start.class is the enum of labels this model reports
-        (B4-02) - what CAP-008 reads off a live registry."""
+        """The serialized de.cap/1 adverts. The tracker one is dynamic:
+        start.class is the enum of labels this model reports (B4-02);
+        the perceive one (SL-0034) carries the wire cls table - what
+        CAP-008 reads off a live registry."""
         tracker = __import__("copy").deepcopy(ADVERT_TRACKER)
         tracker["actions"]["start"] = {
             "desc": "Start detection reporting for a class",
@@ -262,8 +319,12 @@ class StubAIBox(StubBase):
                                  "values": list(self.labels)}},
             "timeout_s": 10,
         }
+        perceive = __import__("copy").deepcopy(ADVERT_PERCEIVE)
+        for k, v in self._perceive_state().items():
+            perceive["state"][k]["default"] = v
         return [__import__("json").dumps(ADVERT_CAMERA),
-                __import__("json").dumps(tracker)]
+                __import__("json").dumps(tracker),
+                __import__("json").dumps(perceive)]
 
     def on_message(self, message, length, jMsg):
         super().on_message(message, length, jMsg)
@@ -283,6 +344,8 @@ class StubAIBox(StubBase):
         self._sel = None
         self._last_frame = -1
         self._clutter = []
+        self._trk_ids = {}
+        self._frame_obs = []
         self._status_next = 0.0
 
     def _class_ok(self, cls):
@@ -322,6 +385,7 @@ class StubAIBox(StubBase):
         gp_pose = gp.GeoPose(lat_deg=pose["lat"], lng_deg=pose["lng"],
                              rel_alt_m=alt)
         self._clutter = [c for c in self._clutter if c[0] > t_s]
+        self._frame_obs = []
 
         for e in self.world.entities:
             if e.cls == "pad":
@@ -336,6 +400,15 @@ class StubAIBox(StubBase):
                                pose, att, gp_pose, frame, t_s)
 
         self._clutter_tick(alt, frame, t_s, att, gp_pose)
+
+        if not self.legacy_box:
+            # SL-0034: one observation frame per camera frame, every
+            # detection an entry - the 6546 the de_mavlink projector
+            # consumes (an empty frame is still a frame)
+            self.emit(TYPE_AndruavMessage_AI_OBSERVATIONS,
+                      {"cam_id": self.cam_id,
+                       "tm_capture": self._tm_us(),
+                       "obs": self._frame_obs})
 
     def _maybe_detect(self, tid, cls, lat, lng, ealt,
                       pose, att, gp_pose, frame, t_s):
@@ -409,11 +482,11 @@ class StubAIBox(StubBase):
                "y": round(max(0.0, v_n + 0.5 - bh / 2), 4),
                "w": round(bw, 4), "h": round(bh, 4),
                "conf": conf, "tm": self._tm_us()}
-        if not self.legacy_box:
-            box["class_id"] = self.classes.index(cls)
-            box["class_name"] = self.label_map.get(cls, cls)
-        self.emit(TYPE_AndruavMessage_AI_Recognition_TargetLocation,
-                  {"b": box})
+        if self.legacy_box:
+            self.emit(TYPE_AI_TARGET_LOCATION_LEGACY,
+                      {"b": box})
+        else:
+            self._frame_obs.append(self._obs_entry(tid, cls, box, t_s))
         self.truth.append({"src": "ai", "tid": tid, "cls": cls,
                            "frame": frame, "u": round(u_n, 4),
                            "v": round(v_n, 4), "lat": lat, "lng": lng,
@@ -430,6 +503,42 @@ class StubAIBox(StubBase):
             return self._vt_ms * 1000
         import time
         return time.monotonic_ns() // 1000 - 50000
+
+    def _trk_for(self, tid):
+        """A stable int trk id per entity for the run - first-detection
+        order, so deterministic per seed."""
+        trk = self._trk_ids.get(tid)
+        if trk is None:
+            trk = len(self._trk_ids) + 1
+            self._trk_ids[tid] = trk
+        return trk
+
+    def _obs_entry(self, tid, cls, box, t_s):
+        """One 6546 obs entry: trk (entities only - clutter is a
+        transient false positive), the wire cls (the detector label on
+        rgb, hotspot/coldspot on thermal - de_ir_camera's vocabulary),
+        cls_id indexing obs_labels, conf, the top-left [0..1] box, and
+        attrs.temp_c on a thermal camera."""
+        ent = self.world.entity(tid) if tid else None
+        temp_c = None
+        if self.cam_kind == "thermal":
+            temp_c = (self.world.temp_c_at(ent, t_s) if ent is not None
+                      else self.world.ambient_c() + 25.0)
+            wire = ("hotspot" if temp_c >= self.world.ambient_c()
+                    else "coldspot")
+        else:
+            wire = self.label_map.get(cls, cls)
+        entry = {}
+        if tid is not None:
+            entry["trk"] = self._trk_for(tid)
+        entry["cls"] = wire
+        if wire in self.obs_labels:
+            entry["cls_id"] = self.obs_labels.index(wire)
+        entry["conf"] = box["conf"]
+        entry["box"] = [box["x"], box["y"], box["w"], box["h"]]
+        if temp_c is not None:
+            entry["attrs"] = {"temp_c": round(temp_c, 1)}
+        return entry
 
     def _clutter_tick(self, alt, frame, t_s, att, gp_pose):
         """False positives: spawns at rate_per_km2_min over the frame's
@@ -517,13 +626,13 @@ class StubAIBox(StubBase):
                    "y": round(max(0.0, v + 0.5 - bh / 2), 4),
                    "w": round(bw, 4), "h": round(bh, 4),
                    "conf": conf, "tm": self._tm_us()}
-            if not self.legacy_box:
-                cl_cls = cl["cls"]
-                box["class_id"] = (self.classes.index(cl_cls)
-                                   if cl_cls in self.classes else -1)
-                box["class_name"] = self.label_map.get(cl_cls, cl_cls)
-            self.emit(TYPE_AndruavMessage_AI_Recognition_TargetLocation,
-                      {"b": box})
+            if self.legacy_box:
+                self.emit(
+                    TYPE_AI_TARGET_LOCATION_LEGACY,
+                    {"b": box})
+            else:
+                self._frame_obs.append(
+                    self._obs_entry(None, cl["cls"], box, t_s))
             row.update({"u": round(u, 4), "v": round(v, 4),
                         "conf": conf})
             self.truth.append(row, ms=self.clock_ms())

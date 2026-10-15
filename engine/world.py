@@ -1736,7 +1736,7 @@ def prepare_sim(scn, world):
             if catalog.get(m, {}).get("stub"):
                 cfg[m] = simlib.deep_merge(cfg.get(m) or {}, {"stub": stub})
         if "stub_ai_box" in mods or "de_yolo_ai" in mods:
-            # P5-15: de_yolo_ai emits real 1078 boxes through the same
+            # P5-15: de_yolo_ai emits real obs frames through the same
             # de_mavlink/de_comm projector - same injection, real pixels
             if "de_mavlink" in mods:
                 cfg["de_mavlink"] = simlib.deep_merge(

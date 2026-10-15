@@ -553,6 +553,12 @@ VERBS = [
           "ADSB_VEHICLE frames with this ICAO each within max_m of "
           "truth",
       eg="{adsb_vehicle: {icao: 'a1b2c3', at_least: 1}}"),
+    V("obs_frames", "check", req=["unit"],
+      opt=["min_frames", "cls", "trk_stable", "attrs"],
+      doc="the stub's 6546 obs frames: cls multiset per frame, stable "
+          "trk set, attrs bounds (SL-0034)",
+      eg="{obs_frames: {unit: cam1, min_frames: 20, "
+         "cls: [person], trk_stable: true}}"),
 ]
 
 KINDS = ("step", "probe", "fault", "check")

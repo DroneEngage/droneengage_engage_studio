@@ -12,6 +12,12 @@
 # near the decoy violates the `min_m: 60` distance assert - the rest of
 # the chain may stall or deliver to the decoy, which is fine; the
 # world-model corruption is the point being recorded.
+#
+# SL-0034 note: since the projector only consumes obs (6546), a legacy
+# 1078 box now fuses NOTHING - the expected failure mode changed from
+# "decoy fuses as a second person" to "no detection reaches the world
+# model at all". The asserts below fail even harder (0 person targets),
+# which still demonstrates the point: the legacy wire is dead.
 version: 1
 name: p4b10_k_class_filter_legacy
 seed: 7
@@ -60,11 +66,11 @@ timeline:
 assert:
   # a stub emitted a car detection (truth row, tid car_1, sent)
   - detection_recall: {truth: car_1, src: ai, min: 1}
-  # EXPECTED FAIL - the legacy box carries no class, so the decoy fuses
-  # as a second person target: 2 WM_NEW cls=person, not 1
+  # EXPECTED FAIL - the legacy box carries no class; post-SL-0034 the
+  # projector ignores 1078 outright, so 0 WM_NEW cls=person land at all
   - journal_count: {unit: "all", re: "WM_NEW .* cls=person", equals: 1}
   - journal_count: {unit: "all", re: "WM_NEW .* cls=car", equals: 0}
-  # EXPECTED FAIL - one of the person targets sits ON the decoy
+  # EXPECTED FAIL - no person targets exist to measure (legacy wire dead)
   - distance_to: {unit: "s1", re: "WM_NEW .* cls=person",
                   detected_cls: person, truth: [car_1], min_m: 60}
 teardown: land

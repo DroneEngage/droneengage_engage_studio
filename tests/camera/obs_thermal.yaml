@@ -1,0 +1,30 @@
+# camera/obs_thermal - SL-0034 thermal leg: the same obs-contract mast
+# but the unit's stub_ai_box runs camera_kind: thermal, so the wire cls
+# is the de_ir_camera vocabulary - hotspot/coldspot, never the entity's
+# own cls - and every entry carries attrs.temp_c. person_1 (temp_c 37)
+# and car_1 (temp_c 40) read hotspot against the ~11 C dusk ambient;
+# person_2 (temp_c -10) reads coldspot. Every frame must report
+# {coldspot, hotspot, hotspot} with temp_c inside [-11, 41].
+version: 1
+name: obs_thermal
+seed: 7
+transport: fake
+world: ../../worlds/obs_thermal.yaml
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: cam1, cls: static, modules: [stub_ai_box],
+     base: [-35.363262, 149.165237, 584, 0],
+     config: {stub_ai_box: {camera_kind: thermal}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 10, do: wait, seconds: 30}
+  - {t: 45, do: stop}
+assert:
+  - obs_frames: {unit: cam1, min_frames: 20,
+                 cls: [coldspot, hotspot, hotspot], trk_stable: true,
+                 attrs: {temp_c: {min: -11, max: 41}}}
+  - stub_deterministic: {module: stub_ai_box, unit: cam1,
+                         poses: ../../worlds/pose_obs_mast.jsonl,
+                         dur_s: 20}
+teardown: none

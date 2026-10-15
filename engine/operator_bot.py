@@ -223,9 +223,10 @@ class OperatorBot:
                             return
                     elif env_cls != det_cls:
                         return
-                # 1078 `b` (or `t`) carries the normalized {x,y,w,h}
-                # detection box - a dict for best-object, a list for
-                # multi-target payloads
+                # the obs entry's box (6546, SL-0034 - 1078 `b`/`t`
+                # before it) reaches the envelope as `b`: the normalized
+                # {x,y,w,h} detection box - a dict for best-object, a
+                # list for multi-target payloads
                 box = p.get("b")
                 if isinstance(box, list):
                     box = box[0] if box and isinstance(box[0], dict) \
@@ -253,9 +254,9 @@ class OperatorBot:
                         # P5-08: the reported position + arrival wall ms -
                         # distance_to(detected_cls:) reads them
                         "pos": p.get("pos") or ms.get("pos"),
-                        # P5-15: the 1078 box {x,y,w,h} when the envelope
-                        # carries it - detection_precision_render IoUs it
-                        # against the ID-pass boxes
+                        # P5-15: the detection box {x,y,w,h} when the
+                        # envelope carries it - detection_precision_render
+                        # IoUs it against the ID-pass boxes
                         "box": box,
                         "t_ms": int(time.time() * 1000),
                         "src": ms.get("src") or sd,
