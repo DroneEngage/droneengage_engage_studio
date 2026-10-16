@@ -111,10 +111,10 @@ COMM_REPO = repo_dir("DE_COMM_DIR", "droneengage_communication")
 SERVER_REPO = repo_dir("DE_SERVER_DIR", "droneengage_server")
 AUTH_REPO = repo_dir("DE_AUTH_DIR", "droneengage_authenticator")
 WEBCLIENT_REPO = repo_dir("DE_WEBCLIENT_DIR", "droneengage_webclient_react")
-# P5-14: Mavlink3DMap lives outside the DE_CODE tree; only needed for
+# P5-14: Mavlink3DMap2 lives inside the DE_CODE tree; only needed for
 # render modes that launch the viewer
 MAVLINK3DMAP_DIR = setting("MAVLINK3DMAP_DIR",
-                           os.path.expanduser("~/code/Mavlink3DMap"))
+                           os.path.join(DE_CODE, "Mavlink3DMap2"))
 # P5-15: the headless render farm is a stock Chromium/Chrome plus the
 # sink's per-unit ffmpeg - both machine binaries
 CHROMIUM_BIN = setting("CHROMIUM_BIN", "google-chrome")
