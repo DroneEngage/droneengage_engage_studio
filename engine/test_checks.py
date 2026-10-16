@@ -1320,5 +1320,80 @@ class PhysicsChecks(unittest.TestCase):
                          "FAIL")
 
 
+class TObsFrames(unittest.TestCase):
+    """SL-0034/SL-0060: obs_frames - the stub SEND mt=6546 gate must
+    fail when frames are missing, below min_frames, or carry the wrong
+    cls multiset; and pass on a contract-valid stream."""
+
+    def _run(self, stub_lines, **a):
+        with tempfile.TemporaryDirectory() as td:
+            sim = "t_obs"
+            stubs = os.path.join(td, sim, "stubs")
+            os.makedirs(stubs)
+            u = {"name": "u1", "party_id": "p1", "fc": None,
+                 "sim": sim}
+            if stub_lines is not None:
+                with open(os.path.join(stubs, "u1.log"), "w") as f:
+                    f.write("".join(ln + "\n" for ln in stub_lines))
+            c = {"manifest": {"name": sim, "units": [u],
+                              "server_procs": []},
+                 "sim": sim, "marks": {}, "file": "/x/s.yaml",
+                 "results_dir": None}
+            with mock.patch.object(simlib, "RUN_DIR", td), \
+                    mock.patch.object(checks.ctl, "resolve",
+                                      lambda tok, m=None: [u]):
+                return checks.check_assertion(
+                    {"obs_frames": dict(unit="u1", **a)}, c)
+
+    @staticmethod
+    def _send(ms, classes):
+        obs = [{"cls": c, "conf": 0.9, "trk": "t%d" % i,
+                "box": [0.1, 0.1, 0.2, 0.2]}
+               for i, c in enumerate(classes)]
+        return "%d SEND %s" % (ms, json.dumps(
+            {"mt": 6546,
+             "ms": {"cam_id": "c1", "tm_capture": ms, "obs": obs}}))
+
+    def test_missing_log_is_skip_not_pass(self):
+        self.assertEqual(self._run(None)["status"], "SKIP")
+
+    def test_no_frames_fails(self):
+        # only non-6546 rows: the min_frames gate must FAIL, never pass
+        lines = ["1 SEND " + json.dumps({"mt": 1077, "ms": {"a": 2}})]
+        self.assertEqual(self._run(lines)["status"], "FAIL")
+
+    def test_below_min_frames_fails(self):
+        lines = [self._send(1000, ["person"])]
+        self.assertEqual(self._run(lines, min_frames=2)["status"],
+                         "FAIL")
+        self.assertEqual(self._run(lines, min_frames=1)["status"],
+                         "PASS")
+
+    def test_wrong_cls_multiset_fails(self):
+        lines = [self._send(1000, ["car"]),
+                 self._send(1100, ["car"])]
+        self.assertEqual(
+            self._run(lines, cls=["person"])["status"], "FAIL")
+        self.assertEqual(
+            self._run(lines, cls=["car"])["status"], "PASS")
+
+    def test_run_reset_only_counts_frames_after(self):
+        lines = [self._send(1000, ["person"]),
+                 "1100 RUN " + json.dumps({"reset": True}),
+                 self._send(1200, ["person"])]
+        self.assertEqual(self._run(lines, min_frames=2)["status"],
+                         "FAIL")
+        self.assertEqual(self._run(lines, min_frames=1)["status"],
+                         "PASS")
+
+    def test_contract_fields_enforced(self):
+        # a frame whose entries miss cam_id/tm_capture/cls/box bounds
+        bad = ["1 SEND " + json.dumps(
+            {"mt": 6546, "ms": {"cam_id": "c1", "tm_capture": 1,
+                                "obs": [{"cls": "person", "conf": 2.0,
+                                         "box": [0.1, 0.1, 0.2, 0.2]}]}})]
+        self.assertEqual(self._run(bad)["status"], "FAIL")
+
+
 if __name__ == "__main__":
     unittest.main()
