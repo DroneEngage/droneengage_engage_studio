@@ -16,7 +16,7 @@
 # Proves per spec:
 #   - the car decoy is really seen by a camera stub (detection truth row
 #     sent, cls car) and at least one de_mavlink projects it as
-#     class "car" (module stdout "detect.detected car @ ...")
+#     class "car" (journal "event detect.detected latched ... cls=car")
 #   - W5 rejects it: the fleet sees exactly ONE person target, near
 #     person_1, and none within 60 m of the decoy; no car target is ever
 #     declared (undeclared class) and no WM_NEW cls=car appears
@@ -87,12 +87,11 @@ assert:
   # --- the decoy was seen and labelled car end to end -----------------
   # a stub emitted a car detection (truth row, tid car_1, sent)
   - detection_recall: {truth: car_1, src: ai, min: 1}
-  # and at least one projector fired it as class car - the DEBUG stdout
-  # line "detect.detected car @ lat,lng" lands on whichever unit's
-  # de_mavlink saw it, so the count is fleet-wide
-  - module_log_count: {unit: "scout1,s1,s2,s3", module: de_mavlink,
-                       re: "detect\\.detected car \\@",
-                       total: true, at_least: 1}
+  # and at least one projector fired it as class car - SL-0061: the
+  # detection's class is journaled on the latched row (the de_mavlink
+  # DEBUG print is gone since the geo_projector_core refactor)
+  - journal_count: {unit: "all", re: "event detect\\.detected latched .* cls=car",
+                    total: true, at_least: 1}
   # --- W5 dropped it: exactly one person target, at X -----------------
   - journal_count: {unit: "all", re: "WM_NEW .* cls=person", equals: 1}
   - journal_count: {unit: "all", re: "WM_NEW .* cls=car", equals: 0}

@@ -10,8 +10,9 @@
 #          packages/sar_forest.deploy.json (de.package/2.2) deploys.
 #
 # Proves per spec:
-#   - 'human' boxes are really emitted (module log "detect.detected
-#     human @ ...") yet WM_NEW cls=person is ZERO over the whole run
+#   - 'human' boxes are really emitted (journal "event detect.detected
+#     latched ... cls=human") yet WM_NEW cls=person is ZERO over the
+#     whole run
 #   - the classless sdr.signal path is unaffected: the phone target is
 #     found, confirmed and claimed as usual
 #   - CAP-008's warning was recorded at verify time (verify.json in the
@@ -65,9 +66,8 @@ timeline:
   - {t: 99, do: wait, seconds: 90}
 assert:
   # --- the person entity really was seen, labelled 'human' ------------
-  - module_log_count: {unit: "scout1,s1,s2,s3", module: de_mavlink,
-                       re: "detect\\.detected human \\@",
-                       total: true, at_least: 1}
+  - journal_count: {unit: "all", re: "event detect\\.detected latched .* cls=human",
+                    total: true, at_least: 1}
   # --- yet W5 dropped every one of them -------------------------------
   - journal_count: {unit: "all", re: "WM_NEW .* cls=person", equals: 0}
   - journal_count: {unit: "all", re: "WM_NEW .* cls=car", equals: 0}

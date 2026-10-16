@@ -13,8 +13,9 @@
 #          phone_1, car_1 decoy); only the wire labels change.
 #
 # Proves per spec:
-#   - a stub emits 'human' boxes for the person entity (module log line
-#     "detect.detected human @ ...") and they DO create the person
+#   - a stub emits 'human' boxes for the person entity (journal row
+#     "event detect.detected latched ... cls=human") and they DO create
+#     the person
 #     target - the alias is accepted through fleet.event_target_classes
 #   - labels not in classes still drop: the car decoy and phone boxes
 #     never fuse into the person target (single WM_NEW cls=person at
@@ -83,11 +84,11 @@ timeline:
   - {t: 99, do: wait, seconds: 25}
 assert:
   # --- the person entity was reported under the 'human' label --------
-  # the projector fired it with the detector label - the 1078 class_name
-  # rides verbatim into the fleet event's payload class
-  - module_log_count: {unit: "scout1,s1,s2,s3", module: de_mavlink,
-                       re: "detect\\.detected human \\@",
-                       total: true, at_least: 1}
+  # the projector fired it with the detector label - SL-0061: the obs
+  # class rides verbatim into the fleet event's payload class and onto
+  # the journal's latched row
+  - journal_count: {unit: "all", re: "event detect\\.detected latched .* cls=human",
+                    total: true, at_least: 1}
   # --- W5 accepted the alias: exactly one person target, at X ---------
   - journal_count: {unit: "all", re: "WM_NEW .* cls=person", equals: 1}
   - distance_to: {unit: "s1", re: "WM_NEW .* cls=person",
@@ -95,9 +96,8 @@ assert:
   # --- unlisted labels still drop -------------------------------------
   # 'car' is not in classes and there is no car decl at all
   - journal_count: {unit: "all", re: "WM_NEW .* cls=car", equals: 0}
-  - module_log_count: {unit: "scout1,s1,s2,s3", module: de_mavlink,
-                       re: "detect\\.detected car \\@",
-                       total: true, at_least: 1}
+  - journal_count: {unit: "all", re: "event detect\\.detected latched .* cls=car",
+                    total: true, at_least: 1}
   - distance_to: {unit: "s1", re: "WM_NEW .* cls=person",
                   detected_cls: person, truth: [car_1], min_m: 60}
   # --- the rest of the SAR chain still completes -----------------------
