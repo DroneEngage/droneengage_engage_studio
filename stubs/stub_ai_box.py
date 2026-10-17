@@ -130,7 +130,7 @@ ADVERT_CAMERA = {
 
 ADVERT_TRACKER = {
     "schema": "de.cap/1",
-    "ns": "visual_tracker",
+    "ns": "visual_tracker",      # adverts() rewrites to the cam-scoped ns
     "module": "stub_ai_box",
     "ver": "0.1.0",
     "actions": {
@@ -143,9 +143,39 @@ ADVERT_TRACKER = {
             "timeout_s": 10,
         },
         "untrack": {"desc": "Drop the tracked object", "timeout_s": 10},
+        # MP-0217: a mission 'track' step's lock-on / release - the
+        # de_tracker advert's lock/unlock pair, cam routing hint included
+        "lock": {
+            "desc": "hold a perceived track: by track id, or the first "
+                    "confirmed track of a class",
+            "params": {
+                "trk": {"type": "int", "optional": True,
+                        "desc": "track id from the observation stream"},
+                "class": {"type": "string", "optional": True,
+                          "desc": "class label; empty = any class"},
+                "cam": {"type": "string", "optional": True,
+                        "desc": "cam_id routing hint; must match this "
+                                "tracker when present"},
+            },
+            "timeout_s": 10,
+        },
+        "unlock": {
+            "desc": "stop holding a track",
+            "params": {
+                "cam": {"type": "string", "optional": True,
+                        "desc": "cam_id routing hint; must match this "
+                                "tracker when present"},
+            },
+            "timeout_s": 10,
+        },
     },
     "events": {},
-    "state": {"tracking": {"type": "bool"}},
+    "state": {
+        "cam_id": {"type": "string"},
+        "tracking": {"type": "bool"},
+        "lock": {"type": "string",
+                 "desc": "none | trk:<id> | class:<label> | class:*"},
+    },
 }
 
 # SL-0034: the stub plays the detector too - the 'perceive' advert is
@@ -158,11 +188,11 @@ ADVERT_TRACKER = {
 CAP_NAME_MAX_LEN = 32
 
 
-def perceive_namespace(cam_id):
-    """de_perceive perceiveNamespace() mirror: 'perceive' on an empty
-    cam_id, else 'perceive_<cam>' lowercased, non [a-z0-9_] -> '_',
-    capped at CAP_NAME_MAX_LEN."""
-    ns = "perceive"
+def _cam_scoped_ns(base, cam_id):
+    """perceiveNamespace()/visualTrackerNamespace() mirror: the bare
+    base on an empty cam_id, else '<base>_<cam>' lowercased, non
+    [a-z0-9_] -> '_', capped at CAP_NAME_MAX_LEN."""
+    ns = base
     if not cam_id:
         return ns
     ns += "_"
@@ -172,6 +202,14 @@ def perceive_namespace(cam_id):
         l = c.lower()
         ns += l if (l.isalnum() and l.isascii()) or l == "_" else "_"
     return ns
+
+
+def perceive_namespace(cam_id):
+    return _cam_scoped_ns("perceive", cam_id)
+
+
+def visual_tracker_namespace(cam_id):
+    return _cam_scoped_ns("visual_tracker", cam_id)
 
 
 ADVERT_PERCEIVE = {
@@ -306,6 +344,11 @@ class StubAIBox(StubBase):
             # classes: [] as the configured default = start paused
             self._reporting = False
         self._perceive_ns = perceive_namespace(self.cam_id)
+        # MP-0217: the tracker namespace is cam-scoped the same way -
+        # two stub instances on one unit would each own their
+        # visual_tracker_<cam_id>
+        self._tracker_ns = visual_tracker_namespace(self.cam_id)
+        self._lock = "none"              # visual_tracker.lock state
         self._nonce_ring = []            # Sync_EventFire dedupe
         self._nonce_set = set()
         self._trk_ids = {}               # tid -> stable int trk (run)
@@ -343,17 +386,20 @@ class StubAIBox(StubBase):
                          ms=self.clock_ms())
             self.state({"recording": self._recording})
             return {"recording": self._recording}, None
-        if ns == "visual_tracker" and act == "track":
+        if ns in ("visual_tracker", self._tracker_ns) and act == "track":
             self._tracking = True
             self.log.log("TRACK", {"box": params}, ms=self.clock_ms())
-            self.state({"tracking": True})
+            self._publish_tracker_state()
             return {"tracking": True}, None
-        if ns == "visual_tracker" and act == "untrack":
+        if ns in ("visual_tracker", self._tracker_ns) and act == "untrack":
             self._tracking = False
             self.log.log("UNTRACK", {}, ms=self.clock_ms())
-            self.state({"tracking": False})
+            self._publish_tracker_state()
             return {"tracking": False}, None
-        if ns == "visual_tracker" and act == "start":
+        if ns in ("visual_tracker", self._tracker_ns) and \
+                act in ("lock", "unlock"):
+            return self._tracker_lock(act, params, "invoke")
+        if ns in ("visual_tracker", self._tracker_ns) and act == "start":
             # B4-02: start(class) picks the detection label set - the
             # stub keeps reporting every class regardless (the world
             # camera is the only gate) but logs the selection
@@ -366,6 +412,56 @@ class StubAIBox(StubBase):
             if act == "restore":
                 return self._perceive_restore(params, "invoke")
         return None, f"unknown action '{ns}.{act}'"
+
+    # --------------------------------------------- tracker lock (MP-0217)
+
+    def _publish_tracker_state(self):
+        if self.facade is not None:
+            self.facade.publish_state(
+                self._tracker_ns,
+                {"cam_id": self.cam_id, "tracking": self._tracking,
+                 "lock": self._lock})
+
+    def _tracker_lock(self, act, params, cause):
+        """visual_tracker.lock / .unlock - the mission 'track' step's
+        lock-on and release. de_tracker's semantics: lock needs exactly
+        one of trk / class; a cam hint naming another tracker is
+        refused."""
+        params = params or {}
+        cam = params.get("cam")
+        if isinstance(cam, str) and cam and cam != self.cam_id:
+            return None, \
+                f"tracker cam '{cam}' not served by '{self.cam_id}'"
+        if act == "unlock":
+            self._lock = "none"
+            self._tracking = False
+            print(f"visual_tracker unlock ({cause}): lock=none",
+                  flush=True)
+            self.log.log("UNLOCK", {"cause": cause}, ms=self.clock_ms())
+            self._publish_tracker_state()
+            return {"lock": "none"}, None
+        has_trk = isinstance(params.get("trk"), int) and \
+            not isinstance(params.get("trk"), bool)
+        has_cls = isinstance(params.get("class"), str)
+        if has_trk == has_cls:
+            return None, "lock needs exactly one of trk or class"
+        if has_trk:
+            trk = params["trk"]
+            if trk not in self._trk_ids.values():
+                return None, f"trk {trk} not in the observation stream"
+            self._lock = f"trk:{trk}"
+        else:
+            cls = params["class"]
+            if cls and cls not in self.obs_labels:
+                return None, f"unknown class '{cls}'"
+            self._lock = f"class:{cls or '*'}"
+        self._tracking = True
+        print(f"visual_tracker lock ({cause}): lock={self._lock} "
+              f"cam={self.cam_id}", flush=True)
+        self.log.log("LOCK", {"lock": self._lock, "cam": self.cam_id,
+                     "cause": cause}, ms=self.clock_ms())
+        self._publish_tracker_state()
+        return {"lock": self._lock}, None
 
     # ------------------------------------------------- perceive (MP-0215)
 
@@ -500,6 +596,8 @@ class StubAIBox(StubBase):
         elif self.facade is not None:
             # MP-0214: live perceive state mirrors the advert
             self._publish_perceive_state()
+            # MP-0217: the tracker lock state rides the same tick
+            self._publish_tracker_state()
 
     def _perceive_state(self):
         return {"cam_id": self.cam_id, "backend": "sim",
@@ -516,6 +614,10 @@ class StubAIBox(StubBase):
         the perceive one (SL-0034) carries the wire cls table - what
         CAP-008 reads off a live registry."""
         tracker = __import__("copy").deepcopy(ADVERT_TRACKER)
+        # MP-0217: cam-scoped namespace (visual_tracker_<cam_id>) so the
+        # mission's cam pin picks the right tracker
+        tracker["ns"] = self._tracker_ns
+        tracker["state"]["cam_id"]["default"] = self.cam_id
         tracker["actions"]["start"] = {
             "desc": "Start detection reporting for a class",
             "params": {"class": {"type": "enum",
@@ -568,6 +670,9 @@ class StubAIBox(StubBase):
             self._reporting = False
         self._nonce_ring = []
         self._nonce_set = set()
+        # MP-0217: a new run starts unlocked
+        self._lock = "none"
+        self._tracking = False
 
     def _class_ok(self, cls):
         """A SEARCH selection limits detections to the chosen classes."""
