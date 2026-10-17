@@ -65,6 +65,8 @@
       "properties": {
         "expect_errors": {"type": "integer", "minimum": 0},
         "expect_rules": {"type": "array", "items": {"type": "string"}},
+        "proceed_rules": {"type": "array", "items": {"type": "string"},
+          "description": "deploy anyway: proceed only when the error findings are exactly these rules (negative controls)"},
         "cli": {"type": "string",
           "description": "override path to the P5-06 verify CLI (verify-op.js)"}
       }

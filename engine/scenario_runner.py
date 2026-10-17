@@ -138,6 +138,14 @@ def run_verify(scn, results_dir):
     rules = sorted({e.get("rule") or e.get("ruleId") or "?" for e in errs})
     out["errors"] = n_err
     out["rules"] = rules
+    if spec.get("proceed_rules") is not None:
+        # a negative-control scenario deploys past the gate: proceed
+        # ONLY when the error findings are exactly the declared rules -
+        # any extra or missing rule still stops the run before deploy
+        ok = rules == sorted(spec["proceed_rules"])
+        out["ok"] = ok
+        out["gate_proceed"] = ok
+        return _verify_out(out, results_dir, ok)
     if "expect_errors" in spec or spec.get("expect_rules") is not None:
         # a negative scenario EXPECTS error findings (exit 1 is fine):
         # expectations only classify the run at suite level (GATE-PASS

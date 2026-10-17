@@ -4,7 +4,7 @@
 Pure check - node + verify_wrap.js only, no fleet, no servers, no sim:
 
   - every tests/**/*.yaml (and scenarios/**/*.yaml) with a `verify:`
-    block declaring expect_rules / expect_errors names an op under
+    block declaring expect_rules / proceed_rules names an op under
     `operation:` - that op MUST be blocked by the verifier and the
     findings MUST carry exactly the declared rules
   - every other *.op.json / *.deop found under tests/ (and scenarios/)
@@ -72,14 +72,18 @@ for y in glob.glob(os.path.join(ROOT, "tests", "**", "*.yaml"),
                    recursive=True):
     raw = simlib.load_yaml(y) or {}
     spec = raw.get("verify")
-    if not isinstance(spec, dict) or "expect_rules" not in spec:
+    if not isinstance(spec, dict):
+        continue
+    want = spec.get("expect_rules")
+    if want is None:
+        want = spec.get("proceed_rules")
+    if want is None:
         continue
     op = raw.get("operation")
     if not op:
-        bad.append(f"{y}: verify.expect_rules without operation:")
+        bad.append(f"{y}: verify rule expectation without operation:")
         continue
-    expected[os.path.normpath(os.path.join(os.path.dirname(y), op))] = \
-        spec["expect_rules"]
+    expected[os.path.normpath(os.path.join(os.path.dirname(y), op))] = want
 
 ops = sorted(set(
     glob.glob(os.path.join(ROOT, "tests", "**", "*.op.json"),

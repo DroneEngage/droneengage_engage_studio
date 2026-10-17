@@ -236,6 +236,13 @@ class T(unittest.TestCase):
                 scn["verify"] = {"cli": cli, "expect_errors": 1,
                                  "expect_rules": ["LIV-001"]}
                 self.assertFalse(scenario_runner.run_verify(scn, d))
+                # proceed_rules: a negative control deploys past the
+                # gate only when the error set matches exactly
+                scn["verify"] = {"cli": cli,
+                                 "proceed_rules": ["LIV-001"]}
+                self.assertTrue(scenario_runner.run_verify(scn, d))
+                scn["verify"] = {"cli": cli, "proceed_rules": ["OTHER"]}
+                self.assertFalse(scenario_runner.run_verify(scn, d))
             obj = json.dumps({"error_count": 1,
                               "errors": [{"rule": "bad"}]})
             with mock.patch.object(scenario_runner.subprocess, "run",

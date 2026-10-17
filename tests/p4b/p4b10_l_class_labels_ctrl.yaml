@@ -5,8 +5,9 @@
 #
 # Op:      ops/sar_forest_labels_ctrl.op.json verified at the gate - the
 #          ctx binds cam_scout to a stub_ai_box advert whose class enum
-#          lacks 'person', so CAP-008 is recorded in verify.json (a
-#          warning, not a gate failure); then the plain
+#          lacks 'person', so CAP-008 fires (error severity per MP-0214)
+#          and verify.proceed_rules lets the run deploy anyway with the
+#          finding recorded in verify.json; then the plain
 #          packages/sar_forest.deploy.json (de.package/2.2) deploys.
 #
 # Proves per spec:
@@ -15,15 +16,15 @@
 #     whole run
 #   - the classless sdr.signal path is unaffected: the phone target is
 #     found, confirmed and claimed as usual
-#   - CAP-008's warning was recorded at verify time (verify.json in the
-#     run dir carries the finding)
+#   - CAP-008 was recorded at verify time (verify.json in the run dir
+#     carries the finding)
 version: 1
 name: p4b10_l_class_labels_ctrl
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest_decoy.yaml
 operation: ops/sar_forest_labels_ctrl.op.json
-verify: {cli: ../../tools/verify_wrap.js}
+verify: {cli: ../../tools/verify_wrap.js, proceed_rules: [CAP-008]}
 settle_s: 180
 operator:
   approve: {launch: {after_s: 2}, action: {after_s: 2}}

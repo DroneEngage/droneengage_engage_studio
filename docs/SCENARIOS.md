@@ -397,10 +397,18 @@ answers" posture: the request stays pending and times out live.
 verify: {cli: ../../tools/verify_wrap.js}                    # normal
 verify: {cli: ..., expect_errors: 1}                          # gate must block
 verify: {cli: ..., expect_rules: [GEO-003, LANE-001]}        # with these rules
+verify: {cli: ..., proceed_rules: [CAP-008]}                 # deploy anyway,
+                                                            # errors must be
+                                                            # exactly these
 ```
 
-Without `expect_*` a clean verify is required. With them, the run is a
-GATE-PASS only when the verifier blocks with exactly those findings.
+Without `expect_*`/`proceed_rules` a clean verify is required. With
+`expect_*`, the run is a GATE-PASS only when the verifier blocks with
+exactly those findings (the scenario never deploys). `proceed_rules` is
+the negative-control opt-in: the findings are recorded in verify.json
+(`gate_proceed`) and the run proceeds to deploy only when the error set
+matches exactly - an extra or missing rule still stops the run at the
+gate.
 
 ## `world:` — seeded truth (optional)
 
