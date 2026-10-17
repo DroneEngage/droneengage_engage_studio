@@ -209,15 +209,17 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
     other sim first. `world_stream` says the caller will serve
     de.worldstream/1 on render.stream_port (a scenario with a world) -
     the printed viewer URL only advertises ?world= then."""
-    sim = simlib.load_sim(sim_src)
+    sim = simlib.load_sim(sim_src,
+                          exclusive=exclusive and not _shared())
     name = sim["name"]
     srv = sim["server"]
     simlib.check_binaries(sim)          # before stopping the running sim
     if exclusive and not _shared():
         down(quiet=True)                # tests own the machine
     else:
-        # additive `sim up`: refuse ports/names of a live sim, restart
-        # only the same-named one
+        # additive `sim up`: refuse ports of a live sim (and unit names
+        # where they still must be unique), restart only the same-named
+        # one
         simlib.check_conflicts(sim)
         down(name, quiet=True)
     if srv["type"] == "external":
@@ -369,7 +371,8 @@ def ensure(sim_src, timeout=180, world_stream=False, exclusive=True):
     live sims stay up - the fresh up then does what `sim up` does
     (conflict check, same-name restart). `world_stream` is passed to
     `up` for the viewer URL's ?world= param."""
-    sim = simlib.load_sim(sim_src)
+    sim = simlib.load_sim(sim_src,
+                          exclusive=exclusive and not _shared())
     m = simlib.load_manifest(sim["name"], required=False)
     if m and m.get("sim_hash") == sim["hash"]:
         alive = set(simlib.read_pids(sim["name"]))

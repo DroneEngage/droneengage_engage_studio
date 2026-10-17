@@ -163,7 +163,12 @@ Mavlink3DMap checkout.
 ```
 
 You can run **several fleets at once** — they never fight over ports
-(`./sim up` refuses to start one that clashes). The ready-made
+(`./sim up` refuses to start one that clashes), and unit names may even
+repeat between fleets: each sim spawns its own server, so `quad1` in one
+sim is invisible to the other. Names still must be unique when fleets
+share a server stack *you* run (`server: {type: external}`) or when
+either fleet renders cameras (the virtual video devices are
+machine-global). The ready-made
 `sims/quadcopter.yaml`, `sims/rover.yaml` and `sims/plane.yaml` are
 built for this; they connect to a server stack *you* run (see §8).
 

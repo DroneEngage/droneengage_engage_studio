@@ -219,8 +219,14 @@ cannot see inside the stream.
 ### Running several sims in parallel
 
 `./sim up` is additive: it only restarts the same-named sim and refuses
-to start one whose ports or unit names collide with a live sim (pick a
-different `slot_base`). `var/run/<sim>/` holds each sim's manifest, configs,
+to start one whose ports collide with a live sim (pick a different
+`slot_base`, or let `--slot-base any` choose). Unit names may repeat
+across parallel sims - a spawned fake/real server gives each fleet its
+own party registry - except where the fleets could actually meet or
+share devices: on a `server: {type: external}` stack (a unit name is the
+login identity there) or when either fleet runs rendered cameras (the
+DE-SRC-k/DE-AI-k v4l2loopback cards are machine-global). Both keep the
+old uniqueness refusal. `var/run/<sim>/` holds each sim's manifest, configs,
 logs and pids, so sims are fully independent:
 
 ```bash
@@ -233,7 +239,8 @@ logs and pids, so sims are fully independent:
 
 `ctl` commands that need one sim (server procs, `reset`, deploy) use the
 `-s` sim, else the only live sim; unit lookups (`arm quad1`, `logs`)
-search live sims first. `sim run` stays exclusive for tests - a test
+search live sims first - a bare unit name that exists in several live
+sims is refused as ambiguous, pin it with `-s`. `sim run` stays exclusive for tests - a test
 owns the machine and downs the other sims (a bare `sims/*.yaml`
 `run`/`view` is additive, like `up`). `--shared` applies the additive
 rules to a `run`/`view`/`suite` instead, and `--slot-base <N>` overrides

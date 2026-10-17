@@ -490,13 +490,17 @@ def validate_block(b, catalog):
 SERVER_TYPES = ("real", "fake", "external")
 
 
-def load_sim(path_or_spec, base_dir=None, overlays=None):
+def load_sim(path_or_spec, base_dir=None, overlays=None,
+             exclusive=False):
     """Load a sim file (or an inline dict) and expand it into concrete units.
     Returns {name, server{}, home, slot_base, units[], hash}. The name -
     the sim file's stem or an explicit `name:` - owns var/run/<name>/. An
     unnamed spec gets each applied overlay appended (copters3 --with
     faults -> copters3_faults), so variants keep their own var/run dir
-    and a changed overlay set always changes the hash."""
+    and a changed overlay set always changes the hash. `exclusive` marks
+    the load as the front of an exclusive bring-up (a test run that
+    downs every other live sim before it binds) - it only changes how
+    --slot-base any treats a live sim with clashing unit names."""
     spec, src = _sim_spec(path_or_spec, base_dir)
     applied = []
     for ov in _spec_overlays(spec, overlays):
@@ -525,7 +529,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None):
     # lowest fully-free base (below)
     ov = str(setting("SIM_SLOT_BASE_OVERRIDE", ""))
     if ov == "any":
-        return _load_sim_free_slot(dict(spec, name=name), base_dir)
+        return _load_sim_free_slot(dict(spec, name=name), base_dir,
+                                   exclusive)
     slot_base = int(ov or spec.get("slot_base", SLOT_BASE))
     srv_spec = spec.get("server") or {}
     # a server port derived from the spec's own slot (the scenario loader
@@ -605,15 +610,19 @@ def sim_hash(sim, overrides):
         sort_keys=True).encode()).hexdigest()[:16]
 
 
-def _load_sim_free_slot(spec, base_dir):
+def _load_sim_free_slot(spec, base_dir, exclusive=False):
     """SIM_SLOT_BASE_OVERRIDE=any: resolve the sim once per candidate
     base, lowest first; the first whose whole port set is free wins.
     "Free" means no clash with a live sim's manifest AND nothing already
     bound on the host - ports_held catches the dev server or stray SITL
     that is not a sim. A same-named live sim's ports are its own (`up`
-    restarts it), and so are those of a live sim with clashing unit
-    names - an exclusive run downs it, up/--shared refuse it later in
-    check_conflicts.
+    restarts it). The ports of a live sim with clashing unit names are
+    its own too, but only for an exclusive bring-up: `run` downs it
+    first, so they come free whatever the base - a suite's sequential
+    scenarios keep the pick they always had. Additive callers (up,
+    --shared) leave it running, so every live sim's ports are real
+    conflicts - parallel sims may reuse unit names on disjoint server
+    namespaces now, but never ports.
     Candidates start at SLOT_BASE (the configured floor) and stop when a
     port would pass 65535. A shifted pick changes the sim hash - `ensure`
     then does a fresh up instead of reusing."""
@@ -633,11 +642,11 @@ def _load_sim_free_slot(spec, base_dir):
                 if other == sim["name"]:
                     own = used_ports(m)
                     continue
-                if names & {u["name"] for u in m["units"]}:
+                if exclusive and \
+                        names & {u["name"] for u in m["units"]}:
                     # slot-independent: an exclusive test run downs it
-                    # (a suite's previous scenario), while up/--shared
-                    # still refuse it in check_conflicts - either way its
-                    # ports are not this pick's problem
+                    # (a suite's previous scenario) before it binds, so
+                    # its ports are this pick's for the taking
                     own |= used_ports(m)
                     continue
                 if ports & used_ports(m):
@@ -1333,13 +1342,31 @@ def units_by_name(manifest=None):
     return {u["name"]: u for u in m["units"]}
 
 
-def find_unit(name):
-    """A unit by name across every generated sim. Live sims first - a
-    dead sim's manifest keeps its units on disk and may reuse the same
-    names, but its launch scripts/configs are stale."""
+def find_unit(name, sim=None):
+    """A unit by name - `sim` pins the search to one manifest (ctl -s),
+    otherwise live sims first: a dead sim's manifest keeps its units on
+    disk and may reuse the same names, but its launch scripts/configs are
+    stale. Unit names may repeat across live sims on disjoint server
+    namespaces (check_conflicts allows it), so a name found in several
+    live sims is ambiguous - the caller has to pin the sim."""
     manifests = all_manifests()
-    for n in live_sim_names() + [n for n in sim_names()
-                                 if n not in live_sim_names()]:
+    if sim:
+        for u in manifests.get(sim, {"units": []})["units"]:
+            if u["name"] == name:
+                return u
+        return None
+    live = live_sim_names()
+    hits = [u for n in live for u in manifests[n]["units"]
+            if u["name"] == name]
+    if len({u["sim"] for u in hits}) > 1:
+        raise SimError(f"ambiguous unit {name!r} - live in sims "
+                       + ", ".join(sorted({u["sim"] for u in hits}))
+                       + "; pin one with -s <sim>")
+    if hits:
+        return hits[0]
+    for n in sim_names():
+        if n in live:
+            continue
         for u in manifests[n]["units"]:
             if u["name"] == name:
                 return u
@@ -1415,11 +1442,37 @@ def ports_held(ports):
     return held
 
 
+def _names_must_be_unique(sim, other):
+    """Whether overlapping unit names between sim and the live sim
+    `other` are a real conflict. Unit names double as party_id, so they
+    must stay unique only where the two fleets could actually meet: on
+    a shared `server: {type: external}` stack (party_id is the login
+    identity there and auth accounts expand {name}), or on
+    rendered-camera units whose v4l2loopback card labels
+    (DE-SRC-k/DE-AI-k, per-sim indexed) are machine-global devices. Sims
+    spawning their own server (fake or real) keep private party
+    registries - the same names never route to each other."""
+    return (sim["server"]["type"] == "external" or
+            other["server"]["type"] == "external" or
+            _has_render_cameras(sim) or _has_render_cameras(other))
+
+
+def _has_render_cameras(sim):
+    """A unit the render frame farm feeds (de_yolo_ai, or de_camera under
+    render.mode cameras|full) occupies machine-global v4l2loopback card
+    labels - two such fleets would fight over the same /dev devices."""
+    return any(_is_render_camera_unit(u.get("modules", []), sim)
+               for u in sim["units"])
+
+
 def check_conflicts(sim):
-    """Refuse to bring a sim up when its ports or unit names collide with
-    another sim that is actually running (a manifest with live pids).
-    Unit names double as party_id on a shared external server, so they
-    must stay unique across parallel sims."""
+    """Refuse to bring a sim up when its ports collide with another sim
+    that is actually running (a manifest with live pids). Unit names
+    may repeat across parallel sims whose servers are spawned per sim
+    (fake or real - each owns a private party registry); they stay
+    unique only where the fleets could meet - a shared external server
+    stack - or share machine-global camera devices
+    (_names_must_be_unique)."""
     ports = used_ports(sim)
     names = {u["name"] for u in sim["units"]}
     for other in live_sim_names():
@@ -1427,14 +1480,18 @@ def check_conflicts(sim):
             continue
         m = load_manifest(other)
         clash = sorted(ports & used_ports(m))
-        dup = sorted(names & {u["name"] for u in m["units"]})
+        dup = (sorted(names & {u["name"] for u in m["units"]})
+               if _names_must_be_unique(sim, m) else [])
         if clash or dup:
             raise SimError(
                 f"sim {sim['name']!r} conflicts with running sim {other!r}:"
                 + (f" ports {clash}" if clash else "")
                 + (f" unit names {dup}" if dup else "")
-                + f" - rerun with --shared --slot-base any to park on a "
-                  f"free block, or `./sim down {other}` first")
+                + (f" - rerun with --shared --slot-base any to park on a "
+                   f"free block, or `./sim down {other}` first" if clash
+                   else f" - a shared external server or rendered cameras "
+                   f"make unit names machine-global; `./sim down {other}` "
+                   f"first"))
 
 
 def journal_dir(u):

@@ -9,10 +9,12 @@ the GCS bridge (real droneengage_server) or by the fake server.
 <unit> = a unit name (copter1), its 1-based position in the sim (2),
 block:<block> (every unit of that block), a comma list, or all.
 
-Several sims can be up at once (each owns var/run/<name>/). Unit names are
-unique across sims, so unit commands just work; sim-scoped commands
-(server procs, GCS traffic with no target unit) use `-s <name>` - with a
-single sim up nothing extra is needed:  ./sim ctl -s quadcopter status
+Several sims can be up at once (each owns var/run/<name>/). Unit names may
+repeat across sims that spawn their own server - a bare name matching
+more than one live fleet is refused as ambiguous, pin it with -s;
+sim-scoped commands (server procs, GCS traffic with no target unit) use
+`-s <name>` - with a single sim up nothing extra is needed:
+./sim ctl -s quadcopter status
 
 GCS:
   deploy <pkg.json> [binding.json]  1085 upload; blocks until "package READY".
@@ -204,8 +206,11 @@ def server():
 def resolve(tok, manifest_=None):
     """'all' | name | 1-based index | block:<b> | comma list -> [unit].
     Units come from the pinned sim, or every LIVE sim merged - dead sims'
-    units are skipped (unit names are unique across live sims anyway -
-    check_conflicts enforces it)."""
+    units are skipped. Unit names may repeat across live sims on
+    disjoint server namespaces (check_conflicts allows it now), so a
+    bare name that matches in several live sims is ambiguous - pin the
+    sim with -s."""
+    merged = manifest_ is None and not CTX
     if manifest_:
         units = manifest_["units"]
     elif CTX:
@@ -224,6 +229,10 @@ def resolve(tok, manifest_=None):
             hit = [units[int(t) - 1]]
         else:
             hit = [u for u in units if u["name"] == t]
+            if merged and len({u["sim"] for u in hit}) > 1:
+                sys.exit(f"ambiguous unit {t!r} - live in sims "
+                         + ", ".join(sorted({u["sim"] for u in hit}))
+                         + "; pin one with -s <sim>")
         if not hit:
             sys.exit(f"unknown unit {t!r}; sim units: "
                      + ", ".join(u["name"] for u in units))
@@ -711,7 +720,7 @@ def owner_sim(owner):
     for the synthetic 'server'/'render' owners."""
     if owner in ("server", "render"):
         return _ctx_name()
-    u = simlib.find_unit(owner)
+    u = simlib.find_unit(owner, CTX)
     if not u:
         sys.exit(f"unknown unit {owner!r} (no generated sim has it)")
     return u["sim"]
@@ -722,7 +731,10 @@ def owner_dir(owner):
         return simlib.server_dir(owner_sim(owner))
     if owner == "render":
         return simlib.render_dir(owner_sim(owner))
-    return simlib.unit_dir(simlib.find_unit(owner))
+    u = simlib.find_unit(owner, CTX)
+    if not u:
+        sys.exit(f"unknown unit {owner!r} (no generated sim has it)")
+    return simlib.unit_dir(u)
 
 
 def kill_proc(owner, proc):

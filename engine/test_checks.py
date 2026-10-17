@@ -549,27 +549,137 @@ class T(unittest.TestCase):
             self.assertEqual(simlib.load_sim(pinned)["server"]["port"], 9999)
 
     def test_slot_any_tolerates_same_unit_names_live_sim(self):
-        """a suite's previous scenario (same unit names) is still live
-        when the next one resolves --slot-base any - not fatal: the
-        exclusive run downs it, up/--shared refuse it later"""
+        """a suite's previous scenario (same unit names) may still be
+        live when the next one resolves --slot-base any: the exclusive
+        run downs it before it binds, so its ports are the pick's for
+        the taking and the slot stays where it always was. An additive
+        caller (up / --shared) leaves it running - its ports are real
+        conflicts and the pick moves to the first disjoint base."""
         import scenario
         import simlib
         spec = scenario.load_scenario(
             os.path.join(os.path.dirname(os.path.dirname(
                 os.path.abspath(__file__))), "tests/p4f/p4f05_abort.yaml"),
             8)["sim"]
-        with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "60"}):
+        with mock.patch.dict(os.environ,
+                             {"SIM_SLOT_BASE_OVERRIDE":
+                              str(simlib.SLOT_BASE)}):
             prev = simlib.load_sim(dict(spec, name="prev_scenario"))
         prev_m = {"name": "prev_scenario", "server": prev["server"],
-                  "units": prev["units"]}
-        with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "any"}), \
+                  "units": prev["units"], "render": prev.get("render")}
+        with mock.patch.dict(os.environ,
+                             {"SIM_SLOT_BASE_OVERRIDE": "any"}), \
                 mock.patch.object(simlib, "live_sim_names",
                                   lambda: ["prev_scenario"]), \
                 mock.patch.object(simlib, "load_manifest",
                                   lambda n, required=True: prev_m), \
                 mock.patch.object(simlib, "ports_held", lambda p: []):
+            additive = simlib.load_sim(spec)
+            exclusive = simlib.load_sim(spec, exclusive=True)
+        # additive: never parks on a port the live sim holds
+        self.assertFalse(simlib.used_ports(additive)
+                         & simlib.used_ports(prev))
+        self.assertGreater(additive["slot_base"], simlib.SLOT_BASE)
+        # exclusive: identical pick to before SL-0062 - the live sim is
+        # about to be downed, so its ports don't disqualify the floor
+        self.assertEqual(exclusive["slot_base"], simlib.SLOT_BASE)
+
+    def _conflict_pair(self, server_type="fake",
+                       new_modules=None, other_modules=None):
+        """(resolved sim, live manifest) sharing unit names on disjoint
+        ports - the shape check_conflicts arbitrates. server_type/
+        modules knobs flip the namespace rules under test."""
+        import scenario
+        import simlib
+        spec = scenario.load_scenario(
+            os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "tests/p4f/p4f05_abort.yaml"),
+            8)["sim"]
+        with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "40"}):
             sim = simlib.load_sim(spec)
-        self.assertEqual(sim["slot_base"], simlib.SLOT_BASE)
+        if new_modules is not None:
+            sim["units"] = [dict(u, modules=new_modules)
+                            for u in sim["units"]]
+        with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "60"}):
+            other = simlib.load_sim(dict(spec, name="other_sim"))
+        m = {"name": "other_sim",
+             "server": dict(other["server"], type=server_type),
+             "units": ([dict(u, modules=other_modules)
+                        for u in other["units"]]
+                       if other_modules is not None else other["units"]),
+             "render": other.get("render")}
+        return sim, m
+
+    def _check_conflicts(self, sim, m):
+        import simlib
+        with mock.patch.object(simlib, "live_sim_names",
+                               lambda: ["other_sim"]), \
+                mock.patch.object(simlib, "load_manifest",
+                                  lambda n, required=True: m):
+            simlib.check_conflicts(sim)
+
+    def test_conflicts_same_names_ok_on_spawned_servers(self):
+        """fake/real sims each spawn their own server - same unit names,
+        disjoint party registries, no conflict"""
+        sim, m = self._conflict_pair("fake")
+        self._check_conflicts(sim, m)          # no SimError
+
+    def test_conflicts_same_names_refused_on_external(self):
+        """a shared external stack keeps unit names globally unique -
+        party_id is the login identity there"""
+        sim, m = self._conflict_pair("external")
+        with self.assertRaises(simlib.SimError):
+            self._check_conflicts(sim, m)
+        sim, m = self._conflict_pair("fake")
+        sim["server"]["type"] = "external"
+        with self.assertRaises(simlib.SimError):
+            self._check_conflicts(sim, m)
+
+    def test_conflicts_same_names_refused_on_render_cameras(self):
+        """rendered cameras collide on machine-global v4l2 labels
+        (DE-SRC-k/DE-AI-k) - names stay refused whichever side renders"""
+        sim, m = self._conflict_pair("fake", other_modules=["de_yolo_ai"])
+        with self.assertRaises(simlib.SimError):
+            self._check_conflicts(sim, m)
+        sim, m = self._conflict_pair("fake", new_modules=["de_yolo_ai"])
+        with self.assertRaises(simlib.SimError):
+            self._check_conflicts(sim, m)
+
+    def test_ctl_resolve_refuses_ambiguous_unit_names(self):
+        """two live sims on disjoint servers may share unit names - a
+        bare name in ctl then has no unique answer without -s"""
+        import ctl
+        sims = {"a": {"name": "a",
+                      "units": [dict(U1, name="s1", sim="a")]},
+                "b": {"name": "b",
+                      "units": [dict(U1, name="s1", sim="b")]}}
+        with mock.patch.object(ctl, "CTX", None), \
+                mock.patch.object(simlib, "live_sim_names",
+                                  lambda: ["a", "b"]), \
+                mock.patch.object(simlib, "load_manifest",
+                                  lambda n, required=True: sims[n]):
+            self.assertRaises(SystemExit, ctl.resolve, "s1")
+            self.assertEqual(ctl.resolve("s1", sims["a"]),
+                             [sims["a"]["units"][0]])
+
+    def test_find_unit_refuses_ambiguous_live_names(self):
+        """find_unit honours a sim pin and refuses to guess between two
+        live sims sharing the name; a dead twin doesn't count"""
+        sims = {"a": {"units": [dict(U1, name="s1", sim="a")]},
+                "b": {"units": [dict(U1, name="s1", sim="b")]}}
+        with mock.patch.object(simlib, "all_manifests",
+                               lambda: sims), \
+                mock.patch.object(simlib, "live_sim_names",
+                                  lambda: ["a", "b"]), \
+                mock.patch.object(simlib, "sim_names",
+                                  lambda: ["a", "b"]):
+            self.assertRaises(simlib.SimError, simlib.find_unit, "s1")
+            self.assertIs(simlib.find_unit("s1", sim="b"),
+                          sims["b"]["units"][0])
+            with mock.patch.object(simlib, "live_sim_names",
+                                   lambda: ["b"]):
+                self.assertIs(simlib.find_unit("s1"),
+                              sims["b"]["units"][0])
 
     def test_slot_block_skips_host_held_port(self):
         import socket

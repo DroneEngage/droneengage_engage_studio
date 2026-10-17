@@ -5,8 +5,11 @@
   ./sim block <name>               show a block resolved through `extends`
   ./sim show <sim.yaml>            units, modules and ports a sim expands to
   ./sim up <sim.yaml> [--fresh]    start a sim (restarts the same-named one;
-                                   refuses ports/names of a live sim - sims
-                                   run in parallel)
+                                   refuses ports of a live sim - sims run in
+                                   parallel; unit names may repeat on
+                                   per-sim servers but stay unique on a
+                                   shared external stack or rendered
+                                   cameras)
   ./sim down [name|--all]          stop one sim, or every sim
   ./sim sims                       generated sims and live process counts
   ./sim status [live|all]          = ./sim ctl status (live sims only;
@@ -100,10 +103,11 @@ Global flags for show/up/run/view/suite/validate/studio:
   --slot-base <N|any>              the slot every port derives from (wins
                                    over the sim yaml's slot_base: and
                                    SIM_SLOT_BASE); `any` picks the lowest
-                                   base whose ports are all free - a
-                                   shifted pick changes the sim hash, so
-                                   `run` does a fresh up instead of
-                                   reusing (pin a number when iterating)
+                                   base whose ports no live sim or other
+                                   process holds - a shifted pick changes
+                                   the sim hash, so `run` does a fresh up
+                                   instead of reusing (pin a number when
+                                   iterating)
   --with <a[,b...]>                sims/overlays/<name>.yaml twists applied
                                    on top of the sim (server swap, extra
                                    units, config/fc pushes); each applied
@@ -680,7 +684,7 @@ def main(argv):
                     simlib.server_dir(sim_name or simlib._single_sim()),
                     "logs")
             else:
-                u = simlib.find_unit(owner)
+                u = simlib.find_unit(owner, sim_name)
                 if not u:
                     sys.exit(f"unknown unit {owner!r} (no generated sim "
                              "has it)")

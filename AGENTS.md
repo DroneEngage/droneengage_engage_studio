@@ -104,10 +104,13 @@ is now the only simulation/testing location.
     ./sim down
 
 - `./sim up` is additive: it restarts only the same-named sim and refuses
-  ports/unit names that clash with a live sim. `./sim down <name>` stops
-  one sim, `./sim down` all of them. `./sim run` is exclusive - a test
-  downs every other sim first. `SIM_SHARED=1 ./sim run ...` keeps it
-  additive (same rules as `up`) when other sessions share the machine.
+  ports that clash with a live sim. Unit names may repeat across sims
+  that spawn their own server (fake/real - private party registries);
+  they stay unique on a shared `server: {type: external}` stack and for
+  rendered-camera fleets (machine-global v4l2 labels). `./sim down <name>`
+  stops one sim, `./sim down` all of them. `./sim run` is exclusive - a
+  test downs every other sim first. `SIM_SHARED=1 ./sim run ...` keeps
+  it additive (same rules as `up`) when other sessions share the machine.
 - `./sim ctl -s <sim>` pins a command to one sim; without it commands
   that need a single sim use the only live one, and unit lookups search
   live sims first.
@@ -252,7 +255,10 @@ and make `ctl.ctrl` refuse it for that server type.
   post-mortem logs/journals, so a dead sim's units can share names with a
   live one. `simlib.find_unit` and ctl resolution always prefer *live*
   sims (`live_sim_names`); never iterate `all_manifests()` when the
-  intent is the running fleet.
+  intent is the running fleet. Live sims on disjoint server namespaces
+  may share unit names (`check_conflicts` allows it) - a bare name that
+  hits several live sims is ambiguous: `find_unit` raises and ctl
+  requires `-s <sim>` rather than guessing.
 - `server: {type: external}` spawns no server - the sim's units and GCS
   bridge join a server stack the user runs. Its `account` (or
   `SIM_AUTH_USER`/`SIM_AUTH_CODE` in `sim.local.env`, or `./sim --user`/
