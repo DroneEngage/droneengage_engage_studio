@@ -1,0 +1,39 @@
+# perception_tracks - the SL-0035 (a) world (de.world/1).
+#
+# Two people walking crossing ping-pong diagonals under ONE 30 m nadir
+# mast (the ~36 x 27 m footprint covers both whole paths). Each keeps a
+# stable trk on the wire and the projected detections must keep them
+# TWO world-model targets for the whole run: at every crossing they are
+# well inside the 25 m merge reach, so only the (src, trk) key keeps
+# them apart - a distance-only fusion would collapse them into one
+# target.
+#
+# Deterministic: p_detect 1.0, no pixel noise, no clutter. Both stay in
+# frame the whole loop, so every obs frame reports {person, person}
+# with trk {1, 2}.
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_1, cls: person,
+     path: [[-35.3633339, 149.1651048], [-35.3631901, 149.1653692]],
+     speed_mps: 0.9, loop: true, size_m: 0.5}
+  - {id: person_2, cls: person,
+     path: [[-35.3631901, 149.1651048], [-35.3633339, 149.1653692]],
+     speed_mps: 0.9, loop: true, size_m: 0.5}
+clutter: {cls: person, rate_per_km2_min: 0, lifetime_s: 20}
+sensors:
+  camera:
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 30           # ~36 x 27 m nadir footprint
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 1.0
+    p_detect_edge: 1.0
+    max_range_m: 120
+    pos_noise_px: 0
+    fps_boxes: 2
+    size_m: {person: 0.5}

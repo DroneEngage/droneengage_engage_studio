@@ -1,0 +1,37 @@
+# perception_unknown - the SL-0035 (d) world (de.world/1).
+#
+# A person plus a `kangaroo` ~3 m east of it under an 8 m nadir mast
+# (the ~9.7 x 7.3 m footprint keeps both inside the frame: person at
+# +1.5 m N, kangaroo at +3.0 m E of the mast). kangaroo is no detector
+# label and no declared target class, so it rides the wire as a plain
+# string cls (no cls_id), still projects and still latches as a
+# detect.detected event - but the world model must never fuse it into
+# the declared person target. The pair sits inside the 25 m merge reach
+# on purpose: only the strict payload-class check keeps them apart.
+#
+# Deterministic: p_detect 1.0, no pixel noise, no clutter. Every obs
+# frame reports {kangaroo, person} with trk {1, 2}.
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_1, cls: person, pos: [-35.3632485, 149.1652370],
+     size_m: 0.5}
+  - {id: kangaroo_1, cls: kangaroo, pos: [-35.3632485, 149.1652700],
+     size_m: 0.8}
+clutter: {cls: person, rate_per_km2_min: 0, lifetime_s: 20}
+sensors:
+  camera:
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 8
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 1.0
+    p_detect_edge: 1.0
+    max_range_m: 100
+    pos_noise_px: 0
+    fps_boxes: 2
+    size_m: {person: 0.5, kangaroo: 0.8}

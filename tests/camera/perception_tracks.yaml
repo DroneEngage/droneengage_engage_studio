@@ -1,0 +1,103 @@
+# camera/perception_tracks - SL-0035 (a) acceptance: the real
+# perception chain end to end on a static mast - stub_ai_box obs frames
+# (6546) -> de_comm geo projection -> detect.detected -> the world
+# model's (src, trk)-keyed fusion.
+#
+# Op:    tests/camera/ops/perception_tracks.deop (compiled on demand;
+#        perception_tracks.ctx.json feeds --caps so CAP verifies the
+#        track step against the cam-scoped visual_tracker_pcam1 advert).
+#        One static watcher: gate 'seen' on detect.detected, a 'track'
+#        step {target: person} once a person is confirmed, a short
+#        dwell, emit watch.done. The op has no end: the run stays up so
+#        detections keep landing while the people walk.
+# World: worlds/perception_tracks.yaml - a 30 m nadir mast over two
+#        people on crossing ping-pong diagonals (in frame the whole
+#        loop, inside the 25 m merge reach at every crossing).
+#
+# Proves per spec:
+#   - distinct stable trk ids across >=30 s of motion: obs_frames
+#     trk_stable + cls multiset {person, person} every frame, and the
+#     world model keeps TWO person targets (WM_NEW == 2) the whole run
+#     - a distance-only fusion would merge them at the crossing
+#   - detect.detected carries trk + cam_id: the 'track' step resolves
+#     the confirmed target's observation and locks the cam-matched
+#     tracker - journal "S: watch track lockon lock trk=N unit=pcam1
+#     cam=pcam1" and the stub's own "lock (invoke)" log row
+#   - throttled events per track: with ~5-6 m unc at 30 m and walkers
+#     at 0.9 m/s the moved gate rarely trips, so each track resends on
+#     the ~5 s steady window - over ~65 s of run that is ~20-25 latched
+#     person rows; a per-class throttle would halve it, an unthrottled
+#     projector would print ~130 - the at_least/at_most band separates
+#     all three behaviours. No duplicates inside the steady window is
+#     exactly what the at_most side bounds.
+version: 1
+name: perception_tracks
+seed: 11
+transport: fake
+world: ../../worlds/perception_tracks.yaml
+operation: ops/perception_tracks.deop
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+operator:
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: pcam1, cls: static, role: watcher, modules: [stub_ai_box],
+     base: [-35.363262, 149.165237, 584, 0]}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 33, do: wait_journal, unit: "pcam1", re: "S: .* activated",
+     timeout: 120}
+  # both people are on the wire immediately; the operator confirms ~3 s in
+  - {t: 40, do: wait_journal, unit: "pcam1", re: "WM_NEW .* cls=person",
+     timeout: 240}
+  - {t: 45, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 240}
+  # the track step resolves a confirmed target and locks its trk on the
+  # observing unit's cam-matched tracker
+  - {t: 50, do: wait_journal, unit: "pcam1",
+     re: 'S: watch track lockon lock trk=\d+ unit=pcam1 cam=pcam1',
+     timeout: 120}
+  # ~45 s more of in-run motion (>= 30 s of tracked movement): the two
+  # people keep crossing while the 5 s steady resends keep landing
+  - {t: 55, do: wait, seconds: 45}
+  - {t: 100, do: stop}
+assert:
+  # --- the stub side: two stable tracks on every obs frame -----------
+  - obs_frames: {unit: pcam1, min_frames: 60, cls: [person, person],
+                 trk_stable: true}
+  # --- distinct tracked targets survive the whole run ----------------
+  - journal_count: {unit: pcam1, re: 'WM_NEW \S+ cls=person', equals: 2}
+  - journal_count: {unit: pcam1, re: 'WM_UPDATE \S+ pos=.* n=', at_least: 4}
+  - no_journal: {unit: pcam1, re: 'WM_UPDATE \S+ pos=.* prev='}
+  # --- trk + cam_id ride the event: the lock row proves both ---------
+  - journal_order: {unit: pcam1,
+                    first: "WM_STATE .* confirmed by operator",
+                    then: 'S: watch track lockon lock trk=\d+'}
+  - journal_count: {unit: pcam1,
+                    re: 'S: watch track lockon lock trk=\d+ unit=pcam1 cam=pcam1',
+                    equals: 1}
+  - module_log_count: {unit: pcam1, module: stub_ai_box,
+                       re: 'visual_tracker lock \(invoke\): lock=trk:\d+ cam=pcam1',
+                       at_least: 1}
+  # --- per-track throttle: the latched row band separates per-track
+  #     (~20-25) from per-class (~10-13) and unthrottled (~130) -------
+  - journal_count: {unit: pcam1,
+                    re: 'event detect\.detected latched .* cls=person',
+                    at_least: 14, at_most: 45}
+  # --- the projected point lands on a real moving entity -------------
+  - distance_to: {unit: pcam1, re: "WM_NEW .* cls=person",
+                  truth: [person_1, person_2], detected_cls: person,
+                  max_m: 8}
+  # --- the stub itself replays byte-identical ------------------------
+  - stub_deterministic: {module: stub_ai_box, unit: pcam1,
+                         poses: ../../worlds/pose_obs_mast.jsonl,
+                         dur_s: 20}
+  # --- a static mast is never commanded to fly ------------------------
+  - journal_count: {unit: pcam1, re: "ALLOC|CLAIM|TAKEOVER", equals: 0}
+  - no_fc_command_to_static: {unit: pcam1}
+teardown: none

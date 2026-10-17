@@ -1,0 +1,38 @@
+{
+  "fileType": "de_operation",
+  "schema": "de.operation/2",
+  "op": "perception_tracks",
+  "comment": "SL-0035 (a) acceptance op: a static camera mast projects stub_ai_box obs frames; two moving people keep distinct trk ids and distinct world-model targets; the mission's 'track' step locks the confirmed person target's trk + cam_id on the mast's cam-scoped visual_tracker. No op end: the run stays up so the 5 s steady resend keeps landing detect.detected rows; the scenario stops it. Compiles to de.package/2.6.",
+  "area": [[-35.36295, 149.16555], [-35.36355, 149.16555],
+           [-35.36355, 149.16490], [-35.36295, 149.16490]],
+  "roles": {
+    "watcher": {"count": 1, "vehicle": "static",
+                "requires": ["camera", "visual_tracker"]}
+  },
+  "events": {
+    "detect.detected": {"target": "person",
+      "payload": {"tid": "string", "pos": "geo", "unc_m": "number",
+                  "conf": "number", "class": "string",
+                  "cam_id": "string", "trk": "number"}},
+    "watch.done": {}
+  },
+  "confirm": {"person": {"policy": "operator_confirm"}},
+  "missions": {
+    "watcher": {
+      "watch": {
+        "trigger": "op.start",
+        "steps": [
+          {"id": "seen", "gate": {"event": "detect.detected"},
+           "timeout": 240, "on_timeout": "end"},
+          {"id": "lockon", "track": {"target": "person"},
+           "timeout": 240, "on_error": "end"},
+          {"id": "dwell", "gate": {"time_at": {"after_start_s": 10}},
+           "timeout": 300, "on_timeout": "continue"},
+          {"id": "note", "emit": "watch.done",
+           "payload_from": "seen"}
+        ],
+        "end": "hold"
+      }
+    }
+  }
+}

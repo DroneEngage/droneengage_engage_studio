@@ -1,0 +1,89 @@
+# camera/perception_mount - SL-0035 (c) acceptance: a per-cam_id mount
+# override in de_comm's geo_projection config changes where the SAME
+# observation projects. Two co-located static masts run stub_ai_box on
+# the same world camera, so both emit identical boxes for the one
+# person ~8 m east (pixel u ~ +0.33 at the 20 m nadir mast - far enough
+# off-axis that the mount matters).
+#
+#   pcam1: no cameras entry -> the world mount (nadir) -> lands ON
+#          person_1 (-35.363262, 149.165325)
+#   pcam2: config.de_comm.geo_projection.cameras.pcam2.mount_yaw_deg = 90
+#          -> the same pixel lands ~8 m south (-35.363334, 149.165237),
+#          ~11.3 m from person_1
+#
+# Each unit's world model fuses both sources (distinct (src, trk) keys
+# keep them apart inside the 25 m merge reach), so EVERY unit's journal
+# shows both WM_NEW positions - the two latched pos= rows ARE the
+# "different ground points" proof, deterministic because the world has
+# no pixel noise.
+#
+# Op:    tests/camera/ops/perception_mount.deop - watcher x2,
+#        detect.detected -> target 'person'. No op end; the scenario
+#        stops the run.
+version: 1
+name: perception_mount
+seed: 13
+transport: fake
+world: ../../worlds/perception_mount.yaml
+operation: ops/perception_mount.deop
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+fleet:
+  - {id: pcam1, cls: static, role: watcher, modules: [stub_ai_box],
+     base: [-35.363262, 149.165237, 584, 0]}
+  - {id: pcam2, cls: static, role: watcher, modules: [stub_ai_box],
+     base: [-35.363262, 149.165237, 584, 0],
+     config:
+       {de_comm:
+         {geo_projection:
+           {cameras: {pcam2: {mount_yaw_deg: 90}}}}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 33, do: wait_journal, unit: "pcam1,pcam2", re: "S: .* activated",
+     timeout: 120}
+  - {t: 40, do: wait_journal, unit: "pcam1", re: "WM_NEW .* cls=person",
+     timeout: 240}
+  - {t: 45, do: wait_journal, unit: "pcam1",
+     re: 'WM_NEW \S+ cls=person pos=-35\.3633',
+     timeout: 240}
+  - {t: 50, do: wait, seconds: 20}
+  - {t: 72, do: stop}
+assert:
+  # --- both stubs see the same single person, one trk each -----------
+  - obs_frames: {unit: pcam1, min_frames: 40, cls: [person],
+                 trk_stable: true}
+  - obs_frames: {unit: pcam2, min_frames: 40, cls: [person],
+                 trk_stable: true}
+  # --- two person targets everywhere: one per observing unit ---------
+  - journal_count: {unit: "all", re: 'WM_NEW \S+ cls=person', equals: 2}
+  # --- the same obs projected two different ground points ------------
+  # pcam1's own projection sits ON person_1 (mast + 8 m east)
+  - journal_count: {unit: pcam1,
+                    re: 'WM_NEW \S+ cls=person pos=-35\.36326\d?,149\.16532',
+                    equals: 1}
+  - journal_count: {unit: pcam2,
+                    re: 'WM_NEW \S+ cls=person pos=-35\.36326\d?,149\.16532',
+                    equals: 1}
+  # pcam2's yaw-90 override sits ~8 m south of the mast
+  - journal_count: {unit: pcam1,
+                    re: 'WM_NEW \S+ cls=person pos=-35\.36333\d?,149\.16523',
+                    equals: 1}
+  - journal_count: {unit: pcam2,
+                    re: 'WM_NEW \S+ cls=person pos=-35\.36333\d?,149\.16523',
+                    equals: 1}
+  # --- and no third position materialises ----------------------------
+  - journal_count: {unit: "all", re: "WM_NEW ", equals: 2}
+  - journal_count: {unit: pcam1,
+                    re: 'event detect\.detected latched .* cls=person',
+                    at_least: 4}
+  - stub_deterministic: {module: stub_ai_box, unit: pcam1,
+                         poses: ../../worlds/pose_obs_mast.jsonl,
+                         dur_s: 20}
+  - no_fc_command_to_static: {unit: pcam1}
+  - no_fc_command_to_static: {unit: pcam2}
+teardown: none

@@ -1,0 +1,49 @@
+# perception_thermal - the SL-0035 (b) world (de.world/1).
+#
+# Same entity set as obs_thermal (SL-0034) but on an 8 m nadir mast so
+# every box fits the strict obs contract: at 4 m the 2 m car's box
+# overflowed the frame edge (y+h > 1), and de_comm's strict parser
+# drops the WHOLE frame - fine for an obs-contract test, fatal for a
+# projection test. At 8 m the ~9.7 x 7.3 m footprint keeps all three
+# boxes inside [0..1] with x+w/y+h <= 1.
+#
+# Wire classes are the de_ir_camera vocabulary: person_1 (temp_c 37)
+# and car_1 (temp_c 40) read hotspot against the ~11 C dusk ambient;
+# person_2 (temp_c -10) reads coldspot. All three sit ~1.5-3 m apart -
+# inside the world model's 25 m merge reach, so the two hotspot targets
+# stay apart only because their (src, trk) keys differ.
+#
+# Deterministic: p_detect 1.0, no pixel noise, no clutter. Every frame
+# reports {coldspot, hotspot, hotspot} with attrs.temp_c in [-11, 41].
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_1, cls: person, pos: [-35.3632485, 149.165237],
+     temp_c: 37.0, size_m: 0.5}
+  - {id: person_2, cls: person, pos: [-35.363262, 149.1652537],
+     temp_c: -10.0, size_m: 0.5}
+  - {id: car_1, cls: car, pos: [-35.3632755, 149.165237], temp_c: 40.0,
+     size_m: 2.0}
+environment:
+  sun_elev_deg: -10               # ambient ESTIMATE: ~11 C
+  visibility_m: 600
+  precip: none
+clutter: {cls: person, rate_per_km2_min: 0, lifetime_s: 20}
+sensors:
+  camera:
+    kind: rgb                      # the world default; the test unit
+    p_detect_thermal: 1.0          # overrides with camera_kind: thermal
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 8
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 1.0
+    p_detect_edge: 1.0
+    max_range_m: 120
+    pos_noise_px: 0                # deterministic projection evidence
+    fps_boxes: 2
+    size_m: {person: 0.5, car: 2.0}

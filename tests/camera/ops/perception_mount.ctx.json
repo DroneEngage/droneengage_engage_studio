@@ -1,0 +1,106 @@
+{
+    "_note": "SL-0035 ctx: binds watcher -> pcam1,pcam2 (two co-located masts) and feeds compile_op.js --caps the stub_ai_box caps view (camera + detect) so the waited-on detect.detected resolves against the advert. cam_id defaults to the unit name on both masts; pcam2's mount override lives in its de_comm geo_projection config, not the caps view.",
+    "binding": { "watcher": ["pcam1", "pcam2"] },
+    "registries": {
+        "pcam1": {
+            "caps": {
+                "camera": {
+                    "ch": "c1", "module": "stub_ai_box", "ver": "0.1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "camera",
+                        "module": "stub_ai_box", "ver": "0.1.0",
+                        "actions": {
+                            "capture": {
+                                "params": {
+                                    "count": {"type": "int", "min": 1, "max": 100, "default": 1},
+                                    "interval_ms": {"type": "int", "min": 0, "max": 60000, "default": 0, "unit": "ms"}},
+                                "timeout_s": 10},
+                            "record": {
+                                "params": {"on": {"type": "bool"}},
+                                "timeout_s": 10}},
+                        "events": {
+                            "captured": {
+                                "payload": {"file": {"type": "string"},
+                                            "pos": {"type": "geo"}}}},
+                        "state": {"recording": {"type": "bool"}}}},
+                "detect": {
+                    "ch": "c1", "module": "de_comm", "ver": "0.1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "detect",
+                        "module": "de_comm", "ver": "0.1.0",
+                        "actions": {
+                            "enable": {},
+                            "disable": {}},
+                        "events": {
+                            "detected": {
+                                "payload": {
+                                    "class": {"type": "string", "optional": true},
+                                    "conf": {"type": "number"},
+                                    "pos": {"type": "geo"},
+                                    "unc_m": {"type": "number"},
+                                    "range_m": {"type": "number"},
+                                    "src": {"type": "enum", "values": ["ai"]},
+                                    "trk": {"type": "int", "optional": true},
+                                    "cam_id": {"type": "string",
+                                               "optional": true}}}},
+                        "state": {
+                            "enabled": {"type": "bool"},
+                            "ai": {"type": "enum",
+                                   "values": ["lost", "detected",
+                                              "enabled", "disabled"]},
+                            "last_fix_age_s": {"type": "number"}}}}
+            },
+            "state": {}, "t": 0
+        },
+        "pcam2": {
+            "caps": {
+                "camera": {
+                    "ch": "c1", "module": "stub_ai_box", "ver": "0.1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "camera",
+                        "module": "stub_ai_box", "ver": "0.1.0",
+                        "actions": {
+                            "capture": {
+                                "params": {
+                                    "count": {"type": "int", "min": 1, "max": 100, "default": 1},
+                                    "interval_ms": {"type": "int", "min": 0, "max": 60000, "default": 0, "unit": "ms"}},
+                                "timeout_s": 10},
+                            "record": {
+                                "params": {"on": {"type": "bool"}},
+                                "timeout_s": 10}},
+                        "events": {
+                            "captured": {
+                                "payload": {"file": {"type": "string"},
+                                            "pos": {"type": "geo"}}}},
+                        "state": {"recording": {"type": "bool"}}}},
+                "detect": {
+                    "ch": "c1", "module": "de_comm", "ver": "0.1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "detect",
+                        "module": "de_comm", "ver": "0.1.0",
+                        "actions": {
+                            "enable": {},
+                            "disable": {}},
+                        "events": {
+                            "detected": {
+                                "payload": {
+                                    "class": {"type": "string", "optional": true},
+                                    "conf": {"type": "number"},
+                                    "pos": {"type": "geo"},
+                                    "unc_m": {"type": "number"},
+                                    "range_m": {"type": "number"},
+                                    "src": {"type": "enum", "values": ["ai"]},
+                                    "trk": {"type": "int", "optional": true},
+                                    "cam_id": {"type": "string",
+                                               "optional": true}}}},
+                        "state": {
+                            "enabled": {"type": "bool"},
+                            "ai": {"type": "enum",
+                                   "values": ["lost", "detected",
+                                              "enabled", "disabled"]},
+                            "last_fix_age_s": {"type": "number"}}}}
+            },
+            "state": {}, "t": 0
+        }
+    }
+}

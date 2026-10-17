@@ -1,0 +1,67 @@
+# camera/perception_unknown - SL-0035 (d) acceptance: an unknown
+# detector class rides the whole wire but never fuses into a declared
+# target class. The world's `kangaroo` is no obs label and the op
+# declares only 'person' - the stub still reports it (cls passes
+# through as a string), de_comm still projects it and the
+# detect.detected event still latches with cls=kangaroo, but
+# wmDetectionFromEvent's strict payload-class check drops it: no
+# detection, no person-cluster member, no second target.
+#
+# The kangaroo sits ~3 m east of the person - inside the 25 m merge
+# reach - so only the class check keeps the person target clean; a
+# fail-open would grow a second 'person' target from the kangaroo's
+# (src, trk) stream.
+#
+# Op:    tests/camera/ops/perception_class_filter.deop - one static
+#        watcher, detect.detected -> target 'person'. No op end; the
+#        scenario stops the run.
+# World: worlds/perception_unknown.yaml - person_1 + kangaroo_1 under
+#        the 8 m nadir mast, deterministic (p_detect 1, no noise).
+version: 1
+name: perception_unknown
+seed: 14
+transport: fake
+world: ../../worlds/perception_unknown.yaml
+operation: ops/perception_class_filter.deop
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+fleet:
+  - {id: pcam1, cls: static, role: watcher, modules: [stub_ai_box],
+     base: [-35.363262, 149.165237, 584, 0]}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 33, do: wait_journal, unit: "pcam1", re: "S: .* activated",
+     timeout: 120}
+  - {t: 40, do: wait_journal, unit: "pcam1", re: "WM_NEW .* cls=person",
+     timeout: 240}
+  - {t: 45, do: wait, seconds: 20}
+  - {t: 68, do: stop}
+assert:
+  # --- the unknown cls stays a string on the wire --------------------
+  - obs_frames: {unit: pcam1, min_frames: 40, cls: [kangaroo, person],
+                 trk_stable: true}
+  # --- both classes still project and latch as detect.detected -------
+  - journal_count: {unit: pcam1,
+                    re: 'event detect\.detected latched .* cls=kangaroo',
+                    at_least: 2}
+  - journal_count: {unit: pcam1,
+                    re: 'event detect\.detected latched .* cls=person',
+                    at_least: 2}
+  # --- ...but only the person fuses: exactly one target, cls=person --
+  - journal_count: {unit: pcam1, re: 'WM_NEW \S+ cls=person', equals: 1}
+  - journal_count: {unit: pcam1, re: "WM_NEW ", equals: 1}
+  # --- the person target sits on person_1, not on the kangaroo -------
+  - distance_to: {unit: pcam1, re: "WM_NEW .* cls=person",
+                  truth: person_1, detected_cls: person, max_m: 4}
+  - distance_to: {unit: pcam1, re: "WM_NEW .* cls=person",
+                  truth: kangaroo_1, detected_cls: person, min_m: 1.5}
+  - stub_deterministic: {module: stub_ai_box, unit: pcam1,
+                         poses: ../../worlds/pose_obs_mast.jsonl,
+                         dur_s: 20}
+  - no_fc_command_to_static: {unit: pcam1}
+teardown: none

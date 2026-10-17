@@ -1,0 +1,35 @@
+{
+  "fileType": "de_operation",
+  "schema": "de.operation/2",
+  "op": "perception_mount",
+  "comment": "SL-0035 (c) acceptance op: two co-located static masts report the same pixels; pcam1 projects with the world mount (nadir), pcam2's unit config overrides cameras.pcam2 mount_yaw to 90 deg - the same obs projects to a different ground point, and both fused world models must show both. No op end: the scenario stops the run. Compiles to de.package/2.6.",
+  "area": [[-35.36295, 149.16555], [-35.36355, 149.16555],
+           [-35.36355, 149.16490], [-35.36295, 149.16490]],
+  "roles": {
+    "watcher": {"count": 2, "vehicle": "static",
+                "requires": ["camera"]}
+  },
+  "events": {
+    "detect.detected": {"target": "person",
+      "payload": {"tid": "string", "pos": "geo", "unc_m": "number",
+                  "conf": "number", "class": "string",
+                  "cam_id": "string", "trk": "number"}},
+    "watch.done": {}
+  },
+  "missions": {
+    "watcher": {
+      "watch": {
+        "trigger": "op.start",
+        "steps": [
+          {"id": "seen", "gate": {"event": "detect.detected"},
+           "timeout": 240, "on_timeout": "end"},
+          {"id": "dwell", "gate": {"time_at": {"after_start_s": 10}},
+           "timeout": 300, "on_timeout": "continue"},
+          {"id": "note", "emit": "watch.done",
+           "payload_from": "seen"}
+        ],
+        "end": "hold"
+      }
+    }
+  }
+}

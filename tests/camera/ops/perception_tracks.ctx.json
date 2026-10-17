@@ -1,0 +1,85 @@
+{
+    "_note": "SL-0035 ctx: binds watcher -> pcam1 and feeds compile_op.js --caps the stub_ai_box caps view (camera + detect + visual_tracker_pcam1) so CAP-001/002/009 verify the track step against the cam-scoped visual_tracker namespace the stub advertises. cam_id = 'pcam1' (the stub defaults cam_id to the unit name).",
+    "binding": { "watcher": ["pcam1"] },
+    "registries": {
+        "pcam1": {
+            "caps": {
+                "camera": {
+                    "ch": "c1", "module": "stub_ai_box", "ver": "0.1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "camera",
+                        "module": "stub_ai_box", "ver": "0.1.0",
+                        "actions": {
+                            "capture": {
+                                "params": {
+                                    "count": {"type": "int", "min": 1, "max": 100, "default": 1},
+                                    "interval_ms": {"type": "int", "min": 0, "max": 60000, "default": 0, "unit": "ms"}},
+                                "timeout_s": 10},
+                            "record": {
+                                "params": {"on": {"type": "bool"}},
+                                "timeout_s": 10}},
+                        "events": {
+                            "captured": {
+                                "payload": {"file": {"type": "string"},
+                                            "pos": {"type": "geo"}}}},
+                        "state": {"recording": {"type": "bool"}}}},
+                "detect": {
+                    "ch": "c1", "module": "de_comm", "ver": "0.1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "detect",
+                        "module": "de_comm", "ver": "0.1.0",
+                        "actions": {
+                            "enable": {},
+                            "disable": {}},
+                        "events": {
+                            "detected": {
+                                "payload": {
+                                    "class": {"type": "string", "optional": true},
+                                    "conf": {"type": "number"},
+                                    "pos": {"type": "geo"},
+                                    "unc_m": {"type": "number"},
+                                    "range_m": {"type": "number"},
+                                    "src": {"type": "enum", "values": ["ai"]},
+                                    "trk": {"type": "int", "optional": true},
+                                    "cam_id": {"type": "string",
+                                               "optional": true}}}},
+                        "state": {
+                            "enabled": {"type": "bool"},
+                            "ai": {"type": "enum",
+                                   "values": ["lost", "detected",
+                                              "enabled", "disabled"]},
+                            "last_fix_age_s": {"type": "number"}}}},
+                "visual_tracker_pcam1": {
+                    "ch": "c1", "module": "stub_ai_box", "ver": "0.1.0",
+                    "advert": {
+                        "schema": "de.cap/1", "ns": "visual_tracker_pcam1",
+                        "module": "stub_ai_box", "ver": "0.1.0",
+                        "actions": {
+                            "lock": {
+                                "params": {
+                                    "trk": {"type": "int", "optional": true},
+                                    "class": {"type": "string", "optional": true},
+                                    "cam": {"type": "string", "optional": true}},
+                                "timeout_s": 10},
+                            "unlock": {
+                                "params": {
+                                    "cam": {"type": "string", "optional": true}},
+                                "timeout_s": 10},
+                            "track": {
+                                "params": {
+                                    "x": {"type": "number", "min": 0.0, "max": 1.0},
+                                    "y": {"type": "number", "min": 0.0, "max": 1.0},
+                                    "w": {"type": "number", "min": 0.0, "max": 1.0},
+                                    "h": {"type": "number", "min": 0.0, "max": 1.0}},
+                                "timeout_s": 10},
+                            "untrack": {"timeout_s": 10}},
+                        "events": {},
+                        "state": {
+                            "cam_id": {"type": "string", "default": "pcam1"},
+                            "tracking": {"type": "bool", "default": false},
+                            "lock": {"type": "string", "default": "none"}}}}
+            },
+            "state": {}, "t": 0
+        }
+    }
+}
