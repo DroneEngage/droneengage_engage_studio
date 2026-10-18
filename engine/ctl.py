@@ -559,7 +559,11 @@ def parallel(fn, units):
             print(e, flush=True)
             res[u["name"]] = False
 
-    ths = [threading.Thread(target=one, args=(u,)) for u in units]
+    # daemon: on SIGINT the main thread's join raises first and interpreter
+    # shutdown must not park on a still-landing worker (land waits out a
+    # real SITL descent)
+    ths = [threading.Thread(target=one, args=(u,), daemon=True)
+           for u in units]
     for t in ths:
         t.start()
     for t in ths:
@@ -2342,4 +2346,7 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    try:
+        main(sys.argv[1:])
+    except KeyboardInterrupt:
+        sys.exit(130)

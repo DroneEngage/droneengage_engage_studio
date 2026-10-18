@@ -1421,7 +1421,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
         runner.run_ctl("link_clear", "all")
     td = "none" if keep else scn["teardown"]
     if td in ("land", "reset"):
-        print(f"\n== teardown: {td} ==", flush=True)
+        print(f"\n== teardown: {td} ==  (Ctrl-C skips)", flush=True)
         # rc_override pumps still holding serial0 would starve land's
         # pilot connection - let them release first
         for t in ctx["pumps"]:
@@ -1430,9 +1430,18 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
             bot.op_abort(why="scenario teardown")
         except Exception:
             pass
-        if ctl.with_fc(m["units"]) and not runner.run_ctl(td, "all"):
-            print("TEARDOWN FAILED: not every vehicle is down", flush=True)
-            ok = False
+        try:
+            if ctl.with_fc(m["units"]) and not runner.run_ctl(td, "all"):
+                print("TEARDOWN FAILED: not every vehicle is down",
+                      flush=True)
+                ok = False
+        except KeyboardInterrupt:
+            # the operator asked to be let go now - leaving vehicles
+            # armed/airborne is safe for a sim but the next run reuses
+            # this fleet as-is, so say how to finish or scrap it
+            print(f"teardown interrupted - the fleet may still be "
+                  f"airborne; ./sim ctl -s {m['name']} land all to "
+                  f"finish, ./sim down {m['name']} to scrap", flush=True)
     bot.stop()
     tele.stop()
     link_stop.set()

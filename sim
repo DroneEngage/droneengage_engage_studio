@@ -451,7 +451,10 @@ def main(argv):
             ctl.main(["web"] + a)
         elif c == "ctl":
             import ctl
-            ctl.main(a)
+            try:
+                ctl.main(a)
+            except KeyboardInterrupt:
+                return 130
         elif c in ("run", "try"):
             import scenario_runner
             a, mods = _module_overrides(a)
