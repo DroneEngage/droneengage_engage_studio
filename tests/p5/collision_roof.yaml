@@ -7,6 +7,7 @@
 # see the raw FAIL a real plan gets).
 version: 1
 name: collision_roof
+speedup: 1                   # the physics rig steps on scenario wall time
 seed: 1
 transport: fake
 world: ../../worlds/physics_roof.yaml

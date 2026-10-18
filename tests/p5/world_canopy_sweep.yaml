@@ -13,6 +13,7 @@
 # projector error - comfortably inside the 25 m budget.
 version: 1
 name: world_canopy_sweep
+realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/forest_canopy.yaml

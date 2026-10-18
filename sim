@@ -46,10 +46,11 @@
                                    Rebuilt de_mavlink? Point --module at the
                                    new bin and the scenario runs against it
                                    on the warm sim (no SITL warm-up)
-  ./sim suite [dir ...] [--seeds 1,2,3] [--keep]
+  ./sim suite [dir ...] [--seeds 1,2,3] [--keep] [--tier smoke]
                                    run every yaml under dir(s) once per seed
                                    (default dir: tests) - verdicts + junit
-                                   in var/results/nightly/
+                                   in var/results/nightly/; --tier smoke runs
+                                   only the marked fast first-pass set
   ./sim view <scenario.yaml>       one command for sim + Mavlink3DMap viewer:
                                    = run --hold (the scenario needs
                                    render: {mode: viewer})
@@ -497,16 +498,25 @@ def main(argv):
                     sys.exit("--seeds needs a value")
                 seeds = a[i + 1]
                 del a[i:i + 2]
+            tier = None
+            if "--tier" in a:
+                i = a.index("--tier")
+                if i + 1 >= len(a):
+                    sys.exit("--tier needs a value")
+                tier = a[i + 1]
+                del a[i:i + 2]
             keep = "--keep" in a
             dirs = [x for x in a if not x.startswith("-")] or ["tests"]
             bad = _bad_flags(a, ("--keep",))
             if bad:
                 sys.exit("usage: ./sim suite [dir ...] [--seeds 1,2,3] "
-                         "[--keep]" + f" - unknown {' '.join(bad)}")
+                         "[--keep] [--tier smoke|regression]"
+                         + f" - unknown {' '.join(bad)}")
             cmd = [sys.executable,
                    os.path.join(simlib.SIM_ROOT, "ci", "run_suite.py"),
                    "--roots"] + dirs + ["--seeds", seeds] \
-                  + (["--keep"] if keep else [])
+                  + (["--keep"] if keep else []) \
+                  + (["--tier", tier] if tier else [])
             return subprocess.call(cmd, cwd=simlib.SIM_ROOT)
         elif c == "list":
             json_out = "--json" in a

@@ -8,6 +8,7 @@
 # it departs alone, later.
 version: 1
 name: p4a10_barrier_lost
+realtime: true
 transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a10_searcher.deploy.json
 fleet:

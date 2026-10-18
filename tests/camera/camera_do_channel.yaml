@@ -10,6 +10,7 @@
 # Same render-farm/de_camera requirements as camera_emit_and_notify.
 version: 1
 name: camera_do_channel
+speedup: 1                   # render farm + de_camera run wall-clock
 transport: fake
 world: ../../worlds/forest_canopy.yaml
 operation: ops/camera_actions.deop

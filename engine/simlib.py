@@ -549,7 +549,9 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         "slot_base": slot_base,
         # SITL --speedup: sim `speedup:` > SIM_SPEEDUP > 1. de_comm's
         # timers stay wall-clock - only a fast first pass, never timing
-        # evidence (realtime: true scenarios pin 1)
+        # evidence. Scenario runs resolve their own rate in
+        # scenario.py (default 3; realtime:/speedup: pin 1) - this
+        # fallback serves a direct `sim up` of a sims/ file.
         "speedup": float(spec.get("speedup")
                          or setting("SIM_SPEEDUP", "1")),
         # SL-0008: run the fcb MAVLink proxy on every FC unit; a unit may

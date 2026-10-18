@@ -111,6 +111,17 @@ is now the only simulation/testing location.
   stops one sim, `./sim down` all of them. `./sim run` is exclusive - a
   test downs every other sim first. `SIM_SHARED=1 ./sim run ...` keeps
   it additive (same rules as `up`) when other sessions share the machine.
+  **Agents: never down the developer's sims to run a test.** If a port or
+  name clash (or a live sim you did not start) blocks the run, do NOT stop
+  and ask, and do NOT `sim down` it - rerun additively on a free port
+  block: `./sim run <test> --shared --slot-base any`. `--slot-base any`
+  re-resolves the sim on the lowest slot whose whole port set (units +
+  spawned server/auth) is free vs live manifests and bound host ports;
+  unit names may repeat because each sim's own server has a private party
+  registry. Only `server: {type: external}` tests (shared registry) and
+  rendered-camera fleets (machine-global v4l2 labels) cannot share the
+  machine - ask then. A shifted slot changes the sim hash, so the run does
+  a fresh `up` (one SITL warm-up) and never reuses the warm fleet.
 - `./sim ctl -s <sim>` pins a command to one sim; without it commands
   that need a single sim use the only live one, and unit lookups search
   live sims first.
@@ -265,6 +276,18 @@ and make `ctl.ctrl` refuse it for that server type.
   `--password`/`--auth-server` on the command line - they win over both)
   must exist on that authenticator; with `account_storage_type: db`
   create it in the webadmin first.
+- **Scenario runs fly SITL at `--speedup 3` by default.** Only SITL's
+  physics clock scales; modules, the 1 Hz world truth tick, rendered
+  camera feeds and journal stamps stay wall-clock. A scenario pins
+  `realtime: true` (timing asserts - also arms the SKIP gate) or
+  `speedup: 1` (render/real cameras, world-driven stubs on a moving
+  SITL, closed module↔FC loops like precland). Precedence: `realtime`
+  > scenario `speedup:` > `sim:` file's `speedup:` > `SIM_SPEEDUP`/
+  `--speedup` > 3. A direct `sim up sims/*.yaml` still defaults 1.
+- **Suite tiers:** `tier: smoke` marks the fast first-pass set (one probe
+  per subsystem); `./sim suite --tier smoke` runs only those. Absent =
+  regression. Smoke is a selection, not evidence — keep it fast and
+  dependency-free.
 - `land`: copter LAND, rover HOLD + disarm, plane → `reset` (it cannot land
   in place). Always tear down: an airborne reused fleet drains its battery
   and the next test trips `battery_low`.

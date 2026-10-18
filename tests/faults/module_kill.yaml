@@ -2,6 +2,7 @@
 # de_comm keeps running.
 version: 1
 name: f_module_kill
+tier: smoke
 transport: fake
 settle_s: 5
 fleet:

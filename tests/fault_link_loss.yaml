@@ -4,6 +4,8 @@
 # only after the cut. (Port of Phase-4A fault_link_loss.yaml.)
 version: 1
 name: fault_link_loss
+tier: smoke
+realtime: true
 transport: {type: fake, seed: 1337}
 operation: ../packages/copter_square.json
 fleet:

@@ -12,6 +12,7 @@
 #           again (status launch.grant back to valid).
 version: 1
 name: p4f05_reboot_void
+speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

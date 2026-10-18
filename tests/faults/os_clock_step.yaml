@@ -10,6 +10,7 @@
 # units keep routing through the server.
 version: 1
 name: f_os_clock_step
+speedup: 1                   # clock test - keep SITL time at wall rate
 transport: fake
 settle_s: 30
 fleet:

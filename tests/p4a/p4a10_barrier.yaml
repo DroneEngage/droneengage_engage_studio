@@ -8,6 +8,7 @@
 # falls through to a c20 RTL item) - it should never fire.
 version: 1
 name: p4a10_barrier
+realtime: true
 transport: real
 operation: ../../packages/p4a10.deploy.json
 fleet:

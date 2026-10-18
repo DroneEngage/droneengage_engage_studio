@@ -10,6 +10,7 @@
 #           stays none.
 version: 1
 name: p4f05_site_off
+speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

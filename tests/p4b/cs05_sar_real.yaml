@@ -22,6 +22,7 @@
 # stepper for start:"ground"+auto_launch roles when the config says so).
 version: 1
 name: cs05_sar_real
+realtime: true
 seed: 7
 transport: real
 world: ../../worlds/sar_forest.yaml

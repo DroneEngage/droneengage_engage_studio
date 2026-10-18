@@ -22,6 +22,7 @@
 # stepper for start:"ground"+auto_launch roles when the config says so).
 version: 1
 name: p4b10_a_nominal
+realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

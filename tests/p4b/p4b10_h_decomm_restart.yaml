@@ -20,6 +20,7 @@
 # test instead), or a duplicate CLAIM for the same lane.
 version: 1
 name: p4b10_h_decomm_restart
+speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

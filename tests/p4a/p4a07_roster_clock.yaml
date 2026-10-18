@@ -19,6 +19,7 @@
 # it must fall inside copter3's stale window, not after lost.
 version: 1
 name: p4a07_roster_clock
+realtime: true
 transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a05.deploy.json
 fleet:

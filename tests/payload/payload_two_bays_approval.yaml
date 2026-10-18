@@ -16,6 +16,7 @@
 # - the aggregate+bay form is also the frozen single-bay-compatible path.
 version: 1
 name: payload_two_bays_approval
+tier: smoke
 seed: 7
 transport: fake
 operation: ops/payload_two_bays.deop

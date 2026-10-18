@@ -11,6 +11,7 @@
 # display path consumes ADS-B, so bridging the frame is the whole proof.
 version: 1
 name: world_adsb_intruder
+speedup: 1                   # the world truth tick is wall-clock
 transport: real          # the proxy + bridge path needs no fake server
 world: ../../worlds/airspace_intruder.yaml
 settle_s: 15

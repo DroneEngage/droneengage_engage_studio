@@ -9,6 +9,7 @@
 #    unarmed (TIME_GATE_UNARMED) and the FC loiter backstop fires
 version: 1
 name: p4a10_closed
+realtime: true
 transport: {type: fake, clock_offset_ms: 10800000, noclock: [copter3], seed: 1337}
 slot_base: 30
 operation: ../../packages/p4a10_closed.deploy.json

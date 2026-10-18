@@ -4,6 +4,7 @@
 # time (CLOCK is logged at de_comm boot, before the run's journal marks).
 version: 1
 name: distance_to
+tier: smoke
 transport: fake
 operation: ../packages/copter_square.json
 settle_s: 10

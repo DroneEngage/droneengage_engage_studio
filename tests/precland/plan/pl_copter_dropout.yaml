@@ -12,6 +12,7 @@
 # below ~4 cm), which is physics, not a second dropout.
 version: 1
 name: pl_copter_dropout
+speedup: 1                   # world stub + FC landing loop are wall-clock
 transport: fake
 world: ../../../worlds/pad_occluded.yaml
 operation: ops/pl_copter_dropout.deop

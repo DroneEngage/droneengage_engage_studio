@@ -2,6 +2,7 @@
 # type allows (copter LAND, rover HOLD + disarm, plane SITL reset).
 version: 1
 name: mixed_bringup
+tier: smoke
 transport: real
 fleet:
   - {id: copter1, cls: copter}

@@ -5,6 +5,7 @@
 # target_changed fact the gate waits on.
 version: 1
 name: pl_plan_set_target
+tier: smoke
 transport: fake
 operation: ops/pl_set_target.deop
 verify: {cli: ../../../tools/verify_wrap.js}

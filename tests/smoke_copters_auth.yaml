@@ -1,6 +1,8 @@
 # Same as smoke_copters, through the authenticator login path.
 version: 1
 name: smoke_copters_auth
+tier: smoke
+realtime: true
 transport: {type: real, auth: true, account: {user: sim@sim.droneengage.com, code: sim1234}}
 operation: ../packages/copter_square.json
 fleet:

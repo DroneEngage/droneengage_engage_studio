@@ -9,6 +9,7 @@
 # "run started" lines within 0.2 s) and the scout->worker event chain.
 version: 1
 name: p4a09_deploy
+realtime: true
 transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a09.deploy.json
 fleet:

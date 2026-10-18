@@ -11,6 +11,7 @@
 # is the property under test.
 version: 1
 name: world_thermal_crossover
+realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/thermal_crossover.yaml

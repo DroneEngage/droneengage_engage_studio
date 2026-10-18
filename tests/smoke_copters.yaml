@@ -2,6 +2,8 @@
 # (Port of Phase-4A smoke_3copters.yaml.)
 version: 1
 name: smoke_copters
+tier: smoke
+realtime: true
 transport: real
 operation: ../packages/copter_square.json
 fleet:

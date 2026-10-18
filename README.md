@@ -316,7 +316,12 @@ live sim before starting anything.
 `tests/` holds everything automation runs: the `de.scenario/1` library in
 its area subdirectories (`faults/`, `p4a/`, `verify/`, `world`/p5, ...).
 The nightly suite is `./sim suite tests` (a.k.a. `ci/run_suite.py --roots
-tests`); `ci/check_library.py` validates every file on push.
+tests`); `ci/check_library.py` validates every file on push. For a fast
+first pass, `./sim suite --tier smoke` runs only the files marked
+`tier: smoke` - one probe per subsystem (bring-up, auth, faults, mission
+supervisor, events, modules, world detect, verify gate). Smoke is a
+selection heuristic, not evidence - the unmarked files stay the
+regression tier.
 
 See the docstring in `engine/runner.py` for every `do:` step and
 `docs/SCENARIOS.md` for the format. In short:
@@ -562,6 +567,14 @@ Format (strict - unknown keys fail against
   reason when SITL speed-up is not ~1. `telemetry_value` reads the last
   sample by default; `pick: min|max` reads the extreme of the recorded
   series (a sag that recovers by disarm still counts).
+
+Scenario runs fly SITL at `--speedup 3` by default (only SITL's physics
+clock scales; modules, the world truth tick and rendered camera feeds
+stay wall-clock). A scenario pins its own rate with `speedup:` -
+`realtime: true` (timing asserts) or `speedup: 1` (render-farm/real
+cameras, world-driven stubs on a moving SITL, closed module<->FC
+loops). `sim run --speedup N`/`SIM_SPEEDUP` overrides, and a `sim:`
+file's own `speedup:` still wins over the default.
 
 Each run gets a seed-derived port block (no cross-seed collisions) and
 `var/results/<utc>/<name>/`: journals, per-unit and server logs,

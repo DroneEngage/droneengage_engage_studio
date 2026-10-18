@@ -20,6 +20,7 @@
 #   a UDP listener on <mav_port> counts HEARTBEATs from both sysids
 version: 1
 name: render_feed_smoke
+speedup: 1                   # world tick + render feed are wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/forest_canopy.yaml

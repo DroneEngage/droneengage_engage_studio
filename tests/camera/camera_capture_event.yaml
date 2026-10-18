@@ -13,6 +13,7 @@
 # camera_emit_and_notify.
 version: 1
 name: camera_capture_event
+speedup: 1                   # render farm + de_camera run wall-clock
 transport: fake
 world: ../../worlds/forest_canopy.yaml
 operation: ops/camera_capture.deop

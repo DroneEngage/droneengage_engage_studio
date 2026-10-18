@@ -10,6 +10,7 @@
 # stub logs.
 version: 1
 name: obs_contract
+tier: smoke
 seed: 7
 transport: fake
 world: ../../worlds/obs_contract.yaml

@@ -11,6 +11,7 @@
 # World/chain: identical to p4b10_a_nominal.
 version: 1
 name: p4b10_b_auto_veto
+realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

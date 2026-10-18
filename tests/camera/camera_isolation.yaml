@@ -13,6 +13,7 @@
 # usual MAVLINK3DMAP_DIR/CHROMIUM_BIN/DE_CAMERA_BIN env.
 version: 1
 name: camera_isolation
+speedup: 1                   # render farm + de_camera run wall-clock
 transport: fake
 world: ../../worlds/forest_canopy.yaml
 operation: ops/camera_isolate.deop

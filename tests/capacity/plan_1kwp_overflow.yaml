@@ -12,6 +12,7 @@
 # gone; regenerate a bigger fixture with tools/gen_bigplan.py --count.
 version: 1
 name: plan_1kwp_overflow
+realtime: true
 transport: real
 settle_s: 10
 teardown: land

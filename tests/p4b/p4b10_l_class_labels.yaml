@@ -27,6 +27,7 @@
 # targets, CAP-008 recorded at verify time.
 version: 1
 name: p4b10_l_class_labels
+speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest_decoy.yaml

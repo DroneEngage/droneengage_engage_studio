@@ -14,6 +14,7 @@
 #           uses_left still 1, grant still valid, never armed.
 version: 1
 name: p4f05_preflight_fail
+speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

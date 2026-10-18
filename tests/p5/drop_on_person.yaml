@@ -13,6 +13,7 @@
 # for the same conditions: 30 m, 1 kg sphere, cd 0.47 -> ~2.6 s).
 version: 1
 name: drop_on_person
+speedup: 1                   # the physics rig steps on scenario wall time
 seed: 1
 transport: fake
 world: ../../worlds/physics_drop.yaml

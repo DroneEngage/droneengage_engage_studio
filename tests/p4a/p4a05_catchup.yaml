@@ -3,6 +3,7 @@
 # few seconds of its link coming back (retry/catch-up), never twice.
 version: 1
 name: p4a05_catchup
+realtime: true
 transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a05.deploy.json
 fleet:

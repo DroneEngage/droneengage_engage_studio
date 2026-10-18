@@ -7,6 +7,7 @@
 #           launch -> APPROVAL_TIMEOUT -> amb1 stays on the ground.
 version: 1
 name: p4f05_revoke
+speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

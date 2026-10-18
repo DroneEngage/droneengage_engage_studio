@@ -28,6 +28,7 @@ Commands:
 ./sim expand <file> [--seed N]              # print the chaos: schedule, run nothing
 ./sim view <file>                           # run + hold with the 3D viewer
 ./sim suite tests/faults --seeds 1,2        # a directory x seeds
+./sim suite --tier smoke                    # the marked fast first-pass set only
 ./sim suite tests/soak                      # soak suites are opt-in (excluded by default)
 ./sim list                                  # catalog everything runnable
 ```
@@ -41,6 +42,15 @@ version: 1
 name: my_scenario              # required; [A-Za-z0-9_-] - becomes the run dir
 seed: 42                       # optional; derives ports + fault/world RNG
 realtime: false                # true gates timing asserts (SKIP unless SITL ~1x)
+                               # AND pins SITL speed-up 1
+speedup: 3                     # SITL --speedup for this run; default 3.
+                               # Pin 1 on wall-clock-bound fleets: render/
+                               # real cameras, world-driven stubs against a
+                               # moving SITL, closed module<->FC loops.
+                               # `sim run --speedup N` overrides it.
+tier: smoke                    # optional; suite selection only
+                               # (`sim suite --tier smoke`), absent =
+                               # regression
 transport: fake                # fake | real | {type: real, link_proxy: true}
                                # (link faults need fake, or real+link_proxy;
                                # clock faults always need fake)

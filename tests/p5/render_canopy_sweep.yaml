@@ -12,6 +12,7 @@
 # pipeline) - nightly/on-demand tier per D8, never pure CI.
 version: 1
 name: render_canopy_sweep
+speedup: 1                   # render farm + de_yolo + de_camera run wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/forest_canopy.yaml

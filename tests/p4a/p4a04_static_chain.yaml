@@ -8,6 +8,7 @@
 # Ported to the two-phase deploy: a roles spec + opstart (P4A-09).
 version: 1
 name: p4a04_static_chain
+tier: smoke
 transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a04.deploy.json
 fleet:

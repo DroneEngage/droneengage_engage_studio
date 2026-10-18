@@ -10,6 +10,7 @@
 # `do: sound.say {text}` is the frozen Phase-3 action - unchanged.
 version: 1
 name: sound_do_action
+tier: smoke
 transport: fake
 operation: ops/snd_actions.deop
 verify: {cli: ../../tools/verify_wrap.js}

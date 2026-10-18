@@ -7,6 +7,7 @@
 # correction, a dumb landing at the mission point.
 version: 1
 name: pl_copter_no_pad
+speedup: 1                   # world stub + FC landing loop are wall-clock
 transport: fake
 world: ../../../worlds/pad_none.yaml
 operation: ops/pl_copter_land.deop

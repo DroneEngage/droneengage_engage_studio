@@ -50,10 +50,11 @@ import simlib          # noqa: E402
 RESULTS = simlib.RESULTS_DIR
 
 
-def yaml_files(roots):
+def yaml_files(roots, tier=None):
     """Every *.yaml under each root - except soak suites: a */soak/ dir
     holds wall-clock runs (tests/soak is 30 min at speed-up 1), opt-in
-    only via an explicit --roots <path>/soak."""
+    only via an explicit --roots <path>/soak. `tier` keeps only files
+    whose `tier:` key matches (absent = regression)."""
     out = []
     for r in roots:
         d = os.path.join(ROOT, r)
@@ -65,6 +66,10 @@ def yaml_files(roots):
             files = [f for f in files
                      if "soak" not in os.path.relpath(f, d).split(os.sep)]
         out += files
+    if tier:
+        out = [f for f in out
+               if (simlib.load_yaml(f) or {}).get("tier", "regression")
+               == tier]
     return out
 
 
@@ -135,14 +140,19 @@ def main():
     ap.add_argument("--seeds", default="1,2,3")
     ap.add_argument("--out", default=os.path.join(RESULTS, "nightly"))
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--tier", default=None,
+                    choices=["smoke", "regression"],
+                    help="only files marked `tier: <name>` (absent = "
+                         "regression; smoke = the fast first-pass set)")
     ap.add_argument("--speedup", type=float, default=None,
-                    help="SITL --speedup for every non-realtime scenario "
-                         "(a fast first pass - rerun at 1 for evidence)")
+                    help="SITL --speedup for every unpinned scenario "
+                         "(default 3; realtime:/speedup:-pinned files "
+                         "keep theirs - rerun at 1 for evidence)")
     a = ap.parse_args()
     if a.speedup:
         os.environ["SIM_SPEEDUP"] = f"{a.speedup:g}"
     seeds = [int(s) for s in a.seeds.split(",") if s.strip()]
-    files = yaml_files(a.roots)
+    files = yaml_files(a.roots, tier=a.tier)
     if not files:
         sys.exit(f"no scenario yaml under {a.roots}")
     os.makedirs(a.out, exist_ok=True)

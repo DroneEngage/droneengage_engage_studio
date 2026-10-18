@@ -26,6 +26,7 @@
 # what those draw is exactly the 1027 stream mission_pull verifies.
 version: 1
 name: plan_1kwp
+realtime: true
 transport: real
 settle_s: 10
 teardown: land

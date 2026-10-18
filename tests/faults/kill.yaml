@@ -2,6 +2,7 @@
 # dead and its link drops.
 version: 1
 name: f_kill
+tier: smoke
 transport: fake
 settle_s: 10
 fleet:

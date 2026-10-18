@@ -12,6 +12,7 @@
 # pure assertion). Run seeds 1-3 (./sim world_dusk_search --seeds 1-3).
 version: 1
 name: world_dusk_search
+realtime: true
 seed: 1
 transport: fake
 world: ../../worlds/forest_dusk.yaml

@@ -10,6 +10,7 @@ fail fast.
     name: sar_nominal
     seed: 42
     realtime: true                  # timing asserts need SITL speed-up 1
+    speedup: 1                      # SITL rate; default 3, realtime pins 1
     transport: fake                 # fake | real | {server: block}
     world: ../worlds/forest_a.yaml  # P5-08 - accepted, not consumed yet
     operation: ../ops/sar.deop      # or a deploy spec / package
@@ -428,6 +429,15 @@ def _validate(raw, path, sim_spec=None):
             if bad:
                 raise simlib.SimError(
                     f"{path}: fleet {ent.get('id')}: unknown keys {sorted(bad)}")
+    # cross-key rules the schema cannot express
+    spd = raw.get("speedup")
+    if spd is not None and (not isinstance(spd, (int, float))
+                            or isinstance(spd, bool) or spd < 1):
+        raise simlib.SimError(f"{path}: speedup must be a number >= 1")
+    if raw.get("realtime") and spd not in (None, 1):
+        raise simlib.SimError(
+            f"{path}: realtime: true already pins speedup 1 - "
+            "drop `speedup:` or set it to 1")
     # a typo in a verb name or arg must fail HERE, not after a
     # ten-minute fleet run ("unknown assertion" is only seen at the end).
     # Every name/arg set goes through the registry (TASK-21 / SL-0024).
@@ -797,6 +807,16 @@ def load_scenario(path, seed=None, probe_ports=True):
     else:
         units = _fleet_units(scn, home)
     _inject_udp_proxies(units, scn["timeline"], path)
+    # SITL rate for this run: realtime pins 1; else the scenario's own
+    # `speedup:` beats a named sim file's `speedup:`, which beats
+    # SIM_SPEEDUP/--speedup, which beats the scenario default 3 - tests
+    # that need wall clock (timing asserts, render/real cameras,
+    # world-driven stubs on a moving SITL, closed module<->FC loops)
+    # mark realtime: true or speedup: 1
+    spd = (1.0 if scn["realtime"]
+           else float(raw.get("speedup")
+                      or (named_spec or {}).get("speedup")
+                      or simlib.setting("SIM_SPEEDUP", "3")))
     # one port block per run: the scenario may pin slot_base, else it is
     # derived from the seed so --seeds runs never share ports (a parallel
     # `sim up` would still refuse a clash)
@@ -821,8 +841,7 @@ def load_scenario(path, seed=None, probe_ports=True):
                 s.setdefault("home", list(home))
             if raw.get("render") is not None:
                 s["render"] = raw["render"]
-            if scn["realtime"]:
-                s["speedup"] = 1
+            s["speedup"] = spd
             return s
         return {
             "version": 1,
@@ -832,7 +851,7 @@ def load_scenario(path, seed=None, probe_ports=True):
             "slot_base": sb,
             "units": units,
             "render": raw.get("render"),
-            **({"speedup": 1} if scn["realtime"] else {}),
+            "speedup": spd,
         }
 
     if raw.get("slot_base"):

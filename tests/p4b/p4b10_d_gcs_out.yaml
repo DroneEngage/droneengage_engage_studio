@@ -19,6 +19,7 @@
 # (op.params) so no pending request can time out mid-run either.
 version: 1
 name: p4b10_d_gcs_out
+speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

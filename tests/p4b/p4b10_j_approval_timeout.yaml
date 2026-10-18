@@ -25,6 +25,7 @@
 # stub detection.
 version: 1
 name: p4b10_j_approval_timeout
+realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

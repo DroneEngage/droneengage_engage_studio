@@ -41,6 +41,7 @@
 #         unc collapses early under loss.
 version: 1
 name: p4b10_e_loss30
+realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

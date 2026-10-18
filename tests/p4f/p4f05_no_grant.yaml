@@ -10,6 +10,7 @@
 # LAUNCH_AUTH / LAUNCH_GO journals appear anywhere.
 version: 1
 name: p4f05_no_grant
+realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml

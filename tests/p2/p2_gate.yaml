@@ -7,6 +7,7 @@
 # to completion with no timeout line.
 version: 1
 name: p2_gate
+tier: smoke
 transport: real
 operation: ../../packages/p2_06_gate.json
 verify: {cli: ../../tools/verify_wrap.js}

@@ -8,6 +8,8 @@
 # >=80% true entities (detection_precision).
 version: 1
 name: world_detect_person
+tier: smoke
+speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/forest_a.yaml
