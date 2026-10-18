@@ -1,0 +1,471 @@
+{
+ "_note": "sdr_person_orbit ctx: binds sdr_scout -> sdr1 and cam_scout -> cam1. registries[0] 'sim' is the union caps view opbuild stages as the compile_op.js --caps registry (GE-07 - one view per compile), so requires[sdr|camera] and 'do sdr.scan|stop' resolve; the per-unit entries below it are the honest unit views verify_wrap checks do-params and event producers against (sdr1: sdr only; cam1: camera + de_comm's detect namespace). Adverts mirror stubs/stub_sdr.py ADVERT and stub_ai_box's camera advert + de_comm's detect namespace.",
+ "binding": {
+  "sdr_scout": [
+   "sdr1"
+  ],
+  "cam_scout": [
+   "cam1"
+  ]
+ },
+ "registries": {
+  "sim": {
+   "caps": {
+    "sdr": {
+     "ch": "c1",
+     "module": "stub_sdr",
+     "ver": "0.1.0",
+     "advert": {
+      "schema": "de.cap/1",
+      "ns": "sdr",
+      "module": "stub_sdr",
+      "ver": "0.1.0",
+      "actions": {
+       "scan": {
+        "desc": "Sweep [f_start, f_end] and report detected signals as sdr.signal area events",
+        "params": {
+         "f_start": {
+          "type": "number",
+          "unit": "Hz",
+          "min": 1
+         },
+         "f_end": {
+          "type": "number",
+          "unit": "Hz",
+          "min": 1
+         },
+         "threshold_dbm": {
+          "type": "number",
+          "unit": "dBm",
+          "default": -70
+         },
+         "dwell_ms": {
+          "type": "int",
+          "unit": "ms",
+          "min": 0,
+          "default": 500
+         },
+         "gain": {
+          "type": [
+           "number",
+           "string"
+          ],
+          "optional": true,
+          "desc": "gain dB or \"auto\""
+         }
+        },
+        "timeout_s": 10
+       },
+       "stop": {
+        "desc": "Stop the running scan sweep",
+        "timeout_s": 10
+       }
+      },
+      "events": {
+       "signal": {
+        "desc": "Spectrum peak above threshold, debounced",
+        "payload": {
+         "freq": {
+          "type": "number",
+          "unit": "Hz"
+         },
+         "rssi_dbm": {
+          "type": "number",
+          "unit": "dBm"
+         },
+         "pos": {
+          "type": "geo"
+         },
+         "radius_m": {
+          "type": "number",
+          "unit": "m"
+         },
+         "snr_db": {
+          "type": "number",
+          "unit": "dB"
+         }
+        }
+       }
+      },
+      "state": {
+       "scanning": {
+        "type": "bool"
+       },
+       "f_start": {
+        "type": "number",
+        "unit": "Hz"
+       },
+       "f_end": {
+        "type": "number",
+        "unit": "Hz"
+       },
+       "peak_dbm": {
+        "type": "number",
+        "unit": "dBm"
+       },
+       "peak_freq": {
+        "type": "number",
+        "unit": "Hz"
+       }
+      }
+     }
+    },
+    "camera": {
+     "ch": "c1",
+     "module": "stub_ai_box",
+     "ver": "0.1.0",
+     "advert": {
+      "schema": "de.cap/1",
+      "ns": "camera",
+      "module": "stub_ai_box",
+      "ver": "0.1.0",
+      "actions": {
+       "capture": {
+        "params": {
+         "count": {
+          "type": "int",
+          "min": 1,
+          "max": 100,
+          "default": 1
+         },
+         "interval_ms": {
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "default": 0,
+          "unit": "ms"
+         }
+        },
+        "timeout_s": 10
+       },
+       "record": {
+        "params": {
+         "on": {
+          "type": "bool"
+         }
+        },
+        "timeout_s": 10
+       }
+      },
+      "events": {
+       "captured": {
+        "payload": {
+         "file": {
+          "type": "string"
+         },
+         "pos": {
+          "type": "geo"
+         }
+        }
+       }
+      },
+      "state": {
+       "recording": {
+        "type": "bool"
+       }
+      }
+     }
+    },
+    "detect": {
+     "ch": "c1",
+     "module": "de_comm",
+     "ver": "0.1.0",
+     "advert": {
+      "schema": "de.cap/1",
+      "ns": "detect",
+      "module": "de_comm",
+      "ver": "0.1.0",
+      "actions": {
+       "enable": {},
+       "disable": {}
+      },
+      "events": {
+       "detected": {
+        "payload": {
+         "class": {
+          "type": "string",
+          "optional": true
+         },
+         "conf": {
+          "type": "number"
+         },
+         "pos": {
+          "type": "geo"
+         },
+         "unc_m": {
+          "type": "number"
+         },
+         "range_m": {
+          "type": "number"
+         },
+         "src": {
+          "type": "enum",
+          "values": [
+           "ai"
+          ]
+         },
+         "trk": {
+          "type": "int",
+          "optional": true
+         },
+         "cam_id": {
+          "type": "string",
+          "optional": true
+         }
+        }
+       }
+      },
+      "state": {
+       "enabled": {
+        "type": "bool"
+       },
+       "ai": {
+        "type": "enum",
+        "values": [
+         "lost",
+         "detected",
+         "enabled",
+         "disabled"
+        ]
+       },
+       "last_fix_age_s": {
+        "type": "number"
+       }
+      }
+     }
+    }
+   }
+  },
+  "sdr1": {
+   "caps": {
+    "sdr": {
+     "ch": "c1",
+     "module": "stub_sdr",
+     "ver": "0.1.0",
+     "advert": {
+      "schema": "de.cap/1",
+      "ns": "sdr",
+      "module": "stub_sdr",
+      "ver": "0.1.0",
+      "actions": {
+       "scan": {
+        "desc": "Sweep [f_start, f_end] and report detected signals as sdr.signal area events",
+        "params": {
+         "f_start": {
+          "type": "number",
+          "unit": "Hz",
+          "min": 1
+         },
+         "f_end": {
+          "type": "number",
+          "unit": "Hz",
+          "min": 1
+         },
+         "threshold_dbm": {
+          "type": "number",
+          "unit": "dBm",
+          "default": -70
+         },
+         "dwell_ms": {
+          "type": "int",
+          "unit": "ms",
+          "min": 0,
+          "default": 500
+         },
+         "gain": {
+          "type": [
+           "number",
+           "string"
+          ],
+          "optional": true,
+          "desc": "gain dB or \"auto\""
+         }
+        },
+        "timeout_s": 10
+       },
+       "stop": {
+        "desc": "Stop the running scan sweep",
+        "timeout_s": 10
+       }
+      },
+      "events": {
+       "signal": {
+        "desc": "Spectrum peak above threshold, debounced",
+        "payload": {
+         "freq": {
+          "type": "number",
+          "unit": "Hz"
+         },
+         "rssi_dbm": {
+          "type": "number",
+          "unit": "dBm"
+         },
+         "pos": {
+          "type": "geo"
+         },
+         "radius_m": {
+          "type": "number",
+          "unit": "m"
+         },
+         "snr_db": {
+          "type": "number",
+          "unit": "dB"
+         }
+        }
+       }
+      },
+      "state": {
+       "scanning": {
+        "type": "bool"
+       },
+       "f_start": {
+        "type": "number",
+        "unit": "Hz"
+       },
+       "f_end": {
+        "type": "number",
+        "unit": "Hz"
+       },
+       "peak_dbm": {
+        "type": "number",
+        "unit": "dBm"
+       },
+       "peak_freq": {
+        "type": "number",
+        "unit": "Hz"
+       }
+      }
+     }
+    }
+   }
+  },
+  "cam1": {
+   "caps": {
+    "camera": {
+     "ch": "c1",
+     "module": "stub_ai_box",
+     "ver": "0.1.0",
+     "advert": {
+      "schema": "de.cap/1",
+      "ns": "camera",
+      "module": "stub_ai_box",
+      "ver": "0.1.0",
+      "actions": {
+       "capture": {
+        "params": {
+         "count": {
+          "type": "int",
+          "min": 1,
+          "max": 100,
+          "default": 1
+         },
+         "interval_ms": {
+          "type": "int",
+          "min": 0,
+          "max": 60000,
+          "default": 0,
+          "unit": "ms"
+         }
+        },
+        "timeout_s": 10
+       },
+       "record": {
+        "params": {
+         "on": {
+          "type": "bool"
+         }
+        },
+        "timeout_s": 10
+       }
+      },
+      "events": {
+       "captured": {
+        "payload": {
+         "file": {
+          "type": "string"
+         },
+         "pos": {
+          "type": "geo"
+         }
+        }
+       }
+      },
+      "state": {
+       "recording": {
+        "type": "bool"
+       }
+      }
+     }
+    },
+    "detect": {
+     "ch": "c1",
+     "module": "de_comm",
+     "ver": "0.1.0",
+     "advert": {
+      "schema": "de.cap/1",
+      "ns": "detect",
+      "module": "de_comm",
+      "ver": "0.1.0",
+      "actions": {
+       "enable": {},
+       "disable": {}
+      },
+      "events": {
+       "detected": {
+        "payload": {
+         "class": {
+          "type": "string",
+          "optional": true
+         },
+         "conf": {
+          "type": "number"
+         },
+         "pos": {
+          "type": "geo"
+         },
+         "unc_m": {
+          "type": "number"
+         },
+         "range_m": {
+          "type": "number"
+         },
+         "src": {
+          "type": "enum",
+          "values": [
+           "ai"
+          ]
+         },
+         "trk": {
+          "type": "int",
+          "optional": true
+         },
+         "cam_id": {
+          "type": "string",
+          "optional": true
+         }
+        }
+       }
+      },
+      "state": {
+       "enabled": {
+        "type": "bool"
+       },
+       "ai": {
+        "type": "enum",
+        "values": [
+         "lost",
+         "detected",
+         "enabled",
+         "disabled"
+        ]
+       },
+       "last_fix_age_s": {
+        "type": "number"
+       }
+      }
+     }
+    }
+   }
+  }
+ }
+}

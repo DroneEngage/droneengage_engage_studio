@@ -12,6 +12,38 @@ for people to run, watch or copy live in `../scenarios/` instead.
 All tests are de.scenario/1 (see `../docs/SCENARIOS.md`); the old
 `sim:` + `steps:` format has been removed.
 
+## Running
+
+One-time setup per machine:
+
+    cp ../sim.local.env.example ../sim.local.env   # edit paths for your machine
+
+Run from the repo root (`../`):
+
+    ./sim list tests                  # list tests (first line of each header)
+    ./sim validate tests/foo.yaml     # schema-check without running
+    ./sim run tests/smoke_copters.yaml         # single test
+    ./sim suite                       # default CI suite (ci/run_suite.py)
+    ./sim suite tests/soak            # or a specific area folder
+    ./sim run tests/foo.yaml --keep   # skip teardown; inspect via ./sim ctl status
+    ./sim try tests/foo.yaml --module de_mavlink=<path-to-binary>  # test a fresh module build
+    ./sim down                        # tear everything down
+
+Exit code 0 = every step and assertion passed; captures land in
+`../var/results/<ts>-<test>/` (journals + logs). `./sim run` is
+exclusive - it downs every other live sim first (`SIM_SHARED=1` keeps it
+additive on a shared machine). Back-to-back runs on the same sim reuse
+the warm fleet and skip the 1-2 min SITL/EKF warm-up. Machine consumers:
+`--json` on read-only commands, `RESULT <dir>/summary.json` as the last
+stdout line of a run - shapes in `../docs/MACHINE_API.md`.
+
+**Agents:** if another sim is live or ports clash, don't stop and don't
+`sim down` what you didn't start - rerun additively:
+`./sim run <test> --shared --slot-base any`. `any` picks the lowest slot
+whose whole port set (units + server) is free; unit names may repeat on
+per-sim servers. Only `server: {type: external}` tests and rendered
+cameras can't share the machine - ask in that case. See `../AGENTS.md`.
+
 ## Area folders
 
 Folders are named after the feature or the project milestone that

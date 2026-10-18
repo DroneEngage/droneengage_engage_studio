@@ -1,0 +1,77 @@
+# Runbook: scenarios/demos/sdr_orbit_viewer.md
+#
+# demos/sdr_orbit_viewer - two-drone SDR cueing, watched live in 3D:
+#   sdr1  takes off, sweeps the field listening for the casualty's
+#         phone (stub_sdr sweeps 868-870 MHz; the ~60 m gate closes
+#         when a survey leg passes overhead);
+#   cam1  waits grounded (start:"ground" + auto_launch). The first
+#         sdr.signal fuses a 'phone' world-model target; sys.target_new
+#         activates cam1's orbit_found template -> APPROVAL_REQ launch
+#         (the operator bot approves after 2 s) -> controlled launch ->
+#         3-turn orbit around the reported point, radius scaled to the
+#         reported uncertainty (clamp(unc_m, 30, 70)).
+#
+# "camera facing the centre" is a fixed side-looking mount in the world
+# (mount_yaw_deg 90 / pitch -42): during a clockwise LOITER_TURNS the
+# nose stays tangent so the right-side optical axis sweeps the orbit
+# centre for the whole circle - the closest the op language gets to a
+# gimbal ROI (no ROI/mount mission item exists).
+#
+# Run: ./sim view scenarios/demos/sdr_orbit_viewer.yaml
+version: 1
+name: sdr_orbit_viewer
+speedup: 1                   # the world truth tick is wall-clock
+seed: 7
+transport: fake
+world: ../../worlds/sdr_person_orbit.yaml
+operation: ops/sdr_person_orbit.deop
+render: {mode: viewer, headless: false}
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 60
+operator:
+  approve: {launch: {after_s: 2}}
+fleet:
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000},
+     role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 0}}
+  - {id: cam1, cls: copter, params: {BATT_CAPACITY: 50000},
+     role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: -20, east_m: -20},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  # arm the scout only - cam1 is start:"ground" auto_launch; the op owns
+  # its arm through the launch approval + stepper
+  - {t: 20, do: arm, unit: sdr1}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  # a survey leg passes inside the ~60 m phone gate -> sdr.signal ->
+  # WM_NEW cls=phone on every unit
+  - {t: 35, do: wait_journal, unit: "all", re: "WM_NEW .* cls=phone",
+     timeout: 480}
+  # the phone target activates cam1's orbit template -> launch approval
+  - {t: 40, do: wait_journal, unit: "cam1", re: "APPROVAL_REQ launch",
+     timeout: 120}
+  - {t: 45, do: wait_journal, unit: "cam1",
+     re: "launch: goto fc seq .* in AUTO", timeout: 240}
+  - {t: 50, do: wait_journal, unit: "cam1", re: "orbit_found",
+     timeout: 120}
+assert:
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=phone", at_least: 1}
+  - signals_in_range: {unit: "sdr1", re: "EVENT_IN.*sdr\\.signal",
+                       truth: phone_1, max_m: 80, min_count: 1}
+  # the reported phone position lands within the modelled gate of truth
+  - distance_to: {unit: "cam1", re: "WM_NEW .* cls=phone",
+                  detected_cls: phone, truth: [phone_1], max_m: 80}
+  - journal_count: {unit: "cam1", re: "APPROVAL_REQ launch", equals: 1}
+  # launch approval -> airborne inside 20 s of the grant
+  - journal_time_delta: {u1: cam1, re1: "APPROVAL_OK .* by",
+                         u2: cam1, re2: "launch: goto fc seq .* in AUTO",
+                         max_s: 20, ordered: true}
+  - journal_count: {unit: "cam1", re: "orbit_found", at_least: 1}
+  - operator_log_count: {re: "APPROVAL approve", at_least: 1}
+teardown: land

@@ -1,0 +1,77 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "sdr_person_orbit",
+    "comment": "demo: an SDR scout sweeps the field listening for the casualty's phone; the first sdr.signal creates a phone target, the grounded camera drone launch-approves, flies to the reported point and orbits it three turns while its side-looking camera stares at the centre (fixed mount yaw +90 - no ROI item exists in the op language). If the person walks into that side frame, detect.detected lifts a second world-model pin.",
+
+    "roles": {
+        "sdr_scout": { "count": 1, "vehicle": "copter",
+                       "requires": ["sdr"] },
+        "cam_scout": { "count": 1, "vehicle": "copter",
+                       "requires": ["camera"],
+                       "start": "ground", "auto_launch": true }
+    },
+
+    "events": {
+        "sdr.signal": { "target": "phone",
+            "payload": { "freq": "number", "rssi_dbm": "number",
+                         "pos": "geo", "radius_m": "number",
+                         "snr_db": "number" } },
+        "detect.detected": { "target": "person",
+            "payload": { "pos": "geo", "unc_m": "number",
+                         "conf": "number", "class": "string",
+                         "cam_id": "string", "trk": "number",
+                         "range_m": "number", "src": "string" } },
+        "scan.begin": {}
+    },
+
+    "missions": {
+        "sdr_scout": {
+            "sweep": {
+                "trigger": "op.start",
+                "steps": [
+                    { "id": "go", "emit": "scan.begin" },
+                    { "id": "takeoff", "nav": "takeoff", "alt": 40 },
+                    { "id": "survey", "pattern": "survey",
+                      "area": [[-35.362723, 149.165567],
+                               [-35.361645, 149.165567],
+                               [-35.361645, 149.166888],
+                               [-35.362723, 149.166888]],
+                      "spacing": 40, "alt": 40, "speed": 5 },
+                    { "id": "hold", "nav": "loiter",
+                      "pos": [-35.362184, 149.166228, 40],
+                      "unlim": true }
+                ],
+                "end": "hold"
+            },
+            "listen": {
+                "trigger": { "event": "scan.begin" },
+                "steps": [
+                    { "id": "scan", "do": "sdr.scan",
+                      "with": { "f_start": 868000000,
+                                "f_end": 870000000 },
+                      "on_error": "end" },
+                    { "id": "hear", "gate": { "event": "sdr.signal" },
+                      "timeout": 900, "on_timeout": "end" }
+                ],
+                "on_exit": [ { "do": "sdr.stop" } ],
+                "end": "hold"
+            }
+        },
+        "cam_scout": {
+            "orbit_found": {
+                "trigger": { "event": "sys.target_new",
+                             "when": "${target.cls == 'phone'}",
+                             "once_per": "target" },
+                "priority": 20,
+                "gen": { "type": "orbit",
+                         "params": {
+                             "center": "${target.pos}",
+                             "r": "${clamp(target.unc_m, 30, 70)}",
+                             "turns": 3, "alt": 40 } },
+                "end": "hold",
+                "end_backstop": { "timeout": 600, "then": "rtl" }
+            }
+        }
+    }
+}
