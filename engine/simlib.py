@@ -1661,7 +1661,10 @@ def gen_unit(u, sim, catalog):
     boot_id = os.path.join(udir, "boot_id")
     if not os.path.isfile(boot_id):
         write_text(boot_id, "boot-1\n")
-    env = [("DE_BOOT_ID_FILE", boot_id)]
+    # DE_BOARD_ID names the unit as its own board - without it every
+    # module reports the host /etc/machine-id, and the GCS CPU summary /
+    # per-board views show a 32-char hash instead of "cam1".
+    env = [("DE_BOOT_ID_FILE", boot_id), ("DE_BOARD_ID", u["name"])]
     if u.get("faketime"):
         # SL-0014: run de_comm under libfaketime. FAKETIME_TIMESTAMP_FILE
         # holds a signed relative offset ("+3600") that ctl clock_step
@@ -1790,7 +1793,8 @@ def gen_unit(u, sim, catalog):
                        f"-loglevel error -f v4l2 -i '{wait_dev}' "
                        f"-frames:v 1 -f null - 2>/dev/null; "
                        f"do sleep 2; done; exec {cmd}\"")
-        _launch_script(u, m, mdir, cmd, spec.get("start_delay", 0))
+        _launch_script(u, m, mdir, cmd, spec.get("start_delay", 0),
+                       env=(("DE_BOARD_ID", u["name"]),))
 
     # ---- SITL ----
     if u["fc"]:
