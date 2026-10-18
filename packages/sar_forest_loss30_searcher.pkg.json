@@ -200,7 +200,9 @@
         "region": "${square_around(target.pos, max(800, 3 * target.unc_m))}",
         "clip": "op.area",
         "max_n": 3,
-        "bid_window_s": 85
+        "bid_window_s": 5,
+        "expect_bidders": 3,
+        "bid_cap_s": 90
       },
       "transit": true,
       "gen": {

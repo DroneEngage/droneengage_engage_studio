@@ -19,25 +19,26 @@
 #
 # Op: packages/sar_forest_loss30.deploy.json - the same op with a
 #     loss-tolerant searcher package carrying two changes:
-#       - bid_window_s 5 -> 85. The fault drops ~half of every bus copy
-#         (30 % on each link leg) and ~3/4 of each copy+ack round; the
-#         bus resends at ages ~1,3,7,15 s then every ~10 s, so ~12 sends
-#         / ~85 s give ~99.9 % bid convergence. 5 s let the coordinator
-#         assign over a bid set of 1; 25 s lost a bidder (~5 % tail);
-#         55 s still lost one (~0.1 % tail - seen live: s2's bid
-#         landed +76 s, 9 s after the of-2 assign). Residual tail is
-#         real - the durable fix is GL-0029.
+#       - expect_bidders 3 + bid_cap_s 90 (GL-0029): the coordinator
+#         defers its assign publish past bid_window_s until all three
+#         searcher bids are in, bounded by the cap. The fault drops
+#         ~half of every bus copy (30 % on each link leg) and ~3/4 of
+#         each copy+ack round; bus resends land at ages ~1,3,7,15 s
+#         then every ~10 s, so bid convergence takes ~5-75 s - a fixed
+#         window is always either too short (5 s assigned over a bid
+#         set of 1, seen live) or a probabilistic bet (55 s still lost
+#         a bid that landed +76 s). Waiting for the expected count is
+#         deterministic; the 90 s cap is the bound on a bidder that
+#         never arrives.
 #       - search-region floor 300 -> 800 m in square_around(target.pos,
-#         max(800, 3*unc)). The longer bid window also gives the phone
-#         estimate ~25 s to collapse unc_m while pos is still the coarse
+#         max(800, 3*unc)). While bids converge under loss the phone
+#         estimate can collapse unc_m while pos is still the coarse
 #         first-fix (observed unc ~150 m at gen -> side 444 m, N edge
 #         -35.3613); the person sits ~390 m off-centre at -35.3606 and
 #         fell outside the square - all searchers swept and landed,
 #         s3's closest leg 83 m short. The 800 m floor reproduces the
 #         nominal coverage (nominal unc ~265 -> side ~800 m) whenever
 #         unc collapses early under loss.
-#     The deeper fix - an expected-bidder-aware coordinator - is its
-#     own task (GL-0029).
 version: 1
 name: p4b10_e_loss30
 seed: 7
