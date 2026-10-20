@@ -1,0 +1,35 @@
+# worlds/collision_roof - P5-16 negative control: a mission at 3 m AGL over
+# hut_1 (a 4 m building 28 m from home that SITL knows nothing about).
+# The flight itself completes; the physics rig's kinematic proxy raises
+# `collision` and no_collision must report it - the proof that the
+# assertion can fail. expect_collision inverts the verdict, so the
+# scenario passes only when the roof WAS hit (drop expect_collision to
+# see the raw FAIL a real plan gets).
+version: 1
+name: collision_roof
+speedup: 1                   # the physics rig steps on scenario wall time
+seed: 1
+transport: fake
+world: ../../worlds/physics_roof.yaml
+operation: ops/collision_roof.deop
+render: {mode: physics, headless: true}
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 15
+fleet:
+  - {id: cam1, cls: copter, role: flyer}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 10, do: wait_ready, unit: cam1, timeout: 240}
+  - {t: 15, do: arm, unit: cam1}
+  - {t: 20, do: start, timeout: 120}
+  - {t: 25, do: wait_journal, unit: cam1, re: "RUN run .* started",
+     timeout: 120}
+  # takeoff to 3 m, then the leg over the hut (~28 m at WPNAV speed)
+  - {t: 30, do: wait, seconds: 60}
+  - {t: 100, do: stop}
+assert:
+  - no_collision: {unit: cam1, expect_collision: true}
+  - telemetry_value: {unit: cam1, field: rel_alt_m, ge: 0}
+teardown: land

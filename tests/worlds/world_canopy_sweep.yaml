@@ -1,0 +1,63 @@
+# worlds/world_canopy_sweep - P5-10 acceptance 1: a copter with stub_ai_box
+# flies the 3-leg lawnmower of packages/p5_canopy_sweep.json at 40 m
+# over all three forest_canopy people (a leg each over the open
+# ground, the wood_n crown and the hut). The person in the open must
+# be found within the sweep budget; the person inside hut_1 must stay
+# hidden with every in-frame row why "occluded", blockers hut_1
+# (detection_recall max 0 is the negative control); person_canopy -
+# under the crown, gap 0.3 - is REPORTED, not asserted: whether a 40 m
+# lawnmower finds a person under canopy is the property under study
+# (max 1 is vacuous, it only prints the recall). distance_to budget
+# note: since P5-18 the world camera and the product projector share
+# the rectilinear model, so a reported position carries no systematic
+# projector error - comfortably inside the 25 m budget.
+version: 1
+name: world_canopy_sweep
+realtime: true
+seed: 7
+transport: fake
+world: ../../worlds/forest_canopy.yaml
+operation: ../../packages/p5_canopy_sweep.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: cam1, cls: copter, modules: [stub_ai_box]}
+timeline:
+  - {t: 0, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 2, do: deploy, timeout: 120}
+  - {t: 4, do: wait_ready, unit: cam1, timeout: 120}
+  - {t: 6, do: arm, unit: cam1}
+  - {t: 9, do: start}
+  - {t: 10, do: wait_journal, unit: cam1,
+     re: "mission main completed", timeout: 300}
+assert:
+  - detection_recall: {truth: person_open, min: 1}
+  - detection_recall: {truth: person_hut, max: 0}
+  # reported, not asserted - the property under study
+  - detection_recall: {truth: person_canopy, max: 1}
+  - time_to_detect: {truth: person_open, max_s: 120}
+  - detection_precision: {cls: person, min: 0.8, unit: cam1}
+  - distance_to: {unit: cam1, re: "detect\\.detected",
+                  detected_cls: person,
+                  truth: [person_open, person_canopy], max_m: 25}
+  # P5-12: the sweep must cover its declared sector, and the
+  # planning/sensor split is asserted per person - pod_at says whether
+  # the plan LOOKED at the cell, detection_recall says whether the
+  # chain REPORTED the person. person_open sits right under a leg,
+  # person_hut's cell ray always ends inside the building (POD 0 -
+  # a planning-free occlusion), person_canopy's is under the crown.
+  # Each pod_at carries its own small poly because the people stand
+  # outside sector_a.
+  - coverage_complete: {area: sector_a, cell_m: 5, min: 0.95,
+                        unit: cam1}
+  - pod_mean: {area: sector_a, cell_m: 5, min: 0.8}
+  - pod_at: {truth: person_open, min: 0.9,
+             poly: [[-35.363118, 149.166019], [-35.363028, 149.166019],
+                    [-35.363028, 149.166129], [-35.363118, 149.166129]]}
+  - pod_at: {truth: person_canopy, min: 0.5,
+             poly: [[-35.362804, 149.166019], [-35.362714, 149.166019],
+                    [-35.362714, 149.166129], [-35.362804, 149.166129]]}
+  - pod_at: {truth: person_hut, max: 0,
+             poly: [[-35.362445, 149.166019], [-35.362355, 149.166019],
+                    [-35.362355, 149.166129], [-35.362445, 149.166129]]}
+teardown: land

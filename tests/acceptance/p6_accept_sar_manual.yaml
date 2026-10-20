@@ -1,0 +1,70 @@
+# acceptance/p6_accept_sar_manual - TASK-P6-09 (MP-0139) usability
+# session driver: the p4b10_a SAR world + fleet brought up with NO
+# operation and NO operator policy, so a human participant authors +
+# deploys + starts their own SAR op from the webclient template library
+# (Task A) and answers every approval from the Run tab (Task B) while
+# the harness just waits for OP_END.
+#
+# Fleet:  the p4b10_a_nominal six - scout1 (cam_scout), sdr1
+#         (sdr_scout), s1-s3 (searcher), amb1 (ambulance). The task
+#         brief asks for a "static SDR mast"; the shipped library SAR
+#         template binds sdr_scout with vehicle: copter and no
+#         static-mast SAR template exists, so the flying scout stands
+#         in - deviation recorded in Phase-6-Tasks/ACCEPTANCE.md.
+# World:  worlds/sar_forest.yaml - person_1 static at X inside the op
+#         area, phone_1 ~30 m off it; the stub sdr fires inside ~600 m
+#         and the stub ai boxes fire inside 50 m. World stubs need no
+#         `fire` steps - the run advances on the participant's own
+#         deploy + start.
+# Flow:   wait_online -> GUIDED -> arm the flyers; then a 45-minute
+#         OP_END wait is the session clock. amb1 stays a
+#         start:"ground" auto_launch role - the op's launch approval
+#         arms it (sv_allow_auto_launch site switch).
+# Ops:    `operator:` omitted -> the bot connects with an empty policy
+#         and never answers; the participant's GCS party answers the
+#         WM person-confirm and the launch/action APPROVAL_REQs from
+#         the Run tab, journaled under THEIR party id.
+# Replay: OP_END (or Ctrl-C) tears down; the run dir's merged journals
+#         + operator.log are what Task C replays.
+version: 1
+name: p6_accept_sar_manual
+realtime: true                # wall-clock - the participant works in real time
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+# no operation: - the participant authors + deploys their own SAR op
+# no operator:  - empty policy = the bot connects but never answers
+settle_s: 30
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 5, do: mode, unit: "all", mode: GUIDED}
+  # arm the flyers only - amb1 is start:"ground" auto_launch; the op's
+  # own launch approval + stepper arms it
+  - {t: 10, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  # the participant window: author -> deploy -> prepare -> start ->
+  # approvals -> OP_END. This wait IS the session - it is not a gate;
+  # a session that stalls just times out and tears down, and the
+  # moderator may Ctrl-C earlier (journals are written either way).
+  - {t: 15, do: wait_journal, unit: "all", re: "OP_END", timeout: 2700}
+assert:
+  # evidence-only rows for Phase-6-Tasks/ACCEPTANCE.md: a completed
+  # session shows the human operator's decisions journaled on the
+  # units and the op ending. A failed row here means the session did
+  # not reach that point - it does not itself prove a product bug.
+  - journal_count: {unit: "all", re: "WM_STATE .* confirmed", at_least: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_OK", at_least: 2}
+  - journal_count: {unit: "all", re: "OP_END", at_least: 1}

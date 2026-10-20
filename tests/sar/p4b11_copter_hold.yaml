@@ -1,0 +1,158 @@
+# sar/p4b11_copter_hold - TASK-P4B-11 acceptance a-g: the owned mission
+# hold. A copter's pause-hold / upload-start hold / guided on_end:"hold"
+# is GUIDED with a pinned target owned by DE-Pilot op 5, reported as
+# e:"hold" on 6541. GCS guided-point / joystick-engage / DE-Pilot-op
+# takeovers end the hold why:"gcs"/"depilot" and PAUSE the run;
+# why:"mode" rides the existing pilot-mode path; why:"cmd" is journal
+# only. dp excludes op 5, so resume stays legal while the plan holds.
+#
+# Op:      packages/p4b11_hold.deploy.json - c1 gets p4b11_hold.json
+#          (copter, cruise 80 m, manual "hop" mission for the mid-flight
+#          upload_start); p1 gets p4b11_plane_gate.json (plane smoke).
+#          c1 runs sv_force_paged so activating "hop" in AUTO goes
+#          through upload_start (the 82->75 regression window).
+# Wire:    opmsg injects real 1094/1033/1081 GCS frames - GuidedPoint is
+#          mt 1033 {a:lat, g:lng, l:alt_m}, DEPilot_Control is mt 1081
+#          {e:true, m:2} (STABILIZATION).
+# Evidence: the alt-window rows land in run/ telemetry - assert the
+# post-pin alt + mode here, read min-alt-during-upload off the truth
+# log for step b.
+version: 1
+name: p4b11_copter_hold
+seed: 11
+transport: fake
+operation: ../../packages/p4b11_hold.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 60
+fleet:
+  - {id: c1, cls: copter, role: solo,
+     at: {north_m: 0, east_m: 0},
+     config: {de_comm: {sv_force_paged: true}}}
+  - {id: p1, cls: plane, role: plane,
+     at: {north_m: 0, east_m: 60}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: c1, mode: GUIDED}
+  - {t: 4, do: mode, unit: p1, mode: GUIDED}
+  - {t: 6, do: deploy, timeout: 300}
+  - {t: 12, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 16, do: arm, unit: c1}
+  - {t: 18, do: arm, unit: p1}
+  - {t: 22, do: start, targets: [c1, p1], timeout: 300}
+  - {t: 25, do: wait_journal, unit: c1, re: "RUN run .* started",
+     timeout: 120}
+  - {t: 27, do: wait_journal, unit: p1, re: "RUN run .* started",
+     timeout: 120}
+  # c1 climbs to 80 m and cruises AUTO (seq 4 is a 300 s loiter)
+  - {t: 30, do: wait_journal, unit: c1, re: "activation confirmed",
+     timeout: 240}
+  - {t: 35, do: wait, seconds: 60}
+
+  # --- (a) pause {hold:true} -> owned GUIDED pin at the request alt ---
+  - {t: 100, do: operator, act: pause, unit: c1, hold: true}
+  - {t: 104, do: wait_journal, unit: c1, re: "mission hold active",
+     timeout: 60}
+  # the pin must hold 80 m for 30 s straight - truth telemetry holds the
+  # window; the end assert checks the latest reading is still 80 +/- 1
+  - {t: 110, do: wait, seconds: 30}
+  # resume is legal mid-hold (dp:false under op 5) -> AUTO resumes
+  - {t: 145, do: operator, act: resume, unit: c1}
+  - {t: 150, do: wait_journal, unit: c1, re: "resumed",
+     timeout: 60}
+  - {t: 155, do: wait_journal, unit: c1, re: "activation confirmed",
+     timeout: 120}
+
+  # --- (b) mid-AUTO activation -> upload_start hold (paged mode) ---
+  # the regression evidence: pre-fix pinned relative_alt at confirm time
+  # (75 m), post-fix pins the request alt (80 m). Truth log gives the
+  # min-alt-during-window; the hold journal carries the pinned alt.
+  - {t: 165, do: operator, act: activate, unit: c1, mission: hop}
+  - {t: 170, do: wait_journal, unit: c1, re: "mission hold active",
+     timeout: 60}
+  - {t: 175, do: wait_journal, unit: c1, re: "mission hop active",
+     timeout: 120}
+  - {t: 180, do: wait, seconds: 20}
+
+  # --- (g) plane smoke: pause {hold:true} -> LOITER, no e:"hold" ---
+  - {t: 200, do: operator, act: pause, unit: p1, hold: true}
+  - {t: 205, do: wait, seconds: 10}
+  - {t: 215, do: operator, act: resume, unit: p1}
+  - {t: 220, do: wait_journal, unit: p1, re: "resumed", timeout: 60}
+
+  # --- (f) hold + de_comm stop/restart: the FC keeps the pin alone ---
+  - {t: 230, do: operator, act: pause, unit: c1, hold: true}
+  - {t: 234, do: wait_journal, unit: c1, re: "mission hold active",
+     timeout: 60}
+  - {t: 240, do: kill, unit: c1, proc: de_comm}
+  - {t: 245, do: wait, seconds: 60}
+  - {t: 305, do: restart, unit: c1, proc: de_comm}
+  - {t: 310, do: wait, seconds: 20}
+  - {t: 330, do: operator, act: resume, unit: c1}
+  - {t: 335, do: wait_journal, unit: c1, re: "resumed|activation confirmed",
+     timeout: 120}
+
+  # --- (c) parked hold -> GCS GuidedPoint takeover -> PAUSED pilot:gcs
+  - {t: 345, do: operator, act: pause, unit: c1, hold: true}
+  - {t: 349, do: wait_journal, unit: c1, re: "mission hold active",
+     timeout: 60}
+  - {t: 355, do: opmsg, tg: c1, mt: 1033,
+     ms: {a: -35.3612, g: 149.1666, l: 80}}
+  - {t: 360, do: wait_journal, unit: c1, re: "hold ended \\(gcs\\)",
+     timeout: 60}
+  - {t: 365, do: wait_journal, unit: c1, re: "paused \\(pilot:gcs\\)",
+     timeout: 60}
+  - {t: 370, do: wait, seconds: 15}
+
+  # --- (d) parked hold -> DE-Pilot operator op -> PAUSED pilot:depilot
+  - {t: 385, do: operator, act: resume, unit: c1}
+  - {t: 390, do: wait_journal, unit: c1, re: "resumed", timeout: 60}
+  - {t: 396, do: operator, act: pause, unit: c1, hold: true}
+  - {t: 400, do: wait_journal, unit: c1, re: "mission hold active",
+     timeout: 60}
+  - {t: 405, do: opmsg, tg: c1, mt: 1081, ms: {e: true, m: 2}}
+  - {t: 410, do: wait_journal, unit: c1, re: "hold ended \\(depilot\\)",
+     timeout: 60}
+  - {t: 415, do: wait_journal, unit: c1,
+     re: "paused \\(pilot:depilot\\)", timeout: 60}
+  # hand DE-Pilot back off before the next leg
+  - {t: 420, do: opmsg, tg: c1, mt: 1081, ms: {e: false}}
+  - {t: 425, do: wait, seconds: 5}
+
+  # --- (e) parked hold -> pilot mode change -> PAUSED pilot:loiter ---
+  - {t: 430, do: operator, act: resume, unit: c1}
+  - {t: 435, do: wait_journal, unit: c1, re: "resumed", timeout: 60}
+  - {t: 440, do: operator, act: pause, unit: c1, hold: true}
+  - {t: 444, do: wait_journal, unit: c1, re: "mission hold active",
+     timeout: 60}
+  - {t: 450, do: mode, unit: c1, mode: LOITER}
+  - {t: 455, do: wait_journal, unit: c1, re: "hold ended \\(mode\\)",
+     timeout: 60}
+  - {t: 460, do: wait_journal, unit: c1,
+     re: "paused \\(pilot:loiter\\)", timeout: 60}
+  # leave the vehicle parked: stop the run and disarm on the ground
+  - {t: 465, do: operator, act: stop, unit: c1}
+  - {t: 470, do: land, unit: c1}
+  - {t: 475, do: operator, act: stop, unit: p1}
+  - {t: 480, do: land, unit: p1}
+assert:
+  # (a) the owned hold engaged and released under operator control
+  - journal_count: {unit: c1, re: "mission hold active", at_least: 3}
+  - journal_count: {unit: c1, re: "paused \\(", at_least: 4}
+  - journal_count: {unit: c1, re: "resumed", at_least: 3}
+  # (c) GCS takeover: hold ends why:gcs and the run PAUSEs
+  - journal_count: {unit: c1, re: "hold ended \\(gcs\\)", equals: 1}
+  - journal_count: {unit: c1, re: "paused \\(pilot:gcs\\)", equals: 1}
+  # (d) DE-Pilot takeover
+  - journal_count: {unit: c1, re: "hold ended \\(depilot\\)", equals: 1}
+  - journal_count: {unit: c1, re: "paused \\(pilot:depilot\\)", equals: 1}
+  # (e) pilot mode change - unchanged P2-10 path
+  - journal_count: {unit: c1, re: "hold ended \\(mode\\)", equals: 1}
+  - journal_count: {unit: c1, re: "paused \\(pilot:loiter\\)", equals: 1}
+  # a takeover never FAULTs the run
+  - journal_count: {unit: c1, re: "FAULT", equals: 0}
+  # (g) the plane never produced an owned hold: no hold journals at all
+  - journal_count: {unit: p1, re: "hold", equals: 0}
+  # (a)+(f): the pin holds altitude without a companion heartbeat
+  - telemetry_value: {unit: c1, field: rel_alt_m, pick: max, ge: 79}
+  - final_state: {unit: "c1,p1", fc_mode: [RTL, LAND, LOITER, GUIDED, AUTO]}
+teardown: land

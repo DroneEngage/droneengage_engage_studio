@@ -4,7 +4,7 @@
 # segment to completion - exactly one "RUN started" and one
 # "mission main completed" in the journal, no re-deploy, no duplicate
 # run. This is the mid-flight version of the bring-up restart case
-# (tests/p4a/p4a05_restart.yaml).
+# (tests/fleet_bus/p4a05_restart.yaml).
 version: 1
 name: f_decomm_restart_midop
 transport: fake

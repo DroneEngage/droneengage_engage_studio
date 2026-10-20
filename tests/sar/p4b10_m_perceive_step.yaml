@@ -1,0 +1,114 @@
+# sar/p4b10_m_perceive_step - MP-0215 / TASK-25 acceptance: a mission
+# 'perceive' step configures de_perceive at run time - no manual 1076.
+#
+# Op:      Tasks/mission_planner/ops/perceive_step.deop (compiled on
+#          demand by opbuild; perceive_step.ctx.json feeds --caps so the
+#          CAP rules run against the cam-scoped perceive_camm1 advert).
+#          One static watcher: gate 'quiet' (20 s), perceive step 'see'
+#          (classes [person], min_conf 0.4), gate 'seen', a time gate
+#          'dwell' (run+55 s) that lets the person stream ~30 s of obs
+#          frames, then emit watch.done -> op end -> the watcher lane
+#          drains and perceive.restore puts the unit default back.
+# World:   worlds/perceive_gate.yaml - person_1 and car_1 stand ~2 m
+#          apart under the mast's nadir camera (mount 8 m, ~9.6 m
+#          footprint); p_detect 1.0, no pixel noise - deterministic.
+# Fleet:   camm1 alone, a static mast on person_1, its stub starts with
+#          stub_ai_box.enabled:false - the unit default is REPORTING
+#          OFF, so before the perceive step nothing reaches the wire.
+#
+# Proves per spec:
+#   - before 'see' the wire is silent: the 'quiet' gate holds its full
+#     20 s (it would fire instantly on any detection)
+#   - 'see' dispatches perceive.configure as a 6543 invoke to the
+#     cam-scoped owner (journal "S: watch perceive see configure id=",
+#     stub stdout "perceive configure (invoke): classes=[person]")
+#   - the person is detected only after the step begins: journal_order
+#     puts the configure row before WM_NEW cls=person
+#   - the car is detected every frame but filtered at the emit seam:
+#     zero sent car rows (detection_recall max 0, dominant why
+#     'filtered'), and every sent obs frame's cls multiset is [person]
+#   - the detection completes the product chain: WM_NEW person, the
+#     operator confirms, watch.done ends the op
+#   - the lane drain restores the unit default once: one
+#     "S: watch perceive restore (scope see)" row
+#
+# Negative control is built in: remove the 'see' step (or the stub's
+# perceive advert) and the run stalls silent - no WM_NEW, the 'seen'
+# gate times out to "end", no watch.done, no OP_END.
+version: 1
+name: p4b10_m_perceive_step
+seed: 7
+transport: fake
+world: ../../worlds/perceive_gate.yaml
+operation: ../../../Tasks/mission_planner/ops/perceive_step.deop
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+operator:
+  confirm: {person: {after_s: 3}}
+fleet:
+  # the mast stands on person_1; its 8 m mount's nadir footprint
+  # (~9.6 m) covers the car 2 m south - both are detected every frame
+  - {id: camm1, cls: static, role: watcher, modules: [stub_ai_box],
+     base: [-35.3605671, 149.1679909, 584, 0],
+     config: {stub_ai_box: {enabled: false}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 33, do: wait_journal, unit: "camm1", re: "S: .* activated",
+     timeout: 120}
+  # the quiet gate burns its 20 s, then 'see' dispatches configure
+  - {t: 40, do: wait_journal, unit: "camm1",
+     re: "S: watch perceive see configure id=", timeout: 120}
+  # the person projects only after the configure lands
+  - {t: 50, do: wait_journal, unit: "all", re: "WM_NEW .* cls=person",
+     timeout: 240}
+  - {t: 55, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 240}
+  # watch.done -> op end -> the lane drains and restore fires once
+  # 'dwell' holds the configured scope until run+55 s, then watch.done
+  # ends the op and the drain restores the unit default
+  - {t: 60, do: wait_journal, unit: "all", re: "OP_END watch\\.done",
+     timeout: 300}
+  - {t: 65, do: wait_journal, unit: "camm1",
+     re: "S: watch perceive restore", timeout: 240}
+  - {t: 99, do: wait, seconds: 15}
+assert:
+  # --- the step ran as a mission action, not a 1076 -------------------
+  - journal_count: {unit: "camm1",
+                    re: "S: watch perceive see configure id=",
+                    equals: 1}
+  - module_log_count: {unit: "camm1", module: stub_ai_box,
+                       re: "perceive configure \\(invoke\\): classes=\\['person'\\] min_conf=0\\.4 detecting=True",
+                       at_least: 1}
+  # --- the person appears only after the step begins ------------------
+  - journal_order: {unit: "camm1",
+                    first: "S: watch perceive see configure id=",
+                    then: "EVENT_IN.*detect\\.detected"}
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=person", equals: 1}
+  - journal_count: {unit: "all",
+                    re: "WM_STATE .* confirmed by operator", equals: 1}
+  # --- the car is seen every frame but never reported -----------------
+  - detection_recall: {truth: car_1, src: ai, max: 0}
+  - detection_recall: {truth: person_1, src: ai, min: 1}
+  # every emitted obs frame carries exactly the person entry - the car
+  # is dropped at the reporting seam, not merely de-fused downstream
+  - obs_frames: {unit: "camm1", cls: [person], min_frames: 10}
+  # --- restore: the unit default returns when the lane drains ---------
+  - journal_count: {unit: "all", re: "OP_END watch\\.done", equals: 1}
+  - journal_count: {unit: "camm1", re: "OP_END watch\\.done -> hold",
+                    equals: 1}
+  - journal_count: {unit: "camm1",
+                    re: "S: watch perceive restore \\(scope see\\)",
+                    equals: 1}
+  - module_log_count: {unit: "camm1", module: stub_ai_box,
+                       re: "perceive restore \\(invoke\\): detecting=False",
+                       at_least: 1}
+  # --- static discipline ----------------------------------------------
+  - journal_count: {unit: "camm1", re: "ALLOC|CLAIM|TAKEOVER", equals: 0}
+  - journal_count: {unit: "camm1", re: "NavMode", equals: 0}
+  - no_fc_command_to_static: {unit: camm1}
+teardown: land

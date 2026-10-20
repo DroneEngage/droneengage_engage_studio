@@ -1,0 +1,61 @@
+# worlds/render_canopy_sweep - P5-15 acceptance: the P5-10 canopy sweep on
+# tier-2 pixels. cam1 is a copter_cam3d - the Mavlink3DMap render farm
+# draws its world camera into DE-SRC-0, the real de_yolo_ai_generic
+# (ONNX) detects on it and emits 1078 through de_mavlink's geo
+# projector, de_camera streams the annotated DE-AI-0. The ID pass
+# proves what was actually visible; the strip+probe measures pose->
+# V4L2 latency.
+#
+# Needs the one-time root setup `sudo tools/setup_v4l2loopback.sh 1`
+# plus CHROMIUM_BIN/DE_YOLO_AI_BIN/DE_CAMERA_BIN in sim.local.env.
+# Tier 2 is statistical, not byte-deterministic (GPU + wall-clock
+# pipeline) - nightly/on-demand tier per D8, never pure CI.
+#
+# EXPERIMENTAL (SL-0050): the render-farm path is opt-in only - living
+# under experimental/ keeps it out of `./sim suite` and nightly; run it
+# explicitly with `./sim run tests/worlds/experimental/render_canopy_sweep.yaml`
+# or `./sim suite tests/worlds/experimental`.
+version: 1
+name: render_canopy_sweep
+speedup: 1                   # render farm + de_yolo + de_camera run wall-clock
+seed: 7
+transport: fake
+world: ../../../worlds/forest_canopy.yaml
+operation: ../../../packages/p5_canopy_sweep.deploy.json
+render: {mode: cameras, headless: false}
+verify: {cli: ../../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: cam1, cls: copter_cam3d}
+timeline:
+  - {t: 0, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 2, do: deploy, timeout: 120}
+  - {t: 4, do: wait_ready, unit: cam1, timeout: 120}
+  - {t: 6, do: arm, unit: cam1}
+  - {t: 9, do: start}
+  - {t: 10, do: wait_journal, unit: cam1,
+     re: "mission main completed", timeout: 300}
+assert:
+  # the real chain emitted at least one 1078 through de_mavlink
+  - journal_count: {unit: cam1, re: "detect\\.detected", min: 1}
+  # strip->probe join: pose sample to frame-on-device, p95 budget
+  - render_latency: {unit: cam1, p95_max_ms: 250}
+  # ID pass: the hut person paints 0 px in every pass (occluded);
+  # the open person paints >=16 px in at least one pass
+  - visible_px: {truth: person_hut, unit: cam1, max_px: 0}
+  - visible_px: {truth: person_open, unit: cam1, min_px: 16,
+                 min_frames: 1}
+  # of what the pixels could show, what the real chain found (a real
+  # YOLO on synthetic people - the measured property, not a guarantee)
+  - detection_recall: {truth: person_open, src: render_vis,
+                       min_px: 16, min_frames: 1, min: 0.5}
+  # the occluded person stays unreported through the real chain
+  - detection_recall: {truth: person_hut, max: 0}
+  # 1078 boxes vs the same-frame ID-pass boxes at IoU 0.3
+  - detection_precision_render: {unit: cam1, min: 0.5, iou: 0.3}
+  # reported position of the found person: rectilinear projector +
+  # latency (speed x latency) budget, generous while measured
+  - distance_to: {unit: cam1, re: "detect\\.detected",
+                  detected_cls: person,
+                  truth: [person_open], max_m: 40}
+teardown: land

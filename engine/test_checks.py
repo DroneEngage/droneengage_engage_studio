@@ -546,7 +546,7 @@ class T(unittest.TestCase):
         import simlib
         spec = scenario.load_scenario(
             os.path.join(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__))), "tests/p4f/p4f05_abort.yaml"),
+                os.path.abspath(__file__))), "tests/launch/p4f05_abort.yaml"),
             8)["sim"]
         with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "60"}):
             sim = simlib.load_sim(spec)
@@ -566,7 +566,7 @@ class T(unittest.TestCase):
         import simlib
         spec = scenario.load_scenario(
             os.path.join(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__))), "tests/p4f/p4f05_abort.yaml"),
+                os.path.abspath(__file__))), "tests/launch/p4f05_abort.yaml"),
             8)["sim"]
         with mock.patch.dict(os.environ,
                              {"SIM_SLOT_BASE_OVERRIDE":
@@ -600,7 +600,7 @@ class T(unittest.TestCase):
         import simlib
         spec = scenario.load_scenario(
             os.path.join(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__))), "tests/p4f/p4f05_abort.yaml"),
+                os.path.abspath(__file__))), "tests/launch/p4f05_abort.yaml"),
             8)["sim"]
         with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "40"}):
             sim = simlib.load_sim(spec)

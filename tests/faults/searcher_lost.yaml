@@ -7,7 +7,7 @@
 # than pretending the coverage still holds. When the link comes back
 # ("ROSTER ... back") the handler must NOT fire a second time: the
 # latch is once per run. Library slice of
-# tests/p4a/p4a11_peer_lost.yaml in de.scenario/1 form.
+# tests/fleet_bus/p4a11_peer_lost.yaml in de.scenario/1 form.
 version: 1
 name: f_searcher_lost
 transport: fake

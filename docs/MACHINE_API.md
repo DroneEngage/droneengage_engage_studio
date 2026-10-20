@@ -99,7 +99,7 @@ The scenario/test/sim catalog:
 ## `./sim validate <file.yaml> --json`
 
 ```json
-{"file": "tests/p4a/p4a08_targets.yaml", "ok": true, "problems": []}
+{"file": "tests/fleet_bus/p4a08_targets.yaml", "ok": true, "problems": []}
 ```
 
 `problems` lists every finding (`ok: false`); exit code is `1` when

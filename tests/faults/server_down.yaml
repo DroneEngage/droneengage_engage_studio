@@ -5,7 +5,7 @@
 # the mission still completes exactly once. Proves a server restart is
 # survivable: no unit loses its run, nothing re-deploys, no duplicate
 # RUN lines. The fleet-wide version lives in
-# tests/p4a/p4a11_comm_lost.yaml.
+# tests/fleet_bus/p4a11_comm_lost.yaml.
 version: 1
 name: f_server_down
 transport: fake

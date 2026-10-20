@@ -1,0 +1,90 @@
+# launch/p4f05_preflight_fail - TASK-P4F-07 acceptance "preflight fail":
+# the grant is valid and the route check passes, but the SITL GPS is
+# dead before the confirm - the standby preflight reports not-ready
+# and the launch stepper aborts at its preflight stage without
+# consuming the grant's use.
+#
+# Op:      packages/p4f05.deploy.json.
+# Fault:   gps_off on amb1 (SIM_GPS1_FIXTYPE 0) before the confirm; the
+#          standby preflight cadence (default 60 s) reports
+#          STANDBY_NOT_READY while the grant sits valid on a dead fix.
+# Evidence: status launch.ready false + launch.reasons (gps) before
+#           the confirm; then LAUNCH_AUTH -> LAUNCH_ROUTE_OK ->
+#           launch: uploading segment -> "launch preflight failed";
+#           uses_left still 1, grant still valid, never armed.
+version: 1
+name: p4f05_preflight_fail
+speedup: 1                   # the world truth tick is wall-clock
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/p4f05.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+operator:
+  approve: {launch: none, action: {after_s: 2}}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300, authorize: {amb1: {}}}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 32, do: wait_journal, unit: "amb1", re: "LAUNCH_GRANT .* valid=",
+     timeout: 60}
+  # kill amb1's GPS fix before the confirm - the standby preflight
+  # (60 s cadence on a valid grant) reports not-ready ahead of the
+  # launch itself
+  - {t: 35, fault: gps_off, unit: "amb1"}
+  - {t: 40, do: wait_journal, unit: "amb1", re: "STANDBY_NOT_READY",
+     timeout: 120}
+  - {t: 45, do: wait_journal, unit: "all", re: "WM_NEW .* cls=phone",
+     timeout: 240}
+  - {t: 50, do: wait_journal, unit: "s1,s2,s3",
+     re: "CLAIM .* index [0-9]+ of 3", timeout: 120}
+  - {t: 55, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 600}
+  # the grant path proceeds (route ok), then the stepper's real
+  # preflight fails on the dead fix
+  - {t: 60, do: wait_journal, unit: "amb1", re: "LAUNCH_AUTH",
+     timeout: 180}
+  - {t: 62, do: wait_journal, unit: "amb1",
+     re: "launch preflight failed", timeout: 240}
+assert:
+  # the standby surface reported not-ready before the confirm
+  - journal_count: {unit: "amb1", re: "STANDBY_NOT_READY", at_least: 1}
+  - journal_order: {unit: "amb1", first: "STANDBY_NOT_READY",
+                    then: "LAUNCH_AUTH"}
+  - status_field: {unit: "amb1", path: "launch.ready", equals: false}
+  - status_field: {unit: "amb1", path: "launch.reasons", re: "gps"}
+  # the stepper aborted at preflight: uploaded segment, preflight, fail.
+  # anchored on "activation of mission" - the error line ("error: launch
+  # aborted: launch preflight failed") carries the same substring
+  - journal_order: {unit: "amb1", first: "launch: uploading segment",
+                    then: "launch preflight failed"}
+  - journal_count: {unit: "amb1",
+                    re: "activation of mission .* aborted: launch preflight failed",
+                    equals: 1}
+  - no_journal: {unit: "amb1", re: "LAUNCH_GO|launch: armed|takeoff"}
+  # the use was never consumed: grant still valid, uses_left still 1
+  - status_field: {unit: "amb1", path: "launch.grant", equals: valid}
+  - status_field: {unit: "amb1", path: "launch.uses_left", equals: 1}
+  - final_state: {unit: "amb1", fc_mode: [STABILIZE, GUIDED, LAND]}
+teardown: land

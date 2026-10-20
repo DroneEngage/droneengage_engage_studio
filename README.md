@@ -346,7 +346,7 @@ machine), and the interactive commands stay additive (see
 run additive on a shared box.
 
 `tests/` holds everything automation runs: the `de.scenario/1` library in
-its area subdirectories (`faults/`, `p4a/`, `verify/`, `world`/p5, ...).
+its feature subdirectories (`faults/`, `fleet_bus/`, `missions/`, `sar/`, `worlds/`, `verify/`, ...).
 The nightly suite is `./sim suite tests` (a.k.a. `ci/run_suite.py --roots
 tests`); `ci/check_library.py` validates every file on push. For a fast
 first pass, `./sim suite --tier smoke` runs only the files marked

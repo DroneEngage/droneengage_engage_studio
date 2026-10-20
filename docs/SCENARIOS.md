@@ -450,7 +450,7 @@ entity into `var/run/<sim>/world_overrides.jsonl` and logs a
 read the same file, so truth, detections and the render feed agree.
 A reactive world is excluded from golden byte-identity (the authority
 is wall-clock — statistically reproducible only). See
-`tests/p5/world_react_flee.yaml`.
+`tests/worlds/world_react_flee.yaml`.
 
 ### `cls: aircraft` — scripted ADS-B intruders
 
@@ -460,7 +460,7 @@ aircraft's truth position into a MAVLink `ADSB_VEHICLE` frame and
 `inject`s it through the control port of every `fcb_proxy: true` FC
 unit, so de_mavlink parses and forwards it exactly like SITL's own
 SIM_ADSB traffic — GCS-side, it is indistinguishable. See
-`tests/p5/world_adsb_intruder.yaml` + `worlds/airspace_intruder.yaml`.
+`tests/worlds/world_adsb_intruder.yaml` + `worlds/airspace_intruder.yaml`.
 
 ```yaml
 - {id: intruder_1, cls: aircraft, icao: "0xAC0DE1", callsign: INTRUDER,

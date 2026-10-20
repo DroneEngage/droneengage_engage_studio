@@ -5,7 +5,7 @@
 # (dismiss: fire) vetoes it, so every unit journals
 # "WM_STATE ... dismissed by operator" and the engage mission's trigger
 # (sys.target_state) never sees a confirmation. The confirmed sibling
-# path is covered by tests/p4b08_confirm.yaml.
+# path is covered by tests/sar/p4b08_confirm.yaml.
 version: 1
 name: f_operator_rejects
 transport: fake

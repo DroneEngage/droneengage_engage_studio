@@ -2,8 +2,8 @@
 #
 #   python3 ci/run_suite.py --roots tests --seeds 1,2,3
 #
-# Runs every tests/**/*.yaml (p0, p2, su, p4a, faults, closed_env,
-# verify, top-level) once per seed, serially. Verify-gate scenarios are
+# Runs every tests/**/*.yaml (missions, fleet_bus, sar, launch, worlds,
+# static_units, faults, closed_env, verify, top-level) once per seed, Verify-gate scenarios are
 # PASS only when verify.json carries the declared expect_rules. A
 # fail-then-pass is reported FLAKY with both attempts in
 # var/results/nightly/summary.md - never silently green.

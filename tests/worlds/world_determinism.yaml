@@ -1,0 +1,26 @@
+# worlds/world_determinism - P5-08 acceptance 3: same seed -> identical stub
+# output. A comm-only unit carries all three stubs; the assertion
+# replays each module's model loop twice on a virtual clock
+# (--selftest <poses>) against the unit's generated config and
+# byte-compares stubs/<unit>.log.
+version: 1
+name: world_determinism
+seed: 7
+transport: fake
+world: ../../worlds/forest_a.yaml
+settle_s: 1
+fleet:
+  - {id: st1, cls: static, modules: [stub_ai_box, stub_sdr, stub_payload],
+     base: [-35.362900, 149.166000, 584, 0]}
+timeline: []
+assert:
+  - stub_deterministic: {module: stub_ai_box, unit: st1,
+                         poses: ../../worlds/pose_cam1.jsonl, dur_s: 30}
+  # ground-level poses: the SDR model ranges on slant distance, so the
+  # airborne pose_cam1 track never hears the -10 dBm phone and the
+  # compare would be over two signal-free logs
+  - stub_deterministic: {module: stub_sdr, unit: st1,
+                         poses: ../../worlds/pose_mast.jsonl, dur_s: 30}
+  - stub_deterministic: {module: stub_payload, unit: st1,
+                         poses: ../../worlds/pose_drop.jsonl, dur_s: 20}
+teardown: none

@@ -1,0 +1,144 @@
+# sar/p4b10_c_searcher_lost - TASK-P4B-10 acceptance C: a searcher drops
+# off the fleet mid-sector and the P4B-06 takeover layer finishes its
+# unfinished lanes.
+#
+# s2's server link is cut for 700 s while the sector scan runs (link_cut,
+# not kill - the unit is provably "lost" to the fleet, not dead; its own
+# de_comm keeps flying the FC mission it already holds). Every unit runs
+# sv_peer_lost_s/sv_roster_ttl_s = 8 s so the LOST edge lands quickly -
+# the same knobs as tests/faults/searcher_lost.yaml.
+#
+# Expected: the surviving searchers journal
+#   ORPHAN <aid>:<index> owner <s2 party> lost, done <n>
+# the first one to free its posture claims the remaining lanes
+#   CLAIM <aid>:<index> part remaining rank <r>
+# and adopts the sector
+#   TAKEOVER <aid>:<index> lanes <n>
+# The TAKEOVER/CLAIM-part-remaining lines exist ONLY in the adopting
+# unit's journal, and which of s1/s3 wins is rank-decided at runtime -
+# the waits use any: true and the asserts count fleet-wide (total: true).
+# Note: the takeover needs a FREE survivor (posture idle), so it starts
+# only once s1 or s3 has finished its own sector.
+#
+# P4B-12 (deaf-owner report): when s2's link returns it re-publishes its
+# progress (PROGRESS_DIGEST), and the adopter - whose remaining lanes are
+# all already in that report - stands down with TAKEOVER_MOOT instead of
+# flying them a second time. The moot's forced final emit is the
+# PROGRESS .*:1 complete line, so that assert stays.
+# The c2/c3 variants of this run live in their own files:
+# p4b11_c2_deaf_owner_long.yaml (950 s cut - the stale-report digest
+# proves the whole sector and moots the adopter) and
+# p4b11_c3_owner_back_midsector.yaml (~560 s cut - partial overlap, no
+# moot, returning owner stands down).
+version: 1
+name: p4b10_c_searcher_lost
+seed: 7
+realtime: true
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/sar_forest.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 180
+operator:
+  approve: {launch: {after_s: 2}, action: {after_s: 2}}
+  # the operator confirms late on purpose: the survivors need to finish
+  # their own (large) sectors and then fly the orphan's lanes BEFORE the
+  # drop ends the op (OP_END rtl would cut the takeover short)
+  confirm: {person: {after_s: 1200}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60},
+     config: {de_comm: {sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true,
+                        sv_peer_lost_s: 8, sv_roster_ttl_s: 8}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 35, do: wait_journal, unit: "all", re: "WM_NEW .* cls=phone",
+     timeout: 240}
+  - {t: 40, do: wait_journal, unit: "s1,s2,s3",
+     re: "CLAIM .* index [0-9]+ of 3", timeout: 120}
+  # mid-sector: s2's server link drops for 700 s - long enough that it is
+  # still LOST when the first survivor frees up (~8-9 min in) and adopts
+  # its lanes. A short cut is not a lost searcher: an owner back before
+  # anyone claimed clears the orphan (sv_takeover onPeerBack). s2 returns
+  # after the takeover and stands down (returning-owner rule).
+  - {t: 50, fault: link_cut, unit: "s2", dur_s: 700}
+  - {t: 55, do: wait_journal, unit: "s1,s3",
+     re: "ORPHAN .* owner .* lost", timeout: 90}
+  # whichever surviving searcher frees its posture first adopts the
+  # orphan (rank-decided at runtime) - wait on either of them
+  - {t: 60, do: wait_journal, unit: "s1,s3", any: true,
+     re: "TAKEOVER .* lanes", timeout: 900}
+  # ... and flies the orphan's remaining lanes to completion
+  - {t: 62, do: wait_journal, unit: "s1,s3", any: true,
+     re: "PROGRESS .*:1 complete", timeout: 1200}
+  # the rest of the SAR chain still completes
+  - {t: 65, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 900}
+  - {t: 70, do: wait_journal, unit: "amb1", re: "emit payload\\.dropped",
+     timeout: 480}
+  - {t: 75, do: wait_journal, unit: "all", re: "OP_END payload\\.dropped",
+     timeout: 240}
+  # let the RTL/LAND mode reach the status the final_state asserts read
+  - {t: 99, do: wait, seconds: 25}
+assert:
+  # s2 provably left the fleet's view
+  - link_offline: {unit: "s2", at_least: 1, min_s: 30}
+  # both surviving searchers recorded the orphaned sector
+  - journal_count: {unit: "s1,s3", re: "ORPHAN .* owner .* lost",
+                    at_least: 1}
+  # exactly one adoption happened fleet-wide, and it was a
+  # remaining-lanes claim
+  - journal_count: {unit: "s1,s3", re: "TAKEOVER .* lanes", equals: 1,
+                    total: true}
+  - journal_count: {unit: "s1,s3", re: "CLAIM .*:1 part remaining",
+                    equals: 1, total: true}
+  # coverage: every sector completed - the two survivors' own (0 and 2)
+  # and the orphan (1) by its adopter
+  - journal_count: {unit: "s1,s3", re: "PROGRESS .* complete", equals: 3,
+                    total: true}
+  - journal_count: {unit: "s1,s3", re: "PROGRESS .*:1 complete",
+                    equals: 1, total: true}
+  # P4B-12: the returning owner's digest stands the adopter down - one
+  # moot fleet-wide on whichever of s1/s3 adopted
+  - journal_count: {unit: "s1,s3", re: "TAKEOVER_MOOT .*:1 by ",
+                    equals: 1, total: true}
+  - journal_count: {unit: "s2", re: "PROGRESS_DIGEST .*:1",
+                    at_least: 1}
+  # the op still ran to its end
+  - journal_count: {unit: "all", re: "OP_END payload\\.dropped", equals: 1}
+  - journal_count: {unit: "amb1", re: "emit payload\\.dropped", equals: 1}
+  # every vehicle ends RTL/landed - s2 included (its link is back by then)
+  - final_state: {unit: "amb1,s1,s2,s3,sdr1", fc_mode: [RTL, LAND]}
+  - final_state: {unit: "scout1", fc_mode: [AUTO, GUIDED, LOITER, RTL, LAND]}
+  - proc_alive: {unit: "s2", proc: de_comm}
+  - fc_items_unchanged_without_cause:
+      {unit: "all",
+       cause_re: "MISSION_(WRITE|UPLOAD|ACK)|fc mission|FC mission|mission.*upload|upload"}
+  # relaxed below the op's 25/6 params: s2 keeps flying its uploaded
+  # sector uncontrolled while the fleet takes the rest - a genuine
+  # takeover cannot promise nominal separation from a deaf unit
+  - no_sep_violation: {unit: "all", h_m: 10, v_m: 5}
+  # TODO P4B-10: action-id uniqueness needs a check kind
+teardown: land

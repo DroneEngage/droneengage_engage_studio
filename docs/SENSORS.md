@@ -133,7 +133,7 @@ example. The contract declares its inputs (`field: tx_dbm` emitters +
 pose), the full model surface (path-loss exponent, debounce/throttle,
 noise floor, sweep timing, radius clamps — all overridable via
 `world.sensors.sdr`) and the output seam (`sdr.signal` events +
-`signal` truth rows). `tests/p5/world_sdr_mast.yaml` exercises it and
+`signal` truth rows). `tests/worlds/world_sdr_mast.yaml` exercises it and
 asserts `signals_in_range`; `stubs/test_stubs.py` covers determinism.
 
 ## Try it

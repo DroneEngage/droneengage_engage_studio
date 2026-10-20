@@ -1,0 +1,30 @@
+# missions/p2_gate - P2-06 gate release: the mission holds at a gate.hold step
+# until the operator's event releases it (package p2_06_gate: takeoff ->
+# wp -> gate on "drop.ready" (25 s, on_timeout rtl) -> wp -> rtl -> end).
+# The fire step re-fires every 8 s until the release lands in the journal,
+# so the scenario proves the released path no matter when the FC reaches
+# the hold: "gate g released" appears exactly once and the mission runs
+# to completion with no timeout line.
+version: 1
+name: p2_gate
+tier: smoke
+transport: real
+operation: ../../packages/p2_06_gate.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm, unit: c1}
+  - {t: 9, do: start}
+  - {t: 30, do: fire, event: drop.ready, unit: c1,
+     until: {re: "gate .* released", tries: 10, every_s: 8}}
+  - {t: 35, do: wait_journal, unit: c1, re: "mission main completed",
+     timeout: 300}
+assert:
+  - journal_count: {unit: c1, re: "gate .* released", equals: 1}
+  - journal_count: {unit: c1, re: "gate .* timed out", equals: 0}
+  - journal_count: {unit: c1, re: "mission main completed", equals: 1}
+teardown: land

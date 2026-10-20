@@ -1,0 +1,125 @@
+# sar/p4b10_l_class_labels - TASK-B4-02 acceptance L: the reference SAR
+# op, labels variant. Every camera stub remaps the person label to the
+# detector string 'human' (class_labels) - a label that cannot equal the
+# declared class under the old W5 equality rule. The op's detect decl
+# carries classes: [person, human], so the aliased boxes still fuse into
+# the canonical 'person' target while unlisted labels keep dropping.
+#
+# Op:      ops/sar_forest_labels.op.json verified at the gate (CAP-008
+#          silent - 'human' is in the bound advert's class enum), then
+#          packages/sar_forest_labels.deploy.json deployed - de.package/2.4
+#          with fleet.event_target_classes.
+# World:   worlds/sar_forest_decoy.yaml - same truth as K (person_1 at X,
+#          phone_1, car_1 decoy); only the wire labels change.
+#
+# Proves per spec:
+#   - a stub emits 'human' boxes for the person entity (journal row
+#     "event detect.detected latched ... cls=human") and they DO create
+#     the person
+#     target - the alias is accepted through fleet.event_target_classes
+#   - labels not in classes still drop: the car decoy and phone boxes
+#     never fuse into the person target (single WM_NEW cls=person at
+#     person_1, none near car_1, no cls=car target)
+#   - the rest of the SAR chain still completes -> OP_END
+#
+# Negative control: p4b10_l_class_labels_ctrl - same stub remap, but the
+# op has no classes -> W5 equality drops every 'human' box: zero person
+# targets, CAP-008 recorded at verify time.
+version: 1
+name: p4b10_l_class_labels
+speedup: 1                   # the world truth tick is wall-clock
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest_decoy.yaml
+operation: ops/sar_forest_labels.op.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 180
+operator:
+  approve: {launch: {after_s: 2}, action: {after_s: 2}}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0},
+     config: {stub_ai_box: {class_labels: {person: human}}}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60},
+     config: {stub_ai_box: {class_labels: {person: human}}}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0},
+     config: {stub_ai_box: {class_labels: {person: human}}}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60},
+     config: {stub_ai_box: {class_labels: {person: human}}}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, operation: ../../packages/sar_forest_labels.deploy.json,
+     timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  # arm the flyers only - amb1 is start:"ground" auto_launch; the op
+  # owns its arm through the launch approval + stepper
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 35, do: wait_journal, unit: "all", re: "WM_NEW .* cls=phone",
+     timeout: 240}
+  - {t: 40, do: wait_journal, unit: "s1,s2,s3",
+     re: "CLAIM .* index [0-9]+ of 3", timeout: 120}
+  - {t: 45, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 480}
+  - {t: 50, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ launch",
+     timeout: 120}
+  - {t: 55, do: wait_journal, unit: "amb1",
+     re: "launch: goto fc seq .* in AUTO", timeout: 240}
+  - {t: 60, do: wait_journal, unit: "amb1", re: "emit payload\\.dropped",
+     timeout: 480}
+  - {t: 65, do: wait_journal, unit: "all", re: "OP_END payload\\.dropped",
+     timeout: 240}
+  # let the RTL/LAND mode reach the status the final_state asserts read
+  - {t: 99, do: wait, seconds: 25}
+assert:
+  # --- the person entity was reported under the 'human' label --------
+  # the projector fired it with the detector label - SL-0061: the obs
+  # class rides verbatim into the fleet event's payload class and onto
+  # the journal's latched row
+  - journal_count: {unit: "all", re: "event detect\\.detected latched .* cls=human",
+                    total: true, at_least: 1}
+  # --- W5 accepted the alias: exactly one person target, at X ---------
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=person", equals: 1}
+  - distance_to: {unit: "s1", re: "WM_NEW .* cls=person",
+                  detected_cls: person, truth: [person_1], max_m: 25}
+  # --- unlisted labels still drop -------------------------------------
+  # 'car' is not in classes and there is no car decl at all
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=car", equals: 0}
+  - journal_count: {unit: "all", re: "event detect\\.detected latched .* cls=car",
+                    total: true, at_least: 1}
+  - distance_to: {unit: "s1", re: "WM_NEW .* cls=person",
+                  detected_cls: person, truth: [car_1], min_m: 60}
+  # --- the rest of the SAR chain still completes -----------------------
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=phone", at_least: 1}
+  - journal_count: {unit: "all",
+                    re: "WM_STATE .* confirmed by k_sources_within",
+                    at_least: 1}
+  - journal_count: {unit: "s1,s2,s3", re: "CLAIM .* index [0-9]+ of 3",
+                    equals: 1}
+  - journal_count: {unit: "all", re: "WM_STATE .* confirmed by operator",
+                    at_least: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ launch", equals: 1}
+  - journal_count: {unit: "amb1", re: "emit payload\\.dropped", equals: 1}
+  - journal_count: {unit: "all", re: "OP_END payload\\.dropped", equals: 1}
+  - final_state: {unit: "amb1,s1,s2,s3,sdr1", fc_mode: [RTL, LAND]}
+  # scout1's orbit_track then-rule is "hold": it can legitimately still
+  # be on the orbit leg at teardown, so assert its operation completed
+  # rather than a parked fc mode (OP_END is asserted above)
+  - final_state: {unit: "scout1"}
+  - fc_items_unchanged_without_cause:
+      {unit: "all",
+       cause_re: "MISSION_(WRITE|UPLOAD|ACK)|fc mission|FC mission|mission.*upload|upload"}
+  - no_sep_violation: {unit: "all", h_m: 25, v_m: 6}
+teardown: land

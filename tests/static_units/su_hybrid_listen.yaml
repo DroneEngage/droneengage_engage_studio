@@ -1,0 +1,47 @@
+# static_units/su_hybrid_listen - SU-02 desk run 2: a flying copter carries the
+# hybrid package - a sector nav mission plus a manually triggered
+# rf_watch sensor mission (listen-while-flying). The operator activates
+# rf_watch mid-flight; firing sdr.signal makes the sensor lane emit
+# rf.hit, which triggers the investigate mission. Switching the FC to
+# LOITER pauses only the nav lane ("paused (pilot:...)") - the sensor
+# lane keeps running and a second sdr.signal still emits. Proves sensor
+# missions live on their own lane, independent of the pilot/nav state.
+version: 1
+name: su_hybrid_listen
+transport: fake
+operation: ../../packages/su_hybrid_rf.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm, unit: c1}
+  - {t: 9, do: start}
+  - {t: 15, do: wait_journal, unit: c1, re: "RUN run .* started",
+     timeout: 60}
+  # operator activates the sensor mission while the sector flies
+  - {t: 20, do: operator, act: activate, mission: rf_watch, unit: c1}
+  - {t: 25, do: wait_journal, unit: c1,
+     re: "S: rf_watch gate hear waits sdr\\.signal", timeout: 60}
+  - {t: 30, do: fire, event: sdr.signal, unit: c1,
+     payload: {pos: [-35.3630, 149.1660], conf: 0.9}}
+  - {t: 35, do: wait_journal, unit: c1,
+     re: "activating mission investigate", timeout: 90}
+  # LOITER pauses the nav lane only - the sensor lane must keep running
+  - {t: 40, fault: mode, unit: c1, mode: LOITER}
+  - {t: 45, do: wait_journal, unit: c1, re: "paused", timeout: 60}
+  - {t: 50, do: fire, event: sdr.signal, unit: c1,
+     payload: {pos: [-35.3640, 149.1660], conf: 0.8}}
+  - {t: 55, do: wait_journal, unit: c1,
+     re: "S: rf_watch emit rf\\.hit", timeout: 60}
+assert:
+  - journal_count: {unit: c1, re: "S: rf_watch activated", equals: 1}
+  - journal_count: {unit: c1, re: "S: rf_watch emit rf\\.hit",
+                    at_least: 2}
+  - journal_count: {unit: c1, re: "activating mission investigate",
+                    at_least: 1}
+  - journal_count: {unit: c1, re: "paused \\((pilot|fc)", at_least: 1}
+  - journal_count: {unit: c1, re: "S: rf_watch .* suspend", equals: 0}
+teardown: land

@@ -1,0 +1,48 @@
+# worlds/drop_on_person - P5-16 acceptance: a copter_gripper delivers to
+# person_open at 30 m and 5 m/s in a 6 m/s wind. The physics rig (render
+# mode physics: a headless Chromium on the world page) spawns the payload
+# on the gripper PWM transition, steps it on scenario time and posts
+# payload_landed back into truth.jsonl (src physics).
+#
+#   - payload_landed: within 10 m of person_open, on the ground
+#   - drop_drift: release -> landing reported (<= 15 m: the wind +
+#     forward-speed allowance for a 1 kg sphere)
+#   - no_collision: nothing in the world is in the flight path
+#
+# fall_s vs the Node model: engine/physics_model_check (selftest numbers
+# for the same conditions: 30 m, 1 kg sphere, cd 0.47 -> ~2.6 s).
+version: 1
+name: drop_on_person
+speedup: 1                   # the physics rig steps on scenario wall time
+seed: 1
+transport: fake
+world: ../../worlds/physics_drop.yaml
+operation: ops/drop_on_person.deop
+render: {mode: physics, headless: true}
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: amb1, cls: copter_gripper, role: dropper,
+     at: {north_m: 0, east_m: 0}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: amb1, mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: amb1, timeout: 240}
+  - {t: 20, do: arm, unit: amb1}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: amb1, re: "RUN run .* started",
+     timeout: 120}
+  - {t: 40, do: wait_journal, unit: amb1,
+     re: "ACTION_RESULT .*", timeout: 480}
+  - {t: 50, do: wait, seconds: 20}
+  - {t: 80, do: stop}
+assert:
+  # the FC gripper took the release (an err: result never reaches the
+  # servo - e.g. a bay the provider does not have)
+  - journal_count: {unit: amb1, re: "ACTION_RESULT .* err:", equals: 0}
+  - payload_landed: {truth: person_open, max_m: 10, hit: ground,
+                     unit: amb1}
+  - drop_drift: {unit: amb1, max_m: 15}
+  - no_collision: {unit: all}
+teardown: land

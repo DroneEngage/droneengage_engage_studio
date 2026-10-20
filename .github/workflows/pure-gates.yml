@@ -87,13 +87,13 @@ jobs:
 
       - name: library folders non-empty
         run: |
-          for d in p0 p2 su p4a faults closed_env verify precland; do
+          for d in missions static_units fleet_bus faults closed_env verify precland; do
             n=$(find tests/$d -name '*.yaml' 2>/dev/null | wc -l)
             echo "tests/$d: $n yaml"
             [ "$n" -gt 0 ] || exit 1
           done
-          [ -f tests/p4b/README.md ] || {
-            echo "tests/p4b/README.md missing"; exit 1; }
+          [ -f tests/sar/README.md ] || {
+            echo "tests/sar/README.md missing"; exit 1; }
 
   verifier-gate:
     runs-on: ubuntu-latest

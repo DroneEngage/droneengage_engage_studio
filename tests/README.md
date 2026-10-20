@@ -46,18 +46,20 @@ cameras can't share the machine - ask in that case. See `../AGENTS.md`.
 
 ## Area folders
 
-Folders are named after the feature or the project milestone that
-introduced them:
+Folders are named after the feature they cover (SL-0058; the old
+milestone codes map: p0/p2 -> missions/, p4a -> fleet_bus/, p4b -> sar/,
+p4f -> launch/, p5 -> worlds/, p6_acceptance -> acceptance/,
+su -> static_units/; file names keep their task ids):
 
 | Folder | What it covers |
 |---|---|
-| `p0/` | Phase-0 reference plan, end to end |
-| `p2/` | Phase-2 mission engine: gates, contingencies, handlers |
-| `p4a/` | Phase-4A fleet bus: static chains, link loss, catch-up, restarts, barriers, phases/end |
-| `p4b/` | Phase-4B SAR fleet: injected detections, approvals, searcher/ambulance flows (P4B-10 a–k) |
-| `p4f/` | Phase-4F launch grants and author-gone cases |
-| `p5/` | Phase-5 worlds: canopy/occlusion recall, coverage/POD (the render-farm test lives in `p5/experimental/` - opt-in, not gated) |
-| `su/` | static units (masts, fixed cameras) taking part in operations |
+| `missions/` | mission engine: reference plan, gates, contingencies, handlers |
+| `fleet_bus/` | fleet bus: static chains, link loss, catch-up, restarts, barriers, phases/end |
+| `sar/` | SAR fleet: injected detections, approvals, searcher/ambulance flows (P4B-10 a–k; see `sar/README.md`) |
+| `launch/` | launch grants and author-gone cases |
+| `worlds/` | seeded worlds: canopy/occlusion recall, coverage/POD, render farm |
+| `acceptance/` | usability/acceptance session drivers |
+| `static_units/` | static units (masts, fixed cameras) taking part in operations |
 | `faults/` | battery, link, server and comm faults during missions |
 | `closed_env/` | sealed-environment clock semantics |
 | `verify/` | deploy-time verifier gate (deadlocks, bad ops) |
@@ -65,7 +67,7 @@ introduced them:
 | `capacity/` | oversized plans: wire/package/FC/GCS capacity and the no-space boundary |
 | `camera/`, `gpio/`, `sound/`, `payload/` | per-module capability events and actions |
 | `soak/` | long wall-clock chaos soaks (30 min, speed-up 1) - **not** in the default suite; run with `./sim suite tests/soak` or `--roots tests/soak` |
-| `*/experimental/` | opt-in tests excluded from release gating (e.g. `p5/experimental/render_canopy_sweep` - GPU render farm + v4l2loopback + ONNX, statistical not deterministic) - **not** in the default suite; run with `./sim suite tests/p5/experimental` or `./sim run <file>` |
+| `*/experimental/` | opt-in tests excluded from release gating (e.g. `worlds/experimental/render_canopy_sweep` - GPU render farm + v4l2loopback + ONNX, statistical not deterministic) - **not** in the default suite; run with `./sim suite tests/worlds/experimental` or `./sim run <file>` |
 
 Every file opens with a one-paragraph `#` header saying what it proves;
 `ci/check_library.py` enforces it, and `./sim list tests` prints the

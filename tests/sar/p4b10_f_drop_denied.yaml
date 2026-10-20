@@ -1,0 +1,105 @@
+# sar/p4b10_f_drop_denied - TASK-P4B-10 acceptance F: the launch is
+# approved but the payload drop is denied; the ambulance must NOT
+# release, must come home, and the op must NOT end.
+#
+# The bot policy denies kind "action" (the drop_hold action is submitted
+# as a bus action -> sv_approval resolves it as kind "action");
+# kind "launch" is still approved so the ambulance does fly to the drop
+# point. The person target therefore stays "confirmed" - the op's
+# sys.op_end only fires on payload.dropped which never happens - so
+# OP_END stays at 0 and the delivery mission falls through its
+# remaining rows to its end policy (the nav lane idles on disarm).
+#
+# Denial path journaled on amb1:
+#   APPROVAL_REQ action <mission> req=<req>
+#   APPROVAL_DENIED <req> by <party>
+#   action payload.release (row <n>) approval denied - not dispatched
+# and the mission carries on (no payload.release is ever dispatched).
+version: 1
+name: p4b10_f_drop_denied
+speedup: 1                   # the world truth tick is wall-clock
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest.yaml
+operation: ../../packages/sar_forest.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+operator:
+  approve: {launch: {after_s: 2}}
+  deny: {action: {after_s: 1}}
+  confirm: {person: {after_s: 3}}
+fleet:
+  - {id: scout1, cls: copter, params: {BATT_CAPACITY: 50000}, role: cam_scout, modules: [stub_ai_box],
+     at: {north_m: 0, east_m: 0}}
+  - {id: sdr1, cls: copter, params: {BATT_CAPACITY: 50000}, role: sdr_scout, modules: [stub_sdr],
+     at: {north_m: 0, east_m: 60}}
+  - {id: s1, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: -60}}
+  - {id: s2, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 0}}
+  - {id: s3, cls: copter, params: {BATT_CAPACITY: 50000}, role: searcher, modules: [stub_ai_box],
+     at: {north_m: -80, east_m: 60}}
+  - {id: amb1, cls: copter, params: {BATT_CAPACITY: 50000}, role: ambulance, modules: [stub_payload],
+     at: {north_m: -130, east_m: 0},
+     config: {de_comm: {sv_allow_auto_launch: true}}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 35, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by operator", timeout: 600}
+  - {t: 40, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ launch",
+     timeout: 120}
+  - {t: 45, do: wait_journal, unit: "amb1", re: "APPROVAL_REQ action",
+     timeout: 480}
+  - {t: 50, do: wait_journal, unit: "amb1", re: "APPROVAL_DENIED",
+     timeout: 60}
+  # after the deny the delivery mission finishes and amb1 comes home
+  - {t: 55, do: wait_journal, unit: "amb1", re: "NavMode confirmed",
+     timeout: 240}
+  - {t: 60, do: wait_journal, unit: "amb1",
+     re: "vehicle disarmed - nav lane idle", timeout: 300}
+assert:
+  # the launch was granted - the ambulance really went out (APPROVAL_OK
+  # carries the req id, not the kind - exactly one grant happened)
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ launch", equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_OK .* by", equals: 1}
+  - journal_count: {unit: "amb1", re: "launch: goto fc seq .* in AUTO",
+                    at_least: 1}
+  # the drop approval was requested and denied, order request -> deny
+  - journal_count: {unit: "amb1", re: "APPROVAL_REQ action", equals: 1}
+  - journal_count: {unit: "amb1", re: "APPROVAL_DENIED .* by", equals: 1}
+  - journal_order: {unit: "amb1", first: "APPROVAL_REQ action",
+                    then: "APPROVAL_DENIED"}
+  - journal_count: {unit: "amb1",
+                    re: "action .* approval denied - not dispatched",
+                    equals: 1}
+  - operator_log_count: {re: "APPROVAL deny", equals: 1}
+  # the payload was never released
+  - journal_count: {unit: "amb1",
+                    re: "action payload\\.release approved|emit payload\\.dropped",
+                    equals: 0}
+  # the target is confirmed but never served; the op never ends
+  - journal_count: {unit: "amb1", re: "WM_STATE .* confirmed by operator",
+                    at_least: 1}
+  - journal_count: {unit: "all", re: "WM_STATE .* served", equals: 0}
+  - journal_count: {unit: "all", re: "OP_END", equals: 0}
+  # the ambulance came home on its own; every FC ends landed/RTL
+  - journal_count: {unit: "amb1",
+                    re: "vehicle disarmed - nav lane idle", equals: 1}
+  # no OP_END in this scenario: the other roles legitimately keep
+  # flying their standby/search missions - only the ambulance comes home
+  - final_state: {unit: "amb1", fc_mode: [RTL, LAND]}
+  - final_state: {unit: "scout1,sdr1,s1,s2,s3", fc_mode: [AUTO, GUIDED, LOITER, RTL, LAND]}
+  - fc_items_unchanged_without_cause:
+      {unit: "all",
+       cause_re: "MISSION_(WRITE|UPLOAD|ACK)|fc mission|FC mission|mission.*upload|upload"}
+  # the op's own separation params (op.params min_hsep_m/min_vsep_m)
+  - no_sep_violation: {unit: "all", h_m: 25, v_m: 6}
+  # TODO P4B-10: action-id uniqueness needs a check kind
+teardown: land
