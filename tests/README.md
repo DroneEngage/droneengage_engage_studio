@@ -56,7 +56,7 @@ introduced them:
 | `p4a/` | Phase-4A fleet bus: static chains, link loss, catch-up, restarts, barriers, phases/end |
 | `p4b/` | Phase-4B SAR fleet: injected detections, approvals, searcher/ambulance flows (P4B-10 a–k) |
 | `p4f/` | Phase-4F launch grants and author-gone cases |
-| `p5/` | Phase-5 worlds: canopy/occlusion recall, coverage/POD, render farm |
+| `p5/` | Phase-5 worlds: canopy/occlusion recall, coverage/POD (the render-farm test lives in `p5/experimental/` - opt-in, not gated) |
 | `su/` | static units (masts, fixed cameras) taking part in operations |
 | `faults/` | battery, link, server and comm faults during missions |
 | `closed_env/` | sealed-environment clock semantics |
@@ -65,6 +65,7 @@ introduced them:
 | `capacity/` | oversized plans: wire/package/FC/GCS capacity and the no-space boundary |
 | `camera/`, `gpio/`, `sound/`, `payload/` | per-module capability events and actions |
 | `soak/` | long wall-clock chaos soaks (30 min, speed-up 1) - **not** in the default suite; run with `./sim suite tests/soak` or `--roots tests/soak` |
+| `*/experimental/` | opt-in tests excluded from release gating (e.g. `p5/experimental/render_canopy_sweep` - GPU render farm + v4l2loopback + ONNX, statistical not deterministic) - **not** in the default suite; run with `./sim suite tests/p5/experimental` or `./sim run <file>` |
 
 Every file opens with a one-paragraph `#` header saying what it proves;
 `ci/check_library.py` enforces it, and `./sim list tests` prints the

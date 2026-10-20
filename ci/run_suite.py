@@ -50,11 +50,18 @@ import simlib          # noqa: E402
 RESULTS = simlib.RESULTS_DIR
 
 
+# dir names excluded from a plain suite run - opt-in only via an
+# explicit --roots <path>/<name>: soak = long wall-clock runs,
+# experimental = not release-gating (SL-0050)
+_OPT_IN_DIRS = ("soak", "experimental")
+
+
 def yaml_files(roots, tier=None):
-    """Every *.yaml under each root - except soak suites: a */soak/ dir
-    holds wall-clock runs (tests/soak is 30 min at speed-up 1), opt-in
-    only via an explicit --roots <path>/soak. `tier` keeps only files
-    whose `tier:` key matches (absent = regression)."""
+    """Every *.yaml under each root - except opt-in dirs: a */soak/ dir
+    holds wall-clock runs (tests/soak is 30 min at speed-up 1) and a
+    */experimental/ dir holds tests excluded from release gating; both
+    run only via an explicit --roots <path>/<name>. `tier` keeps only
+    files whose `tier:` key matches (absent = regression)."""
     out = []
     for r in roots:
         d = os.path.join(ROOT, r)
@@ -62,9 +69,10 @@ def yaml_files(roots, tier=None):
                                  recursive=True) +
                        glob.glob(os.path.join(d, "**", "*.yml"),
                                  recursive=True))
-        if os.path.basename(os.path.normpath(d)) != "soak":
+        if os.path.basename(os.path.normpath(d)) not in _OPT_IN_DIRS:
             files = [f for f in files
-                     if "soak" not in os.path.relpath(f, d).split(os.sep)]
+                     if not set(_OPT_IN_DIRS)
+                     & set(os.path.relpath(f, d).split(os.sep))]
         out += files
     if tier:
         out = [f for f in out

@@ -10,15 +10,20 @@
 # plus CHROMIUM_BIN/DE_YOLO_AI_BIN/DE_CAMERA_BIN in sim.local.env.
 # Tier 2 is statistical, not byte-deterministic (GPU + wall-clock
 # pipeline) - nightly/on-demand tier per D8, never pure CI.
+#
+# EXPERIMENTAL (SL-0050): the render-farm path is opt-in only - living
+# under experimental/ keeps it out of `./sim suite` and nightly; run it
+# explicitly with `./sim run tests/p5/experimental/render_canopy_sweep.yaml`
+# or `./sim suite tests/p5/experimental`.
 version: 1
 name: render_canopy_sweep
 speedup: 1                   # render farm + de_yolo + de_camera run wall-clock
 seed: 7
 transport: fake
-world: ../../worlds/forest_canopy.yaml
-operation: ../../packages/p5_canopy_sweep.deploy.json
+world: ../../../worlds/forest_canopy.yaml
+operation: ../../../packages/p5_canopy_sweep.deploy.json
 render: {mode: cameras, headless: false}
-verify: {cli: ../../tools/verify_wrap.js}
+verify: {cli: ../../../tools/verify_wrap.js}
 settle_s: 20
 fleet:
   - {id: cam1, cls: copter_cam3d}
