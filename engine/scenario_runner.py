@@ -1069,9 +1069,18 @@ def _hold(m, world_stream=False):
           simlib.webclient_url(m, "/planning", "GCSPLN_" + m["name"])),
           flush=True)
     if render:
-        print("render viewer: " + simlib.col("1;36",
-              simlib.render_viewer_url(render, world_stream)),
-              flush=True)
+        url = simlib.render_viewer_url(render, world_stream)
+        print("render viewer: " + simlib.col("1;36", url), flush=True)
+        # SL-PG-03: the held run IS the viewer session - open it rather
+        # than making the operator copy-paste; no opener -> the printed
+        # URL still stands
+        try:
+            subprocess.Popen(["xdg-open", url],
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+        except OSError as e:
+            print(f"xdg-open failed: {e} - open the URL above by hand",
+                  flush=True)
     try:
         while True:
             time.sleep(0.5)
