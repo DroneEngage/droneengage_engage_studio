@@ -22,8 +22,7 @@ packages/   operations   - hand-written ops demos/examples deploy
 templates/  scaffold     - the file ./sim new copies
 docs/       authoring    - SCENARIOS.md: the de.scenario/1 reference;
                          SENSORS.md: the world-driven sensor contract
-                         (./sim new --sensor <name>);
-                         WORLDS.md / CHECKS.md: add a world / a grader
+                         (./sim new --sensor <name>)
 wiki/       user docs    - USER_GUIDE.md: the plain-English guide
 ```
 

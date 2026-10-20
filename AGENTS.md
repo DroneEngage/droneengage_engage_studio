@@ -56,10 +56,6 @@ is now the only simulation/testing location.
                               sensor is one blocks/<name>/ folder (block +
                               catalog fragment + <stub>.sensor.yaml +
                               stub_<name>.py); ./sim new --sensor scaffolds
-    docs/WORLDS.md            contributor guide: author a worlds/*.yaml
-                              ground-truth world (fields: world.py docstring)
-    docs/CHECKS.md            contributor guide: add an assert: grader
-                              (checks.py DISPATCH + registry.py V())
     templates/scenario.yaml   what ./sim new scaffolds
     worlds/*.yaml             seeded ground-truth worlds for scenario world:
     packages/*.json           hand-written DE packages shared by
