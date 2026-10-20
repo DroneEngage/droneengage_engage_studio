@@ -3,13 +3,20 @@
 # droneengage_simulation_land - all-in-one scenario playground image.
 #
 #   docker build -f docker/Dockerfile -t de-sim .
-#   docker run -it --network host de-sim view scenarios/demos/world_canopy_viewer.yaml
+#   docker run -it --network host de-sim view docker/canopy_quickstart.yaml
 #
 # Everything the sim launches is baked in: ArduPilot SITL, the DE
 # binaries (de_comm / de_mavlink) and the Mavlink3DMap viewer (the
 # databus python client is the vendored tools/rpi/de_databus_py copy).
 # All upstream refs are pinned below so the image is reproducible - no
 # host checkouts are mounted or copied.
+#
+# The public de_comm/de_mavlink mirrors predate the mission supervisor,
+# so scenarios that `do: deploy` (ops/packages) cannot run here; the
+# image's own demo (docker/canopy_quickstart.yaml) flies the canopy
+# sweep through the classic mt-1075 mission upload instead. Two image
+# patches below adapt the run to the public builds: the catalog ready
+# marker and the missing databus message ids.
 #
 # Op verification (de.operation docs) is not in this image: it needs
 # the webclient's verify pipeline, which the public
@@ -151,6 +158,7 @@ RUN printf '%s\n' \
         'DE_CODE=/opt/de_code' \
         'ARDUPILOT_DIR=/opt/ardupilot' \
         'MAVLINK3DMAP_DIR=/opt/de_code/Mavlink3DMap2' \
+        'SIM_M3D_VERSION=1.4.1' \
         > sim.local.env
 
 # stubs import the databus python client from $DE_DATABUS_DIR/python.
@@ -161,7 +169,18 @@ RUN mkdir -p /opt/de_code/de_databus \
  && ln -s ../droneengage_simulation_land/tools/rpi/de_databus_py \
         /opt/de_code/de_databus/python
 
+# The public de_mavlink has no nav adapter, so 'nav adapter hello' is
+# never journaled and every ready_re wait would time out. Swap the
+# catalog's journal marker for the stdout line every de_common module
+# prints when it finds its broker. Image copy only - the repo file is
+# untouched (the private build still emits the line too, so the patched
+# marker stays correct when the mirrors catch up).
+RUN sed -i 's/^  ready_re: "nav adapter hello"$/  ready_log_re: "Communicator Server Found"/' \
+        modules/catalog.yaml \
+ && grep -q 'ready_log_re: "Communicator Server Found"' \
+        modules/catalog.yaml
+
 COPY docker/entrypoint.sh /opt/de_code/droneengage_simulation_land/docker/entrypoint.sh
 RUN chmod +x docker/entrypoint.sh sim stubs/*.py
 ENTRYPOINT ["/opt/de_code/droneengage_simulation_land/docker/entrypoint.sh"]
-CMD ["view", "scenarios/demos/world_canopy_viewer.yaml"]
+CMD ["view", "docker/canopy_quickstart.yaml"]

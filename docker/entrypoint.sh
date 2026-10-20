@@ -13,7 +13,7 @@
 # reachable from the user's browser.
 cd "$(dirname "$0")/.." || exit 1
 if [ "$#" -eq 0 ]; then
-    set -- view scenarios/demos/world_canopy_viewer.yaml
+    set -- view docker/canopy_quickstart.yaml
 elif [ "$1" = "bash" ] || [ "$1" = "sh" ]; then
     exec /bin/bash
 fi

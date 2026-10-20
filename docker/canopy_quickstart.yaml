@@ -1,0 +1,94 @@
+# docker/canopy_quickstart.yaml - the image's demo scenario.
+#
+# The forest-canopy sweep of scenarios/demos/world_canopy_viewer.yaml,
+# flown through the CLASSIC mission path instead of a supervised op
+# deploy: the timeline injects the same mt 1075 Upload_DE_Mission the
+# webclient sends ({e, j: de_plan}), then just switches the armed copter
+# to AUTO. The public DroneEngage mirrors this image builds do not ship
+# the mission supervisor yet ('nav adapter hello' never journals), so
+# `do: deploy` cannot run here; the world, the stub detections, the
+# coverage/POD grading and the viewer are identical. Keep this file as
+# the "no ops needed" demo even once the mirrors catch up - the gallery
+# demo exercises the deploy path.
+#
+#   docker run -it --network host de-sim        # this file, via CMD
+#   ./sim view docker/canopy_quickstart.yaml    # same run, host-side
+
+version: 1
+name: canopy_quickstart
+speedup: 1
+seed: 7
+transport: fake
+world: ../worlds/forest_canopy.yaml
+render: {mode: viewer, headless: false}
+settle_s: 20
+fleet:
+  - {id: cam1, cls: copter, modules: [stub_ai_box]}
+timeline:
+  # GUIDED first (de_mavlink refuses nav loads in AUTO); arm itself
+  # waits out SITL's GPS/EKF (~1-2 min cold). The upload is the classic
+  # de_plan payload: takeoff, the three-leg lawnmower over the canopy
+  # sector, then an unlimited loiter at the far corner.
+  - {t: 0, do: mode, unit: cam1, mode: GUIDED}
+  - t: 4
+    do: send
+    ty: i
+    mt: 1075                        # TYPE_AndruavMessage_Upload_DE_Mission
+    tg: cam1
+    ms:
+      e: true                       # clear fences first
+      j:
+        fileType: de_plan
+        version: 1
+        # home is REQUIRED: the classic mission manager builds item 0
+        # from it and then does mission_items.at(0..n) - a plan without
+        # home throws map::at and nothing is saved to the FC
+        unit:
+          partyID: 0
+          unitName: General
+          vehichleType: NA
+          home: {lat: -35.363262, lng: 149.165237, alt: 584}
+        de_geoFence: []
+        de_mission:
+          mav_waypoints:
+            - {c: 22, ft: 3, mv: [0, 0, 0, 0, 0, 0, 40]}
+            - {c: 16, ft: 3, mv: [0, 5, 0, 0, -35.363082, 149.165567, 40]}
+            - {c: 16, ft: 3, mv: [0, 5, 0, 0, -35.363082, 149.166559, 40]}
+            - {c: 16, ft: 3, mv: [0, 5, 0, 0, -35.36275, 149.166559, 40]}
+            - {c: 16, ft: 3, mv: [0, 5, 0, 0, -35.36275, 149.165567, 40]}
+            - {c: 16, ft: 3, mv: [0, 5, 0, 0, -35.362409, 149.165567, 40]}
+            - {c: 16, ft: 3, mv: [0, 5, 0, 0, -35.362409, 149.166559, 40]}
+            - {c: 17, ft: 3, mv: [0, 0, 0, 0, -35.362409, 149.166559, 40]}
+          modules: []
+  - {t: 6, do: wait_log, unit: cam1, module: de_mavlink,
+     re: "OnMissionACK 0", timeout: 60}
+  - {t: 8, do: arm, unit: cam1}
+  - {t: 10, do: mode, unit: cam1, mode: AUTO}
+  # 'Mission: N' is ArduPilot's item-active statustext - an unlimited
+  # loiter never reports 'reached', so item 8 going live IS the end
+  - {t: 12, do: wait_log, unit: cam1, module: de_mavlink,
+     re: "Mission: 8", timeout: 300}
+assert:
+  # src ai: the stub's own sent-detection rows. The operator-facing
+  # detect.detected surface (src bot) is de_mavlink's geo projector,
+  # which the public mirrors do not ship either
+  - detection_recall: {truth: person_open, min: 1, src: ai}
+  - detection_recall: {truth: person_hut, max: 0, src: ai}
+  - detection_recall: {truth: person_canopy, max: 1, src: ai}
+  # no `start` step: measured from the world epoch, so the budget also
+  # covers the EKF/arm warm-up the deploy version got for free
+  - time_to_detect: {truth: person_open, max_s: 240, src: ai}
+  - detection_precision: {cls: person, min: 0.8, unit: cam1}
+  - coverage_complete: {area: sector_a, cell_m: 5, min: 0.95,
+                        unit: cam1}
+  - pod_mean: {area: sector_a, cell_m: 5, min: 0.8}
+  - pod_at: {truth: person_open, min: 0.9,
+             poly: [[-35.363118, 149.166019], [-35.363028, 149.166019],
+                    [-35.363028, 149.166129], [-35.363118, 149.166129]]}
+  - pod_at: {truth: person_canopy, min: 0.5,
+             poly: [[-35.362804, 149.166019], [-35.362714, 149.166019],
+                    [-35.362714, 149.166129], [-35.362804, 149.166129]]}
+  - pod_at: {truth: person_hut, max: 0,
+             poly: [[-35.362445, 149.166019], [-35.362355, 149.166019],
+                    [-35.362355, 149.166129], [-35.362445, 149.166129]]}
+teardown: land
