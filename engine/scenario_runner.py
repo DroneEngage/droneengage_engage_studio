@@ -61,6 +61,7 @@ import scenario
 import checks
 import telemetry as telemetry_mod
 import operator_bot
+import adapter
 import world as world_mod
 
 VERIFY_CLI = os.path.join("scripts", "verify-op.js")
@@ -191,8 +192,8 @@ def _step_args(step):
 
 
 def _do(step, scn, ctx):
-    """A do: step - operator-facing names via the bot, everything else
-    delegates to the runner.py step of the same name."""
+    """A do: step - dispatched through ctx['adapter'] (the vehicle-stack
+    seam, engine/adapter.py + docs/ADAPTER.md)."""
     name = step["do"]
     a = _step_args(step)
     # an on-triggered step defaults its unit to the trigger's unit
@@ -206,139 +207,16 @@ def _do(step, scn, ctx):
         print(f"  unknown step {name!r} (catalog: ./sim verbs)",
               flush=True)
         return False
-    bot = ctx["bot"]
-    if name in ("deploy", "prepare"):
-        op = a.get("operation") or a.get("package") or scn.get("operation")
-        if not op:
-            print("  deploy: no operation:", flush=True)
-            return False
-        op = op if os.path.isabs(op) else os.path.join(
-            os.path.dirname(scn["file"]), op)
-        if op.endswith(".deop"):
-            # TASK-23: the run-start build already compiled the
-            # scenario's own op; a step-level operation: override builds
-            # on demand here (the scenario fleet supplies the role
-            # binding for ctx-less ops)
-            if op == scn.get("operation"):
-                op = scn.get("operation_spec") or op
-            if op.endswith(".deop"):
-                import opbuild
-                op = opbuild.build_deop(op, scn.get("fleet"))
-        if ctl._is_deploy_spec(op):
-            bot.log("DEPLOY", f"spec {os.path.basename(op)}")
-            # P4F-07: `authorize: {unit: {valid_for_s, max_launches}}` on
-            # the deploy step - a launch grant per unit after its READY
-            authorize = None
-            if isinstance(a.get("authorize"), dict):
-                authorize = {
-                    (ctx["units_by_name"].get(str(n)) or {})
-                    .get("party_id", str(n)): (v or {})
-                    for n, v in a["authorize"].items()}
-            return bot.op_deploy(op, float(a.get("timeout", 60)),
-                                 authorize=authorize)
-        # `unit:`/`package:` (one compiled package to one unit, e.g.
-        # P4A-07's scout + workers) is the runner step's own per-unit
-        # binding path; the plain form stays a fleet-wide ctl deploy
-        if a.get("unit") not in (None, "all") or a.get("package"):
-            return runner.run_step(
-                {"deploy": {k: v for k, v in a.items()
-                            if k in ("package", "unit", "vehicle")}},
-                {"__file": scn["file"],
-                 "operation": scn.get("operation")}, ctx["marks"])
-        return runner.run_ctl("deploy", op)
-    if name == "start":
-        # the scenario's own t0: time_to_detect measures from the first
-        # start step, not from the earlier fleet-up world epoch (the
-        # arm/EKF wait in between is not detection latency)
-        ctx.setdefault("start_ms", int(time.time() * 1000))
-        st = {}
-        try:
-            st = json.load(open(simlib.op_state_path(ctx["sim"])))
-        except (OSError, ValueError):
-            pass
-        if st.get("run"):
-            ov = {k: a[k] for k in
-                  ("lead_ms", "in_ms", "t_start", "run") if k in a}
-            if isinstance(a.get("start"), dict):
-                ov["start"] = a["start"]      # {role: mission} map (1094)
-            if isinstance(a.get("targets"), list):
-                ov["targets"] = [
-                    (ctx["units_by_name"].get(str(n)) or {})
-                    .get("party_id", str(n)) for n in a["targets"]]
-            if isinstance(a.get("expect_fail"), list):
-                ov["expect_fail"] = [
-                    (ctx["units_by_name"].get(str(n)) or {})
-                    .get("party_id", str(n)) for n in a["expect_fail"]]
-            return bot.op_start(
-                ov, float(a["timeout"]) if "timeout" in a else None)
-        return runner.run_ctl("start")
-    if name == "abort":
-        return bot.op_abort(a.get("run"), a.get("why", ""))
-    if name in ("authorize", "revoke_launch"):
-        # P4F-07: mid-run launch-grant verbs through the bot's session
-        party = (ctx["units_by_name"].get(str(a.get("unit"))) or {}) \
-            .get("party_id", a.get("unit"))
-        if name == "authorize":
-            choice = {k: a[k] for k in ("valid_for_s", "max_launches")
-                      if k in a}
-            return bot.op_authorize(party, choice,
-                                    float(a.get("timeout", 10)))
-        return bot.op_revoke_launch(party, float(a.get("timeout", 10)))
-    if name == "operator":
-        return _operator_act(a, bot)
-    # infra lifecycle steps: an operator action rather than a `fault:`,
-    # but the pids they re-create are expected to change
-    if name in ("reset", "server_up", "land"):
-        ctx["proc_events"].append(
-            {"t_ms": int(time.time() * 1000),
-             "unit": "server" if name == "server_up"
-             else str(a.get("unit", "all")),
-             "proc": "all"})
-    # every other name: the runner.py step, unchanged semantics
-    t = {"__file": scn["file"], "operation": scn.get("operation")}
-    return runner.run_step({name: a}, t, ctx["marks"])
-
-
-def _operator_act(a, bot):
-    """do: operator - act: approve|deny|confirm|dismiss|fire|<1086 a>."""
-    act = a.get("act")
-    unit = a.get("unit")
-    tg = "_AGN_" if not unit or str(unit) == "all" else \
-        ctl.resolve(str(unit), ctx_manifest())[0]["party_id"]
-    if act in ("approve", "deny"):
-        if not unit:
-            print("  operator approve/deny needs unit:", flush=True)
-            return False
-        return bot.decide(tg, req=a.get("req"), kind=a.get("kind"),
-                          decision=act, wait_s=float(a.get("wait_s", 10)))
-    if act in ("confirm", "dismiss"):
-        state = "confirmed" if act == "confirm" else "dismissed"
-        return bot.confirm(a["tid"], tg=tg, state=state)
-    if act == "fire":
-        return bot.fire(a["event"], a.get("payload"), tg)
-    if act in ("activate", "pause", "resume", "stop", "clear"):
-        ms = {"a": act}
-        if a.get("mission"):
-            ms["mission"] = a["mission"]
-        if a.get("hold") is not None:
-            ms["hold"] = bool(a["hold"])
-        return bot.action(ms, tg)
-    if act == "deploy":
-        return _do({"do": "deploy", **{k: v for k, v in a.items()
-                                       if k != "act"}}, _SCN[0], _CTX[0])
-    if act in ("start", "abort"):
-        return _do({"do": act, **{k: v for k, v in a.items()
-                                  if k != "act"}}, _SCN[0], _CTX[0])
-    print(f"  operator: unknown act {act!r}", flush=True)
-    return False
-
-
-_CTX = [None]          # let _operator_act reach the unit resolver
-_SCN = [None]
+    return ctx["adapter"].do_step(name, a, step, scn, ctx)
 
 
 def ctx_manifest():
+    """The live manifest - kept for the fault helpers below that run
+    outside a step's ctx."""
     return _CTX[0]["manifest"]
+
+
+_CTX = [None]
 
 
 # ---------------------------------------------------------------- faults
@@ -1276,7 +1154,6 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
            "samples_file": os.path.join(out, "samples.jsonl"),
            "proc_events": [], "restore_events": []}
     _CTX[0] = ctx
-    _SCN[0] = scn
     # link-capable transports start clean: the fake server's links{} and
     # every unit's link_proxy survive sim reuse
     link_capable = m["server"]["type"] == "fake" or \
@@ -1287,6 +1164,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
     bot = operator_bot.OperatorBot(m, scn["operator"],
                                    log_path=ctx["operator_log"])
     ctx["bot"] = bot
+    ctx["adapter"] = adapter.new_adapter(ctx)
     bot.start()
     tele_path = os.path.join(simlib.run_dir(m["name"]), "telemetry.jsonl")
     tele = telemetry_mod.Telemetry(m["units"], tele_path)
