@@ -2,13 +2,13 @@
   "op": "sar_forest",
   "roles": {
     "cam_scout": {
-      "pkg": "sar_forest_cam_scout.pkg.json",
+      "pkg": "../../packages/sar_forest_cam_scout.pkg.json",
       "units": [
         "scout1"
       ]
     },
     "sdr_scout": {
-      "pkg": "sar_forest_sdr_scout.pkg.json",
+      "pkg": "../../packages/sar_forest_sdr_scout.pkg.json",
       "units": [
         "sdr1"
       ]
@@ -22,7 +22,7 @@
       ]
     },
     "ambulance": {
-      "pkg": "sar_forest_ambulance.pkg.json",
+      "pkg": "../../packages/sar_forest_ambulance.pkg.json",
       "units": [
         "amb1"
       ]

@@ -7,7 +7,7 @@
 #
 # Op:      ops/sar_forest_labels.op.json verified at the gate (CAP-008
 #          silent - 'human' is in the bound advert's class enum), then
-#          tests/packages/sar_forest_labels.deploy.json deployed - de.package/2.4
+#          packages/sar_forest_labels.deploy.json deployed - de.package/2.4
 #          with fleet.event_target_classes.
 # World:   worlds/sar_forest_decoy.yaml - same truth as K (person_1 at X,
 #          phone_1, car_1 decoy); only the wire labels change.

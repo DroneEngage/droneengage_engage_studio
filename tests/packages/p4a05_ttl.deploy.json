@@ -3,7 +3,7 @@
  "roles": {
   "scout":  { "pkg": "fleet_scout_ttl30.json",
               "units": ["copter1"] },
-  "worker": { "pkg": "fleet_worker.json",
+  "worker": { "pkg": "../../packages/fleet_worker.json",
               "units": ["copter2", "copter3"] }
  }
 }

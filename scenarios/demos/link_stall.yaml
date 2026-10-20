@@ -7,7 +7,7 @@ version: 1
 name: link_stall
 realtime: true
 transport: fake
-operation: ../../tests/packages/copter_square_probe.json
+operation: ../../packages/copter_square_probe.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 40
 fleet:

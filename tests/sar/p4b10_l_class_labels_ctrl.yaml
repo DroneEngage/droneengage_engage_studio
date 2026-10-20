@@ -8,7 +8,7 @@
 #          lacks 'person', so CAP-008 fires (error severity per MP-0214)
 #          and verify.proceed_rules lets the run deploy anyway with the
 #          finding recorded in verify.json; then the plain
-#          tests/packages/sar_forest.deploy.json (de.package/2.2) deploys.
+#          packages/sar_forest.deploy.json (de.package/2.2) deploys.
 #
 # Proves per spec:
 #   - 'human' boxes are really emitted (journal "event detect.detected
