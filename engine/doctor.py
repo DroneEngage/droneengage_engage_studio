@@ -345,10 +345,12 @@ def main(argv):
     if json_out:
         print(json.dumps(d.rows, indent=1))
     else:
+        tags = {"ok": ("OK", simlib.col_green),
+                "missing": ("MISSING", simlib.col_red),
+                "optional": ("OPTIONAL", simlib.col_yellow)}
         for r in d.rows:
-            tag = {"ok": "OK", "missing": "MISSING",
-                   "optional": "OPTIONAL"}[r["status"]]
-            line = f"{tag:8s} {r['item']}"
+            tag, c = tags[r["status"]]
+            line = f"{c(tag.ljust(8))} {r['item']}"
             if r["detail"]:
                 line += f"  {r['detail']}"
             if r["fix"]:
