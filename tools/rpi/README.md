@@ -67,6 +67,43 @@ into `rss.csv`; events and per-cycle values go to `events.csv` /
 logs. The final summary prints the locked-window band means, +30s/end
 delta, and the reseed series.
 
+### Forcing an algorithm for the RSS run
+
+`tracker_rss.sh` takes the tracker config from `TRACKER_CONFIG`, so any
+`tracker_algorithm_index` / `tracker_auto_csrt_min_mem_mb` combination can
+be measured without touching the production config:
+
+```bash
+# generate a variant config, then:
+TRACKER_CONFIG=/tmp/de_tracker.kcf.json LOCK_WINDOW_S=90 CYCLES=0 \
+    ORT_LIB=~/opt/onnxruntime-linux-aarch64-1.18.1/lib \
+    ./tracker_rss.sh
+```
+
+e.g. `tracking: {tracker_algorithm_index: -1, tracker_auto_csrt_min_mem_mb:
+99999}` forces the AUTO->KCF path on a large-RAM board — the same code
+path a 1GB board takes.
+
+## tracker_auto_probe.sh — AUTO algorithm-selection probe
+
+Checks `tracker_algorithm_index=-1` (AUTO, CA-0044) resolution: starts
+`de_tracker` briefly per generated config variant and asserts the
+`tracker_algorithm_index AUTO: MemTotal=.. threshold=.. -> X` startup
+line. Expectations are derived from the host's real MemTotal, so the same
+script expects CSRT on a big board and KCF on a 1GB one. No bus or video
+chain needed — the AUTO line is printed before the camera opens.
+
+```
+./tracker_auto_probe.sh        # PASS/FAIL per variant, exit !=0 on failure
+```
+
+Variants: `auto` (default threshold), `forced_kcf` (threshold=MemTotal+1),
+`forced_csrt` (threshold=1), `bad_thresh` (threshold=0 must be ignored),
+`explicit` (index 7 must print no AUTO line).
+
+Env knobs: `TRACKER_BIN`, `RUN_DIR`, `VDEV_SRC`, `VDEV_OUT`, `BUS_PORT`,
+`PROBE_S` (per-variant run seconds, default 6).
+
 ### Gotchas learned on rpi5 (CA-0042)
 
 - `v4l2loopback` `exclusive_caps=Y`: the node only shows capture caps
