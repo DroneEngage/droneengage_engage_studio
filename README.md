@@ -25,6 +25,24 @@ docs/       authoring    - SCENARIOS.md: the de.scenario/1 reference;
 wiki/       user docs    - USER_GUIDE.md: the plain-English guide
 ```
 
+## Quickstart (Docker)
+
+One image with SITL, the DE binaries, the sim engine and the
+Mavlink3DMap viewer baked in - the fastest way to see a scenario run:
+
+```bash
+docker build -f docker/Dockerfile -t de-sim .
+docker run -it --network host de-sim          # runs the canopy-search demo
+```
+
+The run brings the fleet up, flies the sweep and then parks with the
+viewer live - open the printed `render viewer:` URL in a browser, and
+`Ctrl-C` when done. `--network host` is required (the sim binds its
+127.0.0.1 slots; Linux only). See [docker/README.md](docker/README.md)
+for details, other commands, what stays host-side, and the current
+upstream gaps (the public de_comm/de_mavlink mirrors predate the
+nav-adapter deploy path, so the demo does not reach flight yet).
+
 ## Setup (per machine)
 
 ```bash

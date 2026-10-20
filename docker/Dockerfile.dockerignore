@@ -1,0 +1,23 @@
+# Build context for docker/Dockerfile (BuildKit resolves
+# <Dockerfile-name>.dockerignore next to the Dockerfile). The sim repo
+# is copied into the image wholesale - keep host state, build output
+# and caches out of the image.
+.git
+_wt
+var
+**/__pycache__
+**/*.pyc
+.pytest_cache
+node_modules
+**/node_modules
+/sim.local.env
+logs
+img
+build
+# The op verifier wraps the webclient's verify pipeline
+# (src/js/core/mission/verify/), which is not published on the public
+# DroneEngage/droneengage_webclient_react mirror. Shipping the wrapper
+# without it fails every scenario that has an operation; without the
+# file the runner takes its designed skip path and records
+# "P5-06 CLI not yet available" in verify.json.
+/tools/verify_wrap.js
