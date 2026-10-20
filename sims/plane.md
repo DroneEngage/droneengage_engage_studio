@@ -16,7 +16,7 @@ external-server fields (accounts, `--user`/`--auth-server` overrides).
 ```bash
 ./sim up sims/plane.yaml
 ./sim ctl -s plane status
-./sim ctl -s plane web --print
+./sim status -s plane --open-web
 ```
 
 The plane arms in MANUAL; `land` resets the SITL (a plane cannot land

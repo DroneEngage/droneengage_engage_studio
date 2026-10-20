@@ -240,12 +240,13 @@ def _dir_owner(pids_dir):
 
 
 def up(sim_src, fresh=False, timeout=180, exclusive=False,
-       world_stream=False):
+       world_stream=False, open_web=False):
     """sim_src: a sim file path, or an inline sim dict (from a test).
     Restarts only the same-named sim; `exclusive` (test runs) downs every
     other sim first. `world_stream` says the caller will serve
     de.worldstream/1 on render.stream_port (a scenario with a world) -
-    the printed viewer URL only advertises ?world= then."""
+    the printed viewer URL only advertises ?world= then. `open_web`
+    xdg-opens the webclient deep link once the fleet is up."""
     sim = simlib.load_sim(sim_src,
                           exclusive=exclusive and not _shared())
     name = sim["name"]
@@ -412,13 +413,15 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
           + (simlib.col_yellow(
              "\nSITL needs ~1-2 min for GPS/EKF before `arm` succeeds.")
              if any(u["fc"] for u in m["units"]) else ""))
-    # the GCS deep links - always printed so `ctl web --print` is not
-    # needed just to grab them
+    # the GCS deep links - always printed; --open-web only adds the
+    # browser open
     print("webclient: " + simlib.col_cyan(simlib.webclient_url(m)))
     # a second GCS needs its own senderID - same-party connections kick
     # each other off the comm server
     print("planning:  " + simlib.col_cyan(
         simlib.webclient_url(m, "/planning", "GCSPLN_" + name)))
+    if open_web:
+        ctl.xdg_open(simlib.webclient_url(m))
     return m
 
 

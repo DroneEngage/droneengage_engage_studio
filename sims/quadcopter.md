@@ -23,7 +23,7 @@ page comes up with the sim.
 ```bash
 ./sim up sims/quadcopter.yaml
 ./sim ctl -s quadcopter status       # prints the viewer + webclient links
-./sim ctl -s quadcopter web --print
+./sim status -s quadcopter --open-web
 ./sim ctl -s quadcopter arm quad1    # after ~1-2 min GPS/EKF warm-up
 ```
 

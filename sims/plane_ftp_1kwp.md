@@ -46,7 +46,7 @@ cd -
 #    FC-side confirmation in the de_mavlink log: "Flight plan received"
 
 # 4. GCS deep link
-./sim ctl -s plane_ftp_1kwp web --print
+./sim status -s plane_ftp_1kwp --open-web
 ```
 
 Open the printed `webclient:` link, then on the mission panel click

@@ -9,7 +9,7 @@ copters3 for scenarios that only need a pair.
 ```bash
 ./sim up sims/copters2.yaml
 ./sim ctl -s copters2 status
-./sim ctl -s copters2 web --print
+./sim status -s copters2 --open-web
 ```
 
 SITL needs ~1–2 min of GPS/EKF warm-up before `arm` succeeds.

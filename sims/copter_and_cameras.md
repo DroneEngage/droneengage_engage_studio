@@ -22,7 +22,7 @@ real server.
 ```bash
 ./sim up sims/copter_and_cameras.yaml
 ./sim ctl -s copter_and_cameras status
-./sim ctl -s copter_and_cameras web --print   # camera feeds show in the GCS
+./sim status -s copter_and_cameras --open-web   # camera feeds show in the GCS
 ```
 
 ## Teardown

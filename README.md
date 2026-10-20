@@ -86,7 +86,7 @@ and SITL's TCP ports listen on all interfaces.
 ./sim view scenarios/demos/world_canopy_viewer.yaml   # a demo + 3D viewer
 ./sim ctl status                      # live processes / online units /
                                       # the webclient deep link
-./sim web                             # open the webclient logged into this sim
+./sim status --open-web               # open the webclient logged into this sim
 ./sim down
 ./sim clean --dry-run                 # what pruning var/run/ + var/results/ frees
 ```
@@ -296,10 +296,9 @@ ready-made single-box personal sims for an external server, on disjoint
 ```
 
 One command for sitting at a sim: `ensure` (reuse if warm, additive like
-`up`), then the webclient opened in planning mode (`./sim web
---planning`), then the render/world side, then the recorder, then one
-status block - deep links, units online, record file - and it parks
-until Ctrl-C.
+`up`), then the webclient opened in planning mode, then the render/world
+side, then the recorder, then one status block - deep links, units
+online, record file - and it parks until Ctrl-C.
 
 - **Viewer**: the sim file's `render:` wins; a spec without one gets
   `render: {mode: viewer}` so Mavlink3DMap (mav_bridge + vite) and the

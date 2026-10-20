@@ -4,20 +4,20 @@
   ./sim blocks                     list blocks (reusable unit types)
   ./sim block <name>               show a block resolved through `extends`
   ./sim show <sim.yaml>            units, modules and ports a sim expands to
-  ./sim up <sim.yaml> [--fresh]    start a sim (restarts the same-named one;
+  ./sim up <sim.yaml> [--fresh] [--open-web]
+                                   start a sim (restarts the same-named one;
                                    refuses ports of a live sim - sims run in
                                    parallel; unit names may repeat on
                                    per-sim servers but stay unique on a
                                    shared external stack or rendered
-                                   cameras)
+                                   cameras; --open-web xdg-opens the
+                                   webclient link)
   ./sim down [name|--all]          stop one sim, or every sim
   ./sim sims                       generated sims and live process counts
-  ./sim status [live|all]          = ./sim ctl status (live sims only;
-                                     `all` also lists downed ones)
-  ./sim web [name] [--print] [--planning]
-                                   webclient deep links for a sim: opens the
-                                   browser (planner with --planning);
-                                   --print only shows the URLs
+  ./sim status [-s <sim>] [live|all] [--open-web]
+                                   = ./sim ctl status (live sims only;
+                                     `all` also lists downed ones;
+                                     --open-web xdg-opens the sim's link)
   ./sim studio <sim.yaml> [--world <w>] [--record <file>] [--down]
                                    the human session in one command: the
                                    sim up (reuse if warm), the webclient
@@ -29,7 +29,7 @@
                                    seam; Ctrl-C finalizes the recording
                                    and leaves the sim up unless --down
   ./sim ctl [-s <sim>] <cmd> ...   operator console (./sim ctl for help)
-  ./sim run <file.yaml> [--seed N] [--keep] [--hold|--view]
+  ./sim run <file.yaml> [--seed N] [--keep] [--hold|--view] [--open-web]
                        [--module <name>=<path>] ...
                                    run a test/scenario - owns the machine:
                                    downs every other sim (the CI posture;
@@ -41,7 +41,11 @@
                                    links print) until Ctrl-C. Interactive
                                    work is additive by default: a bare
                                    sims/*.yaml just comes up
-                                   (hash-reused, like up).
+                                   (hash-reused, like up). --open-web
+                                   opens the webclient link once the sim
+                                   is up (with --hold/--view or a bare
+                                   sims file - a plain run tears it down
+                                   again).
                                    --module <name>=<abs path> (repeatable)
                                    swaps a catalog module / de_comm binary
                                    for this run only: same fleet spec ->
@@ -57,7 +61,8 @@
                                    --shared. verdicts + junit in
                                    var/results/nightly/; --tier smoke runs
                                    only the marked fast first-pass set
-  ./sim view <scenario.yaml>       one command for sim + Mavlink3DMap viewer:
+  ./sim view <scenario.yaml> [--open-web]
+                                   one command for sim + Mavlink3DMap viewer:
                                    = run --hold (the scenario needs
                                    render: {mode: viewer}); same shared/
                                    exclusive rules as run
@@ -423,11 +428,13 @@ def main(argv):
         elif c == "up":
             import launcher
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--fresh",))
+            bad = _bad_flags(a, ("--fresh", "--open-web"))
             if bad or len(files) != 1:
-                sys.exit("usage: ./sim up <sim.yaml> [--fresh]"
+                sys.exit("usage: ./sim up <sim.yaml> [--fresh] "
+                         "[--open-web]"
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
-            launcher.up(files[0], fresh="--fresh" in a)
+            launcher.up(files[0], fresh="--fresh" in a,
+                        open_web="--open-web" in a)
         elif c == "down":
             import launcher
             names = [x for x in a if not x.startswith("-")]
@@ -462,10 +469,12 @@ def main(argv):
                           f"{len(simlib.read_pids(n))} proc(s) alive")
         elif c == "status":
             import ctl
-            ctl.main(["status"] + a)
-        elif c == "web":
-            import ctl
-            ctl.main(["web"] + a)
+            # ctl parses `-s <sim>` only ahead of the command word -
+            # hoist it so `./sim status -s X` works
+            if len(a) >= 2 and a[0] in ("-s", "--sim"):
+                ctl.main(a[:2] + ["status"] + a[2:])
+            else:
+                ctl.main(["status"] + a)
         elif c == "ctl":
             import ctl
             try:
@@ -490,11 +499,12 @@ def main(argv):
                 record = a[i + 1]
                 del a[i:i + 2]
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--keep", "--hold", "--view"))
+            bad = _bad_flags(a, ("--keep", "--hold", "--view",
+                                 "--open-web"))
             if bad or len(files) != 1:
                 sys.exit(f"usage: ./sim {c} <file.yaml> [--seed N] "
                          "[--keep] [--hold|--view] [--record <file>] "
-                         "[--module <name>=<path>] ..."
+                         "[--open-web] [--module <name>=<path>] ..."
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
             # `try` is the iteration form of `run`: it always keeps the
             # sim (no teardown) so the next try lands on a warm fleet
@@ -507,7 +517,8 @@ def main(argv):
             return scenario_runner.run(files[0], keep=keep,
                                        hold=bool({"--hold", "--view"}
                                                  & set(a)), seed=seed,
-                                       record=record)
+                                       record=record,
+                                       open_web="--open-web" in a)
         elif c == "suite":
             # the full suite driver (verdicts, flaky rerun, junit) lives
             # in ci/run_suite.py - forward everything after `--seeds`
@@ -697,13 +708,14 @@ def main(argv):
                 record = a[i + 1]
                 del a[i:i + 2]
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ())
+            bad = _bad_flags(a, ("--open-web",))
             if bad or len(files) != 1:
                 sys.exit("usage: ./sim view <scenario.yaml> "
-                         "[--record <file>]"
+                         "[--record <file>] [--open-web]"
                          + (f" - unknown {' '.join(bad)}" if bad else ""))
             return scenario_runner.run(files[0], hold=True,
-                                       record=record)
+                                       record=record,
+                                       open_web="--open-web" in a)
         elif c == "logs":
             sim_name = None
             if a and a[0] in ("-s", "--sim"):

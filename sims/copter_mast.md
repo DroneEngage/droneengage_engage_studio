@@ -10,7 +10,7 @@ is never sent a nav command; its package is a sensor mission only.
 ```bash
 ./sim up sims/copter_mast.yaml
 ./sim ctl -s copter_mast status
-./sim ctl -s copter_mast web --print
+./sim status -s copter_mast --open-web
 ```
 
 ## Teardown

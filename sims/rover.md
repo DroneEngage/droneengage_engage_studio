@@ -16,7 +16,7 @@ fields (accounts, `--user`/`--auth-server` overrides).
 ```bash
 ./sim up sims/rover.yaml
 ./sim ctl -s rover status
-./sim ctl -s rover web --print
+./sim status -s rover --open-web
 ```
 
 `land` on the rover = HOLD + disarm. Runs in parallel with

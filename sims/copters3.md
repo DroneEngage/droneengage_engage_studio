@@ -10,8 +10,8 @@ or assume this shape.
 ```bash
 ./sim up sims/copters3.yaml
 ./sim ctl -s copters3 status
-./sim ctl -s copters3 web --print     # WebClient deep link (needs the
-                                    # dev server on https://localhost:3000)
+./sim status -s copters3 --open-web   # WebClient deep link (needs the
+                                      # dev server on https://localhost:3000)
 ```
 
 SITL needs ~1–2 min of GPS/EKF warm-up before `arm` succeeds:

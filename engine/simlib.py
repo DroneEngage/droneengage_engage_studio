@@ -136,7 +136,7 @@ GCS_PARTY = "GCS_FLEET"
 FULL_PERM = 0xFFFFFFFF
 
 # where a webclient is served on this machine (npm start default) - the
-# base of the deep link printed by `sim status` / opened by `./sim web`
+# base of the deep link printed by `sim status` / opened by `--open-web`
 WEBCLIENT_URL = setting("SIM_WEBCLIENT_URL", "https://localhost:3000").rstrip("/")
 # hostname the deep links use for the sim's own 127.0.0.1 server ports.
 # Set to "airgap.local" (with a /etc/hosts entry + the ssl_airgap

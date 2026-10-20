@@ -10,7 +10,7 @@ the mixed-vehicle bring-up regression.
 ```bash
 ./sim up sims/mixed_vehicles.yaml
 ./sim ctl -s mixed_vehicles status
-./sim ctl -s mixed_vehicles web --print
+./sim status -s mixed_vehicles --open-web
 ```
 
 Arm differs per vehicle — the plane arms in MANUAL, the rover arms in

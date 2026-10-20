@@ -18,7 +18,7 @@ each — on **your own** server stack. Same external-server wiring as
 ```bash
 ./sim up sims/quadcopters-4.yaml
 ./sim ctl -s quadcopters-4 status
-./sim ctl -s quadcopters-4 web --print
+./sim status -s quadcopters-4 --open-web
 ```
 
 ## Teardown

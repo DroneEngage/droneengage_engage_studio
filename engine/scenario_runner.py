@@ -928,24 +928,27 @@ def run_timeline(scn, ctx):
     return ok
 
 
-def _hold(m, world_stream=False):
+def _hold(m, world_stream=False, open_web=False):
     """--hold: park the run after the timeline with the world stream,
     truth recorder, operator bot and render procs still live - the
     interactive Mavlink3DMap session. Ctrl-C releases into the normal
     assertions/teardown. `world_stream` says a de.worldstream/1 feed is
     live on render.stream_port - only then does the printed URL carry
-    ?world= (a bare sim has no stream)."""
+    ?world= (a bare sim has no stream). `open_web` xdg-opens the
+    webclient link."""
     render = m.get("render") or {}
     print(simlib.col_bold("\n== holding - Ctrl-C to finish the run =="),
           flush=True)
     # the parked sim's webclient deep links - a held run is exactly when
-    # the operator wants to click into the GCS (same links `ctl web`
-    # prints; each page gets its own GCS senderID)
+    # the operator wants to click into the GCS (each page gets its own
+    # GCS senderID)
     print("webclient: " + simlib.col_cyan(simlib.webclient_url(m)),
           flush=True)
     print("planning:  " + simlib.col_cyan(
           simlib.webclient_url(m, "/planning", "GCSPLN_" + m["name"])),
           flush=True)
+    if open_web:
+        ctl.xdg_open(simlib.webclient_url(m))
     if render:
         url = simlib.render_viewer_url(render, world_stream)
         print("render viewer: " + simlib.col("1;36", url), flush=True)
@@ -1077,7 +1080,7 @@ def _early_result(scn, t_file, out, t0_wall, why):
 
 
 def run_scenario(t_file, seed=None, keep=False, hold=False,
-                 record=None):
+                 record=None, open_web=False):
     """One de.scenario/1 run -> exit code (0 = every non-SKIP assertion
     passed and no step failed). hold parks the run after the timeline
     (the world stream and the render procs stay live) until Ctrl-C.
@@ -1239,7 +1242,8 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
             # detection row clock)
             ctx["hold_ms"] = int(time.time() * 1000)
             tele.until_ms = ctx["hold_ms"]
-            _hold(m, world_stream=ctx.get("world_stream") is not None)
+            _hold(m, world_stream=ctx.get("world_stream") is not None,
+                  open_web=open_web)
     except Exception as e:
         # a runner bug must still reach assertions/teardown/stop(): the
         # bot, telemetry and link threads and the fleet are never leaked
@@ -1384,12 +1388,14 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
     return 0 if ok and n_fail == 0 else 1
 
 
-def run(t_file, keep=False, hold=False, seed=1, record=None):
+def run(t_file, keep=False, hold=False, seed=1, record=None,
+        open_web=False):
     """`./sim run` dispatcher: scenarios -> the de.scenario/1 engine (a
     bare sims/*.yaml file has no steps - it is just ensured up, additive
     like ./sim up but hash-reused, it leaves the other live sims
     alone). --record <file> captures the parked window's webclient
-    actions into a de.scenario/1 file (record.py)."""
+    actions into a de.scenario/1 file (record.py). --open-web opens the
+    sim's webclient link once it is up."""
     raw = simlib.load_yaml(os.path.abspath(t_file))
     if scenario.is_sim_spec(raw):
         print(simlib.col_yellow(
@@ -1398,6 +1404,8 @@ def run(t_file, keep=False, hold=False, seed=1, record=None):
         # additive like `sim up`: a bare sim is nobody's test - it must
         # not down the other live sims
         m = launcher.ensure(t_file, exclusive=False)
+        if open_web:
+            ctl.xdg_open(simlib.webclient_url(m))
         if record:
             import record as record_mod
             record_mod.run_held(m, record)
@@ -1408,8 +1416,14 @@ def run(t_file, keep=False, hold=False, seed=1, record=None):
             print(simlib.col_green("sim is still up")
                   + " - ./sim down to stop it", flush=True)
         return 0
+    if open_web and not hold:
+        # a scenario run tears the sim down on exit - the link only
+        # lives while the run parks (--hold/--view)
+        print(simlib.col_yellow(
+            "--open-web ignored without --hold - the sim is torn down "
+            "when the run ends"), flush=True)
     return run_scenario(t_file, seed=seed, keep=keep, hold=hold,
-                        record=record)
+                        record=record, open_web=open_web)
 
 
 def run_suite(suite_dir, seeds, keep=False):
