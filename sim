@@ -31,13 +31,17 @@
   ./sim ctl [-s <sim>] <cmd> ...   operator console (./sim ctl for help)
   ./sim run <file.yaml> [--seed N] [--keep] [--hold|--view]
                        [--module <name>=<path>] ...
-                                   run a test/scenario (owns the machine:
-                                   downs every other sim); --keep skips the
-                                   teardown, --hold parks after the timeline
-                                   (world stream + Mavlink3DMap viewer live;
-                                   the sim's webclient deep links print)
-                                   until Ctrl-C. A bare sims/*.yaml just
-                                   comes up (hash-reused, like up).
+                                   run a test/scenario - owns the machine:
+                                   downs every other sim (the CI posture;
+                                   --shared / SIM_SHARED=1 keeps it
+                                   additive on a shared box). --keep skips
+                                   the teardown, --hold parks after the
+                                   timeline (world stream + Mavlink3DMap
+                                   viewer live; the sim's webclient deep
+                                   links print) until Ctrl-C. Interactive
+                                   work is additive by default: a bare
+                                   sims/*.yaml just comes up
+                                   (hash-reused, like up).
                                    --module <name>=<abs path> (repeatable)
                                    swaps a catalog module / de_comm binary
                                    for this run only: same fleet spec ->
@@ -48,12 +52,15 @@
                                    on the warm sim (no SITL warm-up)
   ./sim suite [dir ...] [--seeds 1,2,3] [--keep] [--tier smoke]
                                    run every yaml under dir(s) once per seed
-                                   (default dir: tests) - verdicts + junit
-                                   in var/results/nightly/; --tier smoke runs
+                                   (default dir: tests) - the nightly run:
+                                   owns the machine serially, unless
+                                   --shared. verdicts + junit in
+                                   var/results/nightly/; --tier smoke runs
                                    only the marked fast first-pass set
   ./sim view <scenario.yaml>       one command for sim + Mavlink3DMap viewer:
                                    = run --hold (the scenario needs
-                                   render: {mode: viewer})
+                                   render: {mode: viewer}); same shared/
+                                   exclusive rules as run
   ./sim record <sim|live-sim> -o <file.yaml>
                                    capture a live webclient session through
                                    the real server's command_plugin seam and

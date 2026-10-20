@@ -236,6 +236,14 @@ cannot see inside the stream.
 
 ### Running several sims in parallel
 
+**Default posture: interactive work is additive, tests are exclusive.**
+`up`, `studio`, `web`, `ctl` and a `run`/`view` of a bare `sims/*.yaml`
+(no steps to execute) all stay next to whatever is already running. A
+`run`/`view`/`suite` of a file with `steps:` owns the machine - it downs
+every other sim first, because a test needs a clean machine to be
+meaningful. On a shared box pass `--shared` (or export `SIM_SHARED=1`)
+and even scenario runs stay additive; exclusive mode is the CI posture.
+
 `./sim up` is additive: it only restarts the same-named sim and refuses
 to start one whose ports collide with a live sim (pick a different
 `slot_base`, or let `--slot-base any` choose). Unit names may repeat
@@ -330,6 +338,12 @@ need disjoint `slot_base`s - `up` verifies there is no overlap with a
 live sim before starting anything.
 
 ## Tests - the automated library
+
+A `run`/`view`/`suite` of a file with `steps:` is **exclusive**: it downs
+every other sim first - that is the CI posture (a test needs a clean
+machine), and the interactive commands stay additive (see
+*Running several sims in parallel*). `--shared` / `SIM_SHARED=1` keeps a
+run additive on a shared box.
 
 `tests/` holds everything automation runs: the `de.scenario/1` library in
 its area subdirectories (`faults/`, `p4a/`, `verify/`, `world`/p5, ...).

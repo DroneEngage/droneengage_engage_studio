@@ -121,10 +121,10 @@ Later runs on the same fleet reuse it, so they start faster.
 | `./sim sims` | Which fleets are up and how many processes are alive. |
 | `./sim status` | Live processes + which units the server sees online. |
 | `./sim ctl ...` | Operator console — remote-control the fleet by hand (see §7). |
-| `./sim run <file>` | Run a test or scenario to the end, then tear down. |
+| `./sim run <file>` | Run a test or scenario to the end, then tear down. **Owns the machine** — stops other sims first. |
 | `./sim run <file> --keep` | Same, but leave the fleet up afterwards so you can poke it. |
-| `./sim view <file>` | Run a demo **and** open the 3D viewer; stays up until Ctrl-C. |
-| `./sim suite tests` | Run a whole folder of tests (the nightly run). |
+| `./sim view <file>` | Run a demo **and** open the 3D viewer; stays up until Ctrl-C. Same shared/exclusive rules as `run`. |
+| `./sim suite tests` | Run a whole folder of tests (the nightly run). Owns the machine. |
 | `./sim new my_demo` | Create a starter scenario file you can edit. |
 | `./sim record <sim> -o <file>` | Record a live WebClient session into a replayable scenario (see §10). |
 | `./sim validate <file>` | Check a file for mistakes — starts nothing. |
@@ -133,6 +133,14 @@ Later runs on the same fleet reuse it, so they start faster.
 | `./sim clean` | Delete old run/results folders (add `--dry-run` to preview). |
 
 Running `./sim` alone prints this same list.
+
+**On a shared machine:** interactive commands are additive by default —
+`up`, `studio` and a `run`/`view` of a bare `sims/*.yaml` never stop a
+fleet that is already running. Only a `run`/`view`/`suite` of a file
+with `steps:` owns the machine (stops the other sims first), because a
+test needs a clean machine — that is the CI posture. Pass `--shared` on
+the command line, or export `SIM_SHARED=1`, and even scenario runs stay
+additive next to live sims.
 
 ---
 
