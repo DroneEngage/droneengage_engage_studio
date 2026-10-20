@@ -102,7 +102,7 @@ def _close(a, b, name):
 def replay(sub_yaml, submitted):
     """Rerun the submission's scenario and compare assertion values."""
     out = subprocess.run(
-        [os.path.join(ROOT, "sim"), "run", sub_yaml],
+        [os.path.join(ROOT, "sim"), "run", sub_yaml, "--seed", str(OFFICIAL_SEED)],
         cwd=ROOT, capture_output=True, text=True, timeout=1800)
     m = None
     for line in out.stdout.splitlines():
