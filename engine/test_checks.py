@@ -591,6 +591,39 @@ class T(unittest.TestCase):
         # about to be downed, so its ports don't disqualify the floor
         self.assertEqual(exclusive["slot_base"], simlib.SLOT_BASE)
 
+    def test_stub_pose_port_follows_resolved_slot(self):
+        """world.prepare_sim stamps config.<stub>.stub.{sysid,pose_port}
+        from the slot_base it sees before the fleet resolves - under
+        --slot-base any / SIM_SLOT_BASE_OVERRIDE the SITL serial5
+        listener binds the resolved slot, so expansion must re-stamp
+        the stub block or the pose feed dials a dead port (the stub's
+        level-attitude fallback then produces wrong projections)."""
+        spec = {"version": 1, "name": "stub_slot",
+                "server": {"type": "fake"}, "slot_base": 35,
+                "units": [{"name": "s1", "block": "copter",
+                           "add_modules": ["stub_ai_box"],
+                           "config": {"stub_ai_box": {"stub":
+                                      {"world": "w", "seed": 1,
+                                       "unit": "s1", "sysid": 35,
+                                       "pose_port": 6115}}}},
+                          {"name": "cam1", "block": "camera_fixed",
+                           "add_modules": ["stub_ai_box"],
+                           "config": {"stub_ai_box": {"stub":
+                                      {"world": "w", "seed": 1,
+                                       "unit": "cam1", "sysid": 1,
+                                       "pose_port": 0}}}}]}
+        with mock.patch.dict(os.environ,
+                             {"SIM_SLOT_BASE_OVERRIDE": "46"}):
+            units = simlib.load_sim(spec)["units"]
+        copter = units[0]["config"]["stub_ai_box"]["stub"]
+        self.assertEqual(copter["pose_port"],
+                         units[0]["fc"]["pose_port"])
+        self.assertEqual(copter["sysid"], units[0]["fc"]["sysid"])
+        # a static keeps the 9102-feed stub identity prepare_sim gave it
+        static = units[1]["config"]["stub_ai_box"]["stub"]
+        self.assertEqual(static["pose_port"], 0)
+        self.assertEqual(static["sysid"], 1)
+
     def _conflict_pair(self, server_type="fake",
                        new_modules=None, other_modules=None):
         """(resolved sim, live manifest) sharing unit names on disjoint

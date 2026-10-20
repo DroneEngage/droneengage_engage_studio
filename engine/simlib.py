@@ -1243,6 +1243,19 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         if px:
             u["fc"]["fcb_proxy"] = {"port": 7760 + 10 * slot,
                                     "ctrl": 7860 + 10 * slot}
+        # world.prepare_sim stamps config.<stub>.stub.{sysid,pose_port}
+        # from the slot_base it guesses before the fleet resolves -
+        # studio/`--slot-base any`/`SIM_SLOT_BASE_OVERRIDE` can resolve
+        # a different slot, and the SITL serial5 listener always follows
+        # the resolved slot above. A stale stamp leaves the stub dialing
+        # a dead port (pose feed refused all run -> level-attitude
+        # fallback -> wrong geo projections), so the resolved fc values
+        # always win here.
+        for m in u["modules"]:
+            stub = (u["config"].get(m) or {}).get("stub")
+            if isinstance(stub, dict) and "pose_port" in stub:
+                stub["sysid"] = u["fc"]["sysid"]
+                stub["pose_port"] = u["fc"].get("pose_port") or 0
     if u.get("faketime") and not faketime_lib():
         raise SimError(
             f"unit {u['name']}: `faketime: true` needs libfaketime - "
