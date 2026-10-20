@@ -92,11 +92,29 @@ def _journal_restore(sim_dir):
 
 def down(name=None, quiet=False):
     dirs = [d for d in _pids_dirs(name) if os.path.isdir(d)]
+    strays = _stray_pids(name)
+    foreign_kept = False
+    if not _force():
+        # SL-0053 - a live sim another session owns is never silently
+        # downed: keep it, subtract its strays, and say so.
+        kept = []
+        for d in dirs:
+            sname, o = _dir_owner(d)
+            if o:
+                foreign_kept = True
+                print(simlib.col_yellow(
+                    f"sim {sname!r} owned by another session "
+                    f"(sid {o['sid']}) - kept; --force / SIM_FORCE=1 "
+                    "to stop it"), flush=True)
+                strays = [p for p in strays
+                          if p not in set(_stray_pids(sname))]
+            else:
+                kept.append(d)
+        dirs = kept
     for d in dirs:
         _journal_restore(os.path.dirname(d))
-    strays = _stray_pids(name)
     if not dirs and not strays:
-        if not quiet:
+        if not quiet and not foreign_kept:
             print("nothing running" if name is None
                   else f"sim {name!r}: nothing running")
         return
@@ -135,7 +153,7 @@ def down(name=None, quiet=False):
     for p in strays:
         if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
             os.kill(p, signal.SIGKILL)
-    if not quiet:
+    if not quiet and (pids or strays or not foreign_kept):
         print(simlib.col_yellow(
             f"sim stopped ({len(pids) + len(strays)} processes)"))
 
@@ -202,6 +220,25 @@ def _shared():
     return os.environ.get("SIM_SHARED") == "1"
 
 
+def _force():
+    """SIM_FORCE=1 / --force: take over a sim another live session owns
+    (SL-0053) - down it where the owner guard would refuse."""
+    return os.environ.get("SIM_FORCE") == "1"
+
+
+def _dir_owner(pids_dir):
+    """(sim_name, owner) for one pids dir - owner only when the sim is
+    live AND owned by a foreign live session (SL-0053). The legacy flat
+    var/run/pids/ dir names no sim, so it is always (None, None)."""
+    sname = os.path.basename(os.path.dirname(pids_dir))
+    if sname == os.path.basename(simlib.RUN_DIR):
+        return None, None
+    if sname not in simlib.live_sim_names():
+        return sname, None
+    return sname, simlib.foreign_owner(
+        simlib.load_manifest(sname, required=False))
+
+
 def up(sim_src, fresh=False, timeout=180, exclusive=False,
        world_stream=False):
     """sim_src: a sim file path, or an inline sim dict (from a test).
@@ -215,12 +252,35 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
     srv = sim["server"]
     simlib.check_binaries(sim)          # before stopping the running sim
     if exclusive and not _shared():
+        if not _force():
+            # SL-0053 - 'tests own the machine' must not silently down
+            # a sim another session owns; refuse with the way out.
+            foreign = [(n, simlib.foreign_owner(
+                            simlib.load_manifest(n, required=False)))
+                       for n in simlib.live_sim_names()]
+            foreign = [(n, o) for n, o in foreign if o]
+            if foreign:
+                sys.exit(simlib.col_red(
+                    "cannot own the machine: sim(s) "
+                    + ", ".join(f"{n} (session {o['sid']})"
+                                for n, o in foreign)
+                    + " belong to another live session - "
+                    "`--shared --slot-base any` runs beside them, "
+                    "--force downs them"))
         down(quiet=True)                # tests own the machine
     else:
         # additive `sim up`: refuse ports of a live sim (and unit names
         # where they still must be unique), restart only the same-named
         # one
         simlib.check_conflicts(sim)
+        if not _force() and name in simlib.live_sim_names():
+            fo = simlib.foreign_owner(
+                simlib.load_manifest(name, required=False))
+            if fo:
+                sys.exit(simlib.col_red(
+                    f"sim {name!r} is owned by another session "
+                    f"(sid {fo['sid']}) and still running - "
+                    "--force / SIM_FORCE=1 to take it over"))
         down(name, quiet=True)
     if srv["type"] == "external":
         # nothing local to bind except this sim's control port; but the
@@ -374,6 +434,15 @@ def ensure(sim_src, timeout=180, world_stream=False, exclusive=True):
     sim = simlib.load_sim(sim_src,
                           exclusive=exclusive and not _shared())
     m = simlib.load_manifest(sim["name"], required=False)
+    if m and not _force() and sim["name"] in simlib.live_sim_names():
+        # SL-0053 - reusing, swapping or restarting a sim another live
+        # session owns is the same silent takeover `up` refuses.
+        fo = simlib.foreign_owner(m)
+        if fo:
+            sys.exit(simlib.col_red(
+                f"sim {sim['name']!r} is owned by another session "
+                f"(sid {fo['sid']}) and still running - "
+                "--force / SIM_FORCE=1 to take it over"))
     if m and m.get("sim_hash") == sim["hash"]:
         alive = set(simlib.read_pids(sim["name"]))
         need = {f"server.{p}" for p in m["server_procs"]}

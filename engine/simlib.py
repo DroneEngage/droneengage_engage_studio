@@ -40,6 +40,7 @@ import os
 import re
 import socket
 import sys
+import time
 import urllib.parse
 
 import yaml
@@ -1345,6 +1346,43 @@ def live_sim_names():
     return [n for n in sim_names() if read_pids(n)]
 
 
+def owner_record():
+    """SL-0053 - who brought the sim up: host + login session id. A SID
+    outlives the CLI itself (a terminal tab's whole process tree shares
+    it), so the holder's own rerun reuses/restarts freely while a
+    second session is refused instead of silently downing the fleet."""
+    return {"host": socket.gethostname(), "sid": os.getsid(0),
+            "pid": os.getpid(), "t_ms": int(time.time() * 1000)}
+
+
+def _sid_alive(p_sid):
+    """The recorded session's leader (the SID doubles as its pid) still
+    runs - the cheap proxy for 'that terminal/session is still open'.
+    EPERM means alive-but-not-ours to signal; only ESRCH is dead."""
+    try:
+        os.kill(int(p_sid), 0)
+        return True
+    except PermissionError:
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def foreign_owner(p_manifest):
+    """The manifest's `owner` block when it names a DIFFERENT session
+    that is still alive on this host; None for same-session use, a
+    dead/stale owner and owner-less (pre-SL-0053) manifests."""
+    o = (p_manifest or {}).get("owner")
+    if not isinstance(o, dict):
+        return None
+    if o.get("host") != socket.gethostname():
+        return None
+    sid = o.get("sid")
+    if sid in (None, "", os.getsid(0)):
+        return None
+    return o if _sid_alive(sid) else None
+
+
 def units_by_name(manifest=None):
     m = manifest or load_manifest()
     return {u["name"]: u for u in m["units"]}
@@ -2253,7 +2291,8 @@ def generate(sim, sim_file=None):
     server_procs = gen_server(sim)
     render_procs = gen_render(sim)
     manifest = {"version": 1, "name": sim["name"], "sim_file": sim_file,
-                "sim_hash": sim["hash"], "server": sim["server"],
+                "sim_hash": sim["hash"], "owner": owner_record(),
+                "server": sim["server"],
                 "server_procs": server_procs,
                 "render_procs": render_procs,
                 "render": sim.get("render"),

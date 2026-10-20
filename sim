@@ -108,6 +108,10 @@ Global flags for show/up/run/view/suite/validate/studio:
   --shared                         run/view/suite stay additive next to
                                    live sims instead of downing them
                                    (= SIM_SHARED=1)
+  --force                          take over a sim another live session
+                                   still owns: up/run down it instead of
+                                   refusing, `down` stops it (every
+                                   command takes it; = SIM_FORCE=1)
   --slot-base <N|any>              the slot every port derives from (wins
                                    over the sim yaml's slot_base: and
                                    SIM_SLOT_BASE); `any` picks the lowest
@@ -326,6 +330,12 @@ def main(argv):
         print(f"sim {_version()}")
         return 0
     c, a = argv[0], argv[1:]
+    if "--force" in a:
+        # SL-0053 - take over a sim another live session owns (downs it
+        # on up/run/suite paths, stops it on `sim down`). Valid on every
+        # command, so strip it before per-command flag parsing.
+        a = [x for x in a if x != "--force"]
+        os.environ["SIM_FORCE"] = "1"
     try:
         if c in ("show", "up", "run", "try", "view", "suite",
                  "validate", "record", "studio"):
