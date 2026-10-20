@@ -1,0 +1,55 @@
+# Runbook: docs/CHALLENGE.md
+# challenges/sar_challenge - the fixed monthly challenge scenario:
+# one camera copter, the challenge_sar world, seed 11. Replace ONLY
+# the operation: line with your own package - every other key is part
+# of the contract the scoreboard verifies.
+#
+# The assert block is the scorecard: thresholds are floorless (min: 0 /
+# max_s: 9999) on purpose so every entry exits 0 and the MEASURED
+# values carry the score - see docs/CHALLENGE.md for the formula.
+version: 1
+name: sar_challenge
+realtime: true                 # the world truth tick is wall-clock
+seed: 11
+transport: fake
+world: ../../worlds/challenge_sar.yaml
+operation: ../../packages/p5_canopy_sweep.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: cam1, cls: copter, modules: [stub_ai_box]}
+timeline:
+  - {t: 0, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 2, do: deploy, timeout: 120}
+  - {t: 4, do: wait_ready, unit: cam1, timeout: 120}
+  - {t: 6, do: arm, unit: cam1}
+  - {t: 9, do: start}
+  - {t: 10, do: wait_journal, unit: cam1,
+     re: "mission main completed", timeout: 300}
+assert:
+  # score: coverage of the declared block (the plan was flown)
+  - coverage_complete: {area: search_block, cell_m: 5, min: 0,
+                        unit: cam1}
+  # score: mean POD over the same cells (the plan was worth flying)
+  - pod_mean: {area: search_block, cell_m: 5, min: 0}
+  # per-person POD, each on its own cell-sized poly
+  - pod_at: {truth: person_meadow, min: 0,
+             poly: [[-35.362902, 149.166019], [-35.362812, 149.166019],
+                    [-35.362812, 149.166111], [-35.362902, 149.166111]]}
+  - pod_at: {truth: person_wood, min: 0,
+             poly: [[-35.362677, 149.166295], [-35.362587, 149.166295],
+                    [-35.362587, 149.166387], [-35.362677, 149.166387]]}
+  - pod_at: {truth: person_barn, min: 0,
+             poly: [[-35.362542, 149.165854], [-35.362452, 149.165854],
+                    [-35.362452, 149.165946], [-35.362542, 149.165946]]}
+  # score: seconds from `start` to first find - the honest zero
+  # (person_barn) is intentionally not graded for time
+  - time_to_detect: {truth: person_meadow, max_s: 9999}
+  - time_to_detect: {truth: person_wood, max_s: 9999}
+  # score: how much of the reported stream matched truth (clutter and
+  # barn finds cost precision)
+  - detection_precision: {cls: person, min: 0, unit: cam1}
+  - detection_recall: {truth: person_meadow, min: 0}
+  - detection_recall: {truth: person_wood, min: 0}
+  - detection_recall: {truth: person_barn, min: 0}
+teardown: land

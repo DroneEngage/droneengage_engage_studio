@@ -1,0 +1,61 @@
+# challenge_sar - the SL-0046 monthly-challenge world (de.world/1).
+#
+# FIXED for the challenge season - do not tune to a submitted op.
+# Around the SITL home (-35.363262, 149.165237), inside the ~75x115 m
+# search_block the reference sweep covers at 40 m:
+#   person_meadow (N 45, E 75)  - open ground, under a survey leg: the
+#                target a working search must find fast.
+#   person_wood   (N 70, E 100) - under the wood_e crown (band 2-12 m,
+#                gap 0.35): nadir looks transmit ~35 %, oblique worse.
+#   person_barn   (N 85, E 60)  - inside barn_1 (building, 0-4 m): the
+#                honest zero - nothing should find them, and a reported
+#                find here is the world telling you your detector
+#                hallucinates, not that it is good.
+#   clutter - 0.5 person-look-alikes per km2 per minute, seeded and
+#                ground-anchored: every run sees the same false-positive
+#                field; detection_precision grades whether the op
+#                ignores them.
+# No phone, no SDR: this challenge scores camera search only.
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: person_meadow, cls: person, pos: [-35.362857, 149.166065],
+     size_m: 0.5}
+  - {id: person_wood, cls: person, pos: [-35.362632, 149.166341],
+     size_m: 0.5}
+  - {id: person_barn, cls: person, pos: [-35.362497, 149.165900],
+     size_m: 0.5}
+obstacles:
+  - {id: wood_e, kind: canopy,
+     poly: [[-35.362767, 149.166176], [-35.362497, 149.166176],
+            [-35.362497, 149.166617], [-35.362767, 149.166617]],
+     height_m: 12, base_m: 2, gap_fraction: 0.35,
+     rf_db_per_m: 0.3, rf_max_db: 20}
+  - {id: barn_1, kind: building,
+     poly: [[-35.362524, 149.165872], [-35.362470, 149.165872],
+            [-35.362470, 149.165928], [-35.362524, 149.165928]],
+     height_m: 4, rf_loss_db: 12}
+areas:
+  search_block:
+    {poly: [[-35.363082, 149.165624], [-35.362407, 149.165624],
+            [-35.362407, 149.166893], [-35.363082, 149.166893]]}
+clutter: {cls: person, rate_per_km2_min: 0.5, lifetime_s: 25,
+          anchor: ground}
+sensors:
+  camera:
+    lens: rectilinear
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 4            # static mast camera only; FC units
+                               # use rel_alt (the 40 m sweep layer)
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 0.95
+    p_detect_edge: 0.6
+    max_range_m: 120
+    pos_noise_px: 8
+    fps_boxes: 2
+    size_m: {person: 0.5, phone: 0.2}

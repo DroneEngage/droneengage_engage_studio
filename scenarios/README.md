@@ -6,6 +6,7 @@ automated (the CI / nightly regression library) lives in `../tests/`.
 
 ```
 demos/       showcase runs - viewers, render farm, things to look at
+challenges/ the monthly SAR challenge - docs/CHALLENGE.md
 examples/    small, commented starter files - copy one and edit
 ```
 

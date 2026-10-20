@@ -1,0 +1,46 @@
+{
+  "schema": "de.package/2.2",
+  "op": "p5_canopy_sweep",
+  "op_hash": "sha256:0b149025c372ca02eda9cde093ea5d10f5fba5758932eab5954fd1eb1ff22c74",
+  "role": "cam_scout",
+  "vehicle": { "type": "copter" },
+  "requires": [],
+  "fc_items": [
+    { "c": 22, "ft": 3, "mv": [0,0,0,0,0,0,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.363082,149.165567,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.363082,149.166559,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.362750,149.166559,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.362750,149.165567,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.362409,149.165567,40] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.362409,149.166559,40] },
+    { "c": 17, "ft": 3, "mv": [0,0,0,0,-35.362409,149.166559,40] }
+  ],
+  "missions": {
+    "main": {
+      "trigger": { "type": "op.start" },
+      "priority": 0,
+      "segment": { "start": 1, "end": 8 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    }
+  },
+  "manifest": [
+    { "seq": 1, "mission": "main", "step": "t",  "kind": "nav.takeoff" },
+    { "seq": 2, "mission": "main", "step": "w1", "kind": "nav.wp" },
+    { "seq": 3, "mission": "main", "step": "w2", "kind": "nav.wp" },
+    { "seq": 4, "mission": "main", "step": "w3", "kind": "nav.wp" },
+    { "seq": 5, "mission": "main", "step": "w4", "kind": "nav.wp" },
+    { "seq": 6, "mission": "main", "step": "w5", "kind": "nav.wp" },
+    { "seq": 7, "mission": "main", "step": "w6", "kind": "nav.wp" },
+    { "seq": 8, "mission": "main", "step": "l",  "kind": "end.hold" }
+  ],
+  "events": {},
+  "handlers": {},
+  "fleet": {
+    "roles": { "cam_scout": { "count": 1 } },
+    "phases": [ { "id": "search" } ],
+    "event_targets": { "detect.detected": "person" },
+    "event_sticky": [ "detect.detected" ]
+  },
+  "hash": "sha256:0000"
+}

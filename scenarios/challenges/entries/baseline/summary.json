@@ -1,0 +1,100 @@
+{
+  "scenario": "sar_challenge_baseline",
+  "file": "/home/you/de_code/droneengage_simulation_land/scenarios/challenges/entries/baseline/scenario.yaml",
+  "seed": 11,
+  "started_utc": "2026-10-20T09:47:48Z",
+  "wall_s": 284.4,
+  "commits": {
+    "sim": "6e93032",
+    "de_comm": "c745cfa",
+    "de_server": "9cf32a5",
+    "de_auth": "169341f",
+    "ardupilot": "8f59f0c537",
+    "webclient": "be6eb283"
+  },
+  "module_overrides": {},
+  "speedup": {
+    "cam1": 1.0
+  },
+  "speedup_requested": 1.0,
+  "realtime": {
+    "required": true,
+    "ok": true,
+    "note": "cam1=1.0"
+  },
+  "step_ok": true,
+  "assertions": [
+    {
+      "name": "coverage_complete",
+      "status": "PASS",
+      "value": 0.991,
+      "detail": "342/345 cells covered (5438 looks, ['cam1'])"
+    },
+    {
+      "name": "pod_mean",
+      "status": "PASS",
+      "value": 0.984,
+      "detail": "mean POD 0.984 over 345 cells (coverage 0.991)"
+    },
+    {
+      "name": "pod_at",
+      "status": "PASS",
+      "value": 1.0,
+      "detail": "person_meadow (truth row t 1792489907057) sits in a cell with POD 1.000 (7 looks)"
+    },
+    {
+      "name": "pod_at",
+      "status": "PASS",
+      "value": 0.9,
+      "detail": "person_wood (truth row t 1792489907057) sits in a cell with POD 0.900 (11 looks)"
+    },
+    {
+      "name": "pod_at",
+      "status": "PASS",
+      "value": 0.0,
+      "detail": "person_barn (truth row t 1792489907057) sits in a cell with POD 0.000 (7 looks)"
+    },
+    {
+      "name": "time_to_detect",
+      "status": "PASS",
+      "value": 40.2,
+      "detail": "person_meadow found 40.2 s after the start step (src bot, max 9999)"
+    },
+    {
+      "name": "time_to_detect",
+      "status": "FAIL",
+      "value": null,
+      "detail": "person_wood never found (src bot)"
+    },
+    {
+      "name": "detection_precision",
+      "status": "PASS",
+      "value": 1.0,
+      "detail": "7/7 detections hit a truth entity (0 clutter) >= 0 (src truth.jsonl)"
+    },
+    {
+      "name": "detection_recall",
+      "status": "PASS",
+      "value": 1.0,
+      "detail": "found ['person_meadow'] (src bot)"
+    },
+    {
+      "name": "detection_recall",
+      "status": "PASS",
+      "value": 0.0,
+      "detail": "found none; missed person_wood (occluded) (src bot)"
+    },
+    {
+      "name": "detection_recall",
+      "status": "PASS",
+      "value": 0.0,
+      "detail": "found none; missed person_barn (occluded) (src bot)"
+    }
+  ],
+  "counts": {
+    "pass": 10,
+    "fail": 1,
+    "skip": 0
+  },
+  "exit": 1
+}
