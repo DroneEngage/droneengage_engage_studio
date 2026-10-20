@@ -1,0 +1,54 @@
+# Runbook: scenarios/demos/link_stall.md
+# demos/link_stall - congested-cell blackout: a copter rides out a 30 s link stall and recovers in order
+#
+# promoted from tests/faults/link_lte_stall.yaml (CI original unchanged).
+
+version: 1
+name: link_stall
+realtime: true
+transport: fake
+operation: ../../tests/packages/copter_square_probe.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 40
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 2, do: deploy}
+  - {t: 6, do: arm, unit: c1}
+  - {t: 9, do: start}
+  - {t: 15, do: wait_journal, unit: c1, re: "RUN run .* started",
+     timeout: 60}
+  # a buffered blackout: every frame held in order for 30 s, then the
+  # whole queue flushes - the model restores itself at t=50, which is
+  # the recorded restore for recovers_after_fault
+  - {t: 20, fault: link_stall, unit: c1, dur_s: 30}
+  # the unit's watchdog flaps mid-stall; its re-auth is held in the tx
+  # queue and lands when the window ends -> comm line online again
+  - {t: 55, do: wait_journal, unit: c1, re: "comm line online",
+     timeout: 120}
+  # post-blackout the link carries commands again - one latched line
+  - {t: 62, do: fire, event: x.probe, unit: c1,
+     until: {re: "event x\\.probe latched", tries: 10, every_s: 8}}
+  - {t: 72, do: wait_journal, unit: c1, re: "mission main completed",
+     timeout: 240}
+assert:
+  # server-side the unit vanished (its watchdog dropped the dead-quiet
+  # ws) and returned when the held re-auth flushed through
+  - link_offline: {unit: c1, at_least: 1}
+  - journal_count: {unit: c1, re: "comm line offline", at_least: 1}
+  - journal_count: {unit: c1, re: "comm line online", at_least: 1}
+  # the sequenced comm-line events stay in order
+  - journal_order: {unit: c1, first: "comm line offline",
+                    then: "comm line online"}
+  # the offline span is the rest of the blackout (~10 s flap to the
+  # t=50 flush), not a momentary socket bounce
+  - journal_time_delta: {u1: c1, re1: "comm line offline",
+                         u2: c1, re2: "comm line online",
+                         min_s: 10, max_s: 60}
+  # and commands flow again after the blackout
+  - journal_count: {unit: c1, re: "event x\\.probe latched", equals: 1}
+  - recovers_after_fault: {within_s: 90}
+  - proc_alive: {unit: c1, proc: de_comm}
+  - journal_count: {unit: c1, re: "mission main completed", equals: 1}
+teardown: land

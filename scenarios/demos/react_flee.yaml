@@ -1,0 +1,36 @@
+# Runbook: scenarios/demos/react_flee.md
+# demos/react_flee - the world fights back: a fleeing person evades the loitering camera drone
+#
+# promoted from tests/worlds/world_react_flee.yaml (CI original unchanged).
+
+version: 1
+name: react_flee
+speedup: 1                   # the world truth tick is wall-clock
+seed: 7
+transport: fake
+world: ../../worlds/sar_forest_flee.yaml
+operation: ../../tests/packages/p5_react_flee.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 25
+fleet:
+  - {id: cam1, cls: copter, modules: [stub_ai_box]}
+timeline:
+  - {t: 0, do: mode, unit: cam1, mode: GUIDED}
+  - {t: 2, do: deploy, timeout: 120}
+  - {t: 4, do: wait_ready, unit: cam1, timeout: 120}
+  - {t: 6, do: arm, unit: cam1}
+  - {t: 9, do: start}
+  - {t: 10, do: wait_journal, unit: cam1,
+     re: "detect\\.detected", timeout: 240}
+  - {on: {world: person_1, re: "react"},
+     do: fire, event: world.reacted, unit: cam1}
+assert:
+  - journal_count: {unit: cam1, re: "detect\\.detected",
+                    at_least: 1}
+  - journal_count: {unit: cam1, re: "world\\.reacted",
+                    at_least: 1}
+  - distance_to: {unit: cam1, re: "detect\\.detected",
+                  detected_cls: person,
+                  truth: [person_1], max_m: 25}
+  - detection_precision: {cls: person, min: 0.8, unit: cam1}
+teardown: land

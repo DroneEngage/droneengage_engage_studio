@@ -1,0 +1,23 @@
+# Runbook: scenarios/demos/mixed_fleet.md
+# demos/mixed_fleet - every vehicle type at once: copter, plane, rover and a comm mast boot, arm and come down
+#
+# promoted from tests/mixed_bringup.yaml (CI original unchanged).
+
+version: 1
+name: mixed_fleet
+tier: smoke
+transport: real
+fleet:
+  - {id: copter1, cls: copter}
+  - {id: plane1, cls: plane, at: {east_m: 60}}
+  - {id: rover1, cls: rover, at: {east_m: -40}}
+  - {id: ground1, cls: comm_only, at: {north_m: -30}}
+timeline:
+  - {t: 0, do: arm, unit: block:copter}
+  - {t: 0, do: arm, unit: block:rover}
+  - {t: 0, do: arm, unit: block:plane}
+  - {t: 0, do: fc, unit: all}
+  - {t: 0, do: land, unit: all}
+  - {t: 0, do: wait_online, timeout: 30} # all 4 units still at the server, ground node included
+settle_s: 0
+teardown: none
