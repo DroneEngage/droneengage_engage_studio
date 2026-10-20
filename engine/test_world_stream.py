@@ -203,6 +203,9 @@ class T(unittest.TestCase):
         stream = world_stream.WorldStream(w, sim, epoch, 61999,
                                           truth, log, bot=_Bot())
         stream.start()
+        # the serve coroutine binds on the thread's own loop - connect
+        # only once it is actually listening, never on a timer
+        self.assertTrue(stream.wait_ready(10))
         try:
             hello, frames = asyncio.run(
                 _client(61999, truth, seconds=1.4))

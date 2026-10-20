@@ -158,12 +158,22 @@ class WorldStream:
         self._states = {}                   # tid -> seen|miss|occluded
         self._detections = []               # recent sent look rows
         self._stop = threading.Event()
+        # SL-0051 — set once the socket is actually bound, so a caller
+        # that connects immediately can synchronize instead of racing
+        # the thread's loop start-up
+        self._listening = threading.Event()
 
     # ------------------------------------------------------- lifecycle
 
     def start(self):
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+
+    def wait_ready(self, timeout=10.0):
+        """Block until the port is bound and accepting; False on
+        timeout (or if _serve died before listening — the 'error'
+        row in the log says why)."""
+        return self._listening.wait(timeout)
 
     def stop(self):
         self._stop.set()
@@ -192,6 +202,7 @@ class WorldStream:
         self._closing = self._loop.create_future()
         async with websockets.serve(self._client, "127.0.0.1",
                                     self.port, compression=None):
+            self._listening.set()
             self._log("listening", {"port": self.port})
             tick = asyncio.ensure_future(self._tick_loop())
             tail = asyncio.ensure_future(self._truth_tail())
