@@ -2,7 +2,7 @@
 # launches fine, but the unattended backstop (envelope max_flight_s,
 # counted from arm) fires mid-flight and returns the vehicle home.
 #
-# Op:      packages/p4f05_time_limit.deploy.json - ambulance package
+# Op:      tests/packages/p4f05_time_limit.deploy.json - ambulance package
 #          with launch.envelope.max_flight_s = 860 (above the route
 #          estimate at the 5 m/s envelope speed) and deliver gen
 #          hover_s = 400 (the drop approval is never answered, so the
@@ -20,7 +20,7 @@ seed: 7
 realtime: true
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/p4f05_time_limit.deploy.json
+operation: ../packages/p4f05_time_limit.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 180
 operator:

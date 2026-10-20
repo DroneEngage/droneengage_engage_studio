@@ -8,7 +8,7 @@
 version: 1
 name: p4a04_loss
 transport: {type: fake, seed: 1337}
-operation: ../../packages/p4a04.deploy.json
+operation: ../packages/p4a04.deploy.json
 fleet:
   - {id: copter1, cls: copter}
   - {id: copter2, cls: copter}

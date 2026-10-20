@@ -10,7 +10,7 @@ version: 1
 name: p4a10_barrier
 realtime: true
 transport: real
-operation: ../../packages/p4a10.deploy.json
+operation: ../packages/p4a10.deploy.json
 fleet:
   - {id: copter1, cls: copter}
   - {id: copter2, cls: copter}

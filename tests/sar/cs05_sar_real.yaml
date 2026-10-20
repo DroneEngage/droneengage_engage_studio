@@ -1,7 +1,7 @@
 # sar/p4b10_a_nominal - TASK-P4B-10 acceptance A: the reference SAR op
 # end-to-end with an operator who approves everything.
 #
-# Op:      packages/sar_forest.deploy.json (roles cam_scout, sdr_scout,
+# Op:      tests/packages/sar_forest.deploy.json (roles cam_scout, sdr_scout,
 #          searcher x3, ambulance). person confirm = operator_confirm,
 #          phone confirm = k_sources_within k:1 (the single SDR scout).
 # World:   worlds/sar_forest.yaml - person_1 static at X inside the op
@@ -26,7 +26,7 @@ realtime: true
 seed: 7
 transport: real
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/sar_forest.deploy.json
+operation: ../packages/sar_forest.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 180
 operator:

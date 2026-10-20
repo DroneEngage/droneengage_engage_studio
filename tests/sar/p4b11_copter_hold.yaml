@@ -6,7 +6,7 @@
 # why:"mode" rides the existing pilot-mode path; why:"cmd" is journal
 # only. dp excludes op 5, so resume stays legal while the plan holds.
 #
-# Op:      packages/p4b11_hold.deploy.json - c1 gets p4b11_hold.json
+# Op:      tests/packages/p4b11_hold.deploy.json - c1 gets p4b11_hold.json
 #          (copter, cruise 80 m, manual "hop" mission for the mid-flight
 #          upload_start); p1 gets p4b11_plane_gate.json (plane smoke).
 #          c1 runs sv_force_paged so activating "hop" in AUTO goes
@@ -21,7 +21,7 @@ version: 1
 name: p4b11_copter_hold
 seed: 11
 transport: fake
-operation: ../../packages/p4b11_hold.deploy.json
+operation: ../packages/p4b11_hold.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 60
 fleet:

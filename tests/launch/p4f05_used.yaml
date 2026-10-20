@@ -3,7 +3,7 @@
 # use under the grant, the second person's trigger hits the USED grant
 # and falls back to a live approval (NO_GRANT used).
 #
-# Op:      packages/p4f05.deploy.json.
+# Op:      tests/packages/p4f05.deploy.json.
 # World:   worlds/sar_forest_two_person.yaml - person_2 added at the NE
 #          corner of the op area.
 # Evidence: one LAUNCH_GO use=1/1 for the first delivery; the second
@@ -27,7 +27,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest_two_person.yaml
-operation: ../../packages/p4f05.deploy.json
+operation: ../packages/p4f05.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 180
 operator:

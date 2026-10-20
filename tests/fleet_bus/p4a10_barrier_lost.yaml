@@ -10,7 +10,7 @@ version: 1
 name: p4a10_barrier_lost
 realtime: true
 transport: {type: fake, seed: 1337}
-operation: ../../packages/p4a10_searcher.deploy.json
+operation: ../packages/p4a10_searcher.deploy.json
 fleet:
   - {id: copter1, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}
   - {id: copter2, cls: copter, config: {de_comm: {sv_roster_hz: 1, sv_peer_lost_s: 8}}}

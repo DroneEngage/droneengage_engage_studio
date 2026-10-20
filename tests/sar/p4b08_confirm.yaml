@@ -20,7 +20,7 @@
 version: 1
 name: p4b08_confirm
 transport: real
-operation: ../../packages/p4b08.deploy.json
+operation: ../packages/p4b08.deploy.json
 fleet:
   - {id: copter1, cls: copter}
   - {id: copter2, cls: copter}

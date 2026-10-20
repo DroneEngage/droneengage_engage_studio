@@ -10,7 +10,7 @@ name: p4a10_arrive
 realtime: true
 transport: real
 slot_base: 30
-operation: ../../packages/p4a10_arrive.deploy.json
+operation: ../packages/p4a10_arrive.deploy.json
 fleet:
   - {id: copter1, cls: copter, config: {de_comm: {sv_accel_s: 8}}}
   - {id: copter2, cls: copter, config: {de_comm: {sv_accel_s: 8}}}

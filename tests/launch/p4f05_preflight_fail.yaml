@@ -4,7 +4,7 @@
 # and the launch stepper aborts at its preflight stage without
 # consuming the grant's use.
 #
-# Op:      packages/p4f05.deploy.json.
+# Op:      tests/packages/p4f05.deploy.json.
 # Fault:   gps_off on amb1 (SIM_GPS1_FIXTYPE 0) before the confirm; the
 #          standby preflight cadence (default 60 s) reports
 #          STANDBY_NOT_READY while the grant sits valid on a dead fix.
@@ -18,7 +18,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/p4f05.deploy.json
+operation: ../packages/p4f05.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 120
 operator:

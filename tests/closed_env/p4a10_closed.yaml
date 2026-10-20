@@ -12,7 +12,7 @@ name: p4a10_closed
 realtime: true
 transport: {type: fake, clock_offset_ms: 10800000, noclock: [copter3], seed: 1337}
 slot_base: 30
-operation: ../../packages/p4a10_closed.deploy.json
+operation: ../packages/p4a10_closed.deploy.json
 fleet:
   - {id: copter1, cls: copter, params: {SIM_GPS1_ENABLE: 0, SIM_GPS2_ENABLE: 0, GPS1_TYPE: 0, GPS2_TYPE: 0, AHRS_EKF_TYPE: 10}}
   - {id: copter2, cls: copter, params: {SIM_GPS1_ENABLE: 0, SIM_GPS2_ENABLE: 0, GPS1_TYPE: 0, GPS2_TYPE: 0, AHRS_EKF_TYPE: 10}}

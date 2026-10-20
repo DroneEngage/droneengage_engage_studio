@@ -14,7 +14,7 @@
 version: 1
 name: p4a11_static_end
 transport: real
-operation: ../../packages/p4a11_static.deploy.json
+operation: ../packages/p4a11_static.deploy.json
 fleet:
   - {id: copter1, cls: copter}
   - {id: mast1, cls: comm_only, at: {north_m: -30}}

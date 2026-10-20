@@ -58,7 +58,9 @@ is now the only simulation/testing location.
                               stub_<name>.py); ./sim new --sensor scaffolds
     templates/scenario.yaml   what ./sim new scaffolds
     worlds/*.yaml             seeded ground-truth worlds for scenario world:
-    packages/*.json           hand-written DE packages (compiled
+    packages/*.json           hand-written DE packages shared by
+                            demos/examples; test-only fixtures live in
+                            tests/packages/ (compiled
                             outputs of in-repo .deop sources are
                             NOT committed - the runner compiles them
                             on demand into var/build/packages/)

@@ -21,7 +21,7 @@ version: 1
 name: p4a07_roster_clock
 realtime: true
 transport: {type: fake, seed: 1337}
-operation: ../../packages/p4a05.deploy.json
+operation: ../packages/p4a05.deploy.json
 fleet:
   - {id: copter1, cls: copter}
   - {id: copter2, cls: copter}

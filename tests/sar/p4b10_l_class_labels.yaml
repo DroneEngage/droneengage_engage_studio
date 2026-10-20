@@ -7,7 +7,7 @@
 #
 # Op:      ops/sar_forest_labels.op.json verified at the gate (CAP-008
 #          silent - 'human' is in the bound advert's class enum), then
-#          packages/sar_forest_labels.deploy.json deployed - de.package/2.4
+#          tests/packages/sar_forest_labels.deploy.json deployed - de.package/2.4
 #          with fleet.event_target_classes.
 # World:   worlds/sar_forest_decoy.yaml - same truth as K (person_1 at X,
 #          phone_1, car_1 decoy); only the wire labels change.
@@ -58,7 +58,7 @@ fleet:
 timeline:
   - {t: 0, do: wait_online, timeout: 180}
   - {t: 2, do: mode, unit: "all", mode: GUIDED}
-  - {t: 5, do: deploy, operation: ../../packages/sar_forest_labels.deploy.json,
+  - {t: 5, do: deploy, operation: ../packages/sar_forest_labels.deploy.json,
      timeout: 300}
   - {t: 15, do: wait_ready, unit: "all", timeout: 240}
   # arm the flyers only - amb1 is start:"ground" auto_launch; the op

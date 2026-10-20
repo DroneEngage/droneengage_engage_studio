@@ -1,5 +1,5 @@
 # worlds/world_dusk_search - P5-11 acceptance: the same dusk sweep
-# (packages/p5_dusk_sweep.json, 40 m legs over person_wander's anchor,
+# (tests/packages/p5_dusk_sweep.json, 40 m legs over person_wander's anchor,
 # person_rest's walk line and the hiker's trail) flown by two copters
 # through the forest_dusk environment: sun_elev ~ -10 deg, so the rgb
 # unit's p_detect is 0 - it must find NOBODY (detection_recall max 0
@@ -16,7 +16,7 @@ realtime: true
 seed: 1
 transport: fake
 world: ../../worlds/forest_dusk.yaml
-operation: ../../packages/p5_dusk.deploy.json
+operation: ../packages/p5_dusk.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

@@ -6,7 +6,7 @@
 # datagram sees; a "nav load timed out" in the journal is that loss
 # surfacing (the supervisor does not re-drive the leg). While the
 # window is open a 20 KB package is pushed as one 1085 frame
-# (packages/plan_survey_100.json, tools/gen_bigplan.py): de_comm always
+# (tests/packages/plan_survey_100.json, tools/gen_bigplan.py): de_comm always
 # journals "package upload accepted" - the GCS leg never crosses the
 # proxied link - whether or not the s2s nav-load train survives.
 # Assertions: every proc stays alive (de_comm, de_mavlink and the proxy
@@ -27,8 +27,8 @@ timeline:
   - {t: 1, fault: udp_chunks, unit: p1, module: de_mavlink,
      drop_pct: 5, reorder: 0, dup_pct: 0, dur_s: 60}
   - {t: 2, do: send, ty: i, mt: 1085, tg: p1,
-     ms: {pkg: "{PKG:plan_survey_100.json}",
-          hash: "{HASH:plan_survey_100.json}"}}
+     ms: {pkg: "{PKG:tests/packages/plan_survey_100.json}",
+          hash: "{HASH:tests/packages/plan_survey_100.json}"}}
   - {t: 3, do: wait, seconds: 100}
 assert:
   - proc_alive: {unit: p1, proc: de_comm}

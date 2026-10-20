@@ -6,7 +6,7 @@
 # launch is operator-gated only in the supervisor (sv_core.cpp forces
 # policy "operator" on launch requests) - the bot still approves both.
 #
-# Op:   packages/sar_forest_veto.deploy.json (same fleet, person
+# Op:   tests/packages/sar_forest_veto.deploy.json (same fleet, person
 #       auto_with_veto 30 in the op variant).
 # World/chain: identical to p4b10_a_nominal.
 version: 1
@@ -15,7 +15,7 @@ realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/sar_forest_veto.deploy.json
+operation: ../packages/sar_forest_veto.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 180
 operator:

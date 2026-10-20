@@ -3,7 +3,7 @@
 # envelope's smaller polygon, so the generated deliver segment fails
 # the grant route check (area seq <n>) before any upload.
 #
-# Op:      packages/p4f05_outside_area.deploy.json - ambulance package
+# Op:      tests/packages/p4f05_outside_area.deploy.json - ambulance package
 #          whose launch.envelope.area is the south band of op.area
 #          (person_1 at -35.3606 is north of the -35.3615 edge but
 #          still inside op.area, so the SAR chain still finds it).
@@ -16,7 +16,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/p4f05_outside_area.deploy.json
+operation: ../packages/p4f05_outside_area.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 120
 operator:

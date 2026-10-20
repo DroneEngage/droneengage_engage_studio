@@ -2,7 +2,7 @@
 # with STATIC sensor masts instead of a flying SDR scout; the phone
 # target is confirmed by two independent sources (k_sources_within k:2).
 #
-# Op:    packages/sar_forest_static.deploy.json - fleet roles cam_scout,
+# Op:    tests/packages/sar_forest_static.deploy.json - fleet roles cam_scout,
 #        sdr_mast x2 (static), cam_mast (static), searcher x3, ambulance;
 #        the phone confirm rule is k_sources_within k:2.
 # Fleet: NO sdr1. sdrm1 + sdrm2 (cls static + stub_sdr) are the two
@@ -32,7 +32,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/sar_forest_static.deploy.json
+operation: ../packages/sar_forest_static.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 180
 operator:

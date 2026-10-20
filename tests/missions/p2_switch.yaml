@@ -8,7 +8,7 @@
 version: 1
 name: p2_switch
 transport: real
-operation: ../../packages/p2_06_branch.json
+operation: ../packages/p2_06_branch.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 40
 fleet:

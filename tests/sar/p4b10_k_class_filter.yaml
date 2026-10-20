@@ -4,7 +4,7 @@
 # detection can no longer fuse into the declared person target (the
 # pre-B4-01 W5 fail-open).
 #
-# Op:      packages/sar_forest.deploy.json - identical to scenario A
+# Op:      tests/packages/sar_forest.deploy.json - identical to scenario A
 #          (roles cam_scout, sdr_scout, searcher x3, ambulance; person
 #          confirm = operator_confirm, phone = k_sources_within k:1).
 # World:   worlds/sar_forest_decoy.yaml - person_1 at X, phone_1 = X +
@@ -37,7 +37,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest_decoy.yaml
-operation: ../../packages/sar_forest.deploy.json
+operation: ../packages/sar_forest.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 180
 operator:

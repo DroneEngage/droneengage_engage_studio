@@ -10,7 +10,7 @@
 version: 1
 name: su_camera_mast
 transport: fake
-operation: ../../packages/su_cam.deploy.json
+operation: ../packages/su_cam.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 20
 fleet:

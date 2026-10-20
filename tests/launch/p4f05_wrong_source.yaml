@@ -4,7 +4,7 @@
 # grant exists but the provenance check refuses it and falls back to a
 # live approval, which nobody answers.
 #
-# Op:      packages/p4f05_wrong_source.deploy.json - ambulance package
+# Op:      tests/packages/p4f05_wrong_source.deploy.json - ambulance package
 #          with launch.envelope.sources = ["searcher"] (no "gcs").
 # Evidence: LAUNCH_REFUSED deliver trigger gcs -> APPROVAL_REQ launch
 #           (summary carries "grant refused") -> APPROVAL_TIMEOUT ->
@@ -15,7 +15,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/p4f05_wrong_source.deploy.json
+operation: ../packages/p4f05_wrong_source.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 120
 operator:

@@ -6,7 +6,7 @@
 version: 1
 name: p4f03_wm_converge
 transport: {type: fake, seed: 1337}
-operation: ../../packages/p4f03.deploy.json
+operation: ../packages/p4f03.deploy.json
 fleet:
   - {id: copter1, cls: copter}
   - {id: copter2, cls: copter}

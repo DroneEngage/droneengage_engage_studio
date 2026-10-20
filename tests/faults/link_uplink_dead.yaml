@@ -21,7 +21,7 @@
 version: 1
 name: f_link_uplink_dead
 transport: fake
-operation: ../../packages/copter_square_probe.json
+operation: ../packages/copter_square_probe.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 40
 fleet:

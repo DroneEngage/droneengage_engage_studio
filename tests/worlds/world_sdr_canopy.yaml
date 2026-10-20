@@ -15,7 +15,7 @@ name: world_sdr_canopy
 seed: 7
 transport: fake
 world: ../../worlds/forest_canopy.yaml
-operation: ../../packages/p5_sdr.deploy.json
+operation: ../packages/p5_sdr.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 25
 fleet:

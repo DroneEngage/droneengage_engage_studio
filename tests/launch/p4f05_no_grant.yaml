@@ -2,7 +2,7 @@
 # op with NO authorize sent - the launch path must be byte-identical to
 # the P4B-09 live-approval flow (p4b10_a for amb1).
 #
-# Op:      packages/p4f05.deploy.json (grant packages loaded, envelope
+# Op:      tests/packages/p4f05.deploy.json (grant packages loaded, envelope
 #          present, but no grant is ever authorized).
 # Chain proven here: person confirmed -> APPROVAL_REQ launch (live) ->
 # operator bot approves -> controlled launch (upload/preflight/arm/goto)
@@ -14,7 +14,7 @@ realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/p4f05.deploy.json
+operation: ../packages/p4f05.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 120
 operator:

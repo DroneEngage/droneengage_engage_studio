@@ -19,7 +19,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/sar_forest.deploy.json
+operation: ../packages/sar_forest.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 120
 operator:

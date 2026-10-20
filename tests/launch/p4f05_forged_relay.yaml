@@ -3,7 +3,7 @@
 # searcher-authored fact - the relay rule refuses the grant path even
 # though the original source is allow-listed.
 #
-# Op:      packages/p4f05_relay.deploy.json - ambulance package whose
+# Op:      tests/packages/p4f05_relay.deploy.json - ambulance package whose
 #          deliver triggers on the sticky fact `sar.person` and whose
 #          sources drop cam_scout (["gcs","searcher","sdr_scout"]);
 #          searcher package gains relay_person (a sensor mission that
@@ -26,7 +26,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/p4f05_relay.deploy.json
+operation: ../packages/p4f05_relay.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 180
 operator:

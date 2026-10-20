@@ -9,7 +9,7 @@
 version: 1
 name: p2_paged
 transport: real
-operation: ../../packages/p2_07_preempt.json
+operation: ../packages/p2_07_preempt.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 45
 fleet:

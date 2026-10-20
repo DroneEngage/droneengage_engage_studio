@@ -8,7 +8,7 @@
 #          lacks 'person', so CAP-008 fires (error severity per MP-0214)
 #          and verify.proceed_rules lets the run deploy anyway with the
 #          finding recorded in verify.json; then the plain
-#          packages/sar_forest.deploy.json (de.package/2.2) deploys.
+#          tests/packages/sar_forest.deploy.json (de.package/2.2) deploys.
 #
 # Proves per spec:
 #   - 'human' boxes are really emitted (journal "event detect.detected
@@ -51,7 +51,7 @@ fleet:
 timeline:
   - {t: 0, do: wait_online, timeout: 180}
   - {t: 2, do: mode, unit: "all", mode: GUIDED}
-  - {t: 5, do: deploy, operation: ../../packages/sar_forest.deploy.json,
+  - {t: 5, do: deploy, operation: ../packages/sar_forest.deploy.json,
      timeout: 300}
   - {t: 15, do: wait_ready, unit: "all", timeout: 240}
   - {t: 20, do: arm, unit: "scout1,sdr1,s1,s2,s3"}

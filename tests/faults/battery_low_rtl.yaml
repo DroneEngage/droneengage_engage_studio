@@ -12,7 +12,7 @@
 version: 1
 name: f_battery_low_rtl
 transport: fake
-operation: ../../packages/p2_10_handlers.json
+operation: ../packages/p2_10_handlers.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 30
 fleet:

@@ -13,7 +13,7 @@
 version: 1
 name: p4a11_phases_end
 transport: real
-operation: ../../packages/p4a11.deploy.json
+operation: ../packages/p4a11.deploy.json
 fleet:
   - {id: copter1, cls: copter}
   - {id: copter2, cls: copter}

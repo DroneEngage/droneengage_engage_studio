@@ -2,7 +2,7 @@
 # max_flight_s sits below the route estimate, so the grant route check
 # refuses `time <est>s` before any upload.
 #
-# Op:      packages/p4f05_time.deploy.json - ambulance package with
+# Op:      tests/packages/p4f05_time.deploy.json - ambulance package with
 #          launch.envelope.max_flight_s = 120 (the generated deliver
 #          route to person_1 estimates a few hundred seconds at the
 #          envelope's 5 m/s plus the 1.2 margin).
@@ -14,7 +14,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/p4f05_time.deploy.json
+operation: ../packages/p4f05_time.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 120
 operator:

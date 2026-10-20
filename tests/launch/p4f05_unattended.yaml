@@ -2,7 +2,7 @@
 # grant op runs its person-found delivery with NO operator answering
 # launch approvals, because the deploy authorized a launch grant.
 #
-# Op:      packages/p4f05.deploy.json - the sar_forest_grant roles with
+# Op:      tests/packages/p4f05.deploy.json - the sar_forest_grant roles with
 #          p4f05_ambulance.pkg.json (the stock grant package whose
 #          deliver end.guard is bounded RTL - a LOITER_UNLIM guard can
 #          never pass the P4F-05 route check).
@@ -22,7 +22,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/p4f05.deploy.json
+operation: ../packages/p4f05.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 120
 operator:

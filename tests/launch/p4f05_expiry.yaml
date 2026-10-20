@@ -3,7 +3,7 @@
 # expired and the delivery falls back to a live approval nobody
 # answers.
 #
-# Op:      packages/p4f05.deploy.json; the deploy authorizes amb1 with
+# Op:      tests/packages/p4f05.deploy.json; the deploy authorizes amb1 with
 #          valid_for_s: 60 (the search chain takes minutes, so the
 #          grant is long dead by the confirm).
 # Evidence: LAUNCH_GRANT -> LAUNCH_GRANT_VOID expired -> APPROVAL_REQ
@@ -14,7 +14,7 @@ speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/p4f05.deploy.json
+operation: ../packages/p4f05.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 120
 operator:

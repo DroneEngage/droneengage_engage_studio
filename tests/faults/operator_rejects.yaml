@@ -9,7 +9,7 @@
 version: 1
 name: f_operator_rejects
 transport: fake
-operation: ../../packages/p4b08.deploy.json
+operation: ../packages/p4b08.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 operator:
   dismiss: {fire: {after_s: 3}}

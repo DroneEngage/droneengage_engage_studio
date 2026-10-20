@@ -17,7 +17,7 @@
 # Outcome assertions are the same as p4b10_a_nominal - 30 % loss changes
 # when things land, not whether they land.
 #
-# Op: packages/sar_forest_loss30.deploy.json - the same op with a
+# Op: tests/packages/sar_forest_loss30.deploy.json - the same op with a
 #     loss-tolerant searcher package carrying two changes:
 #       - expect_bidders 3 + bid_cap_s 90 (GL-0029): the coordinator
 #         defers its assign publish past bid_window_s until all three
@@ -45,7 +45,7 @@ realtime: true
 seed: 7
 transport: fake
 world: ../../worlds/sar_forest.yaml
-operation: ../../packages/sar_forest_loss30.deploy.json
+operation: ../packages/sar_forest_loss30.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 300
 operator:

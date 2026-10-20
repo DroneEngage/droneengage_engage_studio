@@ -11,7 +11,7 @@ version: 1
 name: p4a09_deploy
 realtime: true
 transport: {type: fake, seed: 1337}
-operation: ../../packages/p4a09.deploy.json
+operation: ../packages/p4a09.deploy.json
 fleet:
   - {id: copter1, cls: copter}
   - {id: copter2, cls: copter}
@@ -31,10 +31,10 @@ timeline:
   - {t: 0, do: opmsg, tg: copter2, seconds: 5, ms: {a: start, run: stale-run-1}, expect: 'fail.*wrong run'}
   # a PREPARE whose bind role disagrees with the package role -> "wrong role"
   - {t: 0, do: opmsg, tg: copter1, seconds: 5, ms: {a: prepare, op: p4a09_two_phase, oh: "sha256:2d2fc4c5cf2e7e65e50bc71a2da6f9c50257102cd59144a3e145fe5dda6e5225",
-      run: probe-wrong-role, bind: {copter1: scout}, pkg: "{PKG:p4a09_worker.json}", hash: "{HASH:p4a09_worker.json}"}, expect: 'fail.*wrong role'}
+      run: probe-wrong-role, bind: {copter1: scout}, pkg: "{PKG:tests/packages/p4a09_worker.json}", hash: "{HASH:tests/packages/p4a09_worker.json}"}, expect: 'fail.*wrong role'}
   # a static-role package on a copter -> "package is for static"
   - {t: 0, do: opmsg, tg: copter1, seconds: 5, ms: {a: prepare, op: p4a09_two_phase, oh: "sha256:2d2fc4c5cf2e7e65e50bc71a2da6f9c50257102cd59144a3e145fe5dda6e5225",
-      run: probe-wrong-vehicle, bind: {copter1: watcher}, pkg: "{PKG:p4a09_watcher.json}", hash: "{HASH:p4a09_watcher.json}"}, expect: 'fail.*package
+      run: probe-wrong-vehicle, bind: {copter1: watcher}, pkg: "{PKG:tests/packages/p4a09_watcher.json}", hash: "{HASH:tests/packages/p4a09_watcher.json}"}, expect: 'fail.*package
       is for static'}
   # the Phase-2 1086 start is refused on a fleet package
   - {t: 0, do: opmsg, tg: copter1, mt: 1086, seconds: 5, ms: {a: start}, expect: 'fleet package: start via DE_OP_CONTROL'}
