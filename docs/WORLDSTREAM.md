@@ -7,7 +7,7 @@ clients. One feed per run — the runner owns the truth, so every
 renderer sees the same world the assertions grade.
 
 Implementations: `engine/world_stream.py` (server, this repo),
-`frontend/src/js/world/de_world_client.js` (client, Mavlink3DMap).
+`frontend/src/js/world/world_client.js` (client, Mavlink3DMap).
 
 ## Transport
 

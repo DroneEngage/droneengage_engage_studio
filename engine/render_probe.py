@@ -6,7 +6,7 @@ de_yolo_ai unit): connects to the scenario's world stream to learn the
 unit's camera dims from hello.units[*].camera, then reads the unit's
 DE-SRC-k loopback device through ffmpeg and decodes the 16-cell frame
 number strip the render farm draws into the bottom 8 pixel rows
-(frontend de_frame_meta.js drawStrip). Every decoded frame is posted
+(frontend frame_meta.js drawStrip). Every decoded frame is posted
 back as an event - truth.jsonl rows {src: render_probe, unit,
 frame_no, t_unix_ms} - so the render_latency assert can join them with
 the farm's frame_meta events on (unit, frame_no).
