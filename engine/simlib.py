@@ -115,6 +115,12 @@ WEBCLIENT_REPO = repo_dir("DE_WEBCLIENT_DIR", "droneengage_webclient_react")
 # render modes that launch the viewer
 MAVLINK3DMAP_DIR = setting("MAVLINK3DMAP_DIR",
                            os.path.join(DE_CODE, "Mavlink3DMap2"))
+# SL-0054 (SL-PG-21): the viewer is versioned gear now - the sim expects
+# this `mavlink3dmap` release (backend/package.json `version`, the npm
+# package identity; a git tag of the same shape also matches). A
+# mismatch warns "expected X, found Y" at render gen and in `doctor` -
+# a warning, never a block: render modes degrade, they do not hard-fail.
+M3D_REQUIRED_VERSION = setting("SIM_M3D_VERSION", "1.4.0")
 # P5-15: the headless render farm is a stock Chromium/Chrome plus the
 # sink's per-unit ffmpeg - both machine binaries
 CHROMIUM_BIN = setting("CHROMIUM_BIN", "google-chrome")
@@ -2139,6 +2145,43 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
     return procs
 
 
+def m3d_version(p_m3d=None):
+    """The version a Mavlink3DMap checkout reports: the npm package
+    version in backend/package.json (the monorepo root is private and
+    carries none), else `git describe --tags` (a tagged release), else
+    None - nothing readable to compare."""
+    m3d = p_m3d or MAVLINK3DMAP_DIR
+    try:
+        v = json.load(open(os.path.join(m3d, "backend", "package.json"))
+                      ).get("version")
+        if v:
+            return str(v)
+    except (OSError, ValueError):
+        pass
+    try:
+        import subprocess
+        r = subprocess.run(
+            ["git", "-C", m3d, "describe", "--tags", "--abbrev=0"],
+            capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip().lstrip("v")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def m3d_version_mismatch(p_m3d=None):
+    """None when the checkout reports M3D_REQUIRED_VERSION; else the
+    'expected X, found Y' detail (found <none> when unreadable)."""
+    found = m3d_version(p_m3d)
+    want = str(M3D_REQUIRED_VERSION)
+    if found is None:
+        return f"expected {want}, found <unreadable>"
+    if found == want or found.lstrip("v") == want.lstrip("v"):
+        return None
+    return f"expected {want}, found {found}"
+
+
 def gen_render(sim):
     """P5-14 D7: render.mode viewer|cameras|physics|full (and not headless,
     except physics, which always needs the page)
@@ -2169,6 +2212,11 @@ def gen_render(sim):
                 f"render: {p} not found - set MAVLINK3DMAP_DIR in "
                 "sim.local.env (or render.headless: true to run the "
                 "stream without the viewer)")
+    mism = m3d_version_mismatch(m3d)
+    if mism is not None:
+        print(col_yellow(f"render: Mavlink3DMap {mism} - "
+                         "checkout the pinned release or set "
+                         "SIM_M3D_VERSION"), flush=True)
     rdir = render_dir(sim["name"])
     os.makedirs(rdir, exist_ok=True)
     os.makedirs(pids_dir(sim["name"]), exist_ok=True)

@@ -276,7 +276,14 @@ def gather(sim=None):
         if os.path.isfile(p)), None)
     m3d_ok = os.path.isfile(bridge) and bool(vite)
     if m3d_ok:
-        d.ok("Mavlink3DMap", m3d)
+        mism = simlib.m3d_version_mismatch(m3d)
+        if mism is None:
+            d.ok("Mavlink3DMap",
+                 f"{m3d} ({simlib.m3d_version(m3d)})")
+        else:
+            d.optional("Mavlink3DMap", f"{m3d} - {mism}",
+                       "checkout the pinned release or set "
+                       "SIM_M3D_VERSION in sim.local.env")
     else:
         d.optional("Mavlink3DMap",
                    f"{m3d} incomplete (render modes only)",
