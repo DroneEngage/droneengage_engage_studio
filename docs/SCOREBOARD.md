@@ -6,9 +6,9 @@ after a `tools/verify_challenge.py --replay` VERIFIED.
 
 | handle | pod_mean | ttd meadow | precision | score | verified |
 |---|---|---|---|---|---|
-| baseline | 0.984 | 40.2 s | 1.0 | 90.7 | yes |
+| baseline | 0.984 | 40.4 s | 1.0 | 90.6 | yes |
 
-Baseline notes: `person_wood` (POD 0.900 over 11 looks through the
+Baseline notes: `person_wood` (POD 0.905 over 11 looks through the
 canopy gap) was never detected — a 0.9-POD cell still misses ~10 % of
 the time; `person_barn` stayed invisible as designed (POD 0.000, all
 looks terminate inside the building). The winning margin is in the

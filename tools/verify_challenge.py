@@ -14,9 +14,14 @@ scenarios/challenges/sar_challenge.yaml in every key except `name` and
 `operation` (world/verify refs are compared path-resolved), and its
 summary.json must carry seed 11. Prints the score per docs/CHALLENGE.md.
 
---replay: additionally reruns `./sim run <dir>/scenario.yaml` and
+--replay: additionally downs any same-name sim (a reused sim keeps its
+world epoch, so seeded draws land on different frame indices - cold
+start only), then reruns `./sim run <dir>/scenario.yaml` (additive -
+`--shared --slot-base any` so it works beside other live sims) and
 compares each assertion's measured value against the submitted
-summary's - fractions within 0.02, time_to_detect within 15 % or 10 s.
+summary's - fractions within 0.05, time_to_detect within 15 % or 10 s.
+Only a --replay VERIFIED counts for a scoreboard row; without it the
+check is structure + self-reported numbers only.
 """
 import json
 import math
@@ -96,13 +101,24 @@ def _close(a, b, name):
         return a == b
     if name == "time_to_detect":
         return abs(a - b) <= max(10.0, 0.15 * abs(b))
-    return math.isclose(a, b, abs_tol=0.02)
+    # 0.05: observed cold-start spread on pod_at is ~0.025 (wall-clock
+    # frame-keyed draws shift a few looks); 0.02 rejects honest entries
+    return math.isclose(a, b, abs_tol=0.05)
 
 
 def replay(sub_yaml, submitted):
     """Rerun the submission's scenario and compare assertion values."""
+    # A same-name sim left up reuses its processes - and its world
+    # epoch, so the seeded draws land on different frame indices.
+    # Down it first: every replay starts cold, like the original run.
+    sname = _load(sub_yaml).get("name")
+    if sname:
+        subprocess.run([os.path.join(ROOT, "sim"), "down", str(sname)],
+                       cwd=ROOT, capture_output=True, text=True)
     out = subprocess.run(
-        [os.path.join(ROOT, "sim"), "run", sub_yaml, "--seed", str(OFFICIAL_SEED)],
+        [os.path.join(ROOT, "sim"), "run", sub_yaml,
+         "--seed", str(OFFICIAL_SEED),
+         "--shared", "--slot-base", "any"],
         cwd=ROOT, capture_output=True, text=True, timeout=1800)
     m = None
     for line in out.stdout.splitlines():
@@ -159,7 +175,13 @@ def main():
         problems += replay(sub_yaml, summ)
     for p in problems:
         print(f"  MISMATCH {p}")
-    print("VERIFIED" if not problems else f"REJECTED ({len(problems)})")
+    if problems:
+        print(f"REJECTED ({len(problems)})")
+    elif "--replay" in sys.argv:
+        print("VERIFIED")
+    else:
+        print("STRUCTURE OK - score is self-reported; "
+              "only a --replay VERIFIED counts for the scoreboard")
     sys.exit(0 if not problems else 1)
 
 

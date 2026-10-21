@@ -40,7 +40,10 @@ A submission directory is `scenario.yaml` + your op files +
 `summary.json`. The verifier checks the scenario is the official one
 (modulo `name:`/`operation:`), that the seed is 11, and prints your
 score. `--replay` reruns your scenario and compares every graded value
-— VERIFIED means your numbers reproduce.
+— VERIFIED means your numbers reproduce. The replay first downs any
+same-name sim so it always starts cold (a reused sim keeps its world
+epoch, which shifts every seeded draw), and runs additive
+(`--shared --slot-base any`) so it works beside other live sims.
 
 ## Scoring (0–100)
 

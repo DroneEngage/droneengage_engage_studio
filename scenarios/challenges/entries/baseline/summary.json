@@ -1,16 +1,16 @@
 {
   "scenario": "sar_challenge_baseline",
-  "file": "/home/you/de_code/droneengage_simulation_land/scenarios/challenges/entries/baseline/scenario.yaml",
+  "file": "/mnt/8a619ce7-cd3f-4520-af65-7991f16410f7/public_versions/drone_engage/droneengage_simulation_land/scenarios/challenges/entries/baseline/scenario.yaml",
   "seed": 11,
-  "started_utc": "2026-10-20T09:47:48Z",
-  "wall_s": 284.4,
+  "started_utc": "2026-10-21T00:01:05Z",
+  "wall_s": 282.2,
   "commits": {
-    "sim": "6e93032",
+    "sim": "6858539",
     "de_comm": "c745cfa",
     "de_server": "9cf32a5",
     "de_auth": "169341f",
-    "ardupilot": "8f59f0c537",
-    "webclient": "be6eb283"
+    "ardupilot": "b718429b99",
+    "webclient": "342062f0"
   },
   "module_overrides": {},
   "speedup": {
@@ -28,7 +28,7 @@
       "name": "coverage_complete",
       "status": "PASS",
       "value": 0.991,
-      "detail": "342/345 cells covered (5438 looks, ['cam1'])"
+      "detail": "342/345 cells covered (5839 looks, ['cam1'])"
     },
     {
       "name": "pod_mean",
@@ -40,25 +40,25 @@
       "name": "pod_at",
       "status": "PASS",
       "value": 1.0,
-      "detail": "person_meadow (truth row t 1792489907057) sits in a cell with POD 1.000 (7 looks)"
+      "detail": "person_meadow (truth row t 1792541100441) sits in a cell with POD 1.000 (9 looks)"
     },
     {
       "name": "pod_at",
       "status": "PASS",
-      "value": 0.9,
-      "detail": "person_wood (truth row t 1792489907057) sits in a cell with POD 0.900 (11 looks)"
+      "value": 0.905,
+      "detail": "person_wood (truth row t 1792541100441) sits in a cell with POD 0.905 (11 looks)"
     },
     {
       "name": "pod_at",
       "status": "PASS",
       "value": 0.0,
-      "detail": "person_barn (truth row t 1792489907057) sits in a cell with POD 0.000 (7 looks)"
+      "detail": "person_barn (truth row t 1792541100441) sits in a cell with POD 0.000 (8 looks)"
     },
     {
       "name": "time_to_detect",
       "status": "PASS",
-      "value": 40.2,
-      "detail": "person_meadow found 40.2 s after the start step (src bot, max 9999)"
+      "value": 40.4,
+      "detail": "person_meadow found 40.4 s after the start step (src bot, max 9999)"
     },
     {
       "name": "time_to_detect",
