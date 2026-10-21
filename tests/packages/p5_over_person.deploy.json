@@ -1,0 +1,11 @@
+{
+  "op": "p5_over_person",
+  "roles": {
+    "cam_scout": {
+      "pkg": "p5_over_person.json",
+      "units": [
+        "cam1"
+      ]
+    }
+  }
+}
