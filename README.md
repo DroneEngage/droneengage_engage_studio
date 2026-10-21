@@ -393,7 +393,7 @@ See the docstring in `engine/runner.py` for every `do:` step and
   binding derives from the fleet (`role:` tags, then fleet order)
   and the dir's single `*.unit.caps.json` feeds --caps;
 - **fleet ops (P4A-09):** when `operation:` names a deploy spec (a top-level
-  `roles` map - see `tests/packages/p4a05.deploy.json`), `deploy` runs the
+  `roles` map - see `packages/p4a05.deploy.json`), `deploy` runs the
   two-phase DE_OP_CONTROL (1094) PREPARE per role, and the run goes up
   with `opstart` / down with `opabort` (`opstatus`, `opmsg` for probes).
   A fleet package refuses the plain `start`;
