@@ -33,17 +33,23 @@ run failure.
 
 ## Required surface (what a non-DE adapter MUST implement)
 
-Each `do:` verb the scenarios use, mapped to the stack's primitive:
+Every `do:` verb in the registry (`./sim verbs`, "do: steps" and
+"do: probes") reaches the adapter. The list below is exhaustive as of
+this document; `./sim verbs` is the authority if it drifts.
 
 | verb family | verbs | required behavior |
 |---|---|---|
-| mode/arm | `mode`, `arm`, `disarm`, `fc` | set flight mode; arm with the stack's own readiness semantics |
-| lifecycle | `reset`, `land`, `stop`, `wait_ready`, `wait_online`, `wait_journal`, `wait_log` | process/mission lifecycle + journal waits |
-| navigation | `guided`, `goto`, `takeoff`… (registry `do` names) | passthrough to the stack's command channel |
-| mission flow | `deploy`, `prepare`, `start`, `abort` | load the operation onto units; start/abort the run |
-| operator | `operator` (approve/deny/confirm/dismiss/fire/activate/pause/resume/stop/clear) | replay the human's session |
-| comms | `link_cut`, `link_stall`, `link_clear`… | exercised through the transport's link model — the adapter only needs the unit-facing half |
-| fire/params | `fire`, `param`, `fc_param`… | event fire + parameter get/set |
+| mission flow | `deploy`, `prepare`, `start`, `abort`, `opstart`, `opabort`, `authorize`, `revoke_launch` | load the operation onto units; start/abort the run; launch grants |
+| operator | `operator` (approve/deny/confirm/dismiss/fire/activate/pause/resume/stop/clear/deploy/start/abort) | replay the human's session |
+| flight | `arm`, `disarm`, `land`, `mode`, `takeoff`, `fc`, `param`, `param_get` | FC commands with the stack's own readiness semantics |
+| mission control | `stop`, `pause`, `resume`, `clear` | mission-level control passthrough |
+| lifecycle | `reset`, `reboot`, `kill`, `restart`, `freeze`, `unfreeze`, `kick`, `journal`, `server_up` | process/session lifecycle |
+| timing | `wait`, `delay`, `clock_offset`, `clock_step` | timeline sleep; clock skew/step |
+| waits/probes | `wait_journal`, `wait_log`, `wait_ready`, `wait_online`, `opstatus`, `opmsg`, `beacon`, `roster_peers`, `links`, `fcb_stats` | observe-only reads of journal/roster/op state |
+| comms | `link_cut`, `link_clear`, `link`, `loss`, `commline`, `udp_chunks` | transport link model; adapter needs only the unit-facing half |
+| fc-bus faults | `fcb_cut`, `fcb_stall`, `fcb_corrupt`, `fcb_drop`, `fcb_inject`, `fcb_clear` | FC link fault injection (MAVLink stacks) |
+| host faults | `cpu_starve`, `cpu_unstarve`, `journal_unwritable`, `journal_writable`, `write_file` | host-level fault injection |
+| events | `fire`, `event`, `send` | event fire / raw message send |
 
 Verb names are the public contract — `./sim verbs` lists the registry.
 An adapter may implement a verb as a no-op *only* where the semantics
@@ -99,4 +105,5 @@ Same code path either way — the refactor only moved the dispatch:
 ```bash
 ./sim run tests/smoke_copters.yaml              # real transport, 3 SITL
 ./sim run tests/fleet_bus/p4a05_catchup.yaml    # bot + bus + operator path
+./sim run tests/sar/p4b10_a_nominal.yaml        # SAR: 32 PASS, 0 FAIL
 ```
