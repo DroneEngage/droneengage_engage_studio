@@ -2,10 +2,10 @@
   "scenario": "sar_challenge_baseline",
   "file": "/mnt/8a619ce7-cd3f-4520-af65-7991f16410f7/public_versions/drone_engage/droneengage_simulation_land/scenarios/challenges/entries/baseline/scenario.yaml",
   "seed": 11,
-  "started_utc": "2026-10-21T00:01:05Z",
-  "wall_s": 282.2,
+  "started_utc": "2026-10-21T01:01:16Z",
+  "wall_s": 282.3,
   "commits": {
-    "sim": "6858539",
+    "sim": "1d76171",
     "de_comm": "c745cfa",
     "de_server": "9cf32a5",
     "de_auth": "169341f",
@@ -28,31 +28,31 @@
       "name": "coverage_complete",
       "status": "PASS",
       "value": 0.991,
-      "detail": "342/345 cells covered (5839 looks, ['cam1'])"
+      "detail": "342/345 cells covered (5937 looks, ['cam1'])"
     },
     {
       "name": "pod_mean",
       "status": "PASS",
-      "value": 0.984,
-      "detail": "mean POD 0.984 over 345 cells (coverage 0.991)"
+      "value": 0.985,
+      "detail": "mean POD 0.985 over 345 cells (coverage 0.991)"
     },
     {
       "name": "pod_at",
       "status": "PASS",
       "value": 1.0,
-      "detail": "person_meadow (truth row t 1792541100441) sits in a cell with POD 1.000 (9 looks)"
+      "detail": "person_meadow (truth row t 1792544711048) sits in a cell with POD 1.000 (9 looks)"
     },
     {
       "name": "pod_at",
       "status": "PASS",
-      "value": 0.905,
-      "detail": "person_wood (truth row t 1792541100441) sits in a cell with POD 0.905 (11 looks)"
+      "value": 0.924,
+      "detail": "person_wood (truth row t 1792544711048) sits in a cell with POD 0.924 (12 looks)"
     },
     {
       "name": "pod_at",
       "status": "PASS",
       "value": 0.0,
-      "detail": "person_barn (truth row t 1792541100441) sits in a cell with POD 0.000 (8 looks)"
+      "detail": "person_barn (truth row t 1792544711048) sits in a cell with POD 0.000 (8 looks)"
     },
     {
       "name": "time_to_detect",
