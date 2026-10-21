@@ -26,7 +26,7 @@ realtime: true
 seed: 7
 transport: real
 world: ../../worlds/sar_forest.yaml
-operation: ../packages/sar_forest.deploy.json
+operation: ../../packages/sar_forest.deploy.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 180
 operator:
