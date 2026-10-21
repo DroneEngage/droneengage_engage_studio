@@ -53,6 +53,132 @@ def _sim(render=None, slot_base=10):
         spec["render"] = render
     return simlib.load_sim(spec)
 
+# --------------------------------------------- de.worldstream/1 contract
+# Frame shapes from docs/WORLDSTREAM.md (SL-PG-22), checked field by
+# field: required keys, JSON types, strict-JSON (no inf/nan). Extra
+# keys are legal (additive evolution), missing/mistyped ones are not.
+
+_NUM = (int, float)
+
+
+def _is_num(v):
+    return isinstance(v, _NUM) and not isinstance(v, bool)
+
+
+def _need(errs, where, obj, key, check, what):
+    if key not in obj:
+        errs.append(f"{where}: missing {key}")
+    elif not check(obj[key]):
+        errs.append(f"{where}.{key}: expected {what}, got {obj[key]!r}")
+
+
+def _latlng(errs, where, o):
+    _need(errs, where, o, "lat", _is_num, "number")
+    _need(errs, where, o, "lng", _is_num, "number")
+
+
+def _finite_json(errs, where, v):
+    if isinstance(v, float) and v != v or v in (float("inf"),
+                                                float("-inf")):
+        errs.append(f"{where}: non-finite {v!r}")
+    elif isinstance(v, dict):
+        for k, x in v.items():
+            _finite_json(errs, f"{where}.{k}", x)
+    elif isinstance(v, list):
+        for i, x in enumerate(v):
+            _finite_json(errs, f"{where}[{i}]", x)
+
+
+def validate_frame(frame):
+    """Return the list of contract violations for one frame (empty =
+    valid). Unknown `t` values are valid by rule 2 and return []."""
+    errs = []
+    t = frame.get("t")
+    if t == "hello":
+        _need(errs, "hello", frame, "schema",
+              lambda v: v == "de.worldstream/1", "de.worldstream/1")
+        _need(errs, "hello", frame, "sim", lambda v: isinstance(v, str),
+              "str")
+        _need(errs, "hello", frame, "seed", _is_num, "number")
+        _need(errs, "hello", frame, "origin",
+              lambda v: isinstance(v, list) and len(v) == 2
+              and all(_is_num(x) for x in v), "[lat, lng]")
+        _need(errs, "hello", frame, "epoch_unix_ms", _is_num, "number")
+        for k in ("obstacles", "units", "entities"):
+            _need(errs, "hello", frame, k, lambda v: isinstance(v, list),
+                  "list")
+        for k in ("areas", "trails", "environment"):
+            _need(errs, "hello", frame, k, lambda v: isinstance(v, dict),
+                  "object")
+        for i, e in enumerate(frame.get("entities") or []):
+            w = f"hello.entities[{i}]"
+            _need(errs, w, e, "id", lambda v: isinstance(v, str), "str")
+            _need(errs, w, e, "cls", lambda v: isinstance(v, str), "str")
+            _need(errs, w, e, "size_m", _is_num, "number")
+        for i, u in enumerate(frame.get("units") or []):
+            w = f"hello.units[{i}]"
+            _need(errs, w, u, "name", lambda v: isinstance(v, str), "str")
+            _need(errs, w, u, "sysid", lambda v: isinstance(v, int),
+                  "int")
+            _need(errs, w, u, "block", lambda v: isinstance(v, str),
+                  "str")
+            for k in ("camera", "payload"):
+                if k in u and not isinstance(u[k], dict):
+                    errs.append(f"{w}.{k}: expected object")
+            if "collision_radius_m" in u \
+                    and not _is_num(u["collision_radius_m"]):
+                errs.append(f"{w}.collision_radius_m: expected number")
+    elif t == "tick":
+        _need(errs, "tick", frame, "t_s", _is_num, "number")
+        _need(errs, "tick", frame, "t_unix_ms", _is_num, "number")
+        _need(errs, "tick", frame, "entities",
+              lambda v: isinstance(v, list), "list")
+        _need(errs, "tick", frame, "clutter",
+              lambda v: isinstance(v, list), "list")
+        for i, e in enumerate(frame.get("entities") or []):
+            w = f"tick.entities[{i}]"
+            _need(errs, w, e, "id", lambda v: isinstance(v, str), "str")
+            _latlng(errs, w, e)
+            _need(errs, w, e, "alt_m", _is_num, "number")
+            _need(errs, w, e, "heading_deg", _is_num, "number")
+            _need(errs, w, e, "moving", lambda v: isinstance(v, bool),
+                  "bool")
+        for i, c in enumerate(frame.get("clutter") or []):
+            w = f"tick.clutter[{i}]"
+            _need(errs, w, c, "id", lambda v: isinstance(v, str), "str")
+            _latlng(errs, w, c)
+            _need(errs, w, c, "cls", lambda v: isinstance(v, str), "str")
+        if "overlay" in frame:
+            ov = frame["overlay"]
+            _need(errs, "overlay", ov, "targets",
+                  lambda v: isinstance(v, dict), "object")
+            _need(errs, "overlay", ov, "states",
+                  lambda v: isinstance(v, dict)
+                  and all(x in ("seen", "miss", "occluded")
+                          for x in v.values()), "tid -> seen|miss|occluded")
+            _need(errs, "overlay", ov, "detections",
+                  lambda v: isinstance(v, list)
+                  and len(v) <= world_stream.MAX_DETECTIONS,
+                  f"list (max {world_stream.MAX_DETECTIONS})")
+            for i, d in enumerate(ov.get("detections") or []):
+                w = f"overlay.detections[{i}]"
+                _need(errs, w, d, "tid", lambda v: isinstance(v, str),
+                      "str")
+                _latlng(errs, w, d)
+                _need(errs, w, d, "t_ms", _is_num, "number")
+    elif t == "cmd":
+        _need(errs, "cmd", frame, "cmd", lambda v: isinstance(v, str),
+              "str")
+        _need(errs, "cmd", frame, "unit", lambda v: isinstance(v, str),
+              "str")
+        _need(errs, "cmd", frame, "t_unix_ms", _is_num, "number")
+    elif t == "event":
+        _need(errs, "event", frame, "kind", lambda v: isinstance(v, str),
+              "str")
+        _need(errs, "event", frame, "t_unix_ms", _is_num, "number")
+    _finite_json(errs, t or "frame", frame)
+    return errs
+
 
 class T(unittest.TestCase):
 
@@ -184,6 +310,42 @@ class T(unittest.TestCase):
         b = _sim(render={"mode": "physics"}, slot_base=35)
         self.assertFalse(simlib.used_ports(a) & simlib.used_ports(b))
 
+    def test_hello_and_tick_validate_against_contract(self):
+        w = world_mod.load(WORLD, 7)
+        hello = json.loads(world_stream.dumps(world_stream.hello_frame(
+            w, _sim(render={"mode": "viewer"}), 123456)))
+        self.assertEqual(validate_frame(hello), [])
+        tick = json.loads(world_stream.dumps(world_stream.tick_frame(
+            w, int(time.time() * 1000) - 5000)))
+        self.assertEqual(validate_frame(tick), [])
+        tick["overlay"] = json.loads(world_stream.dumps(
+            world_stream.overlay_frame(
+                None, {"person_open": "seen"},
+                [{"tid": "person_open", "cls": "person", "lat": 1.0,
+                  "lng": 2.0, "alt_m": 0.0, "t_ms": 5}])))
+        self.assertEqual(validate_frame(tick), [])
+
+    def test_validator_rejects_broken_frames(self):
+        # the validator must actually bite, else the gates above are
+        # vacuous
+        w = world_mod.load(WORLD, 7)
+        hello = world_stream.hello_frame(w, _sim(render={"mode": "viewer"}),
+                                         1)
+        self.assertTrue(validate_frame(hello))      # raw inf not stripped
+        hello = json.loads(world_stream.dumps(hello))
+        hello["schema"] = "de.worldstream/2"
+        del hello["origin"]
+        errs = validate_frame(hello)
+        self.assertEqual(len(errs), 2, errs)
+        tick = {"t": "tick", "t_s": "12", "t_unix_ms": 0,
+                "entities": [{"id": "x", "lat": 1.0}], "clutter": []}
+        self.assertGreaterEqual(len(validate_frame(tick)), 3)
+        self.assertEqual(validate_frame({"t": "future_frame", "x": 1}), [])
+        self.assertEqual(validate_frame(
+            {"t": "cmd", "cmd": "payload_release", "unit": "cam1",
+             "t_unix_ms": 1}), [])
+        self.assertTrue(validate_frame({"t": "cmd", "cmd": "x"}))
+
     def test_roundtrip_ws(self):
         """In-process: serve on an ephemeral port, read hello + a tick,
         inject an event, see it land in truth.jsonl; append a
@@ -213,6 +375,11 @@ class T(unittest.TestCase):
             stream.stop()
         self.assertEqual(hello["schema"], world_stream.SCHEMA)
         self.assertEqual(hello["sim"], "ws_test")
+        # every frame that crossed the wire honours the contract
+        for f in [hello] + frames:
+            self.assertEqual(validate_frame(f), [], f)
+        self.assertEqual({f["t"] for f in frames} | {"hello"},
+                         {"hello", "tick", "cmd"})
         ticks = [f for f in frames if f.get("t") == "tick"]
         self.assertGreaterEqual(len(ticks), 8)     # ~10 Hz over 1.4 s
         cmds = [f for f in frames if f.get("t") == "cmd"]
@@ -232,6 +399,10 @@ class T(unittest.TestCase):
         self.assertEqual(len(evs), 1)
         self.assertEqual(evs[0]["src"], "render")
         self.assertEqual(evs[0]["kind"], "payload_landed")
+        # the client event frame itself obeys the contract, and the
+        # stored truth row keeps its kind/payload verbatim
+        self.assertEqual(validate_frame(
+            dict(evs[0], t="event", t_unix_ms=evs[0]["t_ms"])), [])
         # the log saw the client + the event
         evs_log = [json.loads(ln)["ev"] for ln in open(log)]
         self.assertIn("connect", evs_log)
