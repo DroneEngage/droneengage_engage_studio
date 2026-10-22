@@ -1,5 +1,7 @@
 # Vehicle-stack adapter interface (de.stack/1)
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 `de.scenario/1` — the scenario core — is deliberately vehicle-stack
 agnostic. The timeline, the world model, ground truth, and every
 grader in `engine/checks.py` only need a narrow surface from whatever

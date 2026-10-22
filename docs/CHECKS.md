@@ -1,5 +1,7 @@
 # CHECKS.md — add a grader (assert: check)
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 An `assert:` entry in a de.scenario/1 scenario is `{name: {args}}` —
 the runner calls it after the timeline and grades the run evidence.
 Adding one is three small edits; the heavy lifting (unit resolution,

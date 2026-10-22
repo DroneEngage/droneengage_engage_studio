@@ -1,5 +1,7 @@
 # HIL — hardware-in-the-loop units
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 SPIKE output (SL-0017): how a fleet unit could run its DroneEngage
 processes (de_comm + modules) on a real Pi host — the `de-connect`
 skill's `pi@droneengage.local` / `pi@dronecode.local` — while SITL and

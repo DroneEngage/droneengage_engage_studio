@@ -1,5 +1,7 @@
 # Port allocation management — design
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 Status: **design, not implemented** — except `./sim ports [name|--all]`,
 which already exists in the lightweight form (no allocator): it lists
 every port a generated sim declares (from `var/run/*/sim.json`) and probes

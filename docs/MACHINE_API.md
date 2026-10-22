@@ -1,5 +1,7 @@
 # MACHINE_API.md — `--json` output contract
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 Agent-facing machine interface for `sim`. Every read-only command takes
 `--json` and emits one JSON document on stdout (nothing else). Without
 `--json` the human output is unchanged. `json.tool` / `jq` parse every

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""sim - DroneEngage simulation from reusable blocks.
+"""DroneEngageStudio - sim: simulation and ground-truth testing from reusable
+blocks. DroneEngage is the flagship integration (not the owner).
 
   ./sim blocks                     list blocks (reusable unit types)
   ./sim block <name>               show a block resolved through `extends`
