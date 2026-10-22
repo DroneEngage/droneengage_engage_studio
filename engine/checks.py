@@ -80,6 +80,7 @@ UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
                 "journal_order", "no_journal", "final_state",
                 "fc_items_unchanged_without_cause", "mission_current",
                 "mission_items", "mission_pull", "udp_proxy_mavlink",
+                "udp_proxy_rejects",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
                 "detection_recall", "status_field", "obs_frames"}
@@ -1719,6 +1720,169 @@ def _udp_proxy_mavlink(name, a, ctx):
               sum(vals) / len(vals) if vals else None, "; ".join(bits))
 
 
+def _fc_armed(u):
+    """The FC's armed bit read on serial0 (SITL itself), or None when a
+    heartbeat can't be fetched."""
+    from pymavlink import mavutil
+    m = ctl.mav(u, timeout=15)
+    try:
+        hb = ctl.fc_heartbeat(m, u, timeout=10)
+        if hb is None:
+            return None
+        return bool(hb.base_mode
+                    & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
+    finally:
+        m.close()
+
+
+def _udp_proxy_inject(ip, port, sysid, from_ip, secs):
+    """A stranger's injection attempt against the proxy endpoint:
+    COMMAND_LONG ARM_DISARM + a one-item MISSION_COUNT upload (the
+    MISSION_REQUEST_INT is answered so the write can land), all from a
+    socket bound to `from_ip`. Returns the number of MISSION_ITEMs the
+    FC actually requested - >0 means traffic reached the FC."""
+    from pymavlink import mavutil
+    mav = mavutil.mavlink.MAVLink(None)
+    mav.srcSystem = 255                        # pose as a GCS station
+    mav.srcComponent = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
+    arm = mav.command_long_encode(
+        sysid, 1, mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        0, 1, 0, 0, 0, 0, 0, 0).pack(mav)
+    try:
+        mcount = mav.mission_count_encode(
+            sysid, 1, 1, mavutil.mavlink.MAV_MISSION_TYPE_MISSION).pack(mav)
+    except TypeError:
+        mcount = mav.mission_count_encode(sysid, 1, 1).pack(mav)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    requested = 0
+    try:
+        s.bind((from_ip, 0))
+        s.settimeout(0.25)
+        parser = mavutil.mavlink.MAVLink(None)
+        deadline = time.time() + secs
+        next_send = 0.0
+        while time.time() < deadline:
+            if time.time() >= next_send:
+                s.sendto(arm, (ip, port))
+                s.sendto(mcount, (ip, port))
+                next_send = time.time() + 1.0
+            try:
+                data, _ = s.recvfrom(65536)
+            except socket.timeout:
+                continue
+            try:
+                msgs = parser.parse_buffer(bytearray(data))
+            except mavutil.mavlink.MAVError:
+                parser = mavutil.mavlink.MAVLink(None)
+                continue
+            for m in msgs or []:
+                if m is None:
+                    continue
+                mid = m.get_msgId()
+                if mid in (40, 51):      # MISSION_REQUEST / _INT
+                    requested += 1
+                    try:
+                        item = mav.mission_item_int_encode(
+                            sysid, 1, m.seq,
+                            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                            mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                            0, 1, 0, 0, 0, 0,
+                            int(51.0e7), int(7.0e7), 100.0,
+                            mavutil.mavlink.MAV_MISSION_TYPE_MISSION
+                            ).pack(mav)
+                    except TypeError:
+                        item = mav.mission_item_int_encode(
+                            sysid, 1, m.seq,
+                            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                            mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                            0, 1, 0, 0, 0, 0,
+                            int(51.0e7), int(7.0e7), 100.0).pack(mav)
+                    s.sendto(item, (ip, port))
+    finally:
+        s.close()
+    return requested
+
+
+def _udp_proxy_rejects(name, a, ctx):
+    """udp_proxy_rejects {unit, from_ip, secs, expect}: a stranger must
+    not drive the FC through the proxy pair. Datagrams are sent to the
+    unit's 1071 {a,p} from a socket bound to `from_ip` (default
+    127.0.0.2 - the allowlisted GCS is the bridge at 127.0.0.1): an ARM
+    COMMAND_LONG and a one-item mission upload whose MISSION_REQUESTs
+    are answered so the write can land. PASS requires the FC still
+    disarmed, the mission signature unchanged, and - on a relay sim -
+    relay stats counting >= 1 gcs_not_allowed.
+    expect: fail flips the verdict - the built-in proxy has this hole
+    today (last-sender wins), so its variant asserts the injection
+    landed instead."""
+    secs = float(a.get("secs", 10))
+    from_ip = a.get("from_ip", "127.0.0.2")
+    want_fail = str(a.get("expect", "pass")).lower() == "fail"
+    urelay = (ctx["manifest"].get("server") or {}).get("udp_relay")
+    ok, bits, any_fc, n_landed = True, [], False, 0
+    skipped, n_tested = False, 0
+    for u in _units(a, ctx):
+        if not u["fc"]:
+            bits.append(f"{u['name']}: no fc - skipped")
+            continue
+        any_fc = True
+        ep = _udp_proxy_endpoint(u["party_id"])
+        if ep is None:
+            ok = False
+            bits.append(f"{u['name']}: no 1071 UDPProxy_Info")
+            continue
+        ip, port = ep
+        if urelay:
+            lo, hi = urelay["udp_port_range"]
+            if not (lo <= port <= hi):
+                skipped = True
+                bits.append(f"{u['name']}: SKIP - 1071 port {port} "
+                            f"outside the relay range [{lo},{hi}] "
+                            "(server has no udp_relay support)")
+                continue
+        n_tested += 1
+        # on the built-in proxy the pair must actually be OPEN to prove
+        # the hole - a paused proxy would hide it
+        _udp_proxy_resume(u["party_id"])
+        armed0 = _fc_armed(u)
+        sig0 = mission_signature(u)
+        reqs = _udp_proxy_inject(ip, port, u["fc"]["sysid"], from_ip, secs)
+        armed1 = _fc_armed(u)
+        sig1 = mission_signature(u)
+        hole = ((armed1 and not armed0)
+                or (sig0 is not None and sig1 is not None and sig1 != sig0)
+                or reqs > 0)
+        if hole:
+            ok = False
+            n_landed += 1
+            bits.append(f"{u['name']}: INJECTION LANDED - "
+                        f"armed {armed0}->{armed1}, "
+                        f"mission {'changed' if sig1 != sig0 else 'same'}, "
+                        f"{reqs} mission request(s) from the FC")
+        else:
+            bits.append(f"{u['name']}: rejected - still "
+                        f"{'disarmed' if armed1 is False else 'unarmed?'}, "
+                        "mission unchanged")
+    if skipped and not n_tested:
+        return _r(name, "SKIP", None, "; ".join(bits))
+    if urelay and n_tested:
+        st = ctl.relay_stats()
+        rej = (st or {}).get("rejected") or {}
+        n_gcs = int(rej.get("gcs_not_allowed", 0))
+        bits.append(f"relay rejected: {rej}")
+        if n_gcs < 1 and not want_fail:
+            ok = False
+            bits.append("relay counted no gcs_not_allowed drop")
+    if want_fail:
+        note = "expected failure observed - " if n_landed \
+            else "expected the injection to land but it was blocked - "
+        return _r(name, "PASS" if n_landed else "FAIL", None,
+                  note + "; ".join(bits))
+    if ok and not any_fc:
+        return _r(name, "SKIP", None, "; ".join(bits))
+    return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
+
+
 def _no_fc_command_to_static(name, a, ctx):
     ok, bits, n_all = True, [], 0
     for u in _units(a, ctx):
@@ -2417,6 +2581,7 @@ DISPATCH = {
     "mission_items": _mission_items,
     "mission_pull": _mission_pull,
     "udp_proxy_mavlink": _udp_proxy_mavlink,
+    "udp_proxy_rejects": _udp_proxy_rejects,
     "no_fc_command_to_static": _no_fc_command_to_static,
     "max_latency": lambda n, a, c: _journal_delta(n, a, c, ms=True),
     "proc_alive": lambda n, a, c: _proc_state(n, a, c, True),

@@ -77,3 +77,23 @@ against req/opt — keep them accurate.
 - `engine/test_checks.py` exercises graders against canned fixtures —
   add cases there; a scenario in `tests/` exercises the wiring end to
   end.
+
+## Example: `udp_proxy_rejects` (negative / security check)
+
+`udp_proxy_rejects {unit, from_ip, secs, expect}` proves a stranger cannot
+drive the FC through the UDP proxy pair. It sends an ARM COMMAND_LONG and a
+one-item mission upload to the unit's 1071 `{a,p}` from a socket bound to
+`from_ip` (default `127.0.0.2`; the allowlisted GCS is the bridge at
+`127.0.0.1`), then reads the FC back on serial0 (armed bit, mission
+signature).
+
+- PASS: FC still disarmed, mission unchanged, and on a `server: {udp_relay}`
+  sim `./sim ctl relay stats` shows `rejected.gcs_not_allowed >= 1`
+  (`gcs_unpinned` alone does not count).
+- SKIP: relay sim whose 1071 port is outside `udp_port_range` (the server
+  has no relay support) - same rule as `udp_proxy_mavlink`; nothing is sent.
+- `expect: fail` flips the verdict and asserts the injection *landed*; used
+  by `tests/udp_relay/builtin_injection_expect_fail.yaml` to record the
+  built-in proxy's hole.
+- Registered in `engine/registry.py`, documented in `docs/SCENARIOS.md`,
+  tests in `engine/test_checks.py` (`TestUdpProxyRejects`).

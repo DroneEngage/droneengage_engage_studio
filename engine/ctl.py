@@ -143,7 +143,9 @@ Processes:
 """
 
 import asyncio
+import base64
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -1172,6 +1174,37 @@ async def _fake_ws_collect(first, mts, secs, stop_on_last):
     return out
 
 
+async def _relay_control(mt, ms):
+    """One request on the udp_relay's S2S control socket (SL-0089):
+    answer the nonce challenge with HMAC-SHA256(nonce, per-run shared
+    secret), send {mt, ms, rid:1}, return the reply envelope."""
+    import websockets
+    ur = server().get("udp_relay")
+    if not ur:
+        sys.exit("this sim's server has no udp_relay")
+    secret = open(os.path.join(simlib.server_dir(_ctx_name()),
+                               "udp_relay_s2s_secret.key")).read().strip()
+    async with websockets.connect(f"wss://127.0.0.1:{ur['port']}",
+                                  ssl=_ssl_ctx(), compression=None) as ws:
+        ch = json.loads(await asyncio.wait_for(ws.recv(), 10))
+        sig = base64.b64encode(hmac.new(
+            secret.encode(), str(ch["nonce"]).encode(),
+            hashlib.sha256).digest()).decode()
+        await ws.send(json.dumps({"s2s_auth": "response", "sig": sig,
+                                  "id": "sim_ctl"}))
+        await ws.send(json.dumps({"mt": mt, "ms": ms, "rid": 1}))
+        while True:
+            rep = json.loads(await asyncio.wait_for(ws.recv(), 10))
+            if rep.get("rid") == 1:
+                return rep
+
+
+def relay_stats():
+    """The udp_relay's {pairs, ports_free, rejected} counters."""
+    rep = asyncio.run(_relay_control("stats", {}))
+    return rep.get("ms") or rep
+
+
 def gcs_collect(first, mts, secs, stop_on_last=False):
     if server()["type"] == "fake":
         return asyncio.run(_fake_ws_collect(first, mts, secs, stop_on_last))
@@ -2113,6 +2146,13 @@ def main(argv):
                  + " ".join(str(x) for x in a[1:]))
     elif c == "links":
         ctrl("stats")
+    elif c == "relay":
+        # SL-0089: the standalone udp_relay's control API (per-run HMAC
+        # secret). `relay stats` prints the {pairs, ports_free,
+        # rejected} counters udp_proxy_rejects reads.
+        if not a or a[0] != "stats":
+            sys.exit("usage: relay stats")
+        print(json.dumps(relay_stats(), indent=1))
     elif c == "clock":
         ctrl(f"clock offset {a[1]}")
     elif c == "noclock":

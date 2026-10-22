@@ -491,6 +491,12 @@ VERBS = [
       doc="FC HEARTBEATs counted through the unit's UDP proxy "
           "(built-in or udp_relay)",
       eg="{udp_proxy_mavlink: {unit: c1, secs: 15, at_least: 10}}"),
+    V("udp_proxy_rejects", "check", req=["unit"],
+      opt=["from_ip", "secs", "expect"],
+      doc="a stranger at from_ip cannot inject ARM/mission writes "
+          "through the proxy pair (expect: fail asserts the built-in "
+          "proxy's hole)",
+      eg="{udp_proxy_rejects: {unit: c1, from_ip: '127.0.0.2'}}"),
     V("no_fc_command_to_static", "check", opt=["unit"],
       doc="no MAVLink command was ever sent to a no-FC unit",
       eg="{no_fc_command_to_static: {unit: s1}}"),
