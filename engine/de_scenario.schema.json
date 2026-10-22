@@ -47,6 +47,8 @@
            "seed": {"type": "integer"},
            "link_proxy": {"type": "boolean",
              "description": "SL-0009: per-unit byte-level link-fault proxy in front of de_comm (real+auth:false only)"},
+           "udp_relay": {"type": ["boolean", "object"],
+             "description": "TASK-87: spawn the standalone droneengage_udp_proxy next to the comm server (real only); true or {port, udp_port_range, gcs_peer_policy, id, ssl}"},
            "noclock": {"type": "array", "items": {"type": "string"}},
            "clock_offset_ms": {"type": "integer"},
            "account": {"type": "object", "additionalProperties": false,

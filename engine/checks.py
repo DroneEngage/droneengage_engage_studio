@@ -45,6 +45,9 @@ Journal assertions keep the runner.py semantics (same helpers, same
   - MAVLink mission:     fc_items_unchanged_without_cause, mission_items
                          (count on the FC), mission_pull (the GCS 1027
                          chunk read-back the WebClient draws)
+  - UDP proxy:           udp_proxy_mavlink - the unit's 1071 {a,p}
+                         endpoint, then raw-datagram HEARTBEAT counting
+                         (built-in proxy or spawned udp_relay alike)
 """
 
 import hashlib
@@ -52,6 +55,7 @@ import json
 import math
 import os
 import re
+import socket
 import time
 
 import simlib
@@ -75,7 +79,7 @@ FC_LINE_RE = re.compile(
 UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
                 "journal_order", "no_journal", "final_state",
                 "fc_items_unchanged_without_cause", "mission_current",
-                "mission_items", "mission_pull",
+                "mission_items", "mission_pull", "udp_proxy_mavlink",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
                 "detection_recall", "status_field", "obs_frames"}
@@ -1595,6 +1599,126 @@ def _mission_pull(name, a, ctx):
               sum(vals) / len(vals) if vals else None, "; ".join(bits))
 
 
+def _udp_proxy_endpoint(party, budget_s=30):
+    """Latest mt 1071 {a, p} a unit announces for its UDP proxy, or None.
+    A RemoteExecute {C:1071} makes de_mavlink re-send its UDPProxy_Info;
+    the request is repeated until the unit answers or the budget runs
+    out - right after `sim up` the proxy pair may still be opening."""
+    deadline = time.time() + budget_s
+    frame = {"ty": "i", "mt": 1005, "tg": party, "ms": {"C": 1071}}
+    while time.time() < deadline:
+        frames = ctl.ctrl_stream(
+            "reqm %g 1071 %s" % (5, json.dumps([frame])), 5)
+        hits = [f for f in frames
+                if f.get("sd") == party
+                and (f.get("ms") or {}).get("en")
+                and (f.get("ms") or {}).get("a")
+                and (f.get("ms") or {}).get("p")]
+        if hits:
+            ms = hits[-1]["ms"]
+            return ms["a"], int(ms["p"])
+    return None
+
+
+def _udp_proxy_resume(party):
+    """Un-pause the unit's UDP proxy: RemoteExecute TELEMETRYCTRL (C:108)
+    Act=REQUEST_RESUME (3). The proxy boots paused ("smart telemetry") so
+    without this nothing crosses the pair even when it is open."""
+    frame = {"ty": "i", "mt": 1005, "tg": party,
+             "ms": {"C": 108, "Act": 3}}
+    for _ in ctl.ctrl_stream("req 3 1071 %s" % json.dumps(frame), 3):
+        pass
+
+
+def udp_heartbeat_count(ip, port, sysid, secs):
+    """Send one MAVLink HEARTBEAT to <ip>:<port> from a bound UDP socket,
+    then count HEARTBEATs from <sysid> received for `secs`. One socket
+    for send and receive - the proxy/relay learns the GCS peer from the
+    first datagram, so the unit's stream must come back to that same
+    source port."""
+    from pymavlink import mavutil
+    mav = mavutil.mavlink.MAVLink(None)
+    mav.srcSystem = 255                        # a GCS station
+    mav.srcComponent = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
+    hb = mav.heartbeat_encode(mavutil.mavlink.MAV_TYPE_GCS,
+                              mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                              0, 0, 0).pack(mav)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(0.25)
+    n = 0
+    try:
+        s.bind(("127.0.0.1", 0))
+        s.sendto(hb, (ip, port))
+        parser = mavutil.mavlink.MAVLink(None)
+        deadline = time.time() + secs
+        while time.time() < deadline:
+            try:
+                data, _ = s.recvfrom(65536)
+            except socket.timeout:
+                continue
+            try:
+                msgs = parser.parse_buffer(bytearray(data))
+            except mavutil.mavlink.MAVError:
+                # a stray/non-MAVLink datagram poisons the incremental
+                # parser - drop it and start fresh
+                parser = mavutil.mavlink.MAVLink(None)
+                continue
+            for m in msgs or []:
+                if m is not None and m.get_msgId() == 0 \
+                        and m.get_srcSystem() == sysid:
+                    n += 1
+    finally:
+        s.close()
+    return n
+
+
+def _udp_proxy_mavlink(name, a, ctx):
+    """udp_proxy_mavlink {unit, secs, at_least}: GCS-side MAVLink through
+    the unit's UDP proxy, end to end. The unit's latest 1071 {a, p} is
+    fetched via RemoteExecute {C:1071}, telemetry is resumed
+    (TELEMETRYCTRL/REQUEST_RESUME - the proxy boots paused), one
+    heartbeat opens the GCS peer from a real datagram, then FC
+    HEARTBEATs with the unit's sysid are counted for `secs`. On a relay
+    sim (server.udp_relay) an endpoint outside the relay's
+    udp_port_range means the comm server ignored its `udp_relay`
+    config and stayed on the built-in proxy - the unit reports SKIP,
+    not FAIL."""
+    secs = float(a.get("secs", 15))
+    at_least = int(a.get("at_least", 1))
+    urelay = (ctx["manifest"].get("server") or {}).get("udp_relay")
+    ok, bits, vals, any_fc, skipped = True, [], [], False, False
+    for u in _units(a, ctx):
+        if not u["fc"]:
+            bits.append(f"{u['name']}: no fc - skipped")
+            continue
+        any_fc = True
+        ep = _udp_proxy_endpoint(u["party_id"])
+        if ep is None:
+            ok = False
+            bits.append(f"{u['name']}: no 1071 UDPProxy_Info")
+            continue
+        ip, port = ep
+        if urelay:
+            lo, hi = urelay["udp_port_range"]
+            if not (lo <= port <= hi):
+                skipped = True
+                bits.append(f"{u['name']}: SKIP - 1071 port {port} "
+                            f"outside the relay range [{lo},{hi}] "
+                            "(server has no udp_relay support)")
+                continue
+        _udp_proxy_resume(u["party_id"])
+        n = udp_heartbeat_count(ip, port, u["fc"]["sysid"], secs)
+        vals.append(n)
+        good = n >= at_least
+        ok &= good
+        bits.append(f"{u['name']}: {n} heartbeat(s) via {ip}:{port}"
+                    + ("" if good else f" (need >= {at_least})"))
+    if ok and (skipped or not any_fc):
+        return _r(name, "SKIP", None, "; ".join(bits))
+    return _r(name, "PASS" if ok else "FAIL",
+              sum(vals) / len(vals) if vals else None, "; ".join(bits))
+
+
 def _no_fc_command_to_static(name, a, ctx):
     ok, bits, n_all = True, [], 0
     for u in _units(a, ctx):
@@ -2292,6 +2416,7 @@ DISPATCH = {
     "fc_items_unchanged_without_cause": _fc_items_unchanged,
     "mission_items": _mission_items,
     "mission_pull": _mission_pull,
+    "udp_proxy_mavlink": _udp_proxy_mavlink,
     "no_fc_command_to_static": _no_fc_command_to_static,
     "max_latency": lambda n, a, c: _journal_delta(n, a, c, ms=True),
     "proc_alive": lambda n, a, c: _proc_state(n, a, c, True),

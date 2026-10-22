@@ -1,0 +1,15 @@
+# Built-in UDP proxy telemetry: the same end-to-end MAVLink check as
+# relay_telemetry.yaml but with udp_relay off - the comm server's
+# built-in proxy forwards the unit's FC HEARTBEATs to the GCS. This is
+# the baseline: relay_telemetry must behave identically once the relay
+# is in the path. auth: true like relay_telemetry - the built-in proxy
+# hits the same de_comm local-mode status gap (no 9008 without auth).
+version: 1
+name: builtin_telemetry
+transport: {type: real, auth: true,
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+timeline: []
+assert:
+  - udp_proxy_mavlink: {unit: all, secs: 25, at_least: 10}

@@ -357,6 +357,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `fc_mode` | `unit`, `mode` | last FC mode |
 | `mission_items` | `unit`, `equals`/`at_least`/`at_most` | FC mission count, serial0 read-back |
 | `mission_pull` | `unit`, `secs`, bounds | the GCS 501→1027 plan read-back a WebClient draws; last chunk `i=999` required |
+| `udp_proxy_mavlink` | `unit`, `secs`, `at_least` | FC HEARTBEATs (matching sysid) counted for `secs` on a datagram to the unit's latest 1071 `{a,p}` — end-to-end GCS→UDP proxy→unit. On a `server: {udp_relay}` sim an endpoint outside the relay's `udp_port_range` means the server lacks relay support → SKIP |
 | `roster_value` | `unit`, `key`, `equals`/`…` | roster field |
 | `operator_log_count` | `re`, bounds | the bot's decisions |
 | `clock_spread` | `unit`, `max_ms` (100) or `min_ms` | spread of the units' latest CLOCK `fleet_minus_unix_ms`; `min_ms` proves a `clock_step` landed |
