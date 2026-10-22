@@ -1,5 +1,7 @@
 # The monthly SAR challenge
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 Fixed world, fixed seed, your operation. Write a search package that
 finds the people in `worlds/challenge_sar.yaml` faster and more honestly
 than the reference sweep — then prove it by replay.

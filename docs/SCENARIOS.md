@@ -1,5 +1,7 @@
 # Writing scenarios — `de.scenario/1`
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 This file is the complete authoring reference for a scenario: one YAML
 file that describes a rehearsal — fleet, operation, scripted timeline,
 faults, assertions. It is written so a human **or an LLM** can produce a

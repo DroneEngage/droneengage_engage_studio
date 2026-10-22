@@ -1,5 +1,7 @@
 # Port allocation management — design
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 Status: **design, not implemented**. Task 2 of 3 in the "real servers +
 mesh in the sim" work. Task 1 is the comm-server plugin events
 (`droneengage_server/wiki/PluginEvents.md`). Task 3, the `servers:`

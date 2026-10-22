@@ -1,5 +1,7 @@
 # WORLDS.md — add a ground-truth world (de.world/1)
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 A `worlds/*.yaml` file describes **what is really out there** — the
 people, phones, pads and aircraft that stub sensors turn into the
 messages real modules would send. The runner loads it once per run,

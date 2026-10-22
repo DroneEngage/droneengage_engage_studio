@@ -1,5 +1,7 @@
 # Real servers and mesh topologies in the sim — design
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 Status: **design only**, nothing here is implemented yet.
 Companion docs, written in parallel:
 

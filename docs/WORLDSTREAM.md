@@ -1,5 +1,7 @@
 # de.worldstream/1 — the sim ↔ renderer world contract
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 Versioned schema for the per-run world feed a scenario runner serves to
 renderers (the Mavlink3DMap world scene, the render-camera farm, the
 physics loop). The runner is the server; renderers are WebSocket

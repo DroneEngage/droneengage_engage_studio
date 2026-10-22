@@ -1,6 +1,13 @@
-# droneengage_simulation_land
+# DroneEngageStudio
 
-Reusable building blocks for DroneEngage simulations. You describe a vehicle
+(repo directory `droneengage_simulation_land`)
+
+DroneEngageStudio is a vehicle-stack-agnostic simulation and ground-truth
+testing studio. DroneEngage is its flagship integration - the first and
+best-supported stack it drives, not its owner (see `docs/ADAPTER.md` for
+the stack-agnostic `de.stack/1` interface).
+
+Reusable building blocks for simulations (flagship: DroneEngage). You describe a vehicle
 type once, compose fleets out of these types, and run tests against a fleet.
 Everything runs headless on one machine against the **real**
 `droneengage_server` (optionally with `droneengage_authenticator`) on its own

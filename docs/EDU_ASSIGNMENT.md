@@ -1,5 +1,7 @@
 # Course assignment — search under canopy
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 **Aim:** write a drone search pattern that beats **POD 0.8 under canopy**
 — probability of detection, not coverage — against a fixed ground-truth
 world. Suitable for robotics courses and GSoC warm-ups; runs end to end

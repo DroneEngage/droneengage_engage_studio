@@ -1,5 +1,7 @@
 # SENSORS.md — the sensor contract (SL-0030)
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 A simulated sensor is **one block folder** — no `engine/` edits. The
 folder carries everything the engine needs to find, launch and feed it:
 

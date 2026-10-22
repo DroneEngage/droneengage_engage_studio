@@ -1,5 +1,7 @@
 # SAR challenge scoreboard
 
+> DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
+
 Season world `worlds/challenge_sar.yaml`, seed 11 — see
 `docs/CHALLENGE.md` for the contract and scoring. Entries are appended
 after a `tools/verify_challenge.py --replay` VERIFIED. Only a
