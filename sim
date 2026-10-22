@@ -14,6 +14,9 @@
                                    webclient link)
   ./sim down [name|--all]          stop one sim, or every sim
   ./sim sims                       generated sims and live process counts
+  ./sim ports [name|--all]         live sims' declared ports vs what's bound
+                                   right now (--all: every generated sim;
+                                   udp_relay shows its whole udp range n/N)
   ./sim status [-s <sim>] [live|all] [--open-web]
                                    = ./sim ctl status (live sims only;
                                      `all` also lists downed ones;
@@ -469,6 +472,43 @@ def main(argv):
                     print(f"{n:16s} {len(m['units'])} unit(s)  "
                           f"server {srv['type']}  "
                           f"{len(simlib.read_pids(n))} proc(s) alive")
+        elif c == "ports":
+            # SL-0088: which of a sim's declared ports are actually bound
+            # right now. `sim down` frees them all - this is the lease
+            # visibility the udp_relay checks ask for.
+            names = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, ("--all",))
+            if bad or len(names) > 1:
+                sys.exit("usage: ./sim ports [name|--all]"
+                         + f" - unknown {' '.join(bad)}")
+            scope = names or [n for n in simlib.sim_names()
+                              if "--all" in a or simlib.read_pids(n)]
+            if not scope:
+                print("no live sim - ./sim up <sim.yaml> "
+                      "or ./sim ports --all")
+            for sn in scope:
+                try:
+                    m = simlib.load_manifest(sn)
+                except Exception as e:
+                    sys.exit(f"sim {sn!r}: {e}")
+                alive = len(simlib.read_pids(sn))
+                # collapse the relay's per-port udp rows into one range row
+                rng = [r for r in simlib.port_rows(m)
+                       if r[0] == "server.udp_relay.range"]
+                rows = [r for r in simlib.port_rows(m)
+                        if r[0] != "server.udp_relay.range"]
+                n_bound = sum(simlib.port_bound(p, "udp")
+                              for _, p, _ in rng)
+                print(f"{sn} ({alive} proc(s) alive)")
+                w = max(len(r[0]) for r in rows) if rows else 0
+                for owner, port, proto in rows:
+                    state = "bound" if simlib.port_bound(port, proto) \
+                        else "free"
+                    print(f"  {owner:{w}s}  {port:>6}  {proto:3s} {state}")
+                if rng:
+                    lo, hi = rng[0][1], rng[-1][1]
+                    print(f"  {'server.udp_relay.range':{w}s}  "
+                          f"{lo}-{hi}  udp {n_bound}/{len(rng)} bound")
         elif c == "status":
             import ctl
             # ctl parses `-s <sim>` only ahead of the command word -

@@ -1,8 +1,13 @@
 # Port allocation management — design
 
-Status: **design, not implemented**. Task 2 of 3 in the "real servers +
-mesh in the sim" work. Task 1 is the comm-server plugin events
-(`droneengage_server/wiki/PluginEvents.md`). Task 3, the `servers:`
+Status: **design, not implemented** — except `./sim ports [name|--all]`,
+which already exists in the lightweight form (no allocator): it lists
+every port a generated sim declares (from `var/run/*/sim.json`) and probes
+whether it is bound right now, including `server.udp_relay` and its whole
+`udp_relay.range` as an `n/N bound` row (SL-0088). The allocator described
+below would replace that probe with real lease records. Task 2 of 3 in the
+"real servers + mesh in the sim" work. Task 1 is the comm-server plugin
+events (`droneengage_server/wiki/PluginEvents.md`). Task 3, the `servers:`
 topology / mesh design, uses the request API defined here.
 
 ## Goal

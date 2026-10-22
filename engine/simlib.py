@@ -1481,6 +1481,19 @@ def _single_sim():
                    ") - pass the sim name")
 
 
+def _udp_relay_range(sim):
+    """The relay's resolved [lo, hi] udp_port_range - explicit config,
+    else the slot-derived default. Usable on a spec (pre-gen) or a
+    manifest (gen_server writes the resolved value back)."""
+    ur = sim["server"]["udp_relay"]
+    if ur.get("udp_port_range"):
+        return ur["udp_port_range"]
+    n_pairs = sum(1 for u in sim["units"] if "de_mavlink" in u["modules"])
+    return [UDP_RELAY_PORT_BASE + 40 * sim["slot_base"],
+            UDP_RELAY_PORT_BASE + 40 * sim["slot_base"]
+            + max(4, 2 * n_pairs) - 1]
+
+
 def used_ports(sim):
     """Every local port a sim binds: unit s2s + SITL ports, and (for
     engine-run servers) the server/auth ports. The external server's own
@@ -1492,6 +1505,11 @@ def used_ports(sim):
         ports.add(srv["port"])
         if srv["auth"]:
             ports.update((srv["auth_port"], srv["auth_s2s_port"]))
+        ur = srv.get("udp_relay")
+        if ur:
+            ports.add(ur["port"])
+            lo, hi = _udp_relay_range(sim)
+            ports.update(range(int(lo), int(hi) + 1))
     if sim.get("render"):
         ports.update((sim["render"]["stream_port"],
                       sim["render"]["mav_port"],
@@ -1511,6 +1529,72 @@ def used_ports(sim):
                 ports.update((u["fc"]["fcb_proxy"]["port"],
                               u["fc"]["fcb_proxy"]["ctrl"]))
     return ports
+
+
+def port_rows(sim):
+    """[(owner, port, proto)] - every local port a sim binds, labeled.
+    Same coverage as used_ports(); the relay's udp_port_range is one
+    row per port so `sim ports` can show how much of the block is live."""
+    rows = []
+    srv = sim["server"]
+    rows.append(("server.control", srv["control_port"], "tcp"))
+    if srv["type"] != "external":
+        rows.append(("server.wss", srv["port"], "tcp"))
+        if srv["auth"]:
+            rows.append(("server.auth", srv["auth_port"], "tcp"))
+            rows.append(("server.auth_s2s", srv["auth_s2s_port"], "tcp"))
+        ur = srv.get("udp_relay")
+        if ur:
+            rows.append(("server.udp_relay", ur["port"], "tcp"))
+            lo, hi = _udp_relay_range(sim)
+            rows += [("server.udp_relay.range", p, "udp")
+                     for p in range(int(lo), int(hi) + 1)]
+    if sim.get("render"):
+        r = sim["render"]
+        rows += [("render.stream", r["stream_port"], "tcp"),
+                 ("render.mav", r["mav_port"], "tcp"),
+                 ("render.mav_ws", r["mav_ws_port"], "tcp"),
+                 ("render.web", r["web_port"], "tcp"),
+                 ("render.sink", r["sink_port"], "tcp")]
+    for u in sim["units"]:
+        rows += [(f"{u['name']}.{m}", p, "udp")
+                 for m, p in u["ports"].items()]
+        if u.get("link_proxy"):
+            rows += [(f"{u['name']}.link_proxy", u["link_proxy"]["port"],
+                      "tcp"),
+                     (f"{u['name']}.link_proxy.ctrl",
+                      u["link_proxy"]["ctrl"], "tcp")]
+        if u["fc"]:
+            fc = u["fc"]
+            rows += [(f"{u['name']}.sitl.pilot", fc["pilot_port"], "tcp"),
+                     (f"{u['name']}.sitl.fcb", fc["fcb_port"], "tcp"),
+                     (f"{u['name']}.sitl.aux", fc["aux_port"], "tcp")]
+            if fc.get("pose_port"):
+                rows.append((f"{u['name']}.sitl.pose",
+                             fc["pose_port"], "tcp"))
+            if fc.get("fcb_proxy"):
+                rows += [(f"{u['name']}.fcb_proxy",
+                          fc["fcb_proxy"]["port"], "tcp"),
+                         (f"{u['name']}.fcb_proxy.ctrl",
+                          fc["fcb_proxy"]["ctrl"], "tcp")]
+    return rows
+
+
+def port_bound(port, proto):
+    """Whether anything on this host already binds `port` (bind probe;
+    TCP SO_REUSEADDR still fails on a LISTENing socket)."""
+    s = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_STREAM if proto == "tcp" else socket.SOCK_DGRAM)
+    try:
+        if proto == "tcp":
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind(("0.0.0.0", port))
+        return False
+    except OSError:
+        return True
+    finally:
+        s.close()
 
 
 def ports_held(ports):
@@ -2059,12 +2143,7 @@ def gen_server(sim):
         secret_path = os.path.join(sdir, "udp_relay_s2s_secret.key")
         write_text(secret_path, secrets.token_hex(32) + "\n")
         os.chmod(secret_path, 0o600)
-        n_pairs = sum(1 for u in sim["units"]
-                      if "de_mavlink" in u["modules"])
-        lo = urelay.get("udp_port_range") or \
-            [UDP_RELAY_PORT_BASE + 40 * sim["slot_base"],
-             UDP_RELAY_PORT_BASE + 40 * sim["slot_base"]
-             + max(4, 2 * n_pairs) - 1]
+        lo = _udp_relay_range(sim)
         # the manifest records the resolved range - the
         # udp_proxy_mavlink check gates relay-vs-builtin on it
         urelay["udp_port_range"] = [int(lo[0]), int(lo[1])]
