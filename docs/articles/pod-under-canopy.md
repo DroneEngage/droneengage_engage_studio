@@ -23,7 +23,10 @@ when it doesn't, the world says *why* ("occluded"), not just "no
 detection". Probability of detection is then measurable, per cell and
 per person, instead of asserted by hope.
 
-The scenario's assertion block is the whole argument in four lines:
+The scenario's `assert:` list carries the argument. Abridged here
+(the real file also names `unit: cam1` on some lines and gives each
+`pod_at` its own small `poly:`, because the people stand outside
+`sector_a`):
 
 ```yaml
 - coverage_complete: {area: sector_a, cell_m: 5, min: 0.95}
@@ -34,20 +37,24 @@ The scenario's assertion block is the whole argument in four lines:
 - detection_recall:  {truth: person_hut,    max: 0}
 ```
 
-Read top to bottom: the sweep really does cover 95 % of the sector —
-and the mean probability of detection over those same cells is only
-80 %. The open-ground person is essentially guaranteed to be seen
-(POD ≥ 0.9). The person under canopy is a coin flip (≥ 0.5 — the assert
-floors it, but the honest number hovers there). The person in the hut
-must produce *zero* detections, and the recall check double-locks that.
+These are thresholds the scenario must clear, not measured results; this
+article quotes no run output. Read top to bottom: the sweep must cover
+at least 95 % of the sector, yet the bar for mean probability of
+detection over those same cells is lower, 80 %. The open-ground person
+must be seen (POD at least 0.9). The person under canopy only has to
+clear 0.5. The person in the hut must have POD 0, and the recall check
+on the hut person (max 0) is the negative control. In the scenario file
+itself the canopy person's recall is reported rather than asserted:
+whether a 40 m lawnmower finds someone under a crown is the property
+under study.
 
 The first two lines are the lesson. `coverage_complete` and `pod_mean`
-grade the *same* flown path against the *same* grid and disagree by 15
-points, because coverage treats every visited cell as searched while
+grade the *same* flown path against the *same* grid but ask different
+questions, because coverage treats every visited cell as searched while
 POD weights each look by whether anything could actually have been seen
 through the canopy from that pose.
 
-That is also why the two checks exist as separate graders in
+That is why the two checks exist as separate graders in
 `engine/checks.py` rather than one "search quality" score: they answer
 different questions. Coverage tells you the plan was *flown*. POD tells
 you the plan was *worth flying*. A survey tuned only for coverage will
