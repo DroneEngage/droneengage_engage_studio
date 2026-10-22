@@ -4,6 +4,7 @@ assertion engine itself must be trustworthy. No SITL needed:
 
     python3 engine/test_checks.py
 """
+import contextlib
 import json
 import os
 import shutil
@@ -1655,6 +1656,193 @@ class TestUdpProxyMavlink(unittest.TestCase):
             srv.close()
         self.assertEqual(r["status"], "PASS")
         self.assertEqual(r["value"], 2)
+
+
+class TestUdpProxyRejects(unittest.TestCase):
+    """TASK-84: udp_proxy_rejects - the stranger-injection grader and
+    its injection helper."""
+
+    @staticmethod
+    def _ctx(relay=True):
+        srv = {"type": "real"}
+        if relay:
+            srv["udp_relay"] = {"port": 62030,
+                                "udp_port_range": [40400, 40439]}
+        return {"manifest": {
+                    "name": "t",
+                    "units": [{"name": "u1", "party_id": "p1",
+                               "fc": {"sysid": 42}}],
+                    "server": srv,
+                    "server_procs": []},
+                "marks": {}, "file": "/x/s.yaml", "results_dir": None}
+
+    def _mission_requester(self, port_holder):
+        """A fake FC endpoint: asks for each uploaded mission item
+        (MISSION_REQUEST_INT) - what a successful injection sees."""
+        import socket
+        import threading
+        from pymavlink import mavutil
+        srv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.settimeout(0.2)
+        stop = threading.Event()
+        mav = mavutil.mavlink.MAVLink(None)
+        mav.srcSystem = 42
+
+        def run():
+            parser = mavutil.mavlink.MAVLink(None)
+            while not stop.is_set():
+                try:
+                    data, peer = srv.recvfrom(65536)
+                except socket.timeout:
+                    continue
+                try:
+                    msgs = parser.parse_buffer(bytearray(data))
+                except mavutil.mavlink.MAVError:
+                    parser = mavutil.mavlink.MAVLink(None)
+                    continue
+                for m in msgs or []:
+                    if m is not None and m.get_msgId() == 44:  # MISSION_COUNT
+                        srv.sendto(
+                            mav.mission_request_int_encode(
+                                255, 190, 0).pack(mav), peer)
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        port_holder.append(srv.getsockname()[1])
+        return srv, stop, t
+
+    def test_inject_answers_mission_request(self):
+        ports = []
+        srv, stop, t = self._mission_requester(ports)
+        try:
+            n = checks._udp_proxy_inject("127.0.0.1", ports[0], 42,
+                                         "127.0.0.2", 1.5)
+        finally:
+            stop.set()
+            t.join(2)
+            srv.close()
+        self.assertGreaterEqual(n, 1)
+
+    def test_inject_silent_endpoint_requests_nothing(self):
+        n = checks._udp_proxy_inject("127.0.0.1", 9, 42,
+                                     "127.0.0.2", 0.6)
+        self.assertEqual(n, 0)
+
+    def _patched(self, c, armed_seq, sig_seq, reqs, stats=None):
+        units = c["manifest"]["units"]
+        armed = iter(armed_seq)
+        sigs = iter(sig_seq)
+        return [mock.patch.object(
+                    checks.ctl, "resolve",
+                    lambda tok, m=None: units),
+                mock.patch.object(checks, "_udp_proxy_endpoint",
+                                  return_value=("127.0.0.1", 40401)),
+                mock.patch.object(checks, "_udp_proxy_resume"),
+                mock.patch.object(checks, "_fc_armed",
+                                  side_effect=lambda u: next(armed)),
+                mock.patch.object(checks, "mission_signature",
+                                  side_effect=lambda u: next(sigs)),
+                mock.patch.object(checks, "_udp_proxy_inject",
+                                  return_value=reqs),
+                mock.patch.object(checks.ctl, "relay_stats",
+                                  return_value=stats or {})]
+
+    def test_rejected_passes_with_relay_counter(self):
+        c = self._ctx(relay=True)
+        with contextlib.ExitStack() as st:
+            for m_ in self._patched(
+                    c, [False, False], ["s", "s"], 0,
+                    {"rejected": {"gcs_not_allowed": 3}}):
+                st.enter_context(m_)
+            r = checks.check_assertion(
+                {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
+        self.assertEqual(r["status"], "PASS")
+
+    def test_rejected_fails_without_relay_counter(self):
+        c = self._ctx(relay=True)
+        with contextlib.ExitStack() as st:
+            for m_ in self._patched(
+                    c, [False, False], ["s", "s"], 0,
+                    {"rejected": {"gcs_not_allowed": 0}}):
+                st.enter_context(m_)
+            r = checks.check_assertion(
+                {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_injection_landed_fails(self):
+        # builtin proxy (no relay): the stranger's ARM reaches the FC
+        c = self._ctx(relay=False)
+        with contextlib.ExitStack() as st:
+            for m_ in self._patched(
+                    c, [False, True], ["s", "s"], 0):
+                st.enter_context(m_)
+            r = checks.check_assertion(
+                {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_mission_change_fails(self):
+        c = self._ctx(relay=False)
+        with contextlib.ExitStack() as st:
+            for m_ in self._patched(
+                    c, [False, False], ["s", "t"], 1):
+                st.enter_context(m_)
+            r = checks.check_assertion(
+                {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_off_relay_range_skips(self):
+        # server without udp_relay support: the 1071 port is outside the
+        # relay range -> SKIP like udp_proxy_mavlink, nothing injected
+        c = self._ctx(relay=True)
+        inj = mock.Mock(return_value=0)
+        with contextlib.ExitStack() as st:
+            for m_ in self._patched(c, [False, False], ["s", "s"], 0):
+                st.enter_context(m_)
+            st.enter_context(mock.patch.object(
+                checks, "_udp_proxy_endpoint",
+                return_value=("127.0.0.1", 9999)))
+            st.enter_context(mock.patch.object(
+                checks, "_udp_proxy_inject", inj))
+            r = checks.check_assertion(
+                {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
+        self.assertEqual(r["status"], "SKIP")
+        inj.assert_not_called()
+
+    def test_unpinned_alone_does_not_pass(self):
+        c = self._ctx(relay=True)
+        with contextlib.ExitStack() as st:
+            for m_ in self._patched(
+                    c, [False, False], ["s", "s"], 0,
+                    {"rejected": {"gcs_unpinned": 5,
+                                  "gcs_not_allowed": 0}}):
+                st.enter_context(m_)
+            r = checks.check_assertion(
+                {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_expect_fail_flips_verdict(self):
+        # expect: fail on a builtin sim - PASS means the hole exists
+        c = self._ctx(relay=False)
+        with contextlib.ExitStack() as st:
+            for m_ in self._patched(
+                    c, [False, True], ["s", "s"], 0):
+                st.enter_context(m_)
+            r = checks.check_assertion(
+                {"udp_proxy_rejects":
+                 {"unit": "u1", "secs": 0.1, "expect": "fail"}}, c)
+        self.assertEqual(r["status"], "PASS")
+
+    def test_expect_fail_blocked_fails(self):
+        # expect: fail but the injection was blocked -> FAIL
+        c = self._ctx(relay=False)
+        with contextlib.ExitStack() as st:
+            for m_ in self._patched(
+                    c, [False, False], ["s", "s"], 0):
+                st.enter_context(m_)
+            r = checks.check_assertion(
+                {"udp_proxy_rejects":
+                 {"unit": "u1", "secs": 0.1, "expect": "fail"}}, c)
+        self.assertEqual(r["status"], "FAIL")
 
 
 if __name__ == "__main__":

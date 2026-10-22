@@ -1,0 +1,19 @@
+# UDP relay peer pinning: a stranger cannot inject MAVLink through the
+# pair's GCS side. With gcs_peer_policy: allowlist the comm server seeds
+# the allowlist from its connected GCS sockets (the bridge at
+# 127.0.0.1), so datagrams from 127.0.0.2 must be dropped and counted
+# (rejected.gcs_not_allowed). udp_proxy_mavlink runs first to open the
+# pair and pin the legitimate GCS peer, then udp_proxy_rejects fires a
+# full injection attempt - ARM COMMAND_LONG plus a one-item mission
+# upload - and verifies on serial0 that nothing landed.
+version: 1
+name: relay_reject_injection
+transport: {type: real, auth: true,
+            udp_relay: {gcs_peer_policy: allowlist},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+timeline: []
+assert:
+  - udp_proxy_mavlink: {unit: all, secs: 15, at_least: 5}
+  - udp_proxy_rejects: {unit: all, from_ip: '127.0.0.2', secs: 10}
