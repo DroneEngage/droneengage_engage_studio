@@ -486,6 +486,11 @@ VERBS = [
       opt=["secs", "min", "equals"],
       doc="the GCS 501->1027 plan read-back a WebClient draws",
       eg="{mission_pull: {unit: c1, min: 5}}"),
+    V("udp_proxy_mavlink", "check", req=["unit"],
+      opt=["secs", "at_least"],
+      doc="FC HEARTBEATs counted through the unit's UDP proxy "
+          "(built-in or udp_relay)",
+      eg="{udp_proxy_mavlink: {unit: c1, secs: 15, at_least: 10}}"),
     V("no_fc_command_to_static", "check", opt=["unit"],
       doc="no MAVLink command was ever sent to a no-FC unit",
       eg="{no_fc_command_to_static: {unit: s1}}"),

@@ -38,6 +38,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import socket
 import sys
 import time
@@ -111,6 +112,7 @@ def repo_dir(env_key, name):
 COMM_REPO = repo_dir("DE_COMM_DIR", "droneengage_communication")
 SERVER_REPO = repo_dir("DE_SERVER_DIR", "droneengage_server")
 AUTH_REPO = repo_dir("DE_AUTH_DIR", "droneengage_authenticator")
+UDP_RELAY_REPO = repo_dir("DE_UDP_RELAY_DIR", "droneengage_udp_proxy")
 WEBCLIENT_REPO = repo_dir("DE_WEBCLIENT_DIR", "droneengage_webclient_react")
 # P5-14: Mavlink3DMap2 lives inside the DE_CODE tree; only needed for
 # render modes that launch the viewer
@@ -158,6 +160,13 @@ DE_COMM_PORT_BASE = 62000
 # dials <base>+10k instead of the server wss port; <base>+1+10k is the
 # fault control port (fake-server line protocol).
 LINK_PROXY_PORT_BASE = 61500
+
+# TASK-87: opt-in standalone UDP relay (server: {type: real,
+# udp_relay: true}). Its wss control port rides the server block at
+# server.port + 12 (control is +1, auth +10/+11); the UDP pair sockets
+# come from a per-sim window <base>+40*slot .. +40 - far from every
+# module port_base (54000+) and the 5k/7k/8k unit ports.
+UDP_RELAY_PORT_BASE = 40000
 
 # flight controller kinds: SITL binary, -M model, ArduPilot defaults,
 # pymavlink mode table, mode used to arm, how `land` brings it down
@@ -808,7 +817,8 @@ def load_server(srv, slot_base=None):
     bad = set(srv) - {"type", "ip", "port", "auth", "account",
                       "unit_account", "seed", "clock_offset_ms", "noclock",
                       "auth_ip", "auth_port", "auth_verify_ssl",
-                      "control_port", "gcs_party", "link_proxy"}
+                      "control_port", "gcs_party", "link_proxy",
+                      "udp_relay"}
     if bad:
         raise SimError(f"sim server: unknown keys {sorted(bad)}")
     t = srv.get("type", "real")
@@ -819,6 +829,9 @@ def load_server(srv, slot_base=None):
     if srv.get("link_proxy") and t != "real":
         raise SimError("sim server: link_proxy needs type real - it "
                        "relays bytes to a spawned comm server")
+    if srv.get("udp_relay") and t != "real":
+        raise SimError("sim server: udp_relay needs type real - the "
+                       "relay is spawned next to the comm server")
     if srv.get("link_proxy") and srv.get("auth"):
         raise SimError("sim server: link_proxy needs auth: false - the "
                        "authenticator hands de_comm the server address at "
@@ -882,6 +895,27 @@ def load_server(srv, slot_base=None):
             "link_proxy": False,
         }
     port = int(srv.get("port", SERVER_PORT))
+    urelay = srv.get("udp_relay")
+    if urelay is True:
+        urelay = {}
+    elif urelay in (None, False):
+        urelay = None
+    elif isinstance(urelay, dict):
+        bad = set(urelay) - {"port", "udp_port_range", "gcs_peer_policy",
+                             "id", "ssl"}
+        if bad:
+            raise SimError(f"sim server.udp_relay: unknown keys "
+                           f"{sorted(bad)}")
+    else:
+        raise SimError("sim server.udp_relay: must be true or a mapping "
+                       "({port, udp_port_range, gcs_peer_policy})")
+    if urelay is not None:
+        # the relay's wss control port rides the server port block; the
+        # UDP pair window is per-sim, sized at gen time from the fleet
+        urelay = dict(urelay)
+        urelay.setdefault("port", port + 12)
+        urelay.setdefault("gcs_peer_policy", "open")
+        urelay.setdefault("ssl", True)
     return {
         "type": t, "ip": "127.0.0.1", "port": port,
         "control_port": int(srv.get("control_port") or port + 1),
@@ -895,6 +929,7 @@ def load_server(srv, slot_base=None):
         "clock_offset_ms": int(srv.get("clock_offset_ms", 0)),
         "noclock": list(srv.get("noclock") or []),
         "link_proxy": bool(srv.get("link_proxy", False)),
+        "udp_relay": urelay,
     }
 
 
@@ -2009,6 +2044,59 @@ def gen_server(sim):
         "ignoreLog": True,
         "log_directory": os.path.join(sdir, "logs") + "/",
     })
+
+    urelay = srv.get("udp_relay")
+    if urelay:
+        # TASK-87: the standalone relay runs as a third server proc. The
+        # comm server and the relay share a per-run HMAC secret file; the
+        # comm server then routes 9008 pair opens to it (`udp_relay` in
+        # its config). Started before de_server so the client connects
+        # on the first try.
+        if not os.path.isdir(
+                os.path.join(UDP_RELAY_REPO, "node_modules", "ws")):
+            raise SimError(f"{UDP_RELAY_REPO}: run `npm install` there "
+                           "first (the relay needs its ws dependency)")
+        secret_path = os.path.join(sdir, "udp_relay_s2s_secret.key")
+        write_text(secret_path, secrets.token_hex(32) + "\n")
+        os.chmod(secret_path, 0o600)
+        n_pairs = sum(1 for u in sim["units"]
+                      if "de_mavlink" in u["modules"])
+        lo = urelay.get("udp_port_range") or \
+            [UDP_RELAY_PORT_BASE + 40 * sim["slot_base"],
+             UDP_RELAY_PORT_BASE + 40 * sim["slot_base"]
+             + max(4, 2 * n_pairs) - 1]
+        # the manifest records the resolved range - the
+        # udp_proxy_mavlink check gates relay-vs-builtin on it
+        urelay["udp_port_range"] = [int(lo[0]), int(lo[1])]
+        rcfg = load_config(os.path.join(UDP_RELAY_REPO, "server.config"))
+        rcfg.update({
+            "server_id": urelay.get("id") or "DE_UdpRelay_" + sim["name"],
+            "server_ip": "127.0.0.1",
+            "server_port": urelay["port"],
+            "enable_SSL": bool(urelay.get("ssl", True)),
+            "ssl_key_file": os.path.join(
+                UDP_RELAY_REPO, "ssl_local/ssl_airgap/domain.key"),
+            "ssl_cert_file": os.path.join(
+                UDP_RELAY_REPO, "ssl_local/ssl_airgap/domain.crt"),
+            "s2s_cert_enabled": False,
+            "s2s_shared_secret_file": secret_path,
+            "udp_bind_ip": "0.0.0.0",
+            "public_host": "127.0.0.1",
+            "udp_port_range": [int(lo[0]), int(lo[1])],
+            "gcs_peer_policy": urelay["gcs_peer_policy"],
+            "state_file": os.path.join(sdir, "udp_relay_state.json"),
+            "log_directory": os.path.join(sdir, "logs") + "/",
+        })
+        cfg = os.path.join(sdir, "udp_relay.config")
+        write_json(cfg, rcfg)
+        _node_script(sim, UDP_RELAY_REPO, "udp_relay", cfg)
+        procs.append("udp_relay")
+        scfg["udp_relay"] = [{
+            "host": "127.0.0.1", "port": urelay["port"],
+            "id": rcfg["server_id"], "ssl": bool(urelay.get("ssl", True)),
+        }]
+        scfg["s2s_shared_secret_file"] = secret_path
+
     cfg = os.path.join(sdir, "de_server.config")
     write_json(cfg, scfg)
     _node_script(sim, SERVER_REPO, "de_server", cfg)
@@ -2026,6 +2114,8 @@ def binaries_needed(sim, catalog):
         out.add(os.path.join(SERVER_REPO, "src", "server.js"))
         if sim["server"]["auth"]:
             out.add(os.path.join(AUTH_REPO, "src", "server.js"))
+        if sim["server"].get("udp_relay"):
+            out.add(os.path.join(UDP_RELAY_REPO, "src", "server.js"))
     for u in sim["units"]:
         for m in u["modules"]:
             if m != "de_comm":

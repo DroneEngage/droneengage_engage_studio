@@ -1,0 +1,17 @@
+# Runbook: sims/relay_single.md
+#
+# One quad copter on the real droneengage_server plus the standalone
+# droneengage_udp_proxy relay (server: {type: real, udp_relay: true}).
+# The comm server routes 9008 pair opens to the relay instead of its
+# built-in proxy; tests/udp_relay/ proves GCS-side MAVLink flows through
+# it. Needs a relay-capable comm server build (GL-0063+) in
+# DE_SERVER_DIR, the authenticator (DE_AUTH_DIR) for auth: true, and
+# the relay repo (DE_UDP_RELAY_DIR) with npm install done.
+version: 1
+# auth: true - in local_server mode de_comm reports the never-started
+# remote link's status to modules, so de_mavlink never sees REGISTERED
+# and never sends its 9008 pair-open request.
+server: {type: real, auth: true, udp_relay: true,
+         account: {user: sim@sim.droneengage.com, code: sim1234}}
+units:
+  - {block: copter, name: copter, count: 1}

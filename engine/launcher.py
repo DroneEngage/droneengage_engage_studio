@@ -300,7 +300,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
     else:
         busy = [p for p in ([srv["port"], srv["control_port"]]
                             + ([srv["auth_port"], srv["auth_s2s_port"]]
-                               if srv["auth"] else []))
+                               if srv["auth"] else [])
+                            + ([srv["udp_relay"]["port"]]
+                               if srv.get("udp_relay") else []))
                 if port_busy(p)]
         if busy:
             sys.exit(simlib.col_red(
@@ -353,6 +355,11 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
             sys.exit(simlib.col_red(
                 "authenticator did not open its port - see "
                 f"{rdir}/server/logs/de_auth.log"))
+        if p == "udp_relay" and not wait_port(
+                srv["udp_relay"]["port"], 30):
+            sys.exit(simlib.col_red(
+                "udp relay did not open its control port - see "
+                f"{rdir}/server/logs/udp_relay.log"))
         if p in ("de_server", "fake_server") and not wait_port(srv["port"], 30):
             sys.exit(simlib.col_red(
                 f"{p} did not open {srv['port']} - "

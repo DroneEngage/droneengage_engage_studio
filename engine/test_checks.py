@@ -1545,5 +1545,117 @@ class TObsFrames(unittest.TestCase):
         self.assertEqual(self._run(bad)["status"], "FAIL")
 
 
+class TestUdpProxyMavlink(unittest.TestCase):
+    """TASK-87: the udp_proxy_mavlink check and its helpers - real UDP
+    sockets, no sim needed."""
+
+    @staticmethod
+    def _hb(sysid):
+        from pymavlink import mavutil
+        mav = mavutil.mavlink.MAVLink(None)
+        mav.srcSystem = sysid
+        return mav.heartbeat_encode(
+            mavutil.mavlink.MAV_TYPE_QUADROTOR,
+            mavutil.mavlink.MAV_AUTOPILOT_ARDUPILOTMEGA,
+            0, 0, 0).pack(mav)
+
+    def _responder(self, sysids, repeats=3):
+        """A socket that answers each datagram with `repeats` heartbeats
+        per sysid in sysids - what the proxy sends back to the pinned
+        GCS peer."""
+        import socket
+        import threading
+        srv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.settimeout(0.2)
+        stop = threading.Event()
+
+        def run():
+            while not stop.is_set():
+                try:
+                    _, peer = srv.recvfrom(65536)
+                except socket.timeout:
+                    continue
+                for _ in range(repeats):
+                    for sysid in sysids:
+                        srv.sendto(self._hb(sysid), peer)
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
+        return srv, srv.getsockname()[1], stop, t
+
+    def test_heartbeat_count_filters_sysid(self):
+        srv, port, stop, t = self._responder([42, 7], repeats=3)
+        try:
+            n = checks.udp_heartbeat_count("127.0.0.1", port, 42, 1.5)
+        finally:
+            stop.set()
+            t.join(2)
+            srv.close()
+        self.assertEqual(n, 3)
+
+    def test_endpoint_picks_latest_enabled_own_frame(self):
+        frames = [
+            {"sd": "p1", "mt": 1071,
+             "ms": {"en": True, "a": "127.0.0.1", "p": 40400}},
+            {"sd": "p2", "mt": 1071,
+             "ms": {"en": True, "a": "1.1.1.1", "p": 1}},
+            {"sd": "p1", "mt": 1071, "ms": {"en": False}},
+        ]
+        with mock.patch.object(checks.ctl, "ctrl_stream",
+                               return_value=frames):
+            self.assertEqual(checks._udp_proxy_endpoint("p1", 1),
+                             ("127.0.0.1", 40400))
+        with mock.patch.object(checks.ctl, "ctrl_stream",
+                               return_value=[]):
+            self.assertIsNone(checks._udp_proxy_endpoint("p1", 0.2))
+
+    @staticmethod
+    def _ctx():
+        return {"manifest": {
+                    "name": "t",
+                    "units": [{"name": "u1", "party_id": "p1",
+                               "fc": {"sysid": 42}}],
+                    "server": {"type": "real", "udp_relay": {
+                        "port": 62030,
+                        "udp_port_range": [40400, 40439]}},
+                    "server_procs": []},
+                "marks": {}, "file": "/x/s.yaml", "results_dir": None}
+
+    def test_off_relay_range_skips(self):
+        # a spawned server without udp_relay support leaves the unit on
+        # the built-in proxy - the 1071 port lands outside the range
+        c = self._ctx()
+        with mock.patch.object(checks.ctl, "resolve",
+                               lambda tok, m=None: c["manifest"]["units"]), \
+                mock.patch.object(checks, "_udp_proxy_endpoint",
+                                  return_value=("127.0.0.1", 9999)):
+            r = checks.check_assertion(
+                {"udp_proxy_mavlink": {"unit": "u1", "secs": 0.1}}, c)
+        self.assertEqual(r["status"], "SKIP")
+
+    def test_in_range_counts_and_passes(self):
+        c = self._ctx()
+        srv, port, stop, t = self._responder([42], repeats=2)
+        try:
+            # the responder port doubles as the "relay" endpoint
+            c["manifest"]["server"]["udp_relay"]["udp_port_range"] = \
+                [port, port]
+            with mock.patch.object(
+                    checks.ctl, "resolve",
+                    lambda tok, m=None: c["manifest"]["units"]), \
+                    mock.patch.object(checks, "_udp_proxy_endpoint",
+                                      return_value=("127.0.0.1", port)), \
+                    mock.patch.object(checks, "_udp_proxy_resume"):
+                r = checks.check_assertion(
+                    {"udp_proxy_mavlink":
+                     {"unit": "u1", "secs": 1.0, "at_least": 2}}, c)
+        finally:
+            stop.set()
+            t.join(2)
+            srv.close()
+        self.assertEqual(r["status"], "PASS")
+        self.assertEqual(r["value"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -413,6 +413,8 @@ def main(argv):
             print(f"server {srv['type']}{' +auth' if srv['auth'] else ''}: "
                   f"wss {srv['port']} control {srv['control_port']}"
                   + (f" auth {srv['auth_port']}" if srv["auth"] else "")
+                  + (f" relay {srv['udp_relay']['port']}"
+                     if srv.get("udp_relay") else "")
                   + f" slot {sim['slot_base']}")
             for u in sim["units"]:
                 fc = u["fc"]
