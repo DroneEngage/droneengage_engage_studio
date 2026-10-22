@@ -494,9 +494,9 @@ def main(argv):
                 alive = len(simlib.read_pids(sn))
                 # collapse the relay's per-port udp rows into one range row
                 rng = [r for r in simlib.port_rows(m)
-                       if r[0] == "server.udp_relay.range"]
+                       if r[0] == f"{simlib.UDP_RELAY_LEASE}.range"]
                 rows = [r for r in simlib.port_rows(m)
-                        if r[0] != "server.udp_relay.range"]
+                        if r[0] != f"{simlib.UDP_RELAY_LEASE}.range"]
                 n_bound = sum(simlib.port_bound(p, "udp")
                               for _, p, _ in rng)
                 print(f"{sn} ({alive} proc(s) alive)")
@@ -507,7 +507,7 @@ def main(argv):
                     print(f"  {owner:{w}s}  {port:>6}  {proto:3s} {state}")
                 if rng:
                     lo, hi = rng[0][1], rng[-1][1]
-                    print(f"  {'server.udp_relay.range':{w}s}  "
+                    print(f"  {simlib.UDP_RELAY_LEASE + '.range':{w}s}  "
                           f"{lo}-{hi}  udp {n_bound}/{len(rng)} bound")
         elif c == "status":
             import ctl

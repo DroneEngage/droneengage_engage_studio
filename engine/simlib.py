@@ -1481,6 +1481,12 @@ def _single_sim():
                    ") - pass the sim name")
 
 
+# Row owner for the relay in `./sim ports`: the lease names of
+# udp_relay.<node>.wss / .range (SL-0081). The single real server has one
+# implicit relay node, "relay"; no allocator yet, so rows are bind probes.
+UDP_RELAY_LEASE = "udp_relay.relay"
+
+
 def _udp_relay_range(sim):
     """The relay's resolved [lo, hi] udp_port_range - explicit config,
     else the slot-derived default. Usable on a spec (pre-gen) or a
@@ -1545,9 +1551,9 @@ def port_rows(sim):
             rows.append(("server.auth_s2s", srv["auth_s2s_port"], "tcp"))
         ur = srv.get("udp_relay")
         if ur:
-            rows.append(("server.udp_relay", ur["port"], "tcp"))
+            rows.append((f"{UDP_RELAY_LEASE}.wss", ur["port"], "tcp"))
             lo, hi = _udp_relay_range(sim)
-            rows += [("server.udp_relay.range", p, "udp")
+            rows += [(f"{UDP_RELAY_LEASE}.range", p, "udp")
                      for p in range(int(lo), int(hi) + 1)]
     if sim.get("render"):
         r = sim["render"]
