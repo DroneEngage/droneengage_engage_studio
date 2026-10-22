@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "droneengage-simulation-land"
+version = "0.1.0"
+description = "Headless multi-vehicle DroneEngage simulation engine (de.scenario/1)"
+requires-python = ">=3.9"
+dependencies = ["pyyaml"]
+
+[project.optional-dependencies]
+# runtime of the stock DroneEngage adapter (bot GCS session, MAVLink)
+de = ["websockets", "pymavlink"]
+
+[project.scripts]
+sim-land = "simland_cli:main"
+
+# vehicle-stack adapters (docs/ADAPTER.md); the DE one is a plugin
+[project.entry-points."simland.adapters"]
+droneengage = "de_adapter:DEAdapter"
+
+[tool.setuptools]
+package-dir = {"" = "engine"}
+py-modules = [
+  "adapter",
+  "checks",
+  "clean",
+  "coverage",
+  "ctl",
+  "de_adapter",
+  "doctor",
+  "fake_fleet_server",
+  "fcb_proxy",
+  "gcs_bridge",
+  "gcs_client",
+  "geo_projection",
+  "launcher",
+  "link_model",
+  "link_proxy",
+  "opbuild",
+  "operator_bot",
+  "record",
+  "registry",
+  "render_probe",
+  "runner",
+  "scenario",
+  "scenario_runner",
+  "simland_cli",
+  "simlib",
+  "telemetry",
+  "udp_proxy",
+  "world",
+  "world_stream",
+  "worldstream_probe",
+]

@@ -46,7 +46,8 @@ import urllib.parse
 
 import yaml
 
-SIM_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SIM_ROOT = os.environ.get("SIM_ROOT") or os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__)))
 LOCAL_ENV = os.path.join(SIM_ROOT, "sim.local.env")
 
 
