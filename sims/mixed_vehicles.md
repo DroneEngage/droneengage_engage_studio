@@ -24,6 +24,7 @@ HOLD; `land` on the plane resets its SITL (it cannot land in place).
 
 ## Ports
 
-slot_base 40: copter1 sysid 40 (pilot 6160, fcb 8060, de_comm 62400,
-de_mavlink 63400); plane1 +10; rover1 +20; ground1 de_comm 62430. Server
-wss 62008, control 62009.
+Every port is leased from the machine-wide allocator at `up` — `./sim
+ports -s mixed_vehicles` lists what was actually bound.
+`slot_base: 40` is identity only: copter1/plane1/rover1 get sysids
+40/41/42; ground1 has no FC.

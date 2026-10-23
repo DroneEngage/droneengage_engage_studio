@@ -38,5 +38,8 @@ has its own slot_base.
 
 ## Ports
 
-slot_base 50: quad1 sysid 50 (pilot 6260, fcb 8160, de_comm 62500,
-de_mavlink 63500), ctl 62059. External server wss 9966, auth 19408.
+Every local port (SITL, de_comm, de_mavlink, the bridge control port) is
+leased from the machine-wide allocator at `up` — `./sim ports -s
+quadcopter` lists what was actually bound. `slot_base: 50` is identity
+only (quad1 sysid 50). External server wss 9966, auth 19408 — those are
+the remote server's own ports, not leases.

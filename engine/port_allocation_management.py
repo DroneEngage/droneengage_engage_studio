@@ -53,8 +53,9 @@ covering request names, block members and ids; tx.ids is just the ids.
         ports = tx.commit()                # or AllocError(.conflicts)
 
     alloc.check(sim, worktree, requests)   dry run -> [conflict dicts]
-    alloc.pick(sim, worktree, candidates)  first candidate base whose
-                                           pinned ports are all free
+    alloc.hints(sim, worktree)             -> {name: port} a request
+                                           would most likely get (live
+                                           lease, else remembered)
     alloc.mark_bound(sim, names)           launcher, after readiness
     alloc.lookup(sim, name)                -> port or None
     alloc.leases()                         -> [lease, ...] (+ "stale")
@@ -730,51 +731,32 @@ class Allocator:
                 sim, w, reqs, [], reg, self._read_last())
         return conflicts
 
-    def pick(self, sim, worktree, candidates,
-             own_ports=(), held_ports=(), drop_sims=(), probe=None):
-        """The `--slot-base any` / scenario free-base pick, phase 1: ONE
-        locked transaction evaluates the candidates in order and returns
-        the first tag whose pinned port set is entirely free, else None.
-        `candidates` yields (tag, [(port, proto)]) - only the pinned
-        ports matter (prefer/free requests never disqualify a base; the
-        allocator moves them to the pool at commit).
-
-        A port fails a candidate when `held_ports` carries it (a live
-        sim's manifest port the caller counts as a conflict), when
-        another (worktree, sim) leases it, or when `probe` (default the
-        internal bind probe; simlib injects ports_held so the host-probe
-        seam stays mockable) refuses it - unless `own_ports` claims it
-        (a restarting sim's bound ports are its own to retake, so the
-        probe is skipped for them). Leases of (worktree, sim) never
-        block (`up` restarts the same-named sim; its stale re-pins are
-        superseded at commit), and leases of the `drop_sims` names in
-        this worktree do not block either (an exclusive run downs them
-        before it binds). The scan reads the post-sweep registry;
-        nothing is written."""
-        w = self._wt(worktree, required=True)
-        probe = probe or self._test_bind
-        own = set(own_ports)
-        held = set(held_ports)
-        drop = set(drop_sims)
-        with self._locked():
-            reg = self._read_registry()
-            self._sweep(reg)
-            others = [l for l in reg["leases"]
-                      if not (l["worktree"] == w and
-                              (l["sim"] == sim or l["sim"] in drop))]
-            for tag, pins in candidates:
-                for port, proto in pins:
-                    if port in held:
-                        break
-                    if any(l["port"] == port and
-                           _proto_clash(l["proto"], proto)
-                           for l in others):
-                        break
-                    if port not in own and not probe(port, proto):
-                        break
-                else:
-                    return tag
-        return None
+    def hints(self, sim, worktree=None):
+        """name -> the port a fresh request would most likely get right
+        now: a live (worktree, sim, name) lease first (a block's name
+        maps to its base), else the remembered port still inside
+        last_ttl. Display-only (./sim show, doctor): the commit itself
+        re-derives the same preferences under the lock."""
+        w = self._wt(worktree)
+        out = {}
+        for l in self._read_registry()["leases"]:
+            if (l["sim"] != sim or
+                    (w is not None and l["worktree"] != w) or
+                    self._stale(l)):
+                continue
+            if l.get("block"):
+                out[re.sub(r"\.p\d+$", "", l["name"])] = l["block"]["base"]
+            else:
+                out[l["name"]] = l["port"]
+        now = time.time()
+        for k, e in self._read_last().items():
+            wt_s, sim_s, name = k.rsplit("|", 2)
+            if (sim_s != sim or name in out or
+                    (w is not None and os.path.realpath(wt_s) != w) or
+                    now - e.get("t", 0) > self.last_ttl):
+                continue
+            out[name] = e["port"]
+        return out
 
     def mark_bound(self, sim, names, worktree=None):
         """reserved -> bound (+touched) on matching (worktree, sim, name)
@@ -834,13 +816,18 @@ class Allocator:
         w = self._wt(worktree, required=True)
         with self._locked():
             reg = self._read_registry()
-            _dead, changed = self._sweep(reg)
+            # `gone` is picked BEFORE the sweep: `sim down` kills the sim
+            # processes before releasing, so its leases already look stale
+            # (dead holder) and a sweep first would reclaim them without
+            # ever remembering their ports.
             gone = [l for l in reg["leases"]
                     if l["sim"] == sim and l["worktree"] == w]
             if gone:
                 reg["leases"] = [l for l in reg["leases"]
                                  if not (l["sim"] == sim and
                                          l["worktree"] == w)]
+            _dead, changed = self._sweep(reg)
+            if gone:
                 changed = True
             if changed:
                 self._write_registry(reg)

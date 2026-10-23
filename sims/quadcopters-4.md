@@ -29,6 +29,8 @@ each — on **your own** server stack. Same external-server wiring as
 
 ## Ports
 
-slot_base 50: quad1..quad4 sysid 50..53 (pilot 6260..6290, fcb
-8160..8190, de_comm 62500..62530, de_mavlink 63500..63530), ctl 62059.
-External server wss 9966, auth 19408.
+Every local port (SITL, de_comm, de_mavlink, the bridge control port) is
+leased from the machine-wide allocator at `up` — `./sim ports -s
+quadcopters-4` lists what was actually bound. `slot_base: 50` is
+identity only (quad1..quad4 sysids 50..53). External server wss 9966,
+auth 19408 — those are the remote server's own ports, not leases.

@@ -32,9 +32,11 @@ SITL needs ~1–2 min of GPS/EKF warm-up before `arm` succeeds:
 
 ## Ports
 
-slot_base 40: copter1 sysid 40 (pilot 6160, fcb 8060, de_comm 62400,
-de_mavlink 63400); copter2 +10; copter3 +20. Server wss 62008, control
-62009.
+Every port is leased from the machine-wide allocator at `up` — `./sim
+ports -s copters3` (or `var/run/copters3/sim.json`) lists what was
+actually bound, and released ports are preferred back on the next run.
+`slot_base: 40` is identity only: copter1..3 get sysids 40..42 and never
+affect the leased ports.
 
 ## Variants (`--with` overlays)
 
@@ -48,7 +50,8 @@ appends them, e.g. `copters3_faults_fastroster`):
 - `static` — adds `static1`, a de_comm-only unit (watcher role)
 - `closed` — closed environment: no GPS, clock 3 h off, slot_base 30
 - `auth` — real server + authenticator (full login path)
-- `slot30` — slot_base 30 when the default SITL ports are taken
+- `slot30` — sysids 30..32 when the default ones clash (identity only;
+  ports are still leased)
 
 A scenario picks the same fleet with `sim: {base: copters3, with:
 [faults]}` instead of a `fleet:` block. See

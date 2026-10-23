@@ -20,16 +20,15 @@ and runner.py. Several sims can be up at once: each owns its own run dir
 and pid dir, and `sim up` refuses to start a sim whose ports or unit
 names clash with a live one.
 
-Port scheme (slot k = slot_base + unit index, default slot_base 10 keeps
-sim ports clear of any developer's own servers):
-    SITL -I k:  pilot 5760+10k (serial0)  aux 5762+10k (serial2)
-                fcb   7660+10k (serial1, de_mavlink)   sysid k
-    fcb proxy   opt-in (`fcb_proxy: true` on the sim or a unit, SL-0008):
-                data 7760+10k -> fcb_port, control 7860+10k
-    de_comm     62000 + 10k     other modules: catalog port_base + 10k
-    server      wss 62008, control 62009 (sim `server.port`)
-    external    no local server; the sim's GCS bridge listens on
-                control_port (default 62009 + slot_base)
+Ports (slot k = slot_base + unit index stays the fleet's IDENTITY -
+SITL -I k / sysid k / unit index - it no longer derives any port):
+every port a sim binds is a named lease from the machine-wide
+allocator in port_allocation_management.py (`lease_requests` ->
+`lease_commit` before generate, `./sim ports` shows them). A
+yaml-explicit port pins; the previous run's ports come back through
+the allocator's remembered-port memory; everything else comes from
+the free pool. A resolved-but-unleased sim shows the pin/remembered
+hint in each field, or None when the allocator has nothing to prefer.
 """
 
 import copy
@@ -130,7 +129,6 @@ M3D_REQUIRED_VERSION = setting("SIM_M3D_VERSION", "1.4.0")
 CHROMIUM_BIN = setting("CHROMIUM_BIN", "google-chrome")
 FFMPEG_BIN = setting("FFMPEG", "ffmpeg")
 
-SERVER_PORT = 62008                 # wss; control port is +1
 SLOT_BASE = int(setting("SIM_SLOT_BASE", 10))
 HOME = (-35.363262, 149.165237, 584.0, 353.0)   # SITL default home
 SPACING_M = 20.0                    # default: units 20 m apart, northward
@@ -154,20 +152,17 @@ SIM_URL_HOST = setting("SIM_URL_HOST", "127.0.0.1")
 CLI_AUTH = {}
 
 DE_COMM_BIN = setting("DE_COMM_BIN", os.path.join(COMM_REPO, "bin", "de_comm"))
-DE_COMM_PORT_BASE = 62000
 
 # SL-0009: opt-in byte-level link-fault proxy between de_comm and the
 # real comm server (server: {type: real, link_proxy: true}). de_comm
-# dials <base>+10k instead of the server wss port; <base>+1+10k is the
-# fault control port (fake-server line protocol).
-LINK_PROXY_PORT_BASE = 61500
-
+# dials the proxy's leased listen port instead of the server wss port;
+# the leased `ctrl` port runs the fault control port (fake-server
+# line protocol).
+#
 # TASK-87: opt-in standalone UDP relay (server: {type: real,
-# udp_relay: true}). Its wss control port rides the server block at
-# server.port + 12 (control is +1, auth +10/+11); the UDP pair sockets
-# come from a per-sim window <base>+40*slot .. +40 - far from every
-# module port_base (54000+) and the 5k/7k/8k unit ports.
-UDP_RELAY_PORT_BASE = 40000
+# udp_relay: true}). Its wss control port and the UDP pair window are
+# leases like everything else - the window is one `block` request
+# sized from the fleet's de_mavlink count.
 
 # flight controller kinds: SITL binary, -M model, ArduPilot defaults,
 # pymavlink mode table, mode used to arm, how `land` brings it down
@@ -506,11 +501,6 @@ def validate_block(b, catalog):
 
 SERVER_TYPES = ("real", "fake", "external")
 
-# SL-0076: while _load_sim_free_slot re-resolves on a picked base the
-# env override is a digit but the intent is still prefer - suppress the
-# --slot-base N pin-all semantics inside the pick's resolves only
-_FREE_SLOT_PICK = False
-
 
 def load_sim(path_or_spec, base_dir=None, overlays=None,
              exclusive=False):
@@ -519,10 +509,7 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
     the sim file's stem or an explicit `name:` - owns var/run/<name>/. An
     unnamed spec gets each applied overlay appended (copters3 --with
     faults -> copters3_faults), so variants keep their own var/run dir
-    and a changed overlay set always changes the hash. `exclusive` marks
-    the load as the front of an exclusive bring-up (a test run that
-    downs every other live sim before it binds) - it only changes how
-    --slot-base any treats a live sim with clashing unit names."""
+    and a changed overlay set always changes the hash."""
     spec, src = _sim_spec(path_or_spec, base_dir)
     applied = []
     for ov in _spec_overlays(spec, overlays):
@@ -546,27 +533,18 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
     home = tuple(spec.get("home", HOME))
     if len(home) == 3:
         home = home + (HOME[3],)
-    # ./sim --slot-base <N> (SIM_SLOT_BASE_OVERRIDE) tops the file's
-    # slot_base: and the SIM_SLOT_BASE fallback; "any" resolves to the
-    # lowest fully-free base (below)
+    # ./sim --slot-base <N|any> (SIM_SLOT_BASE_OVERRIDE) tops the file's
+    # slot_base: and the SIM_SLOT_BASE fallback. Ports no longer come
+    # from the slot, so "any" simply resolves at the spec's own base -
+    # it only still means "I don't pin the identity"
     ov = str(setting("SIM_SLOT_BASE_OVERRIDE", ""))
-    if ov == "any":
-        return _load_sim_free_slot(dict(spec, name=name), base_dir,
-                                   exclusive)
-    slot_base = int(ov or spec.get("slot_base", SLOT_BASE))
+    slot_base = int(spec.get("slot_base", SLOT_BASE)) \
+        if ov in ("", "any") else int(ov)
     srv_spec = spec.get("server") or {}
-    # a server port derived from the spec's own slot (the scenario loader
-    # writes SERVER_PORT + slot_base) follows an overridden slot like
-    # every unit port - else `any` moves the units but keeps a busy
-    # server port; a port pinned to anything else stays as written
-    own_slot = int(spec.get("slot_base", SLOT_BASE))
-    if ov and srv_spec.get("type") != "external" and \
-            srv_spec.get("port") == SERVER_PORT + own_slot:
-        srv_spec = dict(srv_spec, port=SERVER_PORT + slot_base)
     sim = {
         "name": name,
         "description": spec.get("description", "").strip(),
-        "server": load_server(srv_spec, slot_base),
+        "server": load_server(srv_spec),
         "home": list(home),
         "slot_base": slot_base,
         # SITL --speedup: sim `speedup:` > SIM_SPEEDUP > 1. de_comm's
@@ -580,13 +558,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         # still override with its own `fcb_proxy:` - not hashed itself,
         # the per-unit fc.fcb_proxy dict it produces is
         "fcb_proxy": bool(spec.get("fcb_proxy", False)),
-        # SL-0076: an explicit --slot-base N (SIM_SLOT_BASE_OVERRIDE a
-        # digit) pins every request to its formula value - exact or
-        # fail, the phase-0 semantics. The `any` pick and a yaml-only
-        # slot_base: lease the formulas as prefer hints instead.
-        "pin_all": ov.isdigit() and not _FREE_SLOT_PICK,
         "units": [],
-        "render": _render_spec(spec.get("render"), slot_base),
+        "render": _render_spec(spec.get("render")),
     }
     if sim["speedup"] < 1:
         raise SimError("sim: speedup must be >= 1")
@@ -625,25 +598,79 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         if u["name"] in seen:
             raise SimError(f"sim: duplicate unit name {u['name']!r}")
         seen.add(u["name"])
+    sim["port_pins"] = _port_pins(sim)
     sim["hash"] = sim_hash(sim, _MODULE_BINS)
+    _apply_hints(sim)
     return sim
+
+
+def _port_pins(sim):
+    """lease name -> the yaml-explicit port it pins (phase 3: the ONLY
+    hard values - every other request is prefer/free and lands wherever
+    the allocator puts it). Recorded while the resolved fields still
+    carry spec values only - before _apply_hints writes the
+    remembered-port guesses into them."""
+    pins = {}
+    srv = sim["server"]
+    if srv["type"] == "external":
+        if srv["control_port"] is not None:
+            pins["bridge.ctrl"] = srv["control_port"]
+    else:
+        if srv["port"] is not None:
+            pins["server.wss"] = srv["port"]
+        if srv["control_port"] is not None:
+            pins["server.ctrl"] = srv["control_port"]
+        ur = srv.get("udp_relay")
+        if ur:
+            if ur.get("port") is not None:
+                pins[UDP_RELAY_LEASE + ".wss"] = ur["port"]
+            if ur.get("udp_port_range"):
+                pins[UDP_RELAY_LEASE + ".range"] = \
+                    int(ur["udp_port_range"][0])
+    if sim.get("render"):
+        for role, key in (("stream", "stream_port"), ("mav", "mav_port"),
+                          ("mav_ws", "mav_ws_port"), ("web", "web_port"),
+                          ("sink", "sink_port")):
+            if sim["render"][key] is not None:
+                pins[f"render.{role}"] = sim["render"][key]
+    return pins
+
+
+def _apply_hints(sim):
+    """Fill every lease-fed field with the value the allocator would
+    most likely hand back - its request's pin, else static prefer hint,
+    else the remembered/leased port (allocator.hints) - and record the
+    shown values on sim["port_hints"] for the `moved` lines. A field
+    stays None when nothing prefers anything (first run on a quiet
+    machine) - generated configs only ever see the leased ints."""
+    reqs = lease_requests(sim)
+    remembered = allocator().hints(sim["name"], SIM_ROOT)
+    hints = {}
+    for r in reqs:
+        v = r.get("pin", r.get("prefer"))
+        if v is None:
+            v = remembered.get(r["name"])
+        hints[r["name"]] = v
+    sim["port_hints"] = hints
+    _apply_ports(sim, {r["name"]: hints[r["name"]] for r in reqs}, reqs)
 
 
 def sim_hash(sim, overrides):
     """The fleet-identity hash over the REQUEST, not the allocation
-    (SL-0076): the resolved spec with every leased port value stripped
-    (explicit yaml pins keep theirs - they're spec, not allocation),
-    plus the lease request list - names, protos, kinds, sizes and pin
-    values - so request existence/kinds and yaml pins still move the
-    hash. A sim re-resolved at another slot_base hashes the same, and
-    `run`/`ensure` warm-reuse a fleet that merely moved ports. `ensure`
-    rehashes with the manifest's stored overrides to tell "same fleet,
-    different binaries" apart from a real spec change."""
+    (SL-0076): the resolved spec with every lease-fed port field
+    stripped (explicit yaml pins keep theirs - they're spec, not
+    allocation), plus the lease request list - names, protos, kinds,
+    sizes and pin values - so request existence/kinds and yaml pins
+    still move the hash. A sim re-resolved at another slot_base hashes
+    the same, and `run`/`ensure` warm-reuse a fleet that merely moved
+    ports. `ensure` rehashes with the manifest's stored overrides to
+    tell "same fleet, different binaries" apart from a real spec
+    change."""
     return hashlib.sha256(json.dumps(
-        [_hash_server(sim["server"], sim["slot_base"]),
+        [_hash_server(sim["server"]),
          sim["home"],
          [_hash_unit(u) for u in sim["units"]],
-         _hash_render(sim.get("render"), sim["slot_base"]),
+         _hash_render(sim.get("render")),
          overrides or {},
          sorted((r["name"], r["proto"], r["kind"],
                  r.get("pin"), r.get("size"))
@@ -651,28 +678,25 @@ def sim_hash(sim, overrides):
         sort_keys=True).encode()).hexdigest()[:16]
 
 
-def _hash_server(srv, slot_base):
-    """srv as spec for the hash: lease-fed port values (the derived
-    formulas) -> 0; yaml-explicit values keep theirs."""
+def _hash_server(srv):
+    """srv as spec for the hash: lease-fed port fields (None until the
+    commit fills them) -> 0; yaml-explicit values keep theirs."""
     srv = copy.deepcopy(srv)
-    port = srv["port"]
     if srv["type"] == "external":
         # ip/port/auth_* describe the user's remote stack - spec, not
-        # leases; only the local bridge control port is derived
-        if srv["control_port"] == 62009 + slot_base:
+        # leases; only the local bridge control port is leased
+        if srv["control_port"] is None:
             srv["control_port"] = 0
         return srv
-    if srv["port"] == SERVER_PORT + slot_base:
-        srv["port"] = 0
-    if srv["control_port"] == port + 1:
-        srv["control_port"] = 0
-    if srv["auth_port"] == port + 10:
-        srv["auth_port"] = 0
-    if srv["auth_s2s_port"] == port + 11:
-        srv["auth_s2s_port"] = 0
+    for k in ("port", "control_port", "auth_port", "auth_s2s_port"):
+        if srv.get(k) is None:
+            srv[k] = 0
     ur = srv.get("udp_relay")
-    if ur and ur["port"] == port + 12:
-        ur["port"] = 0
+    if ur:
+        if ur.get("port") is None:
+            ur["port"] = 0
+        if ur.get("udp_port_range") is None:
+            ur["udp_port_range"] = 0
     return srv
 
 
@@ -687,9 +711,9 @@ def _hash_unit(u):
     fc = u.get("fc")
     if fc:
         for k in ("sysid", "instance", "base_port", "pilot_port",
-                  "aux_port", "fcb_port", "pose_port", "rcin_port",
-                  "irlock_port", "sim_in_port", "sim_out_port",
-                  "mav_port"):
+                  "aux_port", "fcb_port", "pose_port", "pose_serial",
+                  "rcin_port", "irlock_port", "sim_in_port",
+                  "sim_out_port", "mav_port"):
             fc.pop(k, None)
         if fc.get("fcb_proxy"):
             fc["fcb_proxy"] = {"port": 0, "ctrl": 0}
@@ -703,83 +727,17 @@ def _hash_unit(u):
     return u
 
 
-def _hash_render(render, slot_base):
-    """render as spec for the hash: derived port values -> 0, explicit
+def _hash_render(render):
+    """render as spec for the hash: lease-fed port fields -> 0, explicit
     yaml ports keep theirs; absent render hashes as None."""
     if not render:
         return None
     r = dict(render)
-    for key, base in (("stream_port", STREAM_PORT_BASE),
-                      ("mav_port", MAV_PORT_BASE),
-                      ("mav_ws_port", MAV_WS_PORT_BASE),
-                      ("web_port", WEB_PORT_BASE),
-                      ("sink_port", SINK_PORT_BASE)):
-        if r[key] == base + slot_base:
+    for key in ("stream_port", "mav_port", "mav_ws_port", "web_port",
+                "sink_port"):
+        if r[key] is None:
             r[key] = 0
     return r
-
-
-def _load_sim_free_slot(spec, base_dir, exclusive=False):
-    """SIM_SLOT_BASE_OVERRIDE=any: resolve the sim once at SLOT_BASE,
-    then ONE locked registry transaction (slot_base_pick) returns the
-    lowest base whose whole PINNED port set is free - replacing the old
-    200-candidate rescan + bind probe. "Free" means no clash with a live
-    sim's manifest, no lease held by another sim in any worktree, and
-    nothing already bound on the host. A same-named live sim's ports
-    are its own (`up` restarts it); for an exclusive bring-up the ports
-    of a live sim with clashing unit names are the pick's too - `run`
-    downs it before it binds, so a suite's sequential scenarios keep
-    the pick they always had. Additive callers (up, --shared) leave it
-    running, so every other live sim's ports are real conflicts.
-    SL-0076: pins AND prefer hints vote on a candidate, so the winner
-    is a base whose whole legacy port set is free and the commit can
-    still land the formulas; when no base's legacy set is fully free
-    the spec's own base stands - prefer hints move into the pool at
-    commit, so `any` can no longer run out of bases. A yaml-less
-    server.port is injected as SERVER_PORT+base for the pick so `any`
-    moves the comm server like a scenario's port does.
-    Candidates start at SLOT_BASE (the configured floor). A shifted
-    pick no longer changes the sim hash (the hash covers the request,
-    not the slot), so `run` warm-reuses a fleet that merely moved."""
-    global _FREE_SLOT_PICK
-    prev = os.environ.get("SIM_SLOT_BASE_OVERRIDE")
-    try:
-        srv_spec = spec.get("server") or {}
-        if srv_spec.get("type") != "external" and \
-                "port" not in srv_spec:
-            # no explicit server port: ride the candidate base like a
-            # scenario spec does, else `any` moves the units but keeps a
-            # busy server port; a port pinned to anything else stays as
-            # written
-            own_slot = int(spec.get("slot_base", SLOT_BASE))
-            spec = dict(spec, server=dict(
-                srv_spec, port=SERVER_PORT + own_slot))
-        _FREE_SLOT_PICK = True        # resolves inside prefer, not pin
-        try:
-            os.environ["SIM_SLOT_BASE_OVERRIDE"] = str(SLOT_BASE)
-            sim0 = load_sim(spec, base_dir)
-            reqs0 = lease_requests(sim0)
-
-            def candidates():
-                for cand in range(SLOT_BASE, SLOT_BASE + 200):
-                    pins = _shifted_pins(reqs0, cand - SLOT_BASE)
-                    if not pins:
-                        continue      # every hint left the port range
-                    yield cand, pins
-            base = slot_base_pick(
-                sim0["name"], {u["name"] for u in sim0["units"]},
-                candidates(), exclusive=exclusive)
-            if base is None:
-                base = int(spec.get("slot_base", SLOT_BASE))
-            os.environ["SIM_SLOT_BASE_OVERRIDE"] = str(base)
-            return load_sim(spec, base_dir)
-        finally:
-            _FREE_SLOT_PICK = False
-    finally:
-        if prev is None:
-            os.environ.pop("SIM_SLOT_BASE_OVERRIDE", None)
-        else:
-            os.environ["SIM_SLOT_BASE_OVERRIDE"] = prev
 
 
 def _sim_spec(path_or_spec, base_dir=None, _chain=()):
@@ -876,9 +834,12 @@ def _spec_overlays(spec, overlays):
     return list(own) + list(rest)
 
 
-def load_server(srv, slot_base=None):
+def load_server(srv):
     """server: {type: real|fake|external, port, auth, account{user, code},
     seed, control_port, gcs_party}.
+
+    Every port field is the yaml-explicit value or None - the lease
+    commit fills the Nones; a yaml value is the port's pin.
 
     real (default): the actual droneengage_server from its repo, on the
       sim's own port with a generated config. auth: false runs it in
@@ -900,7 +861,7 @@ def load_server(srv, slot_base=None):
       logs every unit in through the authenticator at
       auth_ip:auth_port; auth: false connects de_comm straight to
       ip:port (the server's local_server_enabled mode). control_port is
-      this sim's local ctl port (default 62009 + slot_base); gcs_party
+      this sim's local ctl port (leased); gcs_party
       defaults to GCS_<sim name> so parallel sims on one server don't
       share a GCS party. `account` is the GCS login (needs the GCS
       permission bit); `unit_account` is the default login for units
@@ -980,8 +941,9 @@ def load_server(srv, slot_base=None):
             "type": t,
             "ip": srv.get("ip", "127.0.0.1"),
             "port": int(srv.get("port", 9966)),
-            "control_port": int(srv.get("control_port") or
-                                62009 + int(slot_base or SLOT_BASE)),
+            "control_port": (int(srv["control_port"])
+                             if srv.get("control_port") is not None
+                             else None),
             "auth": bool(srv.get("auth", True)),
             "auth_ip": CLI_AUTH.get("auth_ip") or srv.get("auth_ip",
                                                          "127.0.0.1"),
@@ -994,7 +956,7 @@ def load_server(srv, slot_base=None):
             "seed": 0, "clock_offset_ms": 0, "noclock": [],
             "link_proxy": False,
         }
-    port = int(srv.get("port", SERVER_PORT))
+    port = int(srv["port"]) if srv.get("port") is not None else None
     urelay = srv.get("udp_relay")
     if urelay is True:
         urelay = {}
@@ -1010,18 +972,20 @@ def load_server(srv, slot_base=None):
         raise SimError("sim server.udp_relay: must be true or a mapping "
                        "({port, udp_port_range, gcs_peer_policy})")
     if urelay is not None:
-        # the relay's wss control port rides the server port block; the
-        # UDP pair window is per-sim, sized at gen time from the fleet
+        # the relay's wss control port and UDP pair window are leases
+        # like everything else; the window sizes at gen time from the
+        # fleet's de_mavlink count
         urelay = dict(urelay)
-        urelay.setdefault("port", port + 12)
+        urelay.setdefault("port", None)
         urelay.setdefault("gcs_peer_policy", "open")
         urelay.setdefault("ssl", True)
     return {
         "type": t, "ip": "127.0.0.1", "port": port,
-        "control_port": int(srv.get("control_port") or port + 1),
+        "control_port": (int(srv["control_port"])
+                         if srv.get("control_port") is not None else None),
         "auth": bool(srv.get("auth", False)),
-        "auth_ip": "127.0.0.1", "auth_port": port + 10,
-        "auth_s2s_port": port + 11,
+        "auth_ip": "127.0.0.1", "auth_port": None,
+        "auth_s2s_port": None,
         "auth_verify_ssl": False,
         "account": {"user": user, "code": code},
         "gcs_party": srv.get("gcs_party") or GCS_PARTY,
@@ -1035,24 +999,21 @@ def load_server(srv, slot_base=None):
 
 RENDER_MODES = ("viewer", "cameras", "physics", "full")
 
-# P5-13: the world stream binds 127.0.0.1 like every sim port; the
-# Mavlink3DMap UDP port rides the same slot block so --seeds runs and
-# parallel sims never share it. P5-14 adds the bridge's WebSocket port
-# (8801+slot = 8811 on the default slot, Mavlink3DMap's own default)
-# and the viewer's http port (8070+slot = 8080, again its default).
-STREAM_PORT_BASE = 61000
-MAV_PORT_BASE = 16450
-MAV_WS_PORT_BASE = 8801
-WEB_PORT_BASE = 8070
-SINK_PORT_BASE = 8090
+# P5-13/14: the render side's five ports are allocator leases like
+# every other. Two keep a static prefer hint - Mavlink3DMap's own
+# defaults, so a viewer launched outside the sim still finds the
+# MAVLink websocket and its dev-server page where it looks first.
+RENDER_MAV_WS_PREFER = 8811
+RENDER_WEB_PREFER = 8080
 
 
-def _render_spec(raw, slot_base):
+def _render_spec(raw):
     """render: {mode, headless, stream_port, mav_port, mav_ws_port,
     web_port} -> a normalized dict, or None when the scenario did not
     opt in (D1: absent render means no process, port or param changes -
     the sim hash, generated from the unit specs, stays byte-identical
-    to before)."""
+    to before). The port fields are the yaml-explicit pins; None until
+    the lease commit fills them."""
     if raw is None:
         return None
     if not isinstance(raw, dict):
@@ -1065,18 +1026,15 @@ def _render_spec(raw, slot_base):
     if mode not in RENDER_MODES:
         raise SimError(f"render: unknown mode {mode!r} "
                        f"(known: {', '.join(RENDER_MODES)})")
+    def _p(key):
+        return int(raw[key]) if raw.get(key) is not None else None
     return {"mode": mode,
             "headless": bool(raw.get("headless", False)),
-            "stream_port": int(raw.get("stream_port",
-                                       STREAM_PORT_BASE + slot_base)),
-            "mav_port": int(raw.get("mav_port",
-                                    MAV_PORT_BASE + slot_base)),
-            "mav_ws_port": int(raw.get("mav_ws_port",
-                                       MAV_WS_PORT_BASE + slot_base)),
-            "web_port": int(raw.get("web_port",
-                                    WEB_PORT_BASE + slot_base)),
-            "sink_port": int(raw.get("sink_port",
-                                     SINK_PORT_BASE + slot_base))}
+            "stream_port": _p("stream_port"),
+            "mav_port": _p("mav_port"),
+            "mav_ws_port": _p("mav_ws_port"),
+            "web_port": _p("web_port"),
+            "sink_port": _p("sink_port")}
 
 
 def render_viewer_url(render, world_stream=True):
@@ -1264,7 +1222,9 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                    setting("SIM_AUTH_CODE", "sim1234"))
         check_account(user, code, f"unit {name} account")
         u["account"] = {"user": user, "code": code}
-    u["ports"]["de_comm"] = DE_COMM_PORT_BASE + 10 * slot
+    # every unit-side port is a lease filled by the commit - None until
+    # then (u["ports"] keys ARE the unit.<u>.* request names)
+    u["ports"]["de_comm"] = None
     # SL-0009: `link_proxy` (server block on a real sim, per-unit
     # override) inserts engine/link_proxy.py between de_comm and the
     # comm server wss port for byte-level link faults
@@ -1276,26 +1236,20 @@ def _expand_unit(sim, b, name, entry, at, catalog):
     if lp and sim["server"]["type"] != "real":
         raise SimError(f"unit {name}: link_proxy needs "
                        "server: {type: real}")
-    u["link_proxy"] = {"port": LINK_PROXY_PORT_BASE + 10 * slot,
-                       "ctrl": LINK_PROXY_PORT_BASE + 1 + 10 * slot} \
-        if lp else None
+    u["link_proxy"] = {"port": None, "ctrl": None} if lp else None
     for m in u["modules"]:
         if m != "de_comm":
-            u["ports"][m] = int(catalog[m]["port_base"]) + 10 * slot
+            u["ports"][m] = None
     for m in entry.get("udp_proxy") or []:
-        # SL-0010: a chunk-fault proxy on this module's s2s link. It
-        # claims the module's slot port +1 (port_base strides are 1000,
-        # so +1..+9 of any module's slot decade is free); gen_unit then
-        # points the module's s2s_udp_target_port at it and the proxy
-        # owns the whole module<->de_comm path - de_comm answers the
-        # sender's address, so both directions cross it.
+        # SL-0010: a chunk-fault proxy on this module's s2s link - its
+        # own leased port; gen_unit then points the module's
+        # s2s_udp_target_port at it and the proxy owns the whole
+        # module<->de_comm path - de_comm answers the sender's
+        # address, so both directions cross it.
         if m == "de_comm" or m not in u["modules"]:
             raise SimError(f"unit {name}: udp_proxy {m!r} is not one of "
                            f"its modules ({u['modules']})")
-        u["ports"]["udp_proxy_" + m] = u["ports"][m] + 1
-    # no port ceiling: u["ports"] are allocator prefer hints now
-    # (SL-0076) - an out-of-range formula value just means the lease
-    # comes from the pool, so a high-slot fleet resolves fine
+        u["ports"]["udp_proxy_" + m] = None
 
     # position: explicit `at` (meters from home), block `location`, or
     # the default spacing by unit order
@@ -1326,33 +1280,34 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             "model": fc.get("model", kind["model"]),
             "sysid": slot, "instance": slot,
             "speedup": sim["speedup"],
-            # SL-0076 port hints - lease_commit rewrites every field
-            # below with the allocated value; until then they hold the
-            # legacy formulas (what `sim show` prints). The SITL TCP
-            # serials are one 10-port block `unit.<name>.sitl`
-            # (pilot = base+0, aux = base+2, pose = base+5, the rest
-            # reserved); serial1's fcb, the RC-in UDP socket, the
-            # irlock and the sim-link in/out UDP are separate leases.
-            "base_port": 5760 + 10 * slot,
-            "pilot_port": 5760 + 10 * slot,
-            "aux_port": 5762 + 10 * slot,
-            "fcb_port": 7660 + 10 * slot,
-            "rcin_port": 5501 + 10 * slot,
-            "irlock_port": 9005 + 10 * slot,
-            "sim_in_port": 9003 + 10 * slot,
-            "sim_out_port": 9002 + 10 * slot,
+            # all ports are leases - None until the commit fills them.
+            # The SITL TCP serials are one 10-port block
+            # `unit.<name>.sitl` (pilot = base+0, aux = base+2,
+            # pose = base+5, the rest reserved); serial1's fcb, the
+            # RC-in UDP socket, the irlock and the sim-link in/out UDP
+            # are separate leases.
+            "base_port": None,
+            "pilot_port": None,
+            "aux_port": None,
+            "fcb_port": None,
+            "rcin_port": None,
+            "irlock_port": None,
+            "sim_in_port": None,
+            "sim_out_port": None,
             "arm_mode": fc.get("arm_mode", kind["arm_mode"]),
             "land": fc.get("land", kind["land"]),
             "defaults": fc.get("defaults", kind["defaults"]),
             "params": fc.get("params") or {},
         }
         # a catalog module flagged `pose` reads the vehicle pose on its
-        # own SITL serial (serial5, tcp:5 -> SITL block base+5, hint
-        # 5765+10k) - the P5-08 stubs use it; serial0/1/2 stay with
+        # own SITL serial (serial5, tcp:5 -> the SITL block's base+5) -
+        # the P5-08 stubs use it; serial0/1/2 stay with
         # ctl / de_mavlink / telemetry and serial3 stays the SITL GPS
-        # device on every unit
+        # device on every unit. pose_serial marks the want; pose_port
+        # is the leased value the commit writes
         if any(catalog.get(m, {}).get("pose") for m in u["modules"]):
-            u["fc"]["pose_port"] = 5765 + 10 * slot
+            u["fc"]["pose_serial"] = True
+            u["fc"]["pose_port"] = None
             u["fc"]["params"] = deep_merge(
                 {"SERIAL5_PROTOCOL": 2, "SERIAL5_BAUD": 57},
                 u["fc"]["params"])
@@ -1390,16 +1345,12 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         if px is None:
             px = bool(sim.get("fcb_proxy"))
         if px:
-            u["fc"]["fcb_proxy"] = {"port": 7760 + 10 * slot,
-                                    "ctrl": 7860 + 10 * slot}
+            u["fc"]["fcb_proxy"] = {"port": None, "ctrl": None}
         # world.prepare_sim stamps config.<stub>.stub.{sysid,pose_port}
-        # from the slot_base it guesses before the fleet resolves -
-        # studio/`--slot-base any`/`SIM_SLOT_BASE_OVERRIDE` can resolve
-        # a different slot, and the SITL serial5 listener always follows
-        # the resolved slot above. A stale stamp leaves the stub dialing
-        # a dead port (pose feed refused all run -> level-attitude
-        # fallback -> wrong geo projections), so the resolved fc values
-        # always win here.
+        # before the fleet resolves and the ports lease - the resolved
+        # fc values always win here (a stale stamp leaves the stub
+        # dialing a dead port: pose feed refused all run ->
+        # level-attitude fallback -> wrong geo projections).
         for m in u["modules"]:
             stub = (u["config"].get(m) or {}).get("stub")
             if isinstance(stub, dict) and "pose_port" in stub:
@@ -1602,16 +1553,22 @@ UDP_RELAY_LEASE = "udp_relay.relay"
 
 
 def _udp_relay_range(sim):
-    """The relay's resolved [lo, hi] udp_port_range - explicit config,
-    else the slot-derived default. Usable on a spec (pre-gen) or a
-    manifest (gen_server writes the resolved value back)."""
+    """The relay's resolved [lo, hi] udp_port_range - explicit config or
+    the value the `udp_relay.relay.range` block lease wrote back at
+    commit; None while the sim is resolved but unleased."""
     ur = sim["server"]["udp_relay"]
-    if ur.get("udp_port_range"):
-        return ur["udp_port_range"]
+    r = ur.get("udp_port_range")
+    return [int(r[0]), int(r[1])] if r else None
+
+
+def _udp_relay_size(sim):
+    """The relay window size: the explicit range's span, else sized for
+    the fleet's de_mavlink pair count."""
+    r = _udp_relay_range(sim)
+    if r:
+        return r[1] - r[0] + 1
     n_pairs = sum(1 for u in sim["units"] if "de_mavlink" in u["modules"])
-    return [UDP_RELAY_PORT_BASE + 40 * sim["slot_base"],
-            UDP_RELAY_PORT_BASE + 40 * sim["slot_base"]
-            + max(4, 2 * n_pairs) - 1]
+    return max(4, 2 * n_pairs)
 
 
 def used_ports(sim):
@@ -1620,44 +1577,55 @@ def used_ports(sim):
     port is remote - only its local bridge control_port counts. A
     manifest's flat `ports` map (the lease map lease_commit writes)
     unions in too, so an allocated port always counts even when a
-    nested field still shows the formula value (SITL-internal ports)."""
+    nested field doesn't carry it (SITL-internal ports). Fields still
+    None - an unleased sim's unresolved values - simply don't count."""
+    def _is_port(v):
+        return isinstance(v, int) and not isinstance(v, bool)
     ports = set()
     srv = sim["server"]
-    ports.add(srv["control_port"])
+    if _is_port(srv["control_port"]):
+        ports.add(srv["control_port"])
     if srv["type"] != "external":
-        ports.add(srv["port"])
-        if srv["auth"]:
-            ports.update((srv["auth_port"], srv["auth_s2s_port"]))
+        for v in (srv["port"], srv["auth_port"], srv["auth_s2s_port"]):
+            if _is_port(v):
+                ports.add(v)
         ur = srv.get("udp_relay")
         if ur:
-            ports.add(ur["port"])
-            lo, hi = _udp_relay_range(sim)
-            ports.update(range(int(lo), int(hi) + 1))
+            if _is_port(ur.get("port")):
+                ports.add(ur["port"])
+            rng = _udp_relay_range(sim)
+            if rng:
+                ports.update(range(rng[0], rng[1] + 1))
     if sim.get("render"):
-        ports.update((sim["render"]["stream_port"],
+        ports.update(v for v in
+                     (sim["render"]["stream_port"],
                       sim["render"]["mav_port"],
                       sim["render"]["mav_ws_port"],
                       sim["render"]["web_port"],
-                      sim["render"]["sink_port"]))
+                      sim["render"]["sink_port"]) if _is_port(v))
     for u in sim["units"]:
-        ports.update(u["ports"].values())
+        ports.update(p for p in u["ports"].values() if _is_port(p))
         if u.get("link_proxy"):
-            ports.update((u["link_proxy"]["port"], u["link_proxy"]["ctrl"]))
+            ports.update(p for p in (u["link_proxy"]["port"],
+                                     u["link_proxy"]["ctrl"])
+                         if _is_port(p))
         if u["fc"]:
             fc = u["fc"]
             # the whole SITL decade is leased (the `unit.<u>.sitl`
             # block), not just the serials in use
-            ports.update(range(fc.get("base_port", fc["pilot_port"]),
-                               fc.get("base_port", fc["pilot_port"]) + 10))
-            ports.add(fc["fcb_port"])
-            if fc.get("pose_port"):
+            if _is_port(fc.get("base_port")):
+                ports.update(range(fc["base_port"], fc["base_port"] + 10))
+            if _is_port(fc.get("fcb_port")):
+                ports.add(fc["fcb_port"])
+            if _is_port(fc.get("pose_port")):
                 ports.add(fc["pose_port"])
             if fc.get("fcb_proxy"):
-                ports.update((fc["fcb_proxy"]["port"],
-                              fc["fcb_proxy"]["ctrl"]))
+                ports.update(p for p in (fc["fcb_proxy"]["port"],
+                                         fc["fcb_proxy"]["ctrl"])
+                             if _is_port(p))
             for key in ("rcin_port", "irlock_port",
                         "sim_in_port", "sim_out_port"):
-                if fc.get(key):
+                if _is_port(fc.get(key)):
                     ports.add(fc[key])
     for v in (sim.get("ports") or {}).values():
         ports.add(int(v["port"] if isinstance(v, dict) else v))
@@ -1667,69 +1635,89 @@ def used_ports(sim):
 def port_rows(sim):
     """[(owner, port, proto)] - every local port a sim binds, labeled.
     Same coverage as used_ports(); the relay's udp_port_range is one
-    row per port so `sim ports` can show how much of the block is live."""
+    row per port so `sim ports` can show how much of the block is live.
+    Fields still None (an unleased sim's unresolved values) produce no
+    row."""
+    def _is_port(v):
+        return isinstance(v, int) and not isinstance(v, bool)
     rows = []
     srv = sim["server"]
-    rows.append(("server.control", srv["control_port"], "tcp"))
+    if _is_port(srv["control_port"]):
+        rows.append(("server.control", srv["control_port"], "tcp"))
     if srv["type"] != "external":
-        rows.append(("server.wss", srv["port"], "tcp"))
+        if _is_port(srv["port"]):
+            rows.append(("server.wss", srv["port"], "tcp"))
         if srv["auth"]:
-            rows.append(("server.auth", srv["auth_port"], "tcp"))
-            rows.append(("server.auth_s2s", srv["auth_s2s_port"], "tcp"))
+            for name, p in (("server.auth", srv["auth_port"]),
+                            ("server.auth_s2s", srv["auth_s2s_port"])):
+                if _is_port(p):
+                    rows.append((name, p, "tcp"))
         ur = srv.get("udp_relay")
         if ur:
-            rows.append((f"{UDP_RELAY_LEASE}.wss", ur["port"], "tcp"))
-            lo, hi = _udp_relay_range(sim)
-            rows += [(f"{UDP_RELAY_LEASE}.range", p, "udp")
-                     for p in range(int(lo), int(hi) + 1)]
+            if _is_port(ur.get("port")):
+                rows.append((f"{UDP_RELAY_LEASE}.wss", ur["port"], "tcp"))
+            rng = _udp_relay_range(sim)
+            if rng:
+                rows += [(f"{UDP_RELAY_LEASE}.range", p, "udp")
+                         for p in range(rng[0], rng[1] + 1)]
     if sim.get("render"):
         r = sim["render"]
-        rows += [("render.stream", r["stream_port"], "tcp"),
-                 ("render.mav", r["mav_port"], "tcp"),
-                 ("render.mav_ws", r["mav_ws_port"], "tcp"),
-                 ("render.web", r["web_port"], "tcp"),
-                 ("render.sink", r["sink_port"], "tcp")]
+        for name, key in (("render.stream", "stream_port"),
+                          ("render.mav", "mav_port"),
+                          ("render.mav_ws", "mav_ws_port"),
+                          ("render.web", "web_port"),
+                          ("render.sink", "sink_port")):
+            if _is_port(r[key]):
+                rows.append((name, r[key], "tcp"))
     for u in sim["units"]:
         rows += [(f"{u['name']}.{m}", p, "udp")
-                 for m, p in u["ports"].items()]
+                 for m, p in u["ports"].items() if _is_port(p)]
         if u.get("link_proxy"):
-            rows += [(f"{u['name']}.link_proxy", u["link_proxy"]["port"],
-                      "tcp"),
-                     (f"{u['name']}.link_proxy.ctrl",
-                      u["link_proxy"]["ctrl"], "tcp")]
+            rows += [(f"{u['name']}.{n}", p, "tcp")
+                     for n, p in (("link_proxy", u["link_proxy"]["port"]),
+                                  ("link_proxy.ctrl",
+                                   u["link_proxy"]["ctrl"]))
+                     if _is_port(p)]
         if u["fc"]:
             fc = u["fc"]
-            base = fc.get("base_port", fc["pilot_port"])
-            rows += [(f"{u['name']}.sitl.p{i}", base + i, "tcp")
-                     for i in range(10)]
-            rows.append((f"{u['name']}.sitl.fcb", fc["fcb_port"], "tcp"))
+            base = fc.get("base_port")
+            if _is_port(base):
+                rows += [(f"{u['name']}.sitl.p{i}", base + i, "tcp")
+                         for i in range(10)]
+            if _is_port(fc.get("fcb_port")):
+                rows.append((f"{u['name']}.sitl.fcb", fc["fcb_port"],
+                             "tcp"))
             for name, key in (("rcin", "rcin_port"),
                               ("irlock", "irlock_port"),
                               ("sim_in", "sim_in_port"),
                               ("sim_out", "sim_out_port")):
-                if fc.get(key):
+                if _is_port(fc.get(key)):
                     rows.append((f"{u['name']}.sitl.{name}",
                                  fc[key], "udp"))
             if fc.get("fcb_proxy"):
-                rows += [(f"{u['name']}.fcb_proxy",
-                          fc["fcb_proxy"]["port"], "tcp"),
-                         (f"{u['name']}.fcb_proxy.ctrl",
-                          fc["fcb_proxy"]["ctrl"], "tcp")]
+                rows += [(f"{u['name']}.{n}", p, "tcp")
+                         for n, p in (("fcb_proxy",
+                                       fc["fcb_proxy"]["port"]),
+                                      ("fcb_proxy.ctrl",
+                                       fc["fcb_proxy"]["ctrl"]))
+                         if _is_port(p)]
     return rows
 
 
 # ------------------------------------------------- port leases (SL-0074)
 # The machine-wide allocator in port_allocation_management.py keeps one
-# registry shared by every worktree (docs/port_allocation.md). Phase 2
-# (SL-0076): every formula-derived value is a `prefer` request carrying
-# the legacy formula as the hint - a held or out-of-range hint makes
-# the allocator move the port into the free pool and `sim up` prints
-# `moved <name> <hint> -> <port>`. Only yaml-explicit values pin
-# (server.port/control_port, the relay range, render ports), plus ALL
-# values under `--slot-base N` (explicit means exact-or-fail). SITL
-# launches with --base-port/--rc-in-port so -I is the identity slot
-# only, and sim_hash covers the request set - ports no longer change
-# the fleet's identity.
+# registry shared by every worktree (docs/port_allocation.md). Phase 3
+# (SL-0077): the formulas are gone - a request carries NO port value
+# unless the yaml wrote one. Only yaml-explicit values pin
+# (server.port/control_port, the relay's port/range, render ports);
+# the only static prefer hints left are the viewer's own defaults
+# (render.mav_ws 8811 / render.web 8080). Re-run stability comes from
+# the allocator's remembered ports - the last run's port for the same
+# (worktree, sim, name) is tried first on every free/prefer request.
+# `sim up` prints `moved <name> <hint> -> <port>` when a hinted value
+# did not land. SITL launches with --base-port/--rc-in-port so -I is
+# the identity slot only, and sim_hash covers the request set - ports
+# no longer change the fleet's identity.
 
 _ALLOCATOR = None
 
@@ -1754,209 +1742,101 @@ def allocator():
 def lease_requests(sim):
     """The port requests a resolved sim makes of the allocator, named
     hierarchically (server.*, auth.*, udp_relay.relay.*, render.*,
-    unit.<u>.*). Phase 2 kinds (SL-0076): `prefer` = the legacy formula
-    is a hint - free it wins, held or out-of-range the allocator moves
-    the port into the pool (every formula-derived value is prefer now);
-    `pin` = yaml-explicit values only, exact port or fail - plus every
-    request under `--slot-base N` (sim["pin_all"], the phase-0
-    semantics an explicit base keeps).
+    unit.<u>.*). Phase 3 kinds (SL-0077): `pin` = yaml-explicit values
+    only (recorded on sim["port_pins"]), exact port or fail; `prefer` =
+    the viewer's own defaults render.mav_ws/render.web; `free` =
+    everything else - the allocator tries the remembered port first,
+    then the pool.
 
     Per-unit SITL serials are ONE 10-port TCP block `unit.<u>.sitl`:
     the launch line gets --base-port <base> and SITL binds pilot at
     base+0, aux at base+2 and pose at base+5; the other members stay
     reserved so no neighbour port can slip under the vehicle. serial1
-    (fcb) is its own prefer lease - the launch line passes it absolute
-    (`--serial1 tcp:P`), so it keeps the legacy 7660+10k layout instead
-    of landing inside the block. The SITL UDP side leases separately:
-    `unit.<u>.sitl.rcin` (bound unconditionally by SITL, passed
-    --rc-in-port) plus `unit.<u>.sitl.irlock` / `.sim_in` / `.sim_out` -
-    leased for every FC unit so a params- or model-enabled socket
-    (precision-landing irlock, external-physics models) can never
-    collide with another sim's ports; all are passed as
-    --irlock-port/--sim-port-in/--sim-port-out, which -I then never
-    re-derives. sysid stays slot-derived (the <= 250 check in
-    _expand_unit): unique inside a sim by construction, and the
-    alloc_id space is a phase-3+ concern.
-
-    `shift` says how each request's port moves per slot_base for the
-    --slot-base any pick (_shifted_pins): unit ports 10 per slot,
-    slot-derived server-side ports 1, the relay range 40, explicit yaml
-    values 0. The allocator ignores the key."""
-    pin_all = bool(sim.get("pin_all"))
+    (fcb) is its own lease - the launch line passes it absolute
+    (`--serial1 tcp:P`), so it does not land inside the block. The SITL
+    UDP side leases separately: `unit.<u>.sitl.rcin` (bound
+    unconditionally by SITL, passed --rc-in-port) plus
+    `unit.<u>.sitl.irlock` / `.sim_in` / `.sim_out` - leased for every
+    FC unit so a params- or model-enabled socket (precision-landing
+    irlock, external-physics models) can never collide with another
+    sim's ports; all are passed as --irlock-port/--sim-port-in/
+    --sim-port-out, which -I then never re-derives. sysid stays
+    slot-derived (the <= 250 check in _expand_unit): unique inside a
+    sim by construction, and the alloc_id space is a phase-4 concern.
+    """
+    pins = sim.get("port_pins") or {}
     reqs = []
 
-    def req(name, proto, port, explicit, shift, size=None):
-        pin_it = pin_all or explicit
-        r = {"name": name, "proto": proto,
-             "kind": "pin" if pin_it else ("block" if size else "prefer"),
-             "shift": shift}
-        if pin_it:
-            r["pin"] = port
-        else:
-            r["prefer"] = port
+    def req(name, proto, prefer=None, size=None):
+        r = {"name": name, "proto": proto}
         if size:
+            r["kind"] = "block"
             r["size"] = size
+        elif prefer is not None:
+            r["kind"] = "prefer"
+        else:
+            r["kind"] = "pin" if name in pins else "free"
+        if name in pins:
+            r["pin"] = pins[name]
+        elif prefer is not None:
+            r["prefer"] = prefer
         return r
 
     srv = sim["server"]
-    # the scenario loader and --slot-base any write SERVER_PORT+sb into
-    # server.port; only then do the derived ports move with the slot.
-    # "Explicit" below means a yaml value that is NEITHER formula -
-    # 62008 (the yaml-less default) prefers like every other derived
-    # port, a user-pinned port pins
-    wss_shift = int(srv["port"] == SERVER_PORT + sim["slot_base"])
-    wss_explicit = srv["port"] not in (
-        SERVER_PORT, SERVER_PORT + sim["slot_base"])
     if srv["type"] == "external":
-        # bridge control: derived (62009+sb) -> prefer, explicit -> pin
-        derived = srv["control_port"] == 62009 + sim["slot_base"]
-        reqs.append(req("bridge.ctrl", "tcp", srv["control_port"],
-                        not derived, int(derived)))
-    elif srv["type"] == "fake":
-        # the fake server binds wss AND wss+1 itself - lease them as a
-        # 2-port block so the pair can never straddle another sim's
-        # lease and moves into the pool together
-        reqs.append(req("server.fake", "tcp", srv["port"],
-                        wss_explicit, wss_shift, size=2))
+        # nothing local but the GCS bridge's control port
+        reqs.append(req("bridge.ctrl", "tcp"))
     else:
-        reqs.append(req("server.wss", "tcp", srv["port"],
-                        wss_explicit, wss_shift))
-        derived_ctrl = srv["control_port"] == srv["port"] + 1
-        reqs.append(req("server.ctrl", "tcp", srv["control_port"],
-                        not derived_ctrl,
-                        wss_shift if derived_ctrl else 0))
-        if srv["auth"]:
-            reqs.append(req("auth.https", "tcp", srv["auth_port"],
-                            srv["auth_port"] != srv["port"] + 10,
-                            wss_shift))
-            reqs.append(req("auth.s2s", "tcp", srv["auth_s2s_port"],
-                            srv["auth_s2s_port"] != srv["port"] + 11,
-                            wss_shift))
+        # fake too: it takes --ctrl-port now, so its pair is two
+        # ordinary leases, not a port+1 block
+        reqs.append(req("server.wss", "tcp"))
+        reqs.append(req("server.ctrl", "tcp"))
+        if srv["type"] == "real" and srv["auth"]:
+            reqs.append(req("auth.https", "tcp"))
+            reqs.append(req("auth.s2s", "tcp"))
         ur = srv.get("udp_relay")
         if ur:
-            lo, hi = _udp_relay_range(sim)
-            derived_relay = ur["port"] == srv["port"] + 12
-            reqs.append(req(UDP_RELAY_LEASE + ".wss", "tcp", ur["port"],
-                            not derived_relay,
-                            wss_shift if derived_relay else 0))
-            reqs.append(req(UDP_RELAY_LEASE + ".range", "udp", int(lo),
-                            bool(ur.get("udp_port_range")),
-                            0 if ur.get("udp_port_range") else 40,
-                            size=int(hi) - int(lo) + 1))
+            reqs.append(req(UDP_RELAY_LEASE + ".wss", "tcp"))
+            reqs.append(req(UDP_RELAY_LEASE + ".range", "udp",
+                            size=_udp_relay_size(sim)))
     if sim.get("render"):
-        r = sim["render"]
-        for role, key, base in (("stream", "stream_port", STREAM_PORT_BASE),
-                                ("mav", "mav_port", MAV_PORT_BASE),
-                                ("mav_ws", "mav_ws_port", MAV_WS_PORT_BASE),
-                                ("web", "web_port", WEB_PORT_BASE),
-                                ("sink", "sink_port", SINK_PORT_BASE)):
-            reqs.append(req(f"render.{role}", "tcp", r[key],
-                            r[key] != base + sim["slot_base"],
-                            int(r[key] == base + sim["slot_base"])))
+        reqs.append(req("render.stream", "tcp"))
+        reqs.append(req("render.mav", "tcp"))
+        # Mavlink3DMap's own defaults - a stock viewer still connects
+        reqs.append(req("render.mav_ws", "tcp",
+                        prefer=RENDER_MAV_WS_PREFER))
+        reqs.append(req("render.web", "tcp", prefer=RENDER_WEB_PREFER))
+        reqs.append(req("render.sink", "tcp"))
     for u in sim["units"]:
-        # every unit-side port is formula-derived - all prefer, shift 10
         prefix = f"unit.{u['name']}."
-        reqs += [req(prefix + mod, "udp", p, False, 10)
-                 for mod, p in u["ports"].items()]
+        reqs += [req(prefix + mod, "udp") for mod in u["ports"]]
         if u.get("link_proxy"):
-            reqs += [req(prefix + "link_proxy", "tcp",
-                         u["link_proxy"]["port"], False, 10),
-                     req(prefix + "link_proxy.ctrl", "tcp",
-                         u["link_proxy"]["ctrl"], False, 10)]
-        fc = u["fc"]
-        if fc:
-            # the SITL TCP serial decade as one block (pilot=+0, aux=+2,
-            # pose=+5, the rest reserved) - passed --base-port
-            reqs.append(req(prefix + "sitl", "tcp", fc["base_port"],
-                            False, 10, size=10))
-            reqs.append(req(prefix + "sitl.fcb", "tcp", fc["fcb_port"],
-                            False, 10))
-            for name, key in (("rcin", "rcin_port"),
-                              ("irlock", "irlock_port"),
-                              ("sim_in", "sim_in_port"),
-                              ("sim_out", "sim_out_port")):
-                reqs.append(req(prefix + "sitl." + name, "udp",
-                                fc[key], False, 10))
-            if fc.get("fcb_proxy"):
-                reqs += [req(prefix + "fcb_proxy", "tcp",
-                             fc["fcb_proxy"]["port"], False, 10),
-                         req(prefix + "fcb_proxy.ctrl", "tcp",
-                             fc["fcb_proxy"]["ctrl"], False, 10)]
+            reqs += [req(prefix + "link_proxy", "tcp"),
+                     req(prefix + "link_proxy.ctrl", "tcp")]
+        if u["fc"]:
+            # the SITL TCP serial decade as one block (pilot=+0,
+            # aux=+2, pose=+5, the rest reserved) - passed --base-port
+            reqs.append(req(prefix + "sitl", "tcp", size=10))
+            reqs.append(req(prefix + "sitl.fcb", "tcp"))
+            for name in ("rcin", "irlock", "sim_in", "sim_out"):
+                reqs.append(req(prefix + "sitl." + name, "udp"))
+            if u["fc"].get("fcb_proxy"):
+                reqs += [req(prefix + "fcb_proxy", "tcp"),
+                         req(prefix + "fcb_proxy.ctrl", "tcp")]
     return reqs
 
 
 def pinned_ports(sim):
     """The ports the resolved sim REQUIRES exactly (every pinned request
-    and every pinned block member) - what check_conflicts and the
-    slot-base pick must find free. prefer/free requests take whatever
-    the allocator hands them, so they never disqualify a base."""
+    and every pinned block member) - what check_conflicts must find
+    free. free/prefer requests take whatever the allocator hands them,
+    so they never conflict."""
     ports = set()
     for r in lease_requests(sim):
         if r.get("pin") is None:
             continue
         ports.update(range(r["pin"], r["pin"] + (r.get("size") or 1)))
     return ports
-
-
-def _shifted_pins(requests, dslot):
-    """The [(port, proto)] values the same sim would request `dslot`
-    slot_bases away: pins AND prefer hints both vote on a candidate
-    (SL-0076) - a base wins only when its whole legacy set is free, so
-    a shifted pick lands the sim on formula values again instead of
-    scattering it into the pool. Values leaving the port range don't
-    vote (they could never bind - the allocator pools them at commit).
-    Each request's `shift` moves it: unit ports 10 per slot,
-    slot-derived server-side ports 1, the relay range 40, explicit
-    yaml values 0."""
-    pins = []
-    for r in requests:
-        v = r.get("pin", r.get("prefer"))
-        if v is None:
-            continue
-        shift = r.get("shift", 0) * dslot
-        for i in range(r.get("size") or 1):
-            p = v + shift + i
-            if 1 <= p <= 65535:
-                pins.append((p, r["proto"]))
-    return pins
-
-
-def slot_base_pick(name, unit_names, candidates,
-                   exclusive=False, down_all=False):
-    """The `--slot-base any` / scenario free-base pick: `candidates`
-    yields (tag, [(port, proto)] request-value sets - pins and prefer
-    hints alike, SL-0076), evaluated lowest-first inside ONE locked
-    registry transaction - replacing the old 200-resolve + per-base
-    bind probe. Returns the first tag whose values are all free, else
-    None. 'Free' = no other sim's lease in any
-    worktree, no live sim's manifest port, no foreign bind; a same-named
-    live sim's ports are its own (`up` restarts it), an exclusive
-    bring-up also takes the ports of a live sim with clashing unit
-    names (the run downs it before the commit) and `down_all` - a
-    scenario's own pick - treats every live sim's ports the same way.
-    Slower than a bare probe but atomic: nobody can claim the base
-    between the scan and the commit."""
-    own, held, drop = set(), set(), set()
-    for n in live_sim_names():
-        m = load_manifest(n)
-        if not m:
-            continue
-        if down_all or n == name or (exclusive and
-                                     unit_names & {u["name"]
-                                                   for u in m["units"]}):
-            # restart or about to be downed: its ports are the pick's
-            # for the taking and its leases must not block
-            own |= used_ports(m)
-            if n != name:
-                drop.add(n)
-        else:
-            held |= used_ports(m)
-    # the bind probe goes through ports_held (the existing mockable
-    # seam); it probes both transports - a port held on either was
-    # disqualifying in the old scan too
-    return allocator().pick(
-        name, SIM_ROOT, candidates, own_ports=own, held_ports=held,
-        drop_sims=drop, probe=lambda p, _proto: not ports_held({p}))
 
 
 def _lease_conflict_msg(name, conflicts):
@@ -1984,8 +1864,8 @@ def _lease_conflict_msg(name, conflicts):
             + (" there first" if suffix else " first"))
     if foreign:
         parts.append(f"ports {foreign} are in use by something else - "
-                     "down what holds them (./sim status) or rerun with "
-                     "--shared --slot-base any to park on a free block")
+                     "down what holds them (./sim status), or change "
+                     "the yaml's explicit port")
     return "; ".join(parts)
 
 
@@ -2017,16 +1897,16 @@ def lease_commit(sim):
     transaction - the sim either owns its whole port set or errors and
     nothing is reserved (allocator AllocError -> the clash message) -
     then write the picked values back into the nested fields
-    (_apply_ports): a `prefer` pick may differ from the resolved hint,
-    and gen_unit/gen_server read those fields, so the launcher calls
-    this BEFORE generate(). The flat {name: port} map is kept on
-    sim["ports"] and lands in sim.json (the lease source of truth);
-    block members land there too (<name>.p<i>), so used_ports sees the
-    reserved runs whole. sim["hash"] deliberately does NOT change - it
-    covers the request set (SL-0076), which allocated values are no
-    part of. `moved_ports` records the prefer hints the allocator had
-    to move into the pool - the launcher prints one `moved` line per
-    entry."""
+    (_apply_ports): gen_unit/gen_server read those fields, so the
+    launcher calls this BEFORE generate(). The flat {name: port} map is
+    kept on sim["ports"] and lands in sim.json (the lease source of
+    truth); block members land there too (<name>.p<i>), so used_ports
+    sees the reserved runs whole. sim["hash"] deliberately does NOT
+    change - it covers the request set (SL-0076), which allocated
+    values are no part of. `moved_ports` records the hinted values
+    (pins, prefers, remembered ports - what the fields showed) the
+    allocator could not hand back - the launcher prints one `moved`
+    line per entry."""
     import port_allocation_management as pam
     reqs = lease_requests(sim)
     try:
@@ -2048,77 +1928,78 @@ def lease_commit(sim):
         for i in range(r.get("size") or 0):
             sim["ports"][f"{r['name']}.p{i}"] = \
                 {"port": ports[f"{r['name']}.p{i}"], "proto": r["proto"]}
+    hints = sim.get("port_hints") or {}
     sim["moved_ports"] = [
-        {"name": r["name"], "hint": r["prefer"], "port": ports[r["name"]]}
+        {"name": r["name"], "hint": hints[r["name"]],
+         "port": ports[r["name"]]}
         for r in reqs
-        if r.get("prefer") is not None and ports[r["name"]] != r["prefer"]]
+        if hints.get(r["name"]) is not None
+        and ports[r["name"]] != hints[r["name"]]]
     _apply_ports(sim, ports, reqs)
     return ports
 
 
 def _apply_ports(sim, ports, requests):
     """The flat lease map back into the nested fields generation reads -
-    every prefer pick may have moved into the pool, so every field a
-    generated config or launch script uses takes the allocated value:
-    server/auth/relay ports, render ports, the module s2s map, the
-    proxies, the SITL block base and the members it derives (pilot=+0,
-    aux=+2, pose=+5), serial1/fcb, the SITL UDP ports, and the stub
-    blocks world.prepare_sim stamped at resolve time. Lease names not
-    covered here are block members - the block's base carries their
-    value."""
+    every field a generated config or launch script uses takes the
+    allocated value: server/auth/relay ports, render ports, the module
+    s2s map, the proxies, the SITL block base and the members it derives
+    (pilot=+0, aux=+2, pose=+5), serial1/fcb, the SITL UDP ports, and
+    the stub blocks world.prepare_sim stamped at resolve time. Lease
+    names not covered here are block members - the block's base carries
+    their value. A name missing from `ports` leaves its field None
+    (the map _apply_hints builds leaves unknown values out)."""
     srv = sim["server"]
     if srv["type"] == "external":
-        srv["control_port"] = ports["bridge.ctrl"]
-    elif srv["type"] == "fake":
-        # the fake binds wss + wss+1 - the 2-port block lease
-        srv["port"] = ports["server.fake"]
-        srv["control_port"] = ports["server.fake.p1"]
+        srv["control_port"] = ports.get("bridge.ctrl")
     else:
-        srv["port"] = ports["server.wss"]
-        srv["control_port"] = ports["server.ctrl"]
-        if srv["auth"]:
-            srv["auth_port"] = ports["auth.https"]
-            srv["auth_s2s_port"] = ports["auth.s2s"]
+        srv["port"] = ports.get("server.wss")
+        srv["control_port"] = ports.get("server.ctrl")
+        if srv["type"] == "real" and srv["auth"]:
+            srv["auth_port"] = ports.get("auth.https")
+            srv["auth_s2s_port"] = ports.get("auth.s2s")
         ur = srv.get("udp_relay")
         if ur:
-            ur["port"] = ports[UDP_RELAY_LEASE + ".wss"]
+            ur["port"] = ports.get(UDP_RELAY_LEASE + ".wss")
             size = next(r["size"] for r in requests
                         if r["name"] == UDP_RELAY_LEASE + ".range")
-            lo = ports[UDP_RELAY_LEASE + ".range"]
-            ur["udp_port_range"] = [int(lo), int(lo) + size - 1]
+            lo = ports.get(UDP_RELAY_LEASE + ".range")
+            ur["udp_port_range"] = \
+                [int(lo), int(lo) + size - 1] if lo is not None else None
     if sim.get("render"):
         r = sim["render"]
         for role, key in (("stream", "stream_port"), ("mav", "mav_port"),
                           ("mav_ws", "mav_ws_port"), ("web", "web_port"),
                           ("sink", "sink_port")):
-            r[key] = ports[f"render.{role}"]
+            r[key] = ports.get(f"render.{role}")
     for u in sim["units"]:
         prefix = f"unit.{u['name']}."
         for mod in u["ports"]:
-            u["ports"][mod] = ports[prefix + mod]
+            u["ports"][mod] = ports.get(prefix + mod)
         if u.get("link_proxy"):
-            u["link_proxy"]["port"] = ports[prefix + "link_proxy"]
-            u["link_proxy"]["ctrl"] = ports[prefix + "link_proxy.ctrl"]
+            u["link_proxy"]["port"] = ports.get(prefix + "link_proxy")
+            u["link_proxy"]["ctrl"] = ports.get(prefix + "link_proxy.ctrl")
         fc = u["fc"]
         if fc:
-            base = ports[prefix + "sitl"]
+            base = ports.get(prefix + "sitl")
             fc["base_port"] = fc["pilot_port"] = base     # serial0: +0
-            fc["aux_port"] = base + 2                     # serial2: +2
-            fc["fcb_port"] = ports[prefix + "sitl.fcb"]
-            if fc.get("pose_port"):
-                fc["pose_port"] = base + 5                # serial5: +5
+            fc["aux_port"] = base + 2 if base is not None else None
+            fc["fcb_port"] = ports.get(prefix + "sitl.fcb")
+            if fc.get("pose_serial"):
+                fc["pose_port"] = base + 5 if base is not None else None
             for name, key in (("rcin", "rcin_port"),
                               ("irlock", "irlock_port"),
                               ("sim_in", "sim_in_port"),
                               ("sim_out", "sim_out_port")):
-                fc[key] = ports[prefix + "sitl." + name]
-            if fc.get("mav_port"):
-                fc["mav_port"] = ports["render.mav"]
+                fc[key] = ports.get(prefix + "sitl." + name)
+            if fc.get("mav_port") is not None or "render.mav" in ports:
+                fc["mav_port"] = ports.get("render.mav")
             if fc.get("fcb_proxy"):
-                fc["fcb_proxy"]["port"] = ports[prefix + "fcb_proxy"]
-                fc["fcb_proxy"]["ctrl"] = ports[prefix + "fcb_proxy.ctrl"]
+                fc["fcb_proxy"]["port"] = ports.get(prefix + "fcb_proxy")
+                fc["fcb_proxy"]["ctrl"] = \
+                    ports.get(prefix + "fcb_proxy.ctrl")
             # the world stubs' stamped pose feed follows the block -
-            # _expand_unit stamped the formula hint at resolve time
+            # _expand_unit marked the want (pose_serial) at resolve time
             for m in u["modules"]:
                 stub = ((u.get("config") or {}).get(m) or {}).get("stub")
                 if isinstance(stub, dict) and "pose_port" in stub:
@@ -2652,10 +2533,12 @@ def gen_server(sim):
             extra += " --noclock " + ",".join(srv["noclock"])
         write_text(os.path.join(sdir, "launch.fake_server.sh"),
                    "#!/bin/bash\necho $$ > '%s'\nexec python3 -u '%s' --port %d "
-                   "--seed %d --cert '%s' --key '%s' --sim '%s'%s --pretty\n"
+                   "--ctrl-port %d --seed %d --cert '%s' --key '%s' "
+                   "--sim '%s'%s --pretty\n"
                    % (pid_path(sim["name"], "server", "fake_server"),
                       os.path.join(ENGINE_DIR, "fake_fleet_server.py"),
-                      srv["port"], srv["seed"], cert_path(sim["name"]),
+                      srv["port"], srv["control_port"], srv["seed"],
+                      cert_path(sim["name"]),
                       key_path(sim["name"]), sim["name"], extra), 0o755)
         return ["fake_server"]
 
@@ -2688,7 +2571,9 @@ def gen_server(sim):
         "public_host": "127.0.0.1",
         "local_server_enabled": not srv["auth"],
         "s2s_ws_target_ip": "127.0.0.1",
-        "s2s_ws_target_port": str(srv["auth_s2s_port"]),
+        # no authenticator -> no auth.s2s lease: 0 keeps the target a
+        # valid URL that refuses, like the pre-allocator dead port did
+        "s2s_ws_target_port": str(srv["auth_s2s_port"] or 0),
         "ssl_key_file": os.path.join(ssl_dir, "ssl_airgap/domain.key"),
         "ssl_cert_file": os.path.join(ssl_dir, "ssl_airgap/domain.crt"),
         "ca_cert_path": os.path.join(ssl_dir, "ssl_airgap/root.crt"),

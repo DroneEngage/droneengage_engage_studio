@@ -290,20 +290,15 @@ def gather(sim=None):
                    "check out Mavlink3DMap + npm install, set "
                    "MAVLINK3DMAP_DIR in sim.local.env")
 
-    # ports: the sim's own set, else the default server pair
+    # ports: with a sim loaded, its resolved set (yaml pins + hinted
+    # values); without one, the allocator's own pool health is the
+    # registry rows below - there is no formula default to probe
+    # (SL-0077). `./sim ports` shows what is actually leased.
     if sim:
         held = simlib.ports_held(simlib.used_ports(sim))
         d.check("ports", not held,
                 f"{len(simlib.used_ports(sim))} ports",
-                f"ports {held} already bound - ./sim status, down the "
-                "holder, or --slot-base")
-    else:
-        held = simlib.ports_held({simlib.SERVER_PORT,
-                                  simlib.SERVER_PORT + 1})
-        d.check("ports", not held,
-                f"default server {simlib.SERVER_PORT}/"
-                f"{simlib.SERVER_PORT + 1}",
-                f"ports {held} already bound - ./sim status or down "
+                f"ports {held} already bound - ./sim ports, or down "
                 "the holder")
 
     # the machine-wide port-lease registry (docs/port_allocation.md):
@@ -333,8 +328,6 @@ def _load_target(path):
     raw = simlib.load_yaml(path) or {}
     import scenario
     if isinstance(raw, dict) and not scenario.is_sim_spec(raw):
-        # probe_ports like `./sim run`: the run picks a free slot, so
-        # the ports row reports that slot, not the default one
         return simlib.load_sim(scenario.load_scenario(path)["sim"])
     return simlib.load_sim(path)
 

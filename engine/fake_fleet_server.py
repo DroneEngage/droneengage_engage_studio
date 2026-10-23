@@ -46,7 +46,7 @@ Seeding makes the drop decision for the k-th frame of a direction
 reproducible; which frame is k-th still depends on traffic timing, so two
 runs with the same seed are statistically alike, not frame-identical.
 
-Control port (TCP, port+1), newline-delimited:
+Control port (TCP, --ctrl-port; leased server.ctrl), newline-delimited:
 
     list                              connected parties
     stats                             per-link model counters
@@ -82,8 +82,8 @@ Control port (TCP, port+1), newline-delimited:
                                       the fleet clock is the SERVER's clock -
                                       a wrong system clock must not matter)
 
-  Usage: python3 fake_fleet_server.py --port 60008 [--seed 1337] [--pretty]
-         [--clock-offset MS]
+  Usage: python3 fake_fleet_server.py --port 60008 --ctrl-port 60009
+         [--seed 1337] [--pretty] [--clock-offset MS]
          echo 'link fleet2 loss 30' | nc 127.0.0.1 60009
 """
 
@@ -113,7 +113,8 @@ FULL_PERM = fleet_lib.FULL_PERM
 
 PRETTY = False
 SEED = 1337
-PORT = fleet_lib.SERVER_PORT
+PORT = 62008                      # default for manual runs; gen_server
+                                  # always passes the leased --port
 CLOCK_OFFSET_MS = 0                 # P4A-07: deliberate server-clock skew
 NOCLOCK = set()                     # parties whose frames carry no "ts"
 SIM_NAME = None                     # var/run/<name>/ this server belongs to
@@ -612,7 +613,7 @@ async def control_reader(reader, writer):
         print(f"[ctrl] handler error: {e!r}", flush=True)
 
 
-async def serve(port, cert, key):
+async def serve(port, ctrl_port, cert, key):
     import websockets
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert, key)
@@ -621,8 +622,8 @@ async def serve(port, cert, key):
         # same 64 KiB readline cap as gcs_bridge: `send` lines carry
         # whole packages, give them real headroom
         ctl = await asyncio.start_server(control_reader, "127.0.0.1",
-                                         port + 1, limit=16 << 20)
-        print(f"[server] wss on 127.0.0.1:{port}, control on {port + 1}, "
+                                         ctrl_port, limit=16 << 20)
+        print(f"[server] wss on 127.0.0.1:{port}, control on {ctrl_port}, "
               f"seed={SEED}", flush=True)
         async with ctl:
             await asyncio.Future()          # run forever
@@ -631,7 +632,10 @@ async def serve(port, cert, key):
 def main():
     global PRETTY, SEED, PORT, CLOCK_OFFSET_MS, NOCLOCK, SIM_NAME
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=fleet_lib.SERVER_PORT)
+    ap.add_argument("--port", type=int, default=PORT)
+    ap.add_argument("--ctrl-port", type=int, required=True,
+                    help="local control listener - gen_server passes the "
+                         "leased server.ctrl value")
     ap.add_argument("--sim", default=None,
                     help="sim name - its var/run/<name>/sim.json is the unit list")
     ap.add_argument("--cert", default=None)
@@ -650,7 +654,7 @@ def main():
     NOCLOCK = {p for p in args.noclock.split(",") if p}
     cert = args.cert or fleet_lib.cert_path(args.sim or _single())
     key = args.key or fleet_lib.key_path(args.sim or _single())
-    asyncio.run(serve(args.port, cert, key))
+    asyncio.run(serve(args.port, args.ctrl_port, cert, key))
 
 
 if __name__ == "__main__":

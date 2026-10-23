@@ -242,6 +242,29 @@ class T(unittest.TestCase):
             tx.alloc("unit.c1.bus", proto="udp")
             self.assertEqual(tx.commit()["unit.c1.bus"], p)
 
+    def test_release_remembers_after_sim_death(self):
+        """`sim down` order: kill the sim's processes first, THEN call
+        release. By then the lease already looks stale (dead holder, no
+        sim pids) - release must still remove it AND remember its port,
+        not let the sweep reclaim it silently."""
+        a, wt = _mk()
+        proc = _fake_proc(4242, start=99)          # holder start
+        _write_reg(a.registry,
+                   [_lease(port=30100, name="unit.c1.bus", proto="udp",
+                           worktree=wt,
+                           holder={"pid": 4242, "start": 999})])  # dead
+        a2 = pam.Allocator(registry=a.registry, last=a.last_path,
+                           pool="30000-30099", deny="30050",
+                           proc_root=proc)
+        gone = a2.release("s1", wt)
+        self.assertEqual([l["port"] for l in gone], [30100])
+        self.assertEqual(a2.leases(), [])
+        # remembered despite the dead holder: a same-name request
+        # re-leases the released port, not a pool pick
+        with a2.transaction("s1", wt) as tx:
+            tx.alloc("unit.c1.bus", proto="udp")
+            self.assertEqual(tx.commit()["unit.c1.bus"], 30100)
+
     def test_prefer_skips_foreign_listener(self):
         """a foreign bind on the prefer hint is skipped, not an error:
         the lease lands on the next takeable port (the pool) - and the
@@ -266,47 +289,33 @@ class T(unittest.TestCase):
         finally:
             s2.close()
 
-    def test_pick_lowest_free_base(self):
-        """first candidate whose pinned set is free wins; held ports and
-        other sims' leases disqualify a base, foreign binds too"""
-        a, wt = _mk()
-        wt2 = tempfile.mkdtemp(prefix="pam_wt2_")
-        # another worktree's lease blocks a pin of base 1
-        with a.transaction("other", wt2) as tx:
-            tx.alloc("x", proto="tcp", pin=30101)
-            tx.commit()
-        s = _bind(30202)                     # foreign listener on base 2
-        try:
-            cands = [(1, [(30101, "tcp")]),
-                     (2, [(30202, "tcp")]),
-                     (3, [(30303, "tcp")])]
-            self.assertEqual(a.pick("s1", wt, iter(cands)), 3)
-        finally:
-            s.close()
-        # held_ports (a live manifest's port set) disqualifies too
-        cands = [(1, [(30101, "tcp")]), (4, [(30404, "tcp")])]
-        self.assertEqual(a.pick("s1", wt, iter(cands),
-                                held_ports={30404}), None)
-        self.assertEqual(a.pick("s1", wt, iter(cands)), 4)
-
-    def test_pick_own_and_dropped_leases_do_not_block(self):
-        """the same-named sim's leases never block (up restarts it) and
-        drop_sims' leases do not either (an exclusive run downs them)"""
+    def test_hints_report_live_and_remembered_ports(self):
+        """hints() is the display-side guess at what a request would
+        land (./sim show, doctor, simlib._apply_hints): a live same-sim
+        lease wins, a block's name maps to its base, and a released
+        name answers from the remembered-port file. Another sim's
+        leases never leak in, and a stale lease is skipped."""
         a, wt = _mk()
         with a.transaction("s1", wt) as tx:
-            tx.alloc("p1", proto="tcp", pin=30110)
+            tx.alloc("server.wss", proto="tcp", pin=30010)
+            tx.alloc_block("unit.c1.sitl", 4, proto="tcp", pin=30060)
             tx.commit()
-        with a.transaction("prev", wt) as tx:
-            tx.alloc("p2", proto="tcp", pin=30111)
-            tx.commit()
-        cands = [(1, [(30110, "tcp"), (30111, "tcp")])]
-        # s1 restarting: its own lease is free to retake, prev's lease
-        # still blocks unless it is being downed (drop_sims)
-        self.assertIsNone(a.pick("s1", wt, iter(cands)))
-        self.assertEqual(a.pick("s1", wt, iter(cands),
-                              drop_sims={"prev"}), 1)
-        # a different sim is refused either way
-        self.assertIsNone(a.pick("s2", wt, iter(cands)))
+        self.assertEqual(a.hints("s1", wt),
+                         {"server.wss": 30010, "unit.c1.sitl": 30060})
+        # another sim sees nothing of s1's leases
+        self.assertEqual(a.hints("s2", wt), {})
+        # released: the remembered port answers the same name
+        a.release("s1", wt)
+        self.assertEqual(a.hints("s1", wt)["server.wss"], 30010)
+
+    def test_hints_skip_stale_lease(self):
+        """a lease whose worktree is gone is stale - hints() ignores it
+        instead of predicting a port the commit would reclaim"""
+        a, wt = _mk()
+        _write_reg(a.registry,
+                   [_lease(port=30100, worktree="/definitely/not/here",
+                           holder={"pid": 4242, "start": 99})])
+        self.assertEqual(a.hints("s1", wt), {})
 
     def test_check_dry_run_writes_nothing(self):
         a, wt = _mk()

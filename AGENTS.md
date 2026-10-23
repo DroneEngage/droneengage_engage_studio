@@ -113,17 +113,15 @@ is now the only simulation/testing location.
   stops one sim, `./sim down` all of them. `./sim run` is exclusive - a
   test downs every other sim first. `SIM_SHARED=1 ./sim run ...` keeps
   it additive (same rules as `up`) when other sessions share the machine.
-  **Agents: never down the developer's sims to run a test.** If a port or
-  name clash (or a live sim you did not start) blocks the run, do NOT stop
-  and ask, and do NOT `sim down` it - rerun additively on a free port
-  block: `./sim run <test> --shared --slot-base any`. `--slot-base any`
-  re-resolves the sim on the lowest slot whose whole port set (units +
-  spawned server/auth) is free vs live manifests and bound host ports;
-  unit names may repeat because each sim's own server has a private party
-  registry. Only `server: {type: external}` tests (shared registry) and
-  rendered-camera fleets (machine-global v4l2 labels) cannot share the
-  machine - ask then. A shifted slot changes the sim hash, so the run does
-  a fresh `up` (one SITL warm-up) and never reuses the warm fleet.
+  **Agents: never down the developer's sims to run a test.** If a name
+  clash (or a live sim you did not start) blocks the run, do NOT stop
+  and ask, and do NOT `sim down` it - rerun additively:
+  `./sim run <test> --shared`. Ports cannot clash - every port is a
+  machine-wide allocator lease placed inside the `up` transaction, and
+  unit names may repeat because each sim's own server has a private
+  party registry. Only `server: {type: external}` tests (shared
+  registry) and rendered-camera fleets (machine-global v4l2 labels)
+  cannot share the machine - ask then.
 - `./sim ctl -s <sim>` pins a command to one sim; without it commands
   that need a single sim use the only live one, and unit lookups search
   live sims first.
@@ -165,21 +163,24 @@ Machine paths come only from `simlib.setting()`: environment variable >
 
 ## Ports
 
-Slot `k = slot_base (10) + unit index` is the fleet's IDENTITY (SITL
-`-I k`, sysid `k`); it is no longer what ports are bound. The legacy
-formulas - SITL block `5760+10k..5769+10k`, fcb `7660+10k`, RC-in /
-sim out / sim in / irlock `5501 / 9002 / 9003 / 9005 + 10k`, fcb proxy
-`7760`/`7860+10k` (`fcb_proxy: true`, SL-0008), module s2s `port_base +
-10k` (de_comm 62000, de_mavlink 63000, de_camera 64000, de_tracker
-65000), link proxy `61500`/`61501+10k` (SL-0009), server wss 62008,
-control 62009, authenticator +10/+11 - are allocator **prefer hints**:
-free they win, held or out-of-range the port moves into the free pool
-and `sim up` prints `moved <name> <hint> -> <port>`. SITL launches with
+Slot `k = slot_base (10) + unit index` is the fleet's IDENTITY only
+(SITL `-I k`, sysid `k`); no port derives from it. **Every** local port
+a sim binds is a named request to the machine-wide allocator - there
+are no formulas left: SITL binds a leased 10-port block (serial0 pilot
++0, serial2 aux +2, serial5 pose +5) plus separate leases for fcb
+(serial1), RC-in, sim-link in/out and irlock; the fcb proxy
+(`fcb_proxy: true`, SL-0008), link proxy (SL-0009), udp_proxy
+(SL-0010), module s2s ports (de_comm, de_mavlink, ...), server wss and
+control, authenticator https/s2s, the relay wss and its UDP window,
+and the five render ports are each their own lease. Re-run stability
+comes from the allocator's remembered ports (it tries the last run's
+port first); the only static preferences are the viewer's own defaults
+(render.mav_ws 8811, render.web 8080). SITL launches with
 `--base-port/--rc-in-port/--sim-port-*/--irlock-port` before `-I`, so
 every socket is the leased value. The committed map is
-`var/run/<sim>/sim.json` `ports` - read it (or `./sim ctl status`),
-never the formulas, for what a live sim actually bound. yaml-explicit
-ports and `--slot-base <N>` still pin - exact or fail.
+`var/run/<sim>/sim.json` `ports` - read it (or `./sim ports` /
+`./sim ctl status`) for what a live sim actually bound. Only
+yaml-explicit ports pin - exact or fail.
 
 **Port leases (allocator):** `engine/port_allocation_management.py` keeps
 the machine-wide registry every worktree shares -
@@ -210,7 +211,6 @@ extra SITL params in `blocks/<name>/sitl.parm`. Check the result with
 
 **New DE module → a catalog entry (no code)** in `modules/catalog.yaml`:
 `repo`, `dir_env`, `bin` (`bin_env` if built elsewhere), `template`,
-`port_base` (pick an unused range; slot ports must stay < 65535),
 `start_delay`, `needs_fc`, `local` (`arg: -b` only if the binary's getopt
 accepts it, otherwise `file:` in the cwd), `set`, `wire` (placeholders
 `{fcb_port} {pilot_port} {sysid} {comm_port} {port} {unit}`), and `ready_re`

@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
-"""tools/golden_simjson.py - golden-master check for sim.json generation
-(phase 0 of docs/port_allocation.md): record every generatable sim's
-manifest once, then prove a re-run produces the same sim.json and
-sim_hash.
+"""tools/golden_requests.py - golden-master check for the port-request
+list each sim produces (phase 3 of docs/port_allocation.md): every port
+a sim binds is a named allocator request, so the REQUEST LIST - names,
+protocols, kinds, pins, prefer hints, block sizes - is the stable,
+machine-independent contract a yaml's port behaviour boils down to.
+This replaces golden_simjson.py: allocated port values are deliberately
+NOT recorded (they are per-machine allocator picks).
 
-  python3 tools/golden_simjson.py --write <dir>   record a baseline
-  python3 tools/golden_simjson.py --check <dir>   re-generate and diff;
-                                                  exit 1 on any diff
-  --only <substr>                limit to files whose repo-relative
-                                 path contains it
+  python3 tools/golden_requests.py --write [file]   record a baseline
+                                                    (default:
+                                                    tools/golden_requests.json,
+                                                    checked in)
+  python3 tools/golden_requests.py --check [file]   re-resolve and diff;
+                                                    exit 1 on any diff
+  --only <substr>                    limit to files whose repo-relative
+                                     path contains it
 
 Enumerates sims/*.yaml (top level only - overlays/ are fragments),
-scenarios/**/*.yaml and tests/**/*.yaml. Each loads and generates the
-way ./sim does, into <dir>/run_scratch (SIM_RUN_DIR/SIM_RESULTS_DIR are
-bound at simlib import, so they are set before it) - never the repo's
-real var/run. <dir>/golden.json holds
-{relpath: {ok, error, sim_hash, sim_json}}; `owner` (pid/sid/t_ms) is
-dropped and a repo-local sim_file made relative before storing, so the
-baseline survives a moved checkout and a new process. A sim that cannot
-generate here (a missing module repo checkout) records its error as the
-entry - the check compares the failure too.
+scenarios/**/*.yaml and tests/**/*.yaml. Each resolves the way ./sim
+does - a scenario through load_scenario, a sim file straight - then
+simlib.lease_requests gives the request list; nothing is generated or
+leased. <file> holds {relpath: {ok, error, sim_hash, requests}} sorted;
+a sim that cannot resolve here (a missing module catalog entry, a bad
+unit name) records its error as the entry - the check compares the
+failure too.
 """
 
 import difflib
@@ -29,22 +33,7 @@ import os
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-
-def _baseline_arg(argv):
-    """The <dir> after --write/--check, before real parsing - the scratch
-    env vars must be set before simlib binds RUN_DIR/RESULTS_DIR."""
-    for i, a in enumerate(argv):
-        if a in ("--write", "--check") and i + 1 < len(argv):
-            return os.path.abspath(argv[i + 1])
-    return None
-
-
-_scratch = _baseline_arg(sys.argv[1:])
-if _scratch:
-    os.environ["SIM_RUN_DIR"] = os.path.join(_scratch, "run_scratch")
-    os.environ["SIM_RESULTS_DIR"] = os.path.join(_scratch,
-                                               "results_scratch")
+BASELINE = os.path.join(REPO, "tools", "golden_requests.json")
 
 # bytecode under var/pycache from the first import on (same preamble as
 # ./sim - else __pycache__ dirs land next to the engine sources)
@@ -53,22 +42,18 @@ sys.pycache_prefix = os.environ.setdefault(
     os.path.join(os.environ.get("SIM_VAR_DIR") or os.path.join(REPO, "var"),
                  "pycache"))
 os.environ.setdefault("SIM_ROOT", REPO)
-# "any" would make load_sim probe live sims + host ports - the golden
-# must resolve the same slot every run
+# "any" would only change identity - drop overrides so the golden
+# resolves the spec's own base every run
 os.environ.pop("SIM_SLOT_BASE_OVERRIDE", None)
+os.environ.pop("SIM_WITH", None)
 
 sys.path.insert(0, os.path.join(REPO, "engine"))
 import simlib                        # noqa: E402
 import scenario as scenario_mod      # noqa: E402
 
-# the golden covers manifest content, not whether this machine has every
-# module binary (module templates still must exist - a missing repo
-# checkout raises into a failure entry below)
-simlib.check_binaries = lambda sim: None
-
 
 def _enum():
-    """Every generatable yaml as (repo-relative path, kind): 'sim' for
+    """Every resolvable yaml as (repo-relative path, kind): 'sim' for
     the fleet files sims/*.yaml, 'scenario' for de.scenario/1 files."""
     out = []
     for f in sorted(glob.glob(os.path.join(REPO, "sims", "*.yaml"))):
@@ -80,44 +65,43 @@ def _enum():
     return out
 
 
-def _rel_repo(p):
-    """sim_file inside the repo -> relative (the baseline must not pin
-    the checkout's absolute path); anything else stays as generated."""
-    if not isinstance(p, str) or not os.path.isabs(p):
-        return p
-    rp = os.path.relpath(p, REPO)
-    return p if rp.startswith("..") else rp
+def _requests(sim):
+    """lease_requests normalized for the golden: sorted, only the fields
+    that define the request (name/proto/kind/pin/prefer/size) - no
+    allocator state, no remembered ports."""
+    rows = []
+    for r in simlib.lease_requests(sim):
+        row = {"name": r["name"], "proto": r["proto"], "kind": r["kind"]}
+        for k in ("pin", "prefer", "size"):
+            if r.get(k) is not None:
+                row[k] = r[k]
+        rows.append(row)
+    rows.sort(key=lambda r: r["name"])
+    return rows
 
 
 def _produce(rel, kind):
-    """Load + generate one yaml -> {ok, error, sim_hash, sim_json}.
-    sims/*.yaml generate straight from the file; a scenario resolves
-    through load_scenario (probe_ports=False keeps the seed's slot pick
-    deterministic - no host probing) and generates its inline sim dict,
-    labelled "inline" like a real `run` does."""
+    """Load one yaml -> {ok, error, sim_hash, requests}. sims/*.yaml
+    resolve straight from the file; a scenario resolves through
+    load_scenario and resolves its inline sim dict, labelled "inline"
+    like a real `run` does."""
     abspath = os.path.join(REPO, rel)
     try:
         if kind == "sim":
             sim = simlib.load_sim(abspath)
-            simlib.generate(sim, abspath)
         else:
             scn = scenario_mod.load_scenario(abspath, probe_ports=False)
             sim = simlib.load_sim(scn["sim"],
                                   base_dir=os.path.dirname(abspath))
-            simlib.generate(sim, "inline")
-        with open(simlib.manifest_path(sim["name"])) as fh:
-            m = json.load(fh)
     except (SystemExit, Exception) as e:
         return {"ok": False, "error": f"{type(e).__name__}: {e}",
-                "sim_hash": None, "sim_json": None}
-    m.pop("owner", None)            # pid/sid/t_ms - never reproducible
-    m["sim_file"] = _rel_repo(m.get("sim_file"))
+                "sim_hash": None, "requests": None}
     return {"ok": True, "error": None,
-            "sim_hash": m.get("sim_hash"), "sim_json": m}
+            "sim_hash": sim["hash"], "requests": _requests(sim)}
 
 
 def _diff(want, cur, limit=60):
-    """Readable unified diff of two normalized manifests; both sides
+    """Readable unified diff of two normalized entries; both sides
     dumped sort-keyed so dict order never diffs."""
     ta = json.dumps(want, sort_keys=True, indent=1).splitlines()
     tb = json.dumps(cur, sort_keys=True, indent=1).splitlines()
@@ -129,7 +113,7 @@ def _diff(want, cur, limit=60):
 
 def _verdict(want, cur):
     """same | CHANGED | newly-failing | newly-passing for one baseline
-    entry vs its re-generated entry (a matching failure is 'same')."""
+    entry vs its re-resolved entry (a matching failure is 'same')."""
     if want["ok"] and not cur["ok"]:
         print(f"      error: {cur['error']}")
         return "newly-failing"
@@ -142,17 +126,19 @@ def _verdict(want, cur):
         print(f"      current error:  {cur['error']}")
         return "CHANGED"
     if want["sim_hash"] == cur["sim_hash"] \
-            and want["sim_json"] == cur["sim_json"]:
+            and want["requests"] == cur["requests"]:
         return "same"
     if want["sim_hash"] != cur["sim_hash"]:
         print(f"      sim_hash: {want['sim_hash']} -> {cur['sim_hash']}")
-    for ln in _diff(want["sim_json"], cur["sim_json"]):
+    for ln in _diff({"sim_hash": want["sim_hash"],
+                     "requests": want["requests"]},
+                    {"sim_hash": cur["sim_hash"],
+                     "requests": cur["requests"]}):
         print("      " + ln)
     return "CHANGED"
 
 
-def _write(bdir, only):
-    os.makedirs(bdir, exist_ok=True)
+def _write(path, only):
     out, nfail = {}, 0
     for rel, kind in _enum():
         if only and only not in rel:
@@ -164,15 +150,14 @@ def _write(bdir, only):
         else:
             nfail += 1
             print(f"FAIL  {rel}: {e['error']}")
-    path = os.path.join(bdir, "golden.json")
     with open(path, "w") as fh:
         json.dump(out, fh, sort_keys=True, indent=1)
+        fh.write("\n")
     print(f"{len(out)} entries ({nfail} failures) -> {path}")
     return 0
 
 
-def _check(bdir, only):
-    path = os.path.join(bdir, "golden.json")
+def _check(path, only):
     if not os.path.isfile(path):
         sys.exit(f"no baseline at {path} - run --write first")
     with open(path) as fh:
@@ -204,12 +189,17 @@ def main(argv):
     i = 0
     while i < len(argv):
         a = argv[i]
-        if a in ("--write", "--check") and i + 1 < len(argv):
-            if a == "--write":
-                write = argv[i + 1]
+        if a in ("--write", "--check"):
+            if i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+                path = os.path.abspath(argv[i + 1])
+                i += 2
             else:
-                check = argv[i + 1]
-            i += 2
+                path = BASELINE
+                i += 1
+            if a == "--write":
+                write = path
+            else:
+                check = path
         elif a == "--only" and i + 1 < len(argv):
             only = argv[i + 1]
             i += 2
@@ -218,8 +208,8 @@ def main(argv):
     if (write is None) == (check is None):
         sys.exit(__doc__)
     if write is not None:
-        return _write(os.path.abspath(write), only)
-    return _check(os.path.abspath(check), only)
+        return _write(write, only)
+    return _check(check, only)
 
 
 if __name__ == "__main__":

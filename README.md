@@ -254,9 +254,10 @@ every other sim first, because a test needs a clean machine to be
 meaningful. On a shared box pass `--shared` (or export `SIM_SHARED=1`)
 and even scenario runs stay additive; exclusive mode is the CI posture.
 
-`./sim up` is additive: it only restarts the same-named sim and refuses
-to start one whose ports collide with a live sim (pick a different
-`slot_base`, or let `--slot-base any` choose). Unit names may repeat
+`./sim up` is additive: it only restarts the same-named sim. Ports
+cannot collide - every port a sim binds is leased from the machine-wide
+allocator inside the `up` transaction, so two fleets simply get
+different leases. Unit names may repeat
 across parallel sims - a spawned fake/real server gives each fleet its
 own party registry - except where the fleets could actually meet or
 share devices: on a `server: {type: external}` stack (a unit name is the
@@ -280,24 +281,23 @@ sims is refused as ambiguous, pin it with `-s`. `sim run` stays exclusive for te
 owns the machine and downs the other sims (a bare `sims/*.yaml`
 `run`/`view` is additive, like `up`). `--shared` applies the additive
 rules to a `run`/`view`/`suite` instead. `--slot-base <N>` overrides
-the slot the fleet identity derives from for that invocation (wins over
-the sim's `slot_base:` and `SIM_SLOT_BASE`) and pins every port to its
-legacy formula - exact or fail, the pre-allocator behaviour.
-`--slot-base any` picks the lowest base whose whole legacy port set is
-free - both against live sims and ports already bound on the host - and
-falls back to the sim's own base when none is, letting the allocator
-move held ports into the pool. Allocated port values are not part of
-the sim hash, so a moved or shifted fleet still warm-reuses - `run`
-does not pay the ~1-2 min SITL warm-up for a port move alone.
+the slot the fleet identity derives from for that invocation (SITL
+`-I`/sysid and unit positioning; wins over the sim's `slot_base:` and
+`SIM_SLOT_BASE`). No port derives from it - every port is an allocator
+lease (`--slot-base any` is accepted as "I don't pin the identity"
+and means the same as a bare `slot_base:`). Allocated port values are
+not part of the sim hash, so a moved or shifted fleet still
+warm-reuses - `run` does not pay the ~1-2 min SITL warm-up for a port
+move alone.
 
 ```bash
-./sim run tests/smoke_copters.yaml --shared --slot-base 90   # next to a live sim
-./sim run tests/smoke_copters.yaml --shared --slot-base any  # picks one itself
+./sim run tests/smoke_copters.yaml --shared                    # next to a live sim
+./sim run tests/smoke_copters.yaml --shared --slot-base 90     # distinct SITL identity
 ```
 
 `sims/quadcopter.yaml`, `sims/rover.yaml` and `sims/plane.yaml` are
-ready-made single-box personal sims for an external server, on disjoint
-`slot_base`s (50/60/70).
+ready-made single-box personal sims for an external server, on distinct
+`slot_base`s (50/60/70) so their SITL identities/sysids stay apart.
 
 ### `./sim studio` - the human session
 
@@ -333,33 +333,41 @@ online, record file - and it parks until Ctrl-C.
 
 ### Ports (slot k = slot_base + unit index; slot_base defaults to 10)
 
-These are the **preferred** values - what a sim gets when they are free
-(the usual case on a quiet machine). When a preferred port is held, the
-allocator moves it into the free pool and `sim up` prints
-`moved <name> <old> -> <new>`; read `var/run/<sim>/sim.json`'s `ports`
-map or `./sim ctl status` for the values a running sim actually bound.
+**Every** local port a sim binds is a named request to the machine-wide
+allocator - there are no formulas left. The table lists the lease
+names; the values come from the pool, usually the port the same sim
+held last run (the allocator remembers released ports and tries them
+first). Read `var/run/<sim>/sim.json`'s `ports` map, `./sim ports` or
+`./sim ctl status` for the values a running sim actually bound; `sim
+up` prints `moved <name> <old> -> <new>` when a hinted value could not
+land.
 
-| use | preferred port |
+| use | lease name (proto) |
 |---|---|
-| SITL serials (10-port block: serial0 pilot +0, serial2 aux +2, serial5 pose +5) | 5760+10k .. 5769+10k |
-| de_mavlink -> SITL (serial1) | 7660+10k, sysid k |
-| SITL RC-in / sim out / sim in / irlock (UDP) | 5501 / 9002 / 9003 / 9005 + 10k |
-| fcb proxy listen / control (`fcb_proxy: true`) | 7760+10k / 7860+10k |
-| de_comm / de_mavlink / de_camera s2s | 62000 / 63000 / 64000 + 10k |
-| link proxy relay / control (`link_proxy`) | 61500 / 61501 + 10k |
-| comm server wss / control | 62008 / 62009 (`server.port`) |
-| authenticator https / s2s | port+10 / port+11 |
+| comm server wss / control | `server.wss` / `server.ctrl` (tcp) |
+| authenticator https / s2s | `auth.https` / `auth.s2s` (tcp) |
+| udp relay wss / UDP pair window | `udp_relay.relay.wss` (tcp) / `.range` (udp block) |
+| render stream / mav / mav-ws / web / sink | `render.stream` / `.mav` / `.mav_ws` / `.web` / `.sink` (tcp) |
+| unit s2s (`de_comm`, `de_mavlink`, `de_camera`, stubs, ...) | `unit.<u>.<module>` (udp) |
+| unit link proxy listen / control (`link_proxy`) | `unit.<u>.link_proxy` / `.link_proxy.ctrl` (tcp) |
+| unit SITL serials (block: serial0 pilot +0, serial2 aux +2, serial5 pose +5) | `unit.<u>.sitl` (tcp block) |
+| unit de_mavlink -> SITL (serial1) | `unit.<u>.sitl.fcb` (tcp), sysid k |
+| unit SITL RC-in / sim out / sim in / irlock (UDP) | `unit.<u>.sitl.rcin` / `.sim_out` / `.sim_in` / `.irlock` |
+| unit fcb proxy listen / control (`fcb_proxy: true`) | `unit.<u>.fcb_proxy` / `.fcb_proxy.ctrl` (tcp) |
+| external-server GCS bridge control | `bridge.ctrl` (tcp) |
 
 SITL launches with `--base-port <block> --rc-in-port <leased>` (and
 `--sim-port-in/--sim-port-out/--irlock-port`) *before* `-I`, so `-I`
 stays the eeprom/identity slot only and every socket is the leased
-value.
+value. The two viewer defaults (render.mav_ws 8811, render.web 8080)
+are the only static preferences - a stock Mavlink3DMap still finds the
+sim where it looks first.
 
-Two rules survive the allocator: yaml-explicit ports (`server.port`,
-render ports, a relay `udp_port_range`) pin - exact value or `up`
-refuses - and `--slot-base <N>` pins the whole set. Sim names and unit
-names still disambiguate fleets; sims meant to run **in parallel** no
-longer need disjoint `slot_base`s, only `--shared`/`any` discipline.
+One rule survives the allocator: yaml-explicit ports (`server.port`,
+`server.control_port`, render ports, a relay `udp_port_range`) pin -
+exact value or `up` refuses. Sim names and unit names still
+disambiguate fleets; sims meant to run **in parallel** no longer need
+disjoint `slot_base`s at all, only `--shared` discipline.
 
 ### Port leases
 
@@ -375,7 +383,7 @@ release the leases; a `sim up` killed with `kill -9` leaves `reserved`
 leases the next transaction sweeps away on its own. The transaction
 result - the flat request-name -> port map - is written to
 `var/run/<sim>/sim.json` as `ports`, so post-mortems and `ctl` read the
-real values, not the formulas.
+real leased values.
 
 ```bash
 ./sim ports            # this worktree's leases
@@ -519,18 +527,20 @@ Format (strict - unknown keys fail against
   `operator` (the bot's standing approve/confirm policy), `fleet`,
   `timeline`, `assert`, `teardown`, `settle_s`, `render` (P5-13 opt-in:
   `{mode: viewer|cameras|physics|full, headless}` opens a
-  `de.worldstream/1` WebSocket server inside the runner on
-  `61000 + slot_base` - hello snapshot + 10 Hz entity/clutter ticks +
+  `de.worldstream/1` WebSocket server inside the runner on the leased
+  `render.stream` port - hello snapshot + 10 Hz entity/clutter ticks +
   `cmd payload_release` + a 1 Hz `overlay` block (bot world-model
   targets, per-tid seen/miss/occluded states, recent detection
   markers, P5-14), with client `event` frames appended to
   truth.jsonl as `src: render` - and gives every FC unit a
-  `--serial4 udpclient` MAVLink fan-out to `16450 + slot_base` for
-  Mavlink3DMap. Absent = today's headless behaviour, unchanged ports
-  and sim hash; `engine/worldstream_probe.py` is the test client.
+  `--serial4 udpclient` MAVLink fan-out to the leased `render.mav`
+  port for Mavlink3DMap. Absent = today's headless behaviour,
+  unchanged requests and sim hash; `engine/worldstream_probe.py` is
+  the test client.
   P5-14: `mode: viewer|full` with `headless: false` also launches
-  Mavlink3DMap's `udp2websocket.js` (UDP `16450 + slot_base` ->
-  ws `8801 + slot_base`) and a vite dev server on `8070 + slot_base`
+  Mavlink3DMap's `udp2websocket.js` (the `render.mav` UDP fan-out ->
+  ws `render.mav_ws`, prefer 8811) and a vite dev server on
+  `render.web` (prefer 8080)
   from `$MAVLINK3DMAP_DIR` (sim.local.env), pid-tracked under
   `var/run/<sim>/render/` - `./sim up` prints the viewer URL
   `http://127.0.0.1:<web>/?world=ws://127.0.0.1:<stream>`
@@ -542,8 +552,8 @@ Format (strict - unknown keys fail against
   P5-15: `mode: cameras|full` adds the rendered-camera farm on
   `blocks/copter_cam3d` units (real `de_yolo_ai` + `de_camera`):
   headless Chromium (`$CHROMIUM_BIN`) renders each unit's
-  hello-advertised camera into `[32-byte header][JPEG]` frames on a
-  `8090 + slot_base` binary WebSocket; `render_sink.js` demuxes them
+  hello-advertised camera into `[32-byte header][JPEG]` frames on the
+  leased `render.sink` binary WebSocket; `render_sink.js` demuxes them
   into one ffmpeg per unit writing that unit's `DE-SRC-<cam_index>`
   v4l2loopback device. de_yolo_ai detects on it and writes annotated
   frames to `DE-AI-<cam_index>`, which de_camera streams. A 16-cell

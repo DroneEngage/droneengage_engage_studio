@@ -33,6 +33,8 @@ real server.
 
 ## Ports
 
-slot_base 40: camcopter sysid 40 (pilot 6160, fcb 8060, de_comm 62400,
-de_mavlink 63400, de_camera 64400); tower1 de_comm 62410, de_camera
-64410. Server wss 62008, control 62009.
+Every port is leased from the machine-wide allocator at `up` — `./sim
+ports -s copter_and_cameras` lists what was actually bound.
+`slot_base: 40` is identity only (camcopter sysid 40). The render feeds
+are leased too; the v4l2 device labels stay machine-global, so this sim
+still cannot share the machine with another rendered-camera fleet.

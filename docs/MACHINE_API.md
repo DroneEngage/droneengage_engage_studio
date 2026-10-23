@@ -24,26 +24,29 @@ The resolved sim — the same data `./sim show` prints as text:
 {
   "file": "sims/copters3.yaml",
   "name": "copters3",
-  "server": {"type": "real", "auth": false, "port": 62008,
-             "control_port": 62009, "auth_port": 62018,
-             "auth_s2s_port": 62019, "ip": "127.0.0.1",
+  "server": {"type": "real", "auth": false, "port": 20000,
+             "control_port": 20001, "auth_port": null,
+             "auth_s2s_port": null, "ip": "127.0.0.1",
              "auth_ip": "127.0.0.1", "gcs_party": "GCS_FLEET"},
-  "slot_base": 10,
+  "slot_base": 40,
   "speedup": 1.0,
   "units": [
     {"name": "copter1", "block": "copter",
-     "fc": {"vehicle": "copter", "model": "quad", "sysid": 10,
-            "pilot_port": 5860, "fcb_port": 7760, "...": "..."},
+     "fc": {"vehicle": "copter", "model": "quad", "sysid": 40,
+            "pilot_port": 20002, "fcb_port": 20012, "...": "..."},
      "modules": ["de_comm", "de_mavlink"],
-     "ports": {"de_comm": 62010, "de_mavlink": 63010},
+     "ports": {"de_comm": 20000, "de_mavlink": 20001},
      "account": "unit1_or_null",
      "position": {"lat": ..., "lng": ...}}
   ]
 }
 ```
 
-`fc` is `null` for units with no flight controller. Exit 0, or non-zero
-with a `SimError` text when the sim does not resolve.
+`fc` is `null` for units with no flight controller. Ports are allocator
+leases, not formulas: before a sim has ever run (no live or remembered
+leases) they show `null`; once leased, the values `./sim ports` lists.
+Exit 0, or non-zero with a `SimError` text when the sim does not
+resolve.
 
 ## `./sim sims --json`
 
@@ -64,12 +67,12 @@ Live sims (or all known sims with `all`), process state included:
 {"sims": [
   {"name": "smoke_copters", "sim_file": "sims/copters3.yaml",
    "sim_hash": "84d4157c13874177", "live": true,
-   "server": {"type": "real", "auth": false, "port": 62008,
-              "control_port": 62009, "auth_port": 62018, "up": true},
+   "server": {"type": "real", "auth": false, "port": 20000,
+              "control_port": 20001, "auth_port": null, "up": true},
    "procs": {"server.de_server": 240366, "server.gcs_bridge": 240377},
    "units": [
      {"name": "copter1", "block": "copter", "fc": {"...": "..."},
-      "udp": 62010,
+      "udp": 20000,
       "procs": {"sitl": 240388, "de_comm": 240389,
                 "de_mavlink": 240397}}],
    "online": ["copter1", "copter2"],

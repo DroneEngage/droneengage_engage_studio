@@ -7,7 +7,8 @@
 # panel - de_mavlink reads @MISSION/mission.dat over MAVLink FTP and the
 # Read buttons show live progress. BRD_SD_MISSION=32 raises SITL mission
 # storage past the ~655-item 16 kB default (same as tests/capacity).
-# slot_base 95 keeps ports disjoint from the developer's own stacks.
+# slot_base 95 keeps the SITL identity/sysid distinct from the
+# developer's own stacks (ports are allocator leases - `./sim ports`).
 version: 1
 slot_base: 95
 server:

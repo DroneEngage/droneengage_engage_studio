@@ -31,5 +31,8 @@ each personal sim has its own slot_base.
 
 ## Ports
 
-slot_base 70: plane1 sysid 70 (pilot 6460, fcb 8360, de_comm 62700,
-de_mavlink 63700), ctl 62079. External server wss 9966, auth 19408.
+Every local port (SITL, de_comm, de_mavlink, the bridge control port) is
+leased from the machine-wide allocator at `up` — `./sim ports -s plane`
+lists what was actually bound. `slot_base: 70` is identity only (plane1
+sysid 70). External server wss 9966, auth 19408 — those are the remote
+server's own ports, not leases.

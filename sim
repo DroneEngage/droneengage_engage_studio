@@ -124,16 +124,14 @@ Global flags for show/up/run/view/suite/validate/studio:
   --slot-base <N|any>              the slot the fleet identity derives
                                    from (SITL -I/sysid, unit index; wins
                                    over the sim yaml's slot_base: and
-                                   SIM_SLOT_BASE). A number pins every
-                                   port to its legacy formula - exact or
-                                   fail. `any` and a bare slot_base:
-                                   lease the formulas as prefer hints -
-                                   the lowest base whose legacy set is
-                                   free wins, held hints move into the
-                                   pool (`moved <name> a -> b` prints).
-                                   Port values are no longer in the sim
-                                   hash, so a moved fleet still reuses
-                                   the warm sim
+                                   SIM_SLOT_BASE). Identity only - no
+                                   port derives from it: every port is
+                                   a machine-wide allocator lease
+                                   (`./sim ports` lists them; `moved
+                                   <name> a -> b` prints when a hinted
+                                   value could not land). Port values
+                                   are not in the sim hash, so a moved
+                                   fleet still reuses the warm sim
   --with <a[,b...]>                sims/overlays/<name>.yaml twists applied
                                    on top of the sim (server swap, extra
                                    units, config/fc pushes); each applied
@@ -301,7 +299,8 @@ def _cli_flags(argv):
     the command line. --user/--password/--auth-server are the sim's login
     overrides (show/up/run/view only); --shared keeps run/view/suite
     additive next to live sims (the SIM_SHARED=1 semantics) and
-    --slot-base overrides the slot every port derives from."""
+    --slot-base overrides the fleet's identity base (SITL -I/sysid -
+    no port derives from it)."""
     rest, kw, i = [], {}, 0
     while i < len(argv):
         a = argv[i]

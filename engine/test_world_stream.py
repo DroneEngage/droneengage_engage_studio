@@ -43,10 +43,9 @@ WORLD = os.path.join(os.path.dirname(os.path.dirname(
 
 def _sim(render=None, slot_base=10):
     spec = {"version": 1, "name": "ws_test", "slot_base": slot_base,
-            # the scenario layer rides the server port on the slot
-            # block too (scenario._server_spec) - mirror it here
-            "server": {"type": "fake",
-                       "port": simlib.SERVER_PORT + slot_base},
+            # no port fields: every port is an allocator lease filled
+            # at commit (SL-0077) - resolve-time fields stay None
+            "server": {"type": "fake"},
             "units": [{"block": "copter", "name": "cam1",
                        "add_modules": ["stub_ai_box", "stub_payload"]},
                       {"block": "comm_only", "name": "mast1"}]}
@@ -244,18 +243,20 @@ class T(unittest.TestCase):
 
     def test_render_ports_and_serial4(self):
         on = _sim(render={"mode": "viewer"}, slot_base=10)
-        # the resolved values are the prefer hints - lease_commit may
-        # still move them, but the hints ride the slot block
+        # every render port is a lease request - unresolved (or a
+        # remembered-port hint) until lease_commit fills it; the two
+        # viewer defaults are the only static prefers
         r = on["render"]
-        self.assertEqual(r["stream_port"], simlib.STREAM_PORT_BASE + 10)
-        self.assertEqual(r["mav_port"], simlib.MAV_PORT_BASE + 10)
-        self.assertEqual(r["mav_ws_port"], simlib.MAV_WS_PORT_BASE + 10)
-        self.assertEqual(r["web_port"], simlib.WEB_PORT_BASE + 10)
-        self.assertEqual(r["sink_port"], simlib.SINK_PORT_BASE + 10)
+        reqs = {q["name"]: q for q in simlib.lease_requests(on)}
+        self.assertEqual(reqs["render.mav_ws"]["prefer"], 8811)
+        self.assertEqual(reqs["render.web"]["prefer"], 8080)
+        for role in ("stream", "mav", "sink"):
+            self.assertEqual(reqs[f"render.{role}"]["kind"], "free")
         ports = simlib.used_ports(on)
         for key in ("stream_port", "mav_port", "mav_ws_port", "web_port",
                     "sink_port"):
-            self.assertIn(r[key], ports)
+            if r[key] is not None:
+                self.assertIn(r[key], ports)
         cam1 = next(u for u in on["units"] if u["name"] == "cam1")
         self.assertEqual(cam1["fc"]["mav_port"], r["mav_port"])
         self.assertEqual(cam1["fc"]["params"]["SR4_POSITION"], 10)
@@ -268,8 +269,7 @@ class T(unittest.TestCase):
         # a MAVLink serial3 makes serial4 channel 5: only MAV5_*/SR5_*
         # are set - a fixed MAV4_* would raise rates on serial3's link
         spec = {"version": 1, "name": "ws_chan", "slot_base": 10,
-                "server": {"type": "fake",
-                           "port": simlib.SERVER_PORT + 10},
+                "server": {"type": "fake"},
                 "render": {"mode": "viewer"},
                 "units": [{"block": "copter", "name": "c1",
                            "fc": {"params": {"SERIAL3_PROTOCOL": 2}}}]}
@@ -294,10 +294,8 @@ class T(unittest.TestCase):
     def test_absent_render_is_identical(self):
         off = _sim(render=None, slot_base=10)
         self.assertIsNone(off["render"])
-        ports = simlib.used_ports(off)
-        for p in (simlib.STREAM_PORT_BASE + 10, simlib.MAV_PORT_BASE + 10,
-                  simlib.MAV_WS_PORT_BASE + 10, simlib.WEB_PORT_BASE + 10):
-            self.assertNotIn(p, ports)
+        self.assertFalse([r for r in simlib.lease_requests(off)
+                          if r["name"].startswith("render.")])
         for u in off["units"]:
             if u["fc"]:
                 self.assertNotIn("mav_port", u["fc"])
@@ -310,10 +308,19 @@ class T(unittest.TestCase):
         # exactly like a pre-P5-13 one
         self.assertEqual(off["hash"], simlib.sim_hash(off, {}))
 
-    def test_slot_blocks_do_not_collide(self):
+    def test_slot_base_changes_no_port_request(self):
+        """SL-0077: slot_base is identity only - the request list a sim
+        makes is identical at any base (the allocator, not a formula,
+        keeps two live fleets disjoint)."""
         a = _sim(render={"mode": "viewer"}, slot_base=10)
         b = _sim(render={"mode": "physics"}, slot_base=35)
-        self.assertFalse(simlib.used_ports(a) & simlib.used_ports(b))
+        self.assertEqual(
+            [(r["name"], r["proto"], r["kind"], r.get("pin"),
+              r.get("prefer"), r.get("size"))
+             for r in simlib.lease_requests(a)],
+            [(r["name"], r["proto"], r["kind"], r.get("pin"),
+              r.get("prefer"), r.get("size"))
+             for r in simlib.lease_requests(b)])
 
     def test_hello_and_tick_validate_against_contract(self):
         w = world_mod.load(WORLD, 7)

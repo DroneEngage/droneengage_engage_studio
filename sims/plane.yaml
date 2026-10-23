@@ -3,10 +3,11 @@
 # Personal sim: ONE fixed-wing box - ArduPlane SITL + de_comm + de_mavlink -
 # on YOUR OWN server stack (servers/sh_start_servers.sh).
 # See quadcopter.yaml for the external-server fields. Runs in parallel with
-# the other personal sims; slot_base 70 keeps every port/sysid disjoint.
+# the other personal sims; slot_base keeps the sysids distinct (ports are
+# allocator leases - `./sim ports`).
 version: 1
-slot_base: 70                 # plane: pilot 6460, fcb 8360, de_comm 62700,
-                              # de_mavlink s2s 63700, ctl 62079, sysid 70
+slot_base: 70                 # identity only: SITL -I/sysid base; the
+                              # allocator leases every port (`./sim ports`)
 server:
   type: external
   auth: true
