@@ -15,9 +15,9 @@ blocks. DroneEngage is the flagship integration (not the owner).
                                    webclient link)
   ./sim down [name|--all]          stop one sim, or every sim
   ./sim sims                       generated sims and live process counts
-  ./sim ports [name|--all]         live sims' declared ports vs what's bound
-                                   right now (--all: every generated sim;
-                                   udp_relay shows its whole udp range n/N)
+  ./sim ports [name|--all|gc]      port leases in the machine-wide registry
+                                   (gc sweeps stale ones; --all: every
+                                   worktree's, default: this worktree's)
   ./sim status [-s <sim>] [live|all] [--open-web]
                                    = ./sim ctl status (live sims only;
                                      `all` also lists downed ones;
@@ -474,42 +474,61 @@ def main(argv):
                           f"server {srv['type']}  "
                           f"{len(simlib.read_pids(n))} proc(s) alive")
         elif c == "ports":
-            # SL-0088: which of a sim's declared ports are actually bound
-            # right now. `sim down` frees them all - this is the lease
-            # visibility the udp_relay checks ask for.
+            # the machine-wide port-lease registry (docs/port_allocation.md):
+            # `gc` sweeps stale leases, a name filters to one sim, --all
+            # shows every worktree's leases (default: this worktree's).
             names = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, ("--all",))
             if bad or len(names) > 1:
-                sys.exit("usage: ./sim ports [name|--all]"
+                sys.exit("usage: ./sim ports [name|--all|gc]"
                          + f" - unknown {' '.join(bad)}")
-            scope = names or [n for n in simlib.sim_names()
-                              if "--all" in a or simlib.read_pids(n)]
-            if not scope:
-                print("no live sim - ./sim up <sim.yaml> "
-                      "or ./sim ports --all")
-            for sn in scope:
-                try:
-                    m = simlib.load_manifest(sn)
-                except Exception as e:
-                    sys.exit(f"sim {sn!r}: {e}")
-                alive = len(simlib.read_pids(sn))
-                # collapse the relay's per-port udp rows into one range row
-                rng = [r for r in simlib.port_rows(m)
-                       if r[0] == f"{simlib.UDP_RELAY_LEASE}.range"]
-                rows = [r for r in simlib.port_rows(m)
-                        if r[0] != f"{simlib.UDP_RELAY_LEASE}.range"]
-                n_bound = sum(simlib.port_bound(p, "udp")
-                              for _, p, _ in rng)
-                print(f"{sn} ({alive} proc(s) alive)")
-                w = max(len(r[0]) for r in rows) if rows else 0
-                for owner, port, proto in rows:
-                    state = "bound" if simlib.port_bound(port, proto) \
-                        else "free"
-                    print(f"  {owner:{w}s}  {port:>6}  {proto:3s} {state}")
-                if rng:
-                    lo, hi = rng[0][1], rng[-1][1]
-                    print(f"  {simlib.UDP_RELAY_LEASE + '.range':{w}s}  "
-                          f"{lo}-{hi}  udp {n_bound}/{len(rng)} bound")
+            a_ = simlib.allocator()
+            if names and names[0] == "gc":
+                freed = a_.gc()
+                for l in freed:
+                    print(f"  reclaimed {l['name']} port {l['port']}"
+                          f" ({l['sim']} @ {l['worktree']})")
+                print(simlib.col_yellow(
+                    f"{len(freed)} stale lease(s) reclaimed"))
+            else:
+                if names:
+                    ls = a_.leases(sim=names[0])
+                elif "--all" in a:
+                    ls = a_.leases()
+                else:
+                    ls = a_.leases(worktree=simlib.SIM_ROOT)
+                if not ls:
+                    print("no leases - ./sim up <sim.yaml> "
+                          "or ./sim ports --all")
+                groups = {}
+                for l in ls:
+                    groups.setdefault((l["sim"], l["worktree"]),
+                                      []).append(l)
+                for (sn, wt), rows in sorted(groups.items()):
+                    rows.sort(key=lambda l: (l["port"], l["name"]))
+                    # collapse a block's members into one range row
+                    members = [l for l in rows if l.get("block")]
+                    rows = [l for l in rows if not l.get("block")]
+                    own = os.path.realpath(wt) == \
+                        os.path.realpath(simlib.SIM_ROOT)
+                    alive = len(simlib.read_pids(sn)) if own else 0
+                    print(f"{sn}" + ("" if own else f" @ {wt}")
+                          + f" ({alive} proc(s) alive)")
+                    w = max([len(l["name"]) for l in rows]
+                            + [len(simlib.UDP_RELAY_LEASE + ".range")]
+                            if members else
+                            [len(l["name"]) for l in rows] or [0])
+                    for l in rows:
+                        state = l["state"] + \
+                            (" (stale)" if l.get("stale") else "")
+                        print(f"  {l['name']:{w}s}  {l['port']:>6}  "
+                              f"{l['proto']:3s} {state}")
+                    for b in sorted({(l['block']['base'],
+                                      l['block']['size'])
+                                     for l in members}):
+                        print(f"  {simlib.UDP_RELAY_LEASE + '.range':{w}s}"
+                              f"  {b[0]}-{b[0] + b[1] - 1}  udp "
+                              f"{members[0]['state']}")
         elif c == "status":
             import ctl
             # ctl parses `-s <sim>` only ahead of the command word -

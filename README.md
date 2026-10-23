@@ -346,6 +346,27 @@ collide with a developer's own servers. Sims meant to run **in parallel**
 need disjoint `slot_base`s - `up` verifies there is no overlap with a
 live sim before starting anything.
 
+### Port leases
+
+Every port a sim binds is leased, atomically and machine-wide, before a
+single process starts (`docs/port_allocation.md` is the design). The
+registry lives at `$XDG_RUNTIME_DIR/de_sim/ports.json` (fallback
+`~/.cache/de_sim/ports.json`, override `SIM_PORT_REGISTRY` or
+`SIM_PORT_LAST` for the previous-port memory in
+`~/.cache/de_sim/last_ports.json`) - outside `var/` on purpose, so every
+worktree of this repo shares it: a sim brought up in a `_wt/` worktree
+blocks the same ports for a sim `up`ed here. `sim down`/`sim clean`
+release the leases; a `sim up` killed with `kill -9` leaves `reserved`
+leases the next transaction sweeps away on its own.
+
+```bash
+./sim ports            # this worktree's leases
+./sim ports <sim>      # who holds that sim's ports (any worktree)
+./sim ports --all      # every lease in the registry
+./sim ports gc         # sweep leases whose holder/sim is dead
+./sim doctor           # reports registry health among the checks
+```
+
 ## Tests - the automated library
 
 A `run`/`view`/`suite` of a file with `steps:` is **exclusive**: it downs

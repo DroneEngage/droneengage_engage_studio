@@ -175,6 +175,17 @@ wss 62008, control 62009, authenticator +10/+11. The opt-in link proxy
 and `61501+10k` (fault control port). Keep `slot_base` >= 10 so
 sim ports never collide with the developer's own servers.
 
+**Port leases (allocator):** `engine/port_allocation_management.py` keeps
+the machine-wide registry every worktree shares -
+`$XDG_RUNTIME_DIR/de_sim/ports.json` (fallback `~/.cache/de_sim/ports.json`;
+`SIM_PORT_REGISTRY`/`SIM_PORT_LAST` override; never under `var/`). `sim up`
+leases the whole port set in one atomic transaction - phase 0 pins the
+legacy-derived values (`simlib.lease_requests`), so ports/sim_hash are
+unchanged, but ports a *different worktree's* sim leases are refused too.
+`down`/`clean` release; stale leases (dead holder, dead sim, gone
+worktree) are swept by the next transaction or `./sim ports gc`. See
+`docs/port_allocation.md` before touching port logic.
+
 ## Extending
 
 **New unit type → a block (no code).** `blocks/<name>/block.yaml`:

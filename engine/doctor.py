@@ -305,6 +305,25 @@ def gather(sim=None):
                 f"{simlib.SERVER_PORT + 1}",
                 f"ports {held} already bound - ./sim status or down "
                 "the holder")
+
+    # the machine-wide port-lease registry (docs/port_allocation.md):
+    # a missing file just means no sim ever came up; stale leases get
+    # an optional row with the gc hint
+    a = simlib.allocator()
+    leases = a.leases()
+    n_stale = sum(1 for l in leases if l.get("stale"))
+    if os.path.isfile(a.registry):
+        if n_stale:
+            d.optional("port registry",
+                       f"{a.registry} - {len(leases)} lease(s), "
+                       f"{n_stale} stale",
+                       "stale leases: ./sim ports gc")
+        else:
+            d.ok("port registry",
+                 f"{a.registry} - {len(leases)} lease(s)")
+    else:
+        d.ok("port registry",
+             f"{a.registry} (created on first ./sim up)")
     return d
 
 

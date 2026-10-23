@@ -153,6 +153,16 @@ def down(name=None, quiet=False):
     for p in strays:
         if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
             os.kill(p, signal.SIGKILL)
+    # free the sim's machine-wide port leases (foreign-owned sims kept
+    # above were already pruned from `dirs`, so their leases survive)
+    freed = set()
+    for d in dirs:
+        sname, _o = _dir_owner(d)
+        if sname and sname not in freed:
+            simlib.lease_release(sname)
+            freed.add(sname)
+    if name and name not in freed:
+        simlib.lease_release(name)
     if not quiet and (pids or strays or not foreign_kept):
         print(simlib.col_yellow(
             f"sim stopped ({len(pids) + len(strays)} processes)"))
@@ -274,6 +284,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         # where they still must be unique), restart only the same-named
         # one
         simlib.check_conflicts(sim)
+        # refuse ports another worktree leases or a foreign process
+        # binds - before the same-name down() below frees ours
+        simlib.lease_check(sim)
         if not _force() and name in simlib.live_sim_names():
             fo = simlib.foreign_owner(
                 simlib.load_manifest(name, required=False))
@@ -317,6 +330,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         shutil.rmtree(rdir)
     os.makedirs(simlib.pids_dir(name), exist_ok=True)
     m = simlib.generate(sim, _label(sim_src))
+    # lease the whole port set atomically - all of it or none of it,
+    # then the procs below bind what the registry already names ours
+    simlib.lease_commit(sim)
     conn = (f"external server {srv['ip']}:{srv['port']}"
             + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
                if srv["auth"] else "")
@@ -415,6 +431,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
     if not ctl.wait_ready(m["units"], timeout):
         sys.exit(simlib.col_red(
             "sim up FAILED (modules not ready) - check var/run/<unit>/logs/"))
+    simlib.lease_mark_bound(name)
     print(simlib.col_green("sim up.")
           + " operator console: ./sim ctl status"
           + (simlib.col_yellow(

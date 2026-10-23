@@ -1587,6 +1587,185 @@ def port_rows(sim):
     return rows
 
 
+# ------------------------------------------------- port leases (SL-0074)
+# The machine-wide allocator in port_allocation_management.py keeps one
+# registry shared by every worktree (docs/port_allocation.md). Phase 0:
+# every port the legacy formulas derive is leased as a `pin`, so a sim's
+# resolved ports - and therefore sim.json and sim_hash - never change.
+# What changes is enforcement: two worktrees can no longer bind the same
+# ports, and a lease outlives the short-lived `./sim up` process.
+
+_ALLOCATOR = None
+
+
+def allocator():
+    """The machine-wide port-lease allocator. Registry location:
+    SIM_PORT_REGISTRY > $XDG_RUNTIME_DIR/de_sim/ports.json >
+    ~/.cache/de_sim/ports.json - deliberately outside var/ so worktrees
+    share it. SIM_PORT_LAST names the previous-run port memory;
+    SIM_PORT_POOL / SIM_PORT_DENY shape free picks (phase 1)."""
+    global _ALLOCATOR
+    if _ALLOCATOR is None:
+        import port_allocation_management as pam
+        _ALLOCATOR = pam.Allocator(
+            registry=setting("SIM_PORT_REGISTRY"),
+            last=setting("SIM_PORT_LAST"),
+            pool=setting("SIM_PORT_POOL"),
+            deny=setting("SIM_PORT_DENY"))
+    return _ALLOCATOR
+
+
+def lease_requests(sim):
+    """The port requests a resolved sim makes of the allocator, named
+    hierarchically (server.*, auth.*, udp_relay.relay.*, render.*,
+    unit.<u>.*). Phase 0: every request is a `pin` of the exact port the
+    legacy formulas derived - leasing changes who may bind, never which
+    ports are chosen. Later phases re-mark roles as prefer/free."""
+    reqs = []
+    srv = sim["server"]
+    reqs.append({"name": "server.ctrl", "proto": "tcp", "kind": "pin",
+                 "pin": srv["control_port"]})
+    if srv["type"] != "external":
+        reqs.append({"name": "server.wss", "proto": "tcp", "kind": "pin",
+                     "pin": srv["port"]})
+        if srv["auth"]:
+            reqs.append({"name": "auth.https", "proto": "tcp",
+                         "kind": "pin", "pin": srv["auth_port"]})
+            reqs.append({"name": "auth.s2s", "proto": "tcp",
+                         "kind": "pin", "pin": srv["auth_s2s_port"]})
+        ur = srv.get("udp_relay")
+        if ur:
+            lo, hi = _udp_relay_range(sim)
+            reqs.append({"name": UDP_RELAY_LEASE + ".wss", "proto": "tcp",
+                         "kind": "pin", "pin": ur["port"]})
+            reqs.append({"name": UDP_RELAY_LEASE + ".range",
+                         "proto": "udp", "kind": "block",
+                         "pin": int(lo), "size": int(hi) - int(lo) + 1})
+    if sim.get("render"):
+        r = sim["render"]
+        for role, key in (("stream", "stream_port"), ("mav", "mav_port"),
+                          ("mav_ws", "mav_ws_port"), ("web", "web_port"),
+                          ("sink", "sink_port")):
+            reqs.append({"name": f"render.{role}", "proto": "tcp",
+                         "kind": "pin", "pin": r[key]})
+    for u in sim["units"]:
+        reqs += [{"name": f"unit.{u['name']}.{mod}", "proto": "udp",
+                  "kind": "pin", "pin": p}
+                 for mod, p in u["ports"].items()]
+        if u.get("link_proxy"):
+            reqs += [{"name": f"unit.{u['name']}.link_proxy",
+                      "proto": "tcp", "kind": "pin",
+                      "pin": u["link_proxy"]["port"]},
+                     {"name": f"unit.{u['name']}.link_proxy.ctrl",
+                      "proto": "tcp", "kind": "pin",
+                      "pin": u["link_proxy"]["ctrl"]}]
+        fc = u["fc"]
+        if fc:
+            reqs += [{"name": f"unit.{u['name']}.sitl.{role}",
+                      "proto": "tcp", "kind": "pin", "pin": fc[key]}
+                     for role, key in (("pilot", "pilot_port"),
+                                       ("aux", "aux_port"),
+                                       ("fcb", "fcb_port"))]
+            if fc.get("pose_port"):
+                reqs.append({"name": f"unit.{u['name']}.sitl.pose",
+                             "proto": "tcp", "kind": "pin",
+                             "pin": fc["pose_port"]})
+            if fc.get("fcb_proxy"):
+                reqs += [{"name": f"unit.{u['name']}.fcb_proxy",
+                          "proto": "tcp", "kind": "pin",
+                          "pin": fc["fcb_proxy"]["port"]},
+                         {"name": f"unit.{u['name']}.fcb_proxy.ctrl",
+                          "proto": "tcp", "kind": "pin",
+                          "pin": fc["fcb_proxy"]["ctrl"]}]
+    return reqs
+
+
+def _lease_conflict_msg(name, conflicts):
+    """The usual clash message, sourced from the allocator: ports another
+    sim leases read as 'conflicts with running sim' (naming the worktree
+    when it is not this one); ports a non-sim process binds read as
+    'in use by something else'."""
+    foreign = sorted({c["port"] for c in conflicts
+                      if c.get("holder") == "foreign"})
+    held = {}
+    for c in conflicts:
+        h = c.get("holder")
+        if isinstance(h, dict):
+            held.setdefault(h.get("sim", "?"), {}) \
+                .setdefault("ports", set()).add(c["port"])
+            held[h.get("sim", "?")]["worktree"] = h.get("worktree")
+    parts = []
+    for other, info in sorted(held.items()):
+        wt = info.get("worktree")
+        suffix = "" if not wt or os.path.realpath(wt) == os.path.realpath(SIM_ROOT) \
+            else f" (worktree {wt})"
+        parts.append(
+            f"sim {name!r} conflicts with running sim {other!r}{suffix}:"
+            f" ports {sorted(info['ports'])} - `./sim down {other}`"
+            + (" there first" if suffix else " first"))
+    if foreign:
+        parts.append(f"ports {foreign} are in use by something else - "
+                     "down what holds them (./sim status) or rerun with "
+                     "--shared --slot-base any to park on a free block")
+    return "; ".join(parts)
+
+
+def lease_check(sim):
+    """Dry-run of lease_commit, run before `sim up` tears down the
+    same-named sim: the allocator reports which sim (in any worktree)
+    or foreign process already holds each port, and the refusal keeps
+    the usual clash message. A same-named sim already running here binds
+    its own ports - those 'foreign' reports are ours, not a clash."""
+    conflicts = allocator().check(sim["name"], SIM_ROOT,
+                                  lease_requests(sim))
+    if sim["name"] in live_sim_names():
+        m = load_manifest(sim["name"], required=False)
+        own = used_ports(m) if m else set()
+        ours = os.path.realpath(SIM_ROOT)
+        conflicts = [c for c in conflicts
+                     if not (c.get("holder") == "foreign" and
+                             c["port"] in own) and
+                     not (isinstance(c.get("holder"), dict) and
+                          c["holder"].get("sim") == sim["name"] and
+                          os.path.realpath(
+                              c["holder"].get("worktree") or "") == ours)]
+    if conflicts:
+        raise SimError(_lease_conflict_msg(sim["name"], conflicts))
+
+
+def lease_commit(sim):
+    """Lease every port the resolved sim binds, in one atomic
+    transaction - the sim either owns its whole port set or errors and
+    nothing is reserved (allocator AllocError -> the clash message)."""
+    import port_allocation_management as pam
+    try:
+        with allocator().transaction(sim["name"], SIM_ROOT) as tx:
+            for r in lease_requests(sim):
+                if r.get("size"):
+                    tx.alloc_block(r["name"], r["size"], proto=r["proto"],
+                                   pin=r.get("pin"), prefer=r.get("prefer"))
+                else:
+                    tx.alloc(r["name"], proto=r["proto"],
+                             pin=r.get("pin"), prefer=r.get("prefer"))
+            return tx.commit()
+    except pam.AllocError as e:
+        raise SimError(_lease_conflict_msg(sim["name"], e.conflicts))
+
+
+def lease_release(name):
+    """Drop every lease this worktree holds for sim `name` - `sim down`
+    and `sim clean` both free the registry, and a no-op call is fine
+    (a sim whose ports were never leased)."""
+    allocator().release(name, SIM_ROOT)
+
+
+def lease_mark_bound(name):
+    """reserved -> bound: the fleet verified up, so the leases now name
+    actually-bound ports (a kill -9'd `sim up` leaves `reserved` leases
+    the next bring-up reclaims)."""
+    allocator().mark_bound(name, None, SIM_ROOT)
+
+
 def port_bound(port, proto):
     """Whether anything on this host already binds `port` (bind probe;
     TCP SO_REUSEADDR still fails on a LISTENing socket)."""
