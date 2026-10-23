@@ -22,7 +22,9 @@ control-port convention; ctl.py `fcb_*` commands talk here):
                                 at most baud/10 bytes/s through a token
                                 bucket (one 10 ms quantum of burst, whole
                                 frames only - a frame never splits across
-                                a wait); 0 removes the rule
+                                a wait); the queue is a finite tx fifo so
+                                stream frames overflow-drop where a real
+                                FC would skip them; 0 removes the rule
     corrupt <byte_drop%> <bit_flip%> <seed>
                                 frame-aware noise model: a lost UART byte
                                 kills its frame, so a parsed MAVLink
@@ -59,6 +61,23 @@ import threading
 import time
 
 STX_V1, STX_V2 = 0xFE, 0xFD
+
+# a paced link emulates a UART, and a real UART's tx fifo is finite:
+# when it fills the FC simply cannot emit the next stream frame, so the
+# wire never carries seconds of stale telemetry the way an unbounded
+# queue absorbing a whole TCP burst would (SL-0102: a ~2KB fifo is the
+# common ArduPilot tx buffer - ~0.36 s of 57600 airtime).
+TX_CAP = 2048
+
+# msgids whose frames are never fifo-dropped: heartbeat plus the
+# request/response control protocols (param 20-23, mission 37-51,
+# data-stream and commands) - those retry on their own and a drop
+# mid-transfer would never resolve, where a dropped stream frame just
+# skips one telemetry tick. Kept out of the cap so pacing a link does
+# not break the very conversations a test is driving.
+CTRL_MSGIDS = frozenset(
+    {0, 11, 66, 67, 75, 76, 77, 148, 243, 253} | set(range(20, 24))
+    | set(range(37, 52)))
 
 
 def _frame_len(buf, i):
@@ -172,9 +191,9 @@ class FcbProxy:
                      "s2c": random.Random(seed + 7919)}
         self.stats = {"connects": 0, "refused": 0,
                       "c2s": {"frames": 0, "bytes": 0, "dropped": 0,
-                              "flipped": 0, "delayed": 0},
+                              "flipped": 0, "delayed": 0, "overflow": 0},
                       "s2c": {"frames": 0, "bytes": 0, "dropped": 0,
-                              "flipped": 0, "delayed": 0}}
+                              "flipped": 0, "delayed": 0, "overflow": 0}}
 
     def log(self, msg):
         print(f"[{self.unit}] {msg}", flush=True)
@@ -279,10 +298,16 @@ class FcbProxy:
                 # queue itself is the throttle's back-pressure
                 if not self._drain(direction, pending, dst):
                     return
+                if pending and _frame_len(pending, 0) < 0:
+                    # the head is mid-frame - only recv() can complete
+                    # it; park it back on the parse buffer (pending is
+                    # older than buf, so the prepend keeps stream order)
+                    buf = bytearray(pending) + buf
+                    pending.clear()
                 if pending:
                     time.sleep(min(self.buckets[direction].wait_s()
                                    or 0.005, 0.02))
-                continue
+                    continue
             try:
                 data = src.recv(65536)
             except socket.timeout:
@@ -296,7 +321,7 @@ class FcbProxy:
             buf += data
             out = self._shape(buf, direction)
             if out:
-                pending += out
+                self._queue(direction, out, pending)
                 if not self._drain(direction, pending, dst):
                     return
 
@@ -337,6 +362,26 @@ class FcbProxy:
             i += n
         del pending[:i]
         return True
+
+    def _queue(self, direction, out, pending):
+        """Feed shaped bytes into the drain queue at frame granularity.
+        Under a rate rule the queue is the UART's tx fifo: beyond TX_CAP
+        the newest stream frames are refused like hardware refuses them
+        (counted in `overflow`), while CTRL_MSGIDS frames keep queueing
+        on their own retry contracts. bps=0 leaves the queue unlimited -
+        the pre-rate behaviour, byte for byte."""
+        st = self.stats[direction]
+        capped = self.buckets[direction].bps > 0.0
+        i = 0
+        while i < len(out):
+            fl = _frame_len(out, i)
+            n = fl if fl > 0 else (len(out) - i if fl < 0 else 1)
+            if not capped or len(pending) + n <= TX_CAP \
+                    or fl > 0 and _frame_msgid(out, i) in CTRL_MSGIDS:
+                pending += out[i:i + n]
+            else:
+                st["overflow"] += n
+            i += n
 
     def _shape(self, buf, direction):
         """Apply the corruption rules to buf's complete frames; consume
@@ -477,10 +522,10 @@ class FcbProxy:
                 f"refused={self.stats['refused']}\n"
                 f"c2s frames={up['frames']} bytes={up['bytes']} "
                 f"dropped={up['dropped']} flipped={up['flipped']} "
-                f"delayed={up['delayed']}\n"
+                f"delayed={up['delayed']} overflow={up['overflow']}\n"
                 f"s2c frames={dn['frames']} bytes={dn['bytes']} "
                 f"dropped={dn['dropped']} flipped={dn['flipped']} "
-                f"delayed={dn['delayed']}\n"
+                f"delayed={dn['delayed']} overflow={dn['overflow']}\n"
                 f"rules drop={self.rules['drop_pct']}% "
                 f"flip={self.rules['flip_pct']}% "
                 f"msgids={self.rules['msgids']} "

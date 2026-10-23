@@ -256,6 +256,14 @@ def gather(sim=None):
             "sim.local.env",
             bool(sim and any(u.get("faketime") for u in sim["units"])))
 
+    # socat: the pty fcb_link's serial bridge (SL-0102) - required only
+    # by a sim whose units use `fcb_link: {kind: pty}`
+    d.check("socat", _which("socat"), "",
+            "apt install socat",
+            bool(sim and any(
+                u.get("fc") and (u["fc"].get("fcb_link") or {})
+                .get("kind") == "pty" for u in sim["units"])))
+
     # render deps: the frame farm's chromium + ffmpeg (cameras|full);
     # Mavlink3DMap itself is always optional (never a failure)
     needs_farm = bool(sim and render_mode in ("cameras", "full")

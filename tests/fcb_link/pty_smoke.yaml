@@ -1,0 +1,49 @@
+# pty_smoke: `fcb_link: {kind: pty, baud: 57600}` puts a real serial
+# device in front of the SL-0008 proxy - a socat pty (proc fcb_tty)
+# bridges <run>/c1/fcb.tty <-> the proxy, the proxy paces both
+# directions at 5760 B/s (SL-0101 rate rule), and de_mavlink opens the
+# device like hardware instead of dialing tcp (`connectSerial on
+# .../fcb.tty baudrate 57600` in its log). One copter flies the square
+# package over it.
+#
+# The upload ordering mirrors a real GCS on a real 57600 UART: the
+# mission package only goes up after the parameter table finished
+# downloading. A deploy that races the ~45 KB param pull queues the
+# FC's MISSION_REQUEST frames behind PARAM_VALUE airtime and the FC
+# cancels the transaction (nav load failed: ack:15) - so t=0 restarts
+# de_mavlink for a guaranteed-fresh "Parameter LOADED" wait anchor
+# (the line printed during settle predates the run's log mark).
+version: 1
+name: f_pty_smoke
+transport: real
+realtime: true
+settle_s: 30
+operation: ../../packages/copter_square.json
+fleet:
+  - {id: c1, cls: copter, fcb_link: {kind: pty, baud: 57600}}
+timeline:
+  - {t: 0, do: stop}    # reset leftover runs when the sim is reused
+  - {t: 0, do: clear}
+  - {t: 0, do: restart, unit: c1, proc: de_mavlink}
+  - {t: 0, do: wait_log, unit: c1, module: de_mavlink,
+     re: "Parameter LOADED", timeout: 120}
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}  # de_mavlink refuses nav loads in AUTO
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: c1}
+  - {t: 0, do: start}
+  - {t: 0, do: wait_journal, unit: c1, re: "mission main completed",
+     timeout: 300}
+assert:
+  - journal_count: {unit: c1, re: "mission main completed", equals: 1}
+  # de_mavlink really opened the serial device, at the link's baud
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "connectSerial on .*fcb\\.tty baudrate 57600",
+                       at_least: 1}
+  # and it never used the tcp dial
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "TCP Client connected", equals: 0}
+  - telemetry_value: {unit: c1, field: ekf_ok, equals: true}
+  - proc_alive: {unit: c1, proc: fcb_tty}
+  - proc_alive: {unit: c1, proc: fcb_proxy}
+  - proc_alive: {unit: c1, proc: de_mavlink}
+teardown: land

@@ -337,6 +337,8 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                  + (f"fcbpx={simlib.col_cyan(fc['fcb_proxy']['port'])}/"
                     f"{simlib.col_cyan(fc['fcb_proxy']['ctrl'])} "
                     if fc.get("fcb_proxy") else "")
+                 + (f"{simlib.col_cyan('pty:' + str(fc['fcb_link']['baud']))} "
+                    if fc.get("fcb_link") else "")
                  if fc else "no-fc ")
               + " ".join(f"{mod}:{simlib.col_cyan(p)}"
                          for mod, p in u["ports"].items())

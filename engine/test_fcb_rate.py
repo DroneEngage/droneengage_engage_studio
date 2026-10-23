@@ -15,6 +15,7 @@ Covered (the task's acceptance):
 """
 import os
 import sys
+import time
 import unittest
 
 sys.pycache_prefix = os.environ.setdefault(
@@ -44,9 +45,13 @@ class _Sink:
         self.chunks.append(bytes(b))
 
 
-def _v2_frame(payload_len):
+def _v2_frame(payload_len, msgid=0):
     """A well-formed MAVLink v2 frame: 12 + payload_len bytes total."""
-    return bytes([0xFD, payload_len, 0x00]) + bytes(9 + payload_len)
+    f = bytearray([0xFD, payload_len, 0x00]) + bytearray(9 + payload_len)
+    f[7] = msgid & 0xFF
+    f[8] = (msgid >> 8) & 0xFF
+    f[9] = (msgid >> 16) & 0xFF
+    return bytes(f)
 
 
 def _proxy(clock):
@@ -128,6 +133,99 @@ class TestRateBucket(unittest.TestCase):
         # first 9.6 B quantum buys nothing (frame = 40 B): the head
         # frame's 40 bytes were delayed
         self.assertEqual(p.stats["s2c"]["delayed"], 40)
+
+
+class TestPump(unittest.TestCase):
+    """The real _pump loop over socketpairs - the SL-0102 pty link
+    surfaced a wedge: the fast-path _shape forwards a partial frame
+    tail into `pending`, and the drain-wait must never starve recv()
+    of the bytes that complete it."""
+
+    def test_split_frames_keep_flowing(self):
+        import socket
+        import threading
+        p = _proxy(VClock())
+        src_a, src_b = socket.socketpair()   # feed src_b, pump reads src_a
+        dst_a, dst_b = socket.socketpair()   # pump writes dst_a, read dst_b
+        src_a.settimeout(2)
+        src_b.settimeout(2)
+        dst_a.settimeout(2)
+        dst_b.settimeout(2)
+        p.client = (src_a, dst_a, 1)         # live session, generation 1
+        t = threading.Thread(target=p._pump,
+                             args=(1, "s2c", src_a, dst_a), daemon=True)
+        t.start()
+        frame = _v2_frame(28)
+        src_b.sendall(frame[:7])             # a TCP split mid-frame
+        time.sleep(0.05)
+        src_b.sendall(frame[7:] + frame)     # completion + a second frame
+        got = b""
+        t0 = time.time()
+        while len(got) < 2 * len(frame) and time.time() - t0 < 2:
+            try:
+                got += dst_b.recv(4096)
+            except socket.timeout:
+                break
+        self.assertEqual(got, frame + frame)
+        for s in (src_a, src_b, dst_a, dst_b):
+            s.close()
+
+
+class TestQueue(unittest.TestCase):
+    """The paced link's finite tx fifo (SL-0102): on a real UART the FC
+    drops stream frames it cannot emit - an unbounded proxy queue would
+    carry seconds of stale telemetry and starve every request/response
+    protocol the way TCP backpressure cannot."""
+
+    def test_unpaced_queue_stays_unlimited(self):
+        # bps=0 -> the pre-rate behaviour: whatever arrives is queued
+        p = _proxy(VClock())
+        pending = bytearray()
+        out = _v2_frame(240, 30) * 20          # ~5KB - far over TX_CAP
+        p._queue("s2c", out, pending)
+        self.assertEqual(len(pending), len(out))
+        self.assertEqual(p.stats["s2c"]["overflow"], 0)
+
+    def test_stream_drops_past_the_cap(self):
+        p = _proxy(VClock())
+        p.buckets["s2c"].set_bps(5760.0)
+        pending = bytearray(_v2_frame(240, 30) * 8)      # ~2KB queued
+        out = _v2_frame(100, 30) + _v2_frame(100, 30)    # two stream frames
+        p._queue("s2c", out, pending)
+        self.assertEqual(len(pending), 252 * 8)
+        self.assertEqual(p.stats["s2c"]["overflow"], 2 * 112)
+
+    def test_control_frames_are_never_dropped(self):
+        p = _proxy(VClock())
+        p.buckets["s2c"].set_bps(5760.0)
+        pending = bytearray(_v2_frame(240, 30) * 8)      # fifo full
+        out = (_v2_frame(28, 22)                         # PARAM_VALUE
+               + _v2_frame(25, 40)                       # MISSION_REQUEST
+               + _v2_frame(28, 0))                       # HEARTBEAT
+        p._queue("s2c", out, pending)
+        self.assertEqual(len(pending), 252 * 8 + 40 + 37 + 40)
+        self.assertEqual(p.stats["s2c"]["overflow"], 0)
+
+    def test_frames_fit_until_the_byte_boundary(self):
+        p = _proxy(VClock())
+        p.buckets["s2c"].set_bps(5760.0)
+        pending = bytearray(_v2_frame(240, 30) * 7)      # 1764 queued
+        # 112 + 112 = 224 fit inside TX_CAP - 1764 = 284; a third can't
+        out = _v2_frame(100, 30) * 3
+        p._queue("s2c", out, pending)
+        self.assertEqual(len(pending), 1764 + 2 * 112)
+        self.assertEqual(p.stats["s2c"]["overflow"], 112)
+
+    def test_partial_tail_counts_against_the_fifo(self):
+        p = _proxy(VClock())
+        p.buckets["s2c"].set_bps(5760.0)
+        pending = bytearray(_v2_frame(240, 30) * 7)      # 1764 queued
+        out = _v2_frame(100, 30) + _v2_frame(255, 30)[:200]
+        p._queue("s2c", out, pending)
+        # the whole frame fits (1764+112 <= 2048); the 200-byte partial
+        # tail does not (1764+112+200 > 2048) and drops whole
+        self.assertEqual(len(pending), 1764 + 112)
+        self.assertEqual(p.stats["s2c"]["overflow"], 200)
 
 
 class TestControlCommands(unittest.TestCase):

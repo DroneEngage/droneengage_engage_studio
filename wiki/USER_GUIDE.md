@@ -298,6 +298,10 @@ Rules of thumb:
   drains its battery and breaks the next run.
 - Link tricks (packet loss, cutting the connection) need
   `transport: fake` — the fake server exists only for that.
+- Want `de_mavlink` to reach the vehicle over a serial device like
+  real hardware? Put `fcb_link: {kind: pty, baud: 57600}` on the unit —
+  the sim bridges a virtual serial port into SITL and paces it at the
+  real baud rate (`docs/SCENARIOS.md` has the details).
 - Put your files in `scenarios/`; `tests/` is for cases the nightly
   automation runs.
 
@@ -386,6 +390,7 @@ Where to look when debugging:
 | **Journal** | A per-unit diary file of important events; tests read it to check what happened. |
 | **Block / sim / scenario** | Unit recipe / fleet / scripted rehearsal — see §1. |
 | **slot_base** | The number that decides a sim's ports; give each parallel sim its own. |
+| **fcb_link / pty** | A unit key that makes de_mavlink open a virtual serial device (into SITL through the fcb proxy) instead of a TCP connection — for testing serial-link behavior without real hardware. |
 | **package / operation** | A compiled mission or job sent to the fleet (`packages/*.json`). |
 
 ---

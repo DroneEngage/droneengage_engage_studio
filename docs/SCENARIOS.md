@@ -110,6 +110,9 @@ fleet:
     account: {user: u@x.com, code: secret}       # own login (auth sims)
     fcb_proxy: true            # route de_mavlink via the SL-0008 fcb
                              # proxy (enables the fcb_* faults/steps)
+    fcb_link: {kind: pty, baud: 57600}   # SL-0102: de_mavlink opens a
+                             # real serial device (socat pty -> proxy);
+                             # forces fcb_proxy on
     faketime: true           # launch de_comm under libfaketime - needed
                              # by the clock_step fault (SL-0014)
 ```
@@ -197,7 +200,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `cpu_starve` / `cpu_unstarve` | `unit`, `proc`\|`module`, `duty_pct`, `cycle_ms`, `dur_s` — SIGSTOP/SIGCONT duty cycle (SL-0014) |
 | `journal_unwritable` / `journal_writable` | `unit` — the journal dir goes read-only / is restored (SL-0014) |
 | `clock_step` | `unit`, `offset_s` — step a `faketime: true` unit's de_comm clock (SL-0014) |
-| `fcb_cut` / `fcb_stall` / `fcb_corrupt` / `fcb_drop` / `fcb_inject` / `fcb_clear` / `fcb_stats` | `unit`, `seconds`/`ms`/`drop_pct`/`flip_pct`/`msgid`/`hex` — one-shot fcb-proxy faults + rule/counter probes (need `fcb_proxy: true`) |
+| `fcb_cut` / `fcb_stall` / `fcb_rate` / `fcb_corrupt` / `fcb_drop` / `fcb_inject` / `fcb_clear` / `fcb_stats` | `unit`, `seconds`/`ms`/`baud`/`drop_pct`/`flip_pct`/`msgid`/`hex` — one-shot fcb-proxy faults + rule/counter probes (need `fcb_proxy: true`) |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
 ### `fault:` kinds
@@ -231,6 +234,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `mode` | `unit`, `mode` — force an FC mode |
 | `fcb_cut` | `unit`, `dur_s` (30) — sever the de_mavlink↔SITL link via the fcb proxy; reconnects are accepted-then-dropped until expiry |
 | `fcb_stall` | `unit`, `ms` or `dur_s` — hold the fcb link silent (sockets stay open) |
+| `fcb_rate` | `unit`, `baud` (9600), `dur_s` — UART pacing on the fcb link: baud/10 bytes/s per direction, whole frames only (SL-0101) |
 | `fcb_corrupt` | `unit`, `byte_drop_pct`/`bit_flip_pct`, `seed`, `dur_s` — seeded frame-aware noise on the fcb link |
 | `cpu_starve` | `unit`, `proc`\|`module`, `duty_pct` (80), `cycle_ms` (1000), `dur_s` — SL-0014: a detached SIGSTOP/SIGCONT worker holds the proc stopped `duty_pct`% of each cycle (pid + sockets kept); `dur_s` ends the cycle, without it `cpu_unstarve` or teardown does |
 | `journal_unwritable` | `unit`, `dur_s` — SL-0014: the unit's journal dir + files go read-only; open fds still write but every new journal sink open fails. `dur_s` restores, `sim down` always restores |
@@ -314,6 +318,24 @@ hook), `fcb_clear` and `fcb_stats`. The serial2 aux telemetry port and
 the GCS pilot port bypass the proxy, so `telemetry_*`/`mission_items`
 asserts keep working through a cut. Without `fcb_proxy` a unit is
 unchanged — same hash, `de_mavlink` dials SITL directly.
+
+`fcb_link: {kind: pty, baud: <N>}` (SL-0102, unit or sim level) puts a
+real serial device in front of that same proxy: a pidfile'd `fcb_tty`
+proc runs `socat` bridging `<run>/<unit>/fcb.tty` ↔ the proxy's listen
+port, arms the link baud as a proxy `rate` rule (SL-0101 — a real UART
+cannot move bytes faster than baud/10 B/s), and `de_mavlink` opens the
+pty like hardware (`connectSerial on .../fcb.tty baudrate <N>` in its
+log, `dynamic: false` — it must exist at start; the module's own
+launch script waits for it). Every `fcb_*` fault/stats/ctl command
+works on the link — it is the same proxy, just with a serial front:
+
+    de_mavlink --/dev/fcb.tty--> socat --> proxy 7760+10k --> SITL serial1
+
+`kind: tcp` (the default) is today's wiring and records nothing —
+`fcb_link` with any other kind on a no-fc unit is a spec error, and
+`pty` forces `fcb_proxy` on. `sim down` kills the socat (the pty and
+its link file die with it); `./sim doctor` requires `socat` only when
+a sim uses `kind: pty`.
 
 `clock_step` needs the unit's fleet entry to carry `faketime: true` —
 de_comm must launch under libfaketime (there is no retroactive

@@ -26,6 +26,9 @@ sim ports clear of any developer's own servers):
                 fcb   7660+10k (serial1, de_mavlink)   sysid k
     fcb proxy   opt-in (`fcb_proxy: true` on the sim or a unit, SL-0008):
                 data 7760+10k -> fcb_port, control 7860+10k
+    fcb pty     opt-in (`fcb_link: {kind: pty}` on the sim or a unit,
+                SL-0102): a socat pty front for the fcb proxy that
+                de_mavlink opens as a real serial device
     de_comm     62000 + 10k     other modules: catalog port_base + 10k
     server      wss 62008, control 62009 (sim `server.port`)
     external    no local server; the sim's GCS bridge listens on
@@ -524,7 +527,7 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         spec = _apply_overlay(spec, ov, applied)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
                            "slot_base", "units", "render", "speedup",
-                           "fcb_proxy"}
+                           "fcb_proxy", "fcb_link"}
     if unknown:
         raise SimError(f"sim: unknown keys {sorted(unknown)}")
     if spec.get("version", 1) != 1:
@@ -575,6 +578,9 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         # still override with its own `fcb_proxy:` - not hashed itself,
         # the per-unit fc.fcb_proxy dict it produces is
         "fcb_proxy": bool(spec.get("fcb_proxy", False)),
+        # SL-0102: sim-wide `fcb_link: {kind: pty, baud: N}` applies to
+        # the FC units only; each resolved fc.fcb_link is what hashes
+        "fcb_link": spec.get("fcb_link"),
         "units": [],
         "render": _render_spec(spec.get("render"), slot_base),
     }
@@ -593,7 +599,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
             entry = {"block": entry}
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
                             "account", "add_modules", "role", "fcb_proxy",
-                            "faketime", "udp_proxy", "link_proxy"}
+                            "fcb_link", "faketime", "udp_proxy",
+                            "link_proxy"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -725,8 +732,8 @@ def _overlay_path(name):
 
 def _apply_overlay(spec, name, applied, _chain=()):
     """Merge one overlay onto spec (the overlay wins). Keys:
-    server/home/slot_base/render/speedup/fcb_proxy - deep-merged like
-    extends; units - APPENDED; config - deep-merged into every unit
+    server/home/slot_base/render/speedup/fcb_proxy/fcb_link - deep-merged
+    like extends; units - APPENDED; config - deep-merged into every unit
     entry's config:; fc - likewise into every fc:; with - more overlays
     (applied before this one's own keys... no: overlay order = file
     order, a `with:` inside is applied after its own keys). `applied`
@@ -744,7 +751,7 @@ def _apply_overlay(spec, name, applied, _chain=()):
     cfg = o.pop("config", None)
     fc = o.pop("fc", None)
     unknown = set(o) - {"server", "home", "slot_base", "render",
-                        "speedup", "fcb_proxy"}
+                        "speedup", "fcb_proxy", "fcb_link"}
     if unknown:
         raise SimError(f"overlay {name!r}: unknown keys {sorted(unknown)}")
     spec = deep_merge(spec, o)
@@ -1217,6 +1224,27 @@ def _expand_unit(sim, b, name, entry, at, catalog):
     # enabling it changes the sim hash.
     if entry.get("fcb_proxy") and not fc:
         raise SimError(f"unit {name}: `fcb_proxy` but the block has no fc")
+    # SL-0102: `fcb_link: {kind: pty, baud: N}` (unit or sim level)
+    # swaps de_mavlink's tcp dial for a real serial device - a socat
+    # pty bridged into the fcb proxy and paced at baud/10 B/s by the
+    # SL-0101 rate rule. kind tcp is today's wiring and records
+    # nothing; sim-level applies to FC units only (a static skips it).
+    fl = entry.get("fcb_link")
+    if fl is not None and not isinstance(fl, dict):
+        raise SimError(f"unit {name}: `fcb_link` wants a mapping "
+                       "{kind: ..., baud: ...}")
+    if fl is None:
+        fl = sim.get("fcb_link") if fc else None
+    if fl and not fc:
+        raise SimError(f"unit {name}: `fcb_link` but the block has no fc")
+    bad = set(fl or ()) - {"kind", "baud"}
+    if bad:
+        raise SimError(f"unit {name}: `fcb_link` unknown keys "
+                       f"{sorted(bad)}")
+    link_kind = (fl or {}).get("kind", "tcp")
+    if link_kind not in ("tcp", "pty"):
+        raise SimError(f"unit {name}: `fcb_link` kind {link_kind!r} "
+                       "(have: tcp, pty)")
     if fc:
         if not 1 <= slot <= 250:
             raise SimError(f"unit {name}: slot {slot} is not a valid MAVLink sysid")
@@ -1273,10 +1301,22 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                  f"MAV{mav_n}_POSITION": 10, f"MAV{mav_n}_EXTRA1": 10,
                  f"MAV{mav_n}_RC_CHAN": 2, f"MAV{mav_n}_EXT_STAT": 2},
                 u["fc"]["params"])
+        if link_kind == "pty":
+            baud = int(fl.get("baud", 57600))
+            if baud <= 0:
+                raise SimError(f"unit {name}: `fcb_link` baud must be "
+                               "positive")
+            u["fc"]["fcb_link"] = {
+                "kind": "pty", "baud": baud,
+                # the serial device de_mavlink opens - socat's link=
+                # path under the unit's run dir (stable across
+                # bridge restarts)
+                "tty": os.path.join(unit_dir(u), "fcb.tty")}
         px = entry.get("fcb_proxy")
         if px is None:
             px = bool(sim.get("fcb_proxy"))
-        if px:
+        if px or link_kind == "pty":
+            # a pty link only fronts the proxy - it cannot exist alone
             u["fc"]["fcb_proxy"] = {"port": 7760 + 10 * slot,
                                     "ctrl": 7860 + 10 * slot}
         # world.prepare_sim stamps config.<stub>.stub.{sysid,pose_port}
@@ -1707,13 +1747,18 @@ def faketime_rc_path(u):
 def procs_of(u):
     """Process names of a unit in launch order. fcb_proxy (SL-0008) rides
     between sitl and the modules: it must listen before de_mavlink's
-    fcb_connection_uri is dialed. link_proxy (SL-0009) starts before the
-    modules too: it is what de_comm dials for the comm server.
+    fcb_connection_uri is dialed. fcb_tty (SL-0102, a `fcb_link: pty`
+    unit) follows it: the socat bridge waits for the proxy's ctrl port,
+    arms the link baud as a rate rule, then execs - and it must exist
+    before de_mavlink opens the device. link_proxy (SL-0009) starts
+    before the modules too: it is what de_comm dials for the comm server.
     udp_proxy_<m> (SL-0010) goes right before its module so the module's
     s2s dial hits the proxy."""
     out = ["sitl"] if u["fc"] else []
     if u["fc"] and u["fc"].get("fcb_proxy"):
         out.append("fcb_proxy")
+    if u["fc"] and (u["fc"].get("fcb_link") or {}).get("kind") == "pty":
+        out.append("fcb_tty")
     if u.get("link_proxy"):
         out.append("link_proxy")
     for m in u["modules"]:
@@ -1898,6 +1943,20 @@ def gen_unit(u, sim, catalog):
         # listen port when the unit runs one, else the SITL fcb port
         ctx["fcb_connect_port"] = (u["fc"].get("fcb_proxy") or {}) \
             .get("port", u["fc"]["fcb_port"])
+        # SL-0102: `fcb_link: {kind: pty}` turns the dial into a serial
+        # open of the unit's socat-bridged fcb.tty (dynamic: false -
+        # the device is promised present at start, like real hardware)
+        link = u["fc"].get("fcb_link") or {}
+        if link.get("kind") == "pty":
+            ctx["fcb_serial_path"] = link["tty"]
+            ctx["fcb_connection_uri"] = {"type": "serial",
+                                         "port": link["tty"],
+                                         "baudrate": link["baud"],
+                                         "dynamic": False}
+        else:
+            ctx["fcb_connection_uri"] = {"ip": "127.0.0.1",
+                                         "port": ctx["fcb_connect_port"],
+                                         "type": "tcp"}
     for m in u["modules"]:
         if m == "de_comm":
             continue
@@ -1930,6 +1989,10 @@ def gen_unit(u, sim, catalog):
         })
         mcfg = deep_merge(mcfg, _fill(spec.get("wire") or {},
                                       dict(ctx, port=u["ports"][m])))
+        if m == "de_mavlink" and ctx.get("fcb_serial_path"):
+            # SL-0102: the serial uri replaces the template's tcp keys
+            # outright - deep_merge would keep its ip: 0.0.0.0 behind
+            mcfg["fcb_connection_uri"] = ctx["fcb_connection_uri"]
         if "udp_proxy_" + m in u["ports"]:
             # a catalog `wire:` s2s_udp_target_port would win that merge -
             # the proxy keeps the last word
@@ -1978,6 +2041,12 @@ def gen_unit(u, sim, catalog):
                        f"-loglevel error -f v4l2 -i '{wait_dev}' "
                        f"-frames:v 1 -f null - 2>/dev/null; "
                        f"do sleep 2; done; exec {cmd}\"")
+        if m == "de_mavlink" and ctx.get("fcb_serial_path"):
+            # SL-0102: the pty link file appears when the unit's socat
+            # bridge (proc fcb_tty) is running - de_mavlink opens the
+            # device once at startup, so hold it until the link exists
+            cmd = (f"bash -c \"until [ -e '{ctx['fcb_serial_path']}' ]; "
+                   f"do sleep 1; done; exec {cmd}\"")
         _launch_script(u, m, mdir, cmd, spec.get("start_delay", 0),
                        env=(("DE_BOARD_ID", u["name"]),))
 
@@ -2041,6 +2110,26 @@ def gen_unit(u, sim, catalog):
                 % (sys.executable, os.path.join(ENGINE_DIR, "fcb_proxy.py"),
                    u["name"], px["port"], px["ctrl"], fc["fcb_port"],
                    pdir, u["slot"]))
+
+        # ---- fcb pty link (SL-0102) ----
+        # `fcb_link: {kind: pty}` gives de_mavlink a real serial device:
+        # socat bridges <unit>/fcb.tty <-> the fcb proxy's listen port.
+        # The wrapper waits for the proxy's ctrl port and arms the
+        # link's baud as a proxy `rate` rule (a real UART cannot move
+        # bytes faster) before dialing - both repeat per reconnect, so
+        # a proxy restart re-presents the same device path.
+        fl = fc.get("fcb_link")
+        if fl and fl["kind"] == "pty":
+            pdir = os.path.join(udir, "fcb_tty")
+            os.makedirs(pdir, exist_ok=True)
+            _launch_script(
+                u, "fcb_tty", pdir,
+                "bash -c \"while true; do until (exec 3<>/dev/tcp/"
+                "127.0.0.1/%d && printf 'rate %d\\n' >&3 && exec 3>&-) "
+                "2>/dev/null; do sleep 1; done; socat -d -d "
+                "pty,raw,echo=0,link='%s' tcp:127.0.0.1:%d; sleep 1; "
+                "done\""
+                % (px["ctrl"], fl["baud"], fl["tty"], px["port"]))
     u.pop("config", None)
     u.pop("parm_files", None)
 

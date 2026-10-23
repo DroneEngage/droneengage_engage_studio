@@ -40,9 +40,11 @@ de_mavlink:
     tlog_enabled: false
     logger_enabled: false
   wire:
-    # SL-0008: {fcb_connect_port} is the fcb proxy's port on units that
-    # run one (fcb_proxy: true), the SITL fcb port otherwise
-    fcb_connection_uri: {ip: "127.0.0.1", port: "{fcb_connect_port}", type: tcp}
+    # {fcb_connection_uri} renders the whole dial: SL-0008 -> tcp to the
+    # fcb proxy's listen port (fcb_proxy: true) or SITL's fcb port;
+    # SL-0102 -> {type: serial, port: <unit>/fcb.tty, baudrate, dynamic}
+    # on a `fcb_link: {kind: pty}` unit
+    fcb_connection_uri: "{fcb_connection_uri}"
   ready_re: "nav adapter hello"
 
 de_camera:

@@ -592,6 +592,8 @@ def _fleet_units(scn, home):
             u["fc"] = {"params": dict(ent["params"])}
         if ent.get("fcb_proxy") is not None:
             u["fcb_proxy"] = bool(ent["fcb_proxy"])
+        if ent.get("fcb_link") is not None:
+            u["fcb_link"] = ent["fcb_link"]   # SL-0102 (validated in simlib)
         cfg = dict(ent.get("config") or {})
         # SITL tlogs feed distance_to / no_sep_violation / the realtime
         # speed-up check - enable on units that run de_mavlink
