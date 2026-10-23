@@ -387,13 +387,16 @@ class FcbProxy:
         """Apply the corruption rules to buf's complete frames; consume
         what was forwarded. Rules empty -> pass everything through."""
         rules = self.rules
+        st = self.stats[direction]
         if not rules["drop_pct"] and not rules["flip_pct"] \
                 and not rules["msgids"]:
+            # fast path: no per-frame parse, but still account the
+            # bytes so `stats` reports real traffic without rules
+            st["bytes"] += len(buf)
             out = bytes(buf)
             buf.clear()
             return out
         rng = self.rngs[direction]
-        st = self.stats[direction]
         out = bytearray()
         i = 0
         while i < len(buf):

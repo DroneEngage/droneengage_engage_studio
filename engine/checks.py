@@ -429,6 +429,62 @@ def _module_log_count(name, a, ctx):
               sum(vals) / len(vals) if vals else 0, "; ".join(bits))
 
 
+def _fcb_stats(name, a, ctx):
+    """fcb_stats {unit, direction (both), min_bytes (1), min_frames}:
+    the unit's fcb proxy counters read live off its ctrl port - did
+    the wire actually carry MAVLink? The SL-0104 host_serial hardware
+    test asserts bytes moved each way through the bridged adapter.
+    Note `bytes` counts every byte the direction moves; `frames` is
+    counted by the shaped path only, so a rule-free proxy reports
+    bytes but keeps frames at 0 by design."""
+    want = str(a.get("direction", a.get("dir", "both")))
+    dirs = ("c2s", "s2c") if want == "both" else \
+        [d.strip() for d in want.split(",")]
+    min_bytes = int(a.get("min_bytes", 1))
+    min_frames = int(a.get("min_frames", 0))
+    ok, bits, vals = True, [], []
+    for u in _units(a, ctx):
+        pr = (u.get("fc") or {}).get("fcb_proxy")
+        if not pr:
+            ok = False
+            bits.append(f"{u['name']}: no fcb proxy")
+            continue
+        try:
+            s = socket.create_connection(
+                ("127.0.0.1", int(pr["ctrl"])), 3)
+            s.sendall(b"stats\n")
+            s.settimeout(2)
+            data = b""
+            try:
+                while True:
+                    chunk = s.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+            except socket.timeout:
+                pass
+            s.close()
+        except OSError as e:
+            ok = False
+            bits.append(f"{u['name']}: ctrl unreachable: {e}")
+            continue
+        text = data.decode(errors="replace")
+        for d in dirs:
+            m = re.search(rf"\b{d} frames=(\d+) bytes=(\d+)", text)
+            if not m:
+                ok = False
+                bits.append(f"{u['name']}: no {d} counters in reply")
+                continue
+            frames, byts = int(m.group(1)), int(m.group(2))
+            vals.append(byts)
+            ok &= byts >= min_bytes and frames >= min_frames
+            bits.append(f"{u['name']}.{d}: bytes={byts}"
+                        f" (>={min_bytes}) frames={frames}"
+                        f" (>={min_frames})")
+    return _r(name, "PASS" if ok else "FAIL",
+              sum(vals) / len(vals) if vals else 0, "; ".join(bits))
+
+
 def _no_journal(name, a, ctx):
     """no_journal {unit, re}: the negative sibling of journal_count -
     PASS only when the pattern has zero hits since the test mark (P4F-07:
@@ -2599,6 +2655,7 @@ DISPATCH = {
     "fc_mode": _fc_mode,
     "status_field": _status_field,
     "adsb_vehicle": _adsb_vehicle,
+    "fcb_stats": _fcb_stats,
 }
 
 # the SL-0011 run-wide invariants: they read run evidence (samples.jsonl,

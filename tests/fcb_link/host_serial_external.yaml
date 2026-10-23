@@ -1,0 +1,40 @@
+# host_serial_external: the SL-0104 `fcb_link: {kind: host_serial}` path -
+# SITL's serial1 fronts the fcb proxy, the proxy fronts a socat bridge
+# bound to a REAL host USB-serial adapter (raw, echo=0, 57600 baud), and the
+# FC client is `fc_client: external`: no local de_comm/de_mavlink - the
+# client is a device off-host (an Android phone running Andruav, or a
+# Pi) wired to the host adapter TX->RX / RX->TX / GND (docs/HIL.md).
+# The unit still shows in `sim status` with a host:ttyUSBn:baud link.
+#
+# HARDWARE-GATED: the run SKIPs cleanly (exit 0) when the adapter is
+# not attached - scenario_runner checks the device before bring-up.
+# With the adapter present but nothing crossed to it, c2s fails for
+# real (a wire with no client carries nothing).
+version: 1
+name: f_host_serial_ext
+transport: real
+realtime: true
+settle_s: 15
+fleet:
+  - {id: c1, cls: copter, fc_client: external,
+     fcb_link: {kind: host_serial, device: /dev/ttyUSB0, baud: 57600}}
+timeline:
+  # give the external client a real window to attach, pull params and
+  # stream - SITL emits s2c the whole time, the client's heartbeats/
+  # requests are the c2s half
+  - {t: 0, do: wait, seconds: 30}
+  # SL-0103's fault works on this kind too: stopping the bridge is a
+  # cable pull on the wire's far end - the client sees the adapter go
+  # silent, then traffic resumes on replug
+  - {t: 0, fault: fcb_unplug, unit: c1, dur_s: 5}
+  - {t: 0, do: wait, seconds: 25}
+assert:
+  # the proxy counted real bytes each way (bytes are cumulative, so
+  # the unplug window cannot erase pre-fault evidence)
+  - fcb_stats: {unit: c1, direction: c2s, min_bytes: 1}
+  - fcb_stats: {unit: c1, direction: s2c, min_bytes: 1}
+  - proc_alive: {unit: c1, proc: fcb_tty}
+  - proc_alive: {unit: c1, proc: fcb_proxy}
+  - proc_alive: {unit: c1, proc: sitl}
+  - no_unexpected_restart: {}
+teardown: none

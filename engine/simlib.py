@@ -599,8 +599,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
             entry = {"block": entry}
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
                             "account", "add_modules", "role", "fcb_proxy",
-                            "fcb_link", "faketime", "udp_proxy",
-                            "link_proxy"}
+                            "fcb_link", "fc_client", "faketime",
+                            "udp_proxy", "link_proxy"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -622,6 +622,20 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         if u["name"] in seen:
             raise SimError(f"sim: duplicate unit name {u['name']!r}")
         seen.add(u["name"])
+    # one host_serial adapter can only front one unit's wire - a
+    # sim-level `fcb_link:` fan-out or a duplicated device: must not
+    # silently bridge two units onto the same tty
+    dev_owner = {}
+    for u in sim["units"]:
+        fl = (u.get("fc") or {}).get("fcb_link") or {}
+        if fl.get("kind") != "host_serial":
+            continue
+        if fl["device"] in dev_owner:
+            raise SimError(
+                f"sim: units {dev_owner[fl['device']]} and {u['name']} "
+                f"share fcb_link device {fl['device']} - each "
+                "host_serial unit needs its own adapter")
+        dev_owner[fl["device"]] = u["name"]
     sim["hash"] = sim_hash(sim, _MODULE_BINS)
     return sim
 
@@ -1237,14 +1251,34 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         fl = sim.get("fcb_link") if fc else None
     if fl and not fc:
         raise SimError(f"unit {name}: `fcb_link` but the block has no fc")
-    bad = set(fl or ()) - {"kind", "baud"}
+    bad = set(fl or ()) - {"kind", "baud", "device"}
     if bad:
         raise SimError(f"unit {name}: `fcb_link` unknown keys "
                        f"{sorted(bad)}")
     link_kind = (fl or {}).get("kind", "tcp")
-    if link_kind not in ("tcp", "pty"):
+    if link_kind not in ("tcp", "pty", "host_serial"):
         raise SimError(f"unit {name}: `fcb_link` kind {link_kind!r} "
-                       "(have: tcp, pty)")
+                       "(have: tcp, pty, host_serial)")
+    if link_kind != "host_serial" and "device" in (fl or {}):
+        raise SimError(f"unit {name}: `fcb_link` device only applies "
+                       "to kind host_serial")
+    # SL-0104: `fc_client: external` - the FC client lives off-host (an
+    # Android/Pi wired to the host's USB-serial adapter): the unit runs
+    # SITL + the bridge but no local de_comm/de_mavlink. It only makes
+    # sense with a link kind the client can physically attach to.
+    fc_client = str(entry.get("fc_client", "local"))
+    if fc_client not in ("local", "external"):
+        raise SimError(f"unit {name}: `fc_client` {fc_client!r} "
+                       "(have: local, external)")
+    if fc_client == "external":
+        if not fc:
+            raise SimError(f"unit {name}: `fc_client: external` but "
+                           "the block has no fc")
+        if link_kind != "host_serial":
+            raise SimError(f"unit {name}: `fc_client: external` needs "
+                           "`fcb_link` kind host_serial - the only "
+                           "kind that wires a client in from outside "
+                           "the host")
     if fc:
         if not 1 <= slot <= 250:
             raise SimError(f"unit {name}: slot {slot} is not a valid MAVLink sysid")
@@ -1312,10 +1346,36 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                 # path under the unit's run dir (stable across
                 # bridge restarts)
                 "tty": os.path.join(unit_dir(u), "fcb.tty")}
+        elif link_kind == "host_serial":
+            # SL-0104: the host's USB-serial adapter is the wire - a
+            # socat bridge binds it to the fcb proxy while the client
+            # device (crossed cable: its TX->our RX) lives off-host.
+            device = str(fl.get("device") or "").strip()
+            if not device:
+                raise SimError(f"unit {name}: `fcb_link` kind "
+                               "host_serial needs `device:` (e.g. "
+                               "/dev/ttyUSB0 or a /dev/serial/by-id "
+                               "path)")
+            if fc_client != "external":
+                raise SimError(f"unit {name}: `fcb_link` kind "
+                               "host_serial needs `fc_client: "
+                               "external` - the bridge owns the "
+                               "adapter; a local de_mavlink opening "
+                               "the same device would fight it")
+            baud = int(fl.get("baud", 57600))
+            if baud <= 0:
+                raise SimError(f"unit {name}: `fcb_link` baud must be "
+                               "positive")
+            u["fc"]["fcb_link"] = {"kind": "host_serial",
+                                   "device": device, "baud": baud}
+        if fc_client == "external":
+            u["fc_client"] = "external"
+            u["modules"] = [m for m in u["modules"]
+                            if m not in ("de_comm", "de_mavlink")]
         px = entry.get("fcb_proxy")
         if px is None:
             px = bool(sim.get("fcb_proxy"))
-        if px or link_kind == "pty":
+        if px or link_kind in ("pty", "host_serial"):
             # a pty link only fronts the proxy - it cannot exist alone
             u["fc"]["fcb_proxy"] = {"port": 7760 + 10 * slot,
                                     "ctrl": 7860 + 10 * slot}
@@ -1747,8 +1807,9 @@ def faketime_rc_path(u):
 def procs_of(u):
     """Process names of a unit in launch order. fcb_proxy (SL-0008) rides
     between sitl and the modules: it must listen before de_mavlink's
-    fcb_connection_uri is dialed. fcb_tty (SL-0102, a `fcb_link: pty`
-    unit) follows it: the socat bridge waits for the proxy's ctrl port,
+    fcb_connection_uri is dialed. fcb_tty (SL-0102 `fcb_link: pty`,
+    SL-0104 `kind: host_serial`) follows it: the socat bridge waits
+    for the proxy's ctrl port,
     arms the link baud as a rate rule, then execs - and it must exist
     before de_mavlink opens the device. link_proxy (SL-0009) starts
     before the modules too: it is what de_comm dials for the comm server.
@@ -1757,7 +1818,8 @@ def procs_of(u):
     out = ["sitl"] if u["fc"] else []
     if u["fc"] and u["fc"].get("fcb_proxy"):
         out.append("fcb_proxy")
-    if u["fc"] and (u["fc"].get("fcb_link") or {}).get("kind") == "pty":
+    if u["fc"] and (u["fc"].get("fcb_link") or {}).get("kind") in \
+            ("pty", "host_serial"):
         out.append("fcb_tty")
     if u.get("link_proxy"):
         out.append("link_proxy")
@@ -2111,25 +2173,41 @@ def gen_unit(u, sim, catalog):
                    u["name"], px["port"], px["ctrl"], fc["fcb_port"],
                    pdir, u["slot"]))
 
-        # ---- fcb pty link (SL-0102) ----
+        # ---- fcb serial link (SL-0102 pty, SL-0104 host_serial) ----
         # `fcb_link: {kind: pty}` gives de_mavlink a real serial device:
         # socat bridges <unit>/fcb.tty <-> the fcb proxy's listen port.
-        # The wrapper waits for the proxy's ctrl port and arms the
-        # link's baud as a proxy `rate` rule (a real UART cannot move
-        # bytes faster) before dialing - both repeat per reconnect, so
-        # a proxy restart re-presents the same device path.
+        # `fcb_link: {kind: host_serial, device: /dev/ttyUSBn}` puts a
+        # real host adapter on the same spot instead - the wire an
+        # `fc_client: external` device attaches to. The wrapper waits
+        # for the proxy's ctrl port and arms the link's baud as a
+        # proxy `rate` rule (a real UART cannot move bytes faster)
+        # before dialing - both repeat per reconnect, so a proxy
+        # restart re-presents the same device path.
         fl = fc.get("fcb_link")
-        if fl and fl["kind"] == "pty":
+        if fl and fl["kind"] in ("pty", "host_serial"):
+            if fl["kind"] == "pty":
+                peer = "pty,raw,echo=0,link='%s'" % fl["tty"]
+            else:
+                # ispeed/ospeed, not b<baud>: b encodes the speed into
+                # c_cflag which ptys reject with EINVAL - ispeed/ospeed
+                # set the termios speed fields and work on both ptys
+                # and real USB-serial adapters
+                peer = "'%s',raw,echo=0,ispeed=%d,ospeed=%d" \
+                    % (fl["device"], fl["baud"], fl["baud"])
             pdir = os.path.join(udir, "fcb_tty")
             os.makedirs(pdir, exist_ok=True)
+            # the `: '<pdir>'` marker keeps the exec'd bash -c's cmdline
+            # inside RUN_DIR - pid_is_ours/stray-sweep must find this
+            # wrapper (pty's link= happens to carry it; host_serial's
+            # device path does not)
             _launch_script(
                 u, "fcb_tty", pdir,
-                "bash -c \"while true; do until (exec 3<>/dev/tcp/"
+                "bash -c \": '%s'; while true; do until (exec 3<>/dev/tcp/"
                 "127.0.0.1/%d && printf 'rate %d\\n' >&3 && exec 3>&-) "
                 "2>/dev/null; do sleep 1; done; socat -d -d "
-                "pty,raw,echo=0,link='%s' tcp:127.0.0.1:%d; sleep 1; "
+                "%s tcp:127.0.0.1:%d; sleep 1; "
                 "done\""
-                % (px["ctrl"], fl["baud"], fl["tty"], px["port"]))
+                % (pdir, px["ctrl"], fl["baud"], peer, px["port"]))
     u.pop("config", None)
     u.pop("parm_files", None)
 

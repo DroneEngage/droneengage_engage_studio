@@ -112,7 +112,12 @@ fleet:
                              # proxy (enables the fcb_* faults/steps)
     fcb_link: {kind: pty, baud: 57600}   # SL-0102: de_mavlink opens a
                              # real serial device (socat pty -> proxy);
-                             # forces fcb_proxy on
+                             # forces fcb_proxy on. kind host_serial +
+                             # fc_client: external bridges a real host
+                             # USB-serial adapter instead (SL-0104, see
+                             # docs/HIL.md - no local de_comm/de_mavlink)
+    fc_client: external      # SL-0104: the FC client is off-host
+                             # (needs fcb_link kind host_serial)
     faketime: true           # launch de_comm under libfaketime - needed
                              # by the clock_step fault (SL-0014)
 ```
@@ -334,10 +339,21 @@ works on the link — it is the same proxy, just with a serial front:
     de_mavlink --/dev/fcb.tty--> socat --> proxy 7760+10k --> SITL serial1
 
 `kind: tcp` (the default) is today's wiring and records nothing —
-`fcb_link` with any other kind on a no-fc unit is a spec error, and
-`pty` forces `fcb_proxy` on. `sim down` kills the socat (the pty and
-its link file die with it); `./sim doctor` requires `socat` only when
-a sim uses `kind: pty`.
+`fcb_link` with any other kind on a no-fc unit is a spec error, and a
+serial kind forces `fcb_proxy` on. `sim down` kills the socat (the
+pty and its link file die with it); `./sim doctor` requires `socat`
+only when a sim uses a serial kind.
+
+`fcb_link: {kind: host_serial, device: /dev/ttyUSBn, baud: <N>}`
+(SL-0104) swaps the virtual pty for a real host USB-serial adapter —
+the wire an `fc_client: external` device (a phone on USB-OTG, a Pi;
+wiring in docs/HIL.md) attaches to. The unit then starts SITL + the
+proxy + the bridge only: no local de_comm/de_mavlink, and `sim up`
+does not wait for it online (its party never joins the roster).
+`kind: host_serial` requires `fc_client: external` — a local
+de_mavlink opening the same adapter would fight the bridge for it.
+A scenario whose fleet wants a missing device SKIPs cleanly before
+bring-up (`tests/fcb_link/host_serial_external.yaml`).
 
 `clock_step` needs the unit's fleet entry to carry `faketime: true` —
 de_comm must launch under libfaketime (there is no retroactive
@@ -371,6 +387,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `journal_order` | `unit`, `first`, `then`, `proc` | ordering; `proc` reads `logs/<proc>.log` instead of the journal (module stdout lines) |
 | `journal_time_delta` | `u1`, `re1`, `u2`, `re2`, `max_s` | timing between lines |
 | `proc_alive` / `proc_dead` | `unit`, `proc` | process state at end |
+| `fcb_stats` | `unit`, `direction` (`both`\|`c2s`\|`s2c`), `min_bytes` (1), `min_frames` | the unit's fcb proxy counters read live off its ctrl port — did the wire carry MAVLink (SL-0104 host_serial evidence; `bytes` counts always, `frames` while corruption rules are armed) |
 | `adsb_vehicle` | `icao` (hex/dec), `tid` (world entity), `at_least` (1), `max_m` (50), `log`/`unit` | the GCS bridge (or `log:`/unit proc stdout) saw ≥ `at_least` `ADSB_VEHICLE` frames with this ICAO, each within `max_m` of the entity's truth position at frame time |
 | `link_offline` | `unit`, `at_least`, `min_s` | monitor saw it drop |
 | `no_unexpected_restart` | `proc` (+`unit`, `tol_s`) | every pid change in `samples.jsonl` sits inside a `fault:` kill/restart/module_kill/server_down window (or a `do:` reset/server_up/land) |

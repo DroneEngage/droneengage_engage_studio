@@ -256,13 +256,35 @@ def gather(sim=None):
             "sim.local.env",
             bool(sim and any(u.get("faketime") for u in sim["units"])))
 
-    # socat: the pty fcb_link's serial bridge (SL-0102) - required only
-    # by a sim whose units use `fcb_link: {kind: pty}`
+    # socat: the serial fcb_link bridge (SL-0102 pty, SL-0104
+    # host_serial) - required only by a sim whose units use a serial
+    # fcb_link kind
     d.check("socat", _which("socat"), "",
             "apt install socat",
             bool(sim and any(
                 u.get("fc") and (u["fc"].get("fcb_link") or {})
-                .get("kind") == "pty" for u in sim["units"])))
+                .get("kind") in ("pty", "host_serial")
+                for u in sim["units"])))
+
+    # host_serial fcb_link (SL-0104): the bridged USB-serial adapter
+    # must exist and be openable - the dialout group hint is the
+    # usual miss
+    import stat as _stat
+    for u in (sim or {}).get("units", []):
+        fl = (u.get("fc") or {}).get("fcb_link") or {}
+        if fl.get("kind") != "host_serial":
+            continue
+        dev = str(fl.get("device") or "")
+        usable = False
+        try:
+            usable = _stat.S_ISCHR(os.stat(dev).st_mode) and \
+                os.access(dev, os.R_OK | os.W_OK)
+        except OSError:
+            pass
+        d.check(f"fcb_link device {u['name']}", usable,
+                dev or "(no device configured)",
+                "attach the USB-serial adapter, and join the `dialout` "
+                "group (or udev-rule the device) for rw access")
 
     # render deps: the frame farm's chromium + ffmpeg (cameras|full);
     # Mavlink3DMap itself is always optional (never a failure)

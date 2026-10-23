@@ -327,6 +327,11 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
           f"slot {sim['slot_base']}, " + simlib.col_cyan(conn))
     # the resolved fleet: unit, vehicle and ports - the initial settings
     # the run is about to launch with
+    def _link_label(fl):
+        if fl.get("kind") == "host_serial":
+            return (f"host:{os.path.basename(fl['device'])}:"
+                    f"{fl['baud']}")
+        return f"{fl.get('kind', '?')}:{fl.get('baud')}"
     for u in m["units"]:
         fc = u["fc"]
         print("  " + simlib.col_green(f"{u['name']:12s}")
@@ -337,7 +342,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                  + (f"fcbpx={simlib.col_cyan(fc['fcb_proxy']['port'])}/"
                     f"{simlib.col_cyan(fc['fcb_proxy']['ctrl'])} "
                     if fc.get("fcb_proxy") else "")
-                 + (f"{simlib.col_cyan('pty:' + str(fc['fcb_link']['baud']))} "
+                 + (f"{simlib.col_cyan(_link_label(fc['fcb_link']))} "
                     if fc.get("fcb_link") else "")
                  if fc else "no-fc ")
               + " ".join(f"{mod}:{simlib.col_cyan(p)}"

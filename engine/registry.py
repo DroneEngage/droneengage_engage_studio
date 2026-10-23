@@ -566,6 +566,11 @@ VERBS = [
       doc="a field of the latest 1087 status (e.g. launch.grant)",
       eg="{status_field: {unit: c1, path: launch.grant, "
          "equals: true}}"),
+    V("fcb_stats", "check", opt=["unit", "direction",
+                                 "min_bytes", "min_frames"],
+      doc="the unit's fcb proxy counters read live off its ctrl port "
+          "(SL-0104: bytes moved through a bridged serial adapter)",
+      eg="{fcb_stats: {unit: c1, direction: both, min_bytes: 1}}"),
     V("adsb_vehicle", "check", req=["icao"],
       opt=["tid", "at_least", "max_m", "log", "unit"],
       doc="the GCS bridge (or log:/unit stdout) saw >= at_least "

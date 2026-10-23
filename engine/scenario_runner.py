@@ -39,6 +39,7 @@ import math
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import threading
@@ -1096,6 +1097,26 @@ def _collect(scn, m, out, results, verify, extra):
 
 # ------------------------------------------------------------------ main
 
+def _skipped_result(scn, t_file, out, t0_wall, why):
+    """A hardware-gated run whose requirements are absent (SL-0104): the
+    machine contract still gets summary.json + the RESULT line last,
+    but exit 0 and a skip count - missing hardware is not a failure."""
+    simlib.write_json(os.path.join(out, "summary.json"), {
+        "scenario": scn["name"], "file": t_file, "seed": scn["seed"],
+        "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                     time.gmtime(t0_wall)),
+        "wall_s": round(time.time() - t0_wall, 1),
+        "module_overrides": dict(simlib.module_overrides()),
+        "step_ok": True, "skipped": why,
+        "assertions": [{"name": "requires", "status": "SKIP",
+                        "value": None, "detail": why}],
+        "counts": {"pass": 0, "fail": 0, "skip": 1}, "exit": 0,
+    }, indent=2)
+    print(f"SKIP {why}\nRESULT {os.path.join(out, 'summary.json')}",
+          flush=True)
+    return 0
+
+
 def _early_result(scn, t_file, out, t0_wall, why):
     """A run that stops before the timeline still honours the machine
     contract (docs/MACHINE_API.md): a summary.json with the reason and
@@ -1146,6 +1167,29 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
             print("  " + json.dumps(s, sort_keys=True), flush=True)
         simlib.write_text(os.path.join(out, "expanded.yaml"),
                           scenario.expanded_text(scn))
+    # SL-0104 hardware gate: a `fcb_link: {kind: host_serial}` unit
+    # needs its USB-serial adapter on this host (char device, rw for
+    # us) - without it the run can prove nothing, so the whole
+    # scenario skips cleanly before the fleet even starts.
+    missing = []
+    for ent in scn["sim"].get("units") or []:
+        fl = ent.get("fcb_link") or scn["sim"].get("fcb_link") or {}
+        if fl.get("kind") != "host_serial":
+            continue
+        dev = str(fl.get("device") or "")
+        try:
+            usable = stat.S_ISCHR(os.stat(dev).st_mode) and \
+                os.access(dev, os.R_OK | os.W_OK)
+        except OSError:
+            usable = False
+        if not usable:
+            missing.append(f"{ent.get('name', '?')}:{dev or '?'}")
+    if missing:
+        return _skipped_result(
+            scn, t_file, out, t0_wall,
+            "host_serial device(s) not usable: " + ", ".join(missing)
+            + " - attach the USB-serial adapter (dialout group for rw)")
+
     # P5-08: load the world and inject it into the sim spec BEFORE the
     # fleet is ensured - the stub config blocks (world path, seed, unit,
     # pose port) and the geo_projection model land in the generated

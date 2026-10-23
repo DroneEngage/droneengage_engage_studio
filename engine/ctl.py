@@ -2400,7 +2400,14 @@ def main(argv):
         # the pinned sim's units, or every live sim's merged
         sims = [CTX] if CTX else simlib.live_sim_names()
         us = [u for n in sims for u in simlib.load_manifest(n)["units"]]
-        want = {u["party_id"] for u in us}
+        # SL-0104: an `fc_client: external` unit has no local de_comm -
+        # its party never joins the server roster, so it is not awaited
+        want = {u["party_id"] for u in us
+                if u.get("fc_client") != "external"}
+        if not want:
+            print("no local units to wait for "
+                  "(all fc_client: external)")
+            return
         timeout = float(a[0]) if a else 90
         t0 = time.time()
         got = set()

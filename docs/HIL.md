@@ -326,3 +326,52 @@ local analogue already. Follow-up tasks for the human to approve:
    above against a `sim up`'d SITL, record de_comm-online +
    telemetry output in this file's PoC section, then soak a
    `hil_copter` unit for hours and record CPU/mem/thermal.
+
+## host_serial — an off-host FC client on a real USB-serial wire (SL-0104)
+
+The HIL units above relocate the unit's own DE processes. `fcb_link:
+{kind: host_serial}` covers the opposite edge: the FC **client** lives
+off-host — an Android phone running the Andruav app, or a Pi running
+de_comm + de_mavlink — and talks MAVLink to the sim's SITL over a real
+serial cable, exactly like a drone's FC port.
+
+```yaml
+fleet:
+  - {id: c1, cls: copter, fc_client: external,
+     fcb_link: {kind: host_serial, device: /dev/ttyUSB0, baud: 57600}}
+```
+
+- `fc_client: external` starts only SITL + the fcb proxy + the bridge
+  for the unit — no local de_comm/de_mavlink (the external device is
+  the client). The unit never joins the server roster, so `sim up`
+  does not wait for it online.
+- The bridge proc `fcb_tty` runs
+  `socat <device>,raw,echo=0,ispeed=<baud>,ospeed=<baud>
+  tcp:127.0.0.1:<fcb_proxy port>`;
+  before dialing it arms the link baud as a proxy `rate` rule, so the
+  wire cannot move bytes faster than a real UART. `fcb_cut`,
+  `fcb_rate`, `fcb_corrupt` apply on the proxy as usual; `fcb_unplug`
+  stops the bridge (the client's adapter goes silent — a cable pull
+  at the far end) and `dur_s` replugs it.
+- `./sim doctor` requires the device to exist as a char device and be
+  readable+writable — join `dialout` (or a udev rule) for rw access.
+  `tests/fcb_link/host_serial_external.yaml` SKIPs cleanly when the
+  adapter is absent.
+
+### Wiring
+
+Two USB-serial adapters back to back — the **host** one is the
+`device:` the bridge opens; the **client** one belongs to the device
+under test (USB-OTG on a phone, a second adapter on a Pi):
+
+| host adapter | client adapter | note |
+|---|---|---|
+| TX | RX | crossed |
+| RX | TX | crossed |
+| GND | GND | common ground is required |
+| VCC | — | do **not** connect (hosts power their own ends) |
+
+Use 3.3 V adapters (ArduPilot-level signalling); a 5 V adapter into a
+3.3 V client pin can damage it. `/dev/serial/by-id/...` paths are
+preferred over `/dev/ttyUSBn` on benches where several adapters move
+around — the kernel never renumbers them.
