@@ -538,7 +538,7 @@ def _fault(step, scn, ctx):
         return ok
     if kind == "mode":
         return runner.run_ctl("mode", unit, a["mode"])
-    if kind in ("fcb_cut", "fcb_stall", "fcb_corrupt"):
+    if kind in ("fcb_cut", "fcb_stall", "fcb_rate", "fcb_corrupt"):
         # SL-0008: faults on the per-unit fcb proxy between de_mavlink
         # and SITL (unit/sim `fcb_proxy: true`). The proxy is ours, not
         # the server's - these work on any transport.
@@ -559,6 +559,15 @@ def _fault(step, scn, ctx):
             ms = a.get("ms") or int(float(dur or 1) * 1000)
             _restore_at(ms / 1000.0)
             return runner.run_ctl("fcb_stall", unit, ms)
+        if kind == "fcb_rate":
+            # SL-0101: UART pacing (baud/10 bytes/s per direction);
+            # dur_s restores the full-speed link through fcb_clear
+            ok = runner.run_ctl("fcb_rate", unit, a.get("baud", 9600))
+            if ok and dur:
+                _schedule(ctx, float(dur), runner.run_ctl,
+                          "fcb_clear", unit)
+                _restore_at(float(dur))
+            return ok
         ok = runner.run_ctl("fcb_corrupt", unit,
                             a.get("byte_drop_pct", 0),
                             a.get("bit_flip_pct", 0),

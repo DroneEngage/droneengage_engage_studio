@@ -1,0 +1,44 @@
+# fcb_rate: the SL-0101 token bucket paces the de_mavlink<->SITL link
+# like a 9600-baud UART - 960 B/s per direction, whole frames only.
+#
+# t=0: the rate rule goes on the unit's fcb proxy for a fixed 45 s
+# window (dur_s schedules the recorded restore). t=3: de_mavlink
+# restarts, and a fresh process re-downloads the whole parameter table
+# on its first heartbeat - ~1400 PARAM_VALUE frames (~45 KB) that now
+# squeeze through 960 B/s instead of wire speed: ~52 s of airtime where
+# an unthrottled download finishes in ~3 s. The window lifts at ~45 s
+# while the download is still running, so "Parameter LOADED" can only
+# land after the restore - the wait_log step prints its own elapsed
+# time, which is the measurement the acceptance asks for. Position
+# telemetry interleaves through the throttled link the whole time:
+# the FC position source reports lost while de_mavlink is dead, then
+# recovers mid-download (POS_SOURCE_BACK while the rule is still on).
+version: 1
+name: f_fcb_rate
+transport: real          # the proxy is ours - no fake server needed
+realtime: true
+settle_s: 30
+fleet:
+  - {id: c1, cls: copter, fcb_proxy: true}
+timeline:
+  - {t: 0, fault: fcb_rate, unit: c1, baud: 9600, dur_s: 45}
+  - {t: 3, do: restart, unit: c1, proc: de_mavlink}
+  - {t: 8, do: wait_log, unit: c1, module: de_mavlink,
+     re: "TCP Client connected", timeout: 90}
+  - {t: 15, do: wait_log, unit: c1, module: de_mavlink,
+     re: "Parameter LOADED", timeout: 300}
+assert:
+  # the parameter download completed through the throttle...
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "Parameter LOADED", at_least: 1}
+  # ...and FC telemetry still reached de_mavlink through it: the FC
+  # position source recovered promptly while the rate rule was on
+  - journal_time_delta: {u1: c1, re1: "POS_SOURCE_LOST",
+                         u2: c1, re2: "POS_SOURCE_BACK", max_s: 15}
+  # the timed clear at ~45 s restored the link and the unit kept
+  # reporting fresh telemetry after it
+  - recovers_after_fault: {within_s: 120}
+  - telemetry_value: {unit: c1, field: ekf_ok, equals: true}
+  - proc_alive: {unit: c1, proc: de_mavlink}
+  - proc_alive: {unit: c1, proc: fcb_proxy}
+teardown: none

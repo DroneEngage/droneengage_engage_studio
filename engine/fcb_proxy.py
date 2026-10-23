@@ -18,6 +18,11 @@ control-port convention; ctl.py `fcb_*` commands talk here):
                                 would make it exit)
     stall <ms>                  hold the link: nothing is pumped until the
                                 pause elapses, then buffered traffic flows
+    rate <baud>                 UART pacing (SL-0101): each direction moves
+                                at most baud/10 bytes/s through a token
+                                bucket (one 10 ms quantum of burst, whole
+                                frames only - a frame never splits across
+                                a wait); 0 removes the rule
     corrupt <byte_drop%> <bit_flip%> <seed>
                                 frame-aware noise model: a lost UART byte
                                 kills its frame, so a parsed MAVLink
@@ -87,6 +92,56 @@ def _frame_msgid(buf, i):
     return buf[i + 7] | (buf[i + 8] << 8) | (buf[i + 9] << 16)
 
 
+class RateBucket:
+    """UART-style byte pacer (SL-0101): `bps` bytes/sec through a token
+    bucket refilled continuously but capped at one TICK_S quantum, so the
+    largest burst is a single tick's worth - a real serial line cannot
+    outrun baud/10 bytes a second either. `clock` is injectable: the
+    unit tests drive it with a virtual clock and never sleep."""
+
+    TICK_S = 0.01
+
+    def __init__(self, clock=time.time):
+        self.clock = clock
+        self.bps = 0.0            # bytes/sec; 0 = unlimited
+        self.tokens = 0.0
+        self.last = clock()
+
+    def set_bps(self, bps):
+        """Re-arm the bucket at bps bytes/s (0 disables pacing). The
+        bucket starts full: the link is 'ready' like a fresh UART."""
+        self.bps = bps
+        self.tokens = bps * self.TICK_S
+        self.last = self.clock()
+
+    def _refill(self):
+        now = self.clock()
+        if self.bps > 0.0:
+            self.tokens = min(self.bps * self.TICK_S,
+                              self.tokens + (now - self.last) * self.bps)
+        self.last = now
+
+    def allow(self, n):
+        """May a whole n-byte frame leave now? Any positive balance
+        sends it whole even when n exceeds the tokens - the resulting
+        debt is the frame's airtime on a real UART, and later sends
+        wait while the bucket refills. Frames are never split."""
+        if self.bps <= 0.0:
+            return True
+        self._refill()
+        if self.tokens <= 0.0:
+            return False
+        self.tokens -= n
+        return True
+
+    def wait_s(self):
+        """Seconds until the bucket can move another byte."""
+        if self.bps <= 0.0:
+            return 0.0
+        self._refill()
+        return 0.0 if self.tokens > 0.0 else -self.tokens / self.bps
+
+
 class FcbProxy:
     def __init__(self, listen_port, target_host, target_port, ctrl_port,
                  unit, seed):
@@ -107,14 +162,19 @@ class FcbProxy:
         self.cut_until = 0.0         # drop every connection before this time
         self.stall_until = 0.0       # pump nothing before this time
         self.rules = {"drop_pct": 0.0, "flip_pct": 0.0, "msgids": {}}
+        # SL-0101 `rate` rule: one token bucket per direction, both
+        # paced at the same baud/10 bytes a second
+        self.buckets = {"c2s": RateBucket(), "s2c": RateBucket()}
+        # per-direction "head frame already counted in delayed" flags
+        self.held = {"c2s": False, "s2c": False}
         # a seeded RNG per direction: c2s = client->SITL, s2c = SITL->client
         self.rngs = {"c2s": random.Random(seed),
                      "s2c": random.Random(seed + 7919)}
         self.stats = {"connects": 0, "refused": 0,
                       "c2s": {"frames": 0, "bytes": 0, "dropped": 0,
-                              "flipped": 0},
+                              "flipped": 0, "delayed": 0},
                       "s2c": {"frames": 0, "bytes": 0, "dropped": 0,
-                              "flipped": 0}}
+                              "flipped": 0, "delayed": 0}}
 
     def log(self, msg):
         print(f"[{self.unit}] {msg}", flush=True)
@@ -186,8 +246,11 @@ class FcbProxy:
 
     def _pump(self, gen, direction, src, dst):
         """Move bytes src -> dst until the session ends. A cut/stall is
-        checked per loop; corruption is applied frame-aware in _shape."""
+        checked per loop; corruption is applied frame-aware in _shape;
+        the rate rule queues the shaped bytes and releases whole frames
+        as the direction's token bucket pays for them (SL-0101)."""
         buf = bytearray()
+        pending = bytearray()       # shaped bytes waiting on the bucket
         stalled = False
         while not self.stopping.is_set():
             with self.lock:
@@ -211,6 +274,15 @@ class FcbProxy:
                 self.log(f"{direction}: resumed")
             if now < cut:
                 return          # the cut's closer owns the teardown
+            if pending:
+                # rate backlog: keep draining before reading more - the
+                # queue itself is the throttle's back-pressure
+                if not self._drain(direction, pending, dst):
+                    return
+                if pending:
+                    time.sleep(min(self.buckets[direction].wait_s()
+                                   or 0.005, 0.02))
+                continue
             try:
                 data = src.recv(65536)
             except socket.timeout:
@@ -224,17 +296,47 @@ class FcbProxy:
             buf += data
             out = self._shape(buf, direction)
             if out:
-                try:
-                    if direction == "s2c":
-                        # share the client socket with `inject`: whole
-                        # frames only, never bytes mid-frame
-                        with self.tx_lock:
-                            dst.sendall(out)
-                    else:
-                        dst.sendall(out)
-                except OSError:
-                    self._close_client(f"{direction} write error")
+                pending += out
+                if not self._drain(direction, pending, dst):
                     return
+
+    def _drain(self, direction, pending, dst):
+        """Release pending towards dst under the direction's rate
+        bucket. Whole frames only - a frame the bucket cannot pay for
+        waits at the head of the queue rather than being split across
+        ticks (the corrupt rule's contract). Returns False when the
+        write closed the session."""
+        st = self.stats[direction]
+        bucket = self.buckets[direction]
+        i = 0
+        while i < len(pending):
+            fl = _frame_len(pending, i)
+            if fl < 0:
+                break           # partial tail - wait for more bytes
+            n = fl if fl else 1  # a stray non-STX byte moves alone
+            if not bucket.allow(n):
+                if not self.held[direction]:
+                    # first time this head frame waits: count its bytes
+                    # once (later polls stay blocked on the same head)
+                    self.held[direction] = True
+                    st["delayed"] += n
+                break
+            self.held[direction] = False
+            try:
+                out = bytes(pending[i:i + n])
+                if direction == "s2c":
+                    # share the client socket with `inject`: whole
+                    # frames only, never bytes mid-frame
+                    with self.tx_lock:
+                        dst.sendall(out)
+                else:
+                    dst.sendall(out)
+            except OSError:
+                self._close_client(f"{direction} write error")
+                return False
+            i += n
+        del pending[:i]
+        return True
 
     def _shape(self, buf, direction):
         """Apply the corruption rules to buf's complete frames; consume
@@ -310,6 +412,14 @@ class FcbProxy:
             self.stall_until = now + ms / 1000.0
             self.log(f"stall {ms:g}ms")
             return f"stall {ms:g}ms"
+        if c == "rate":
+            baud = float(parts[1])
+            bps = baud / 10.0 if baud > 0 else 0.0
+            for b in self.buckets.values():
+                b.set_bps(bps)
+            self.log(f"rate {baud:g} baud ({bps:g} B/s per direction)"
+                     if bps else "rate cleared")
+            return f"rate {baud:g}"
         if c == "corrupt":
             drop = float(parts[1])
             flip = float(parts[2]) if len(parts) > 2 else 0.0
@@ -349,6 +459,9 @@ class FcbProxy:
         if c == "clear":
             self.rules = {"drop_pct": 0.0, "flip_pct": 0.0, "msgids": {}}
             self.cut_until = self.stall_until = 0.0
+            for b in self.buckets.values():
+                b.set_bps(0.0)
+            self.held = {"c2s": False, "s2c": False}
             self.log("clear")
             return "clear"
         if c == "stats":
@@ -358,16 +471,20 @@ class FcbProxy:
                 state.append(f"cut {self.cut_until - now:.1f}s left")
             if now < self.stall_until:
                 state.append(f"stall {self.stall_until - now:.2f}s left")
+            bps = self.buckets["c2s"].bps
             return (
                 f"connects={self.stats['connects']} "
                 f"refused={self.stats['refused']}\n"
                 f"c2s frames={up['frames']} bytes={up['bytes']} "
-                f"dropped={up['dropped']} flipped={up['flipped']}\n"
+                f"dropped={up['dropped']} flipped={up['flipped']} "
+                f"delayed={up['delayed']}\n"
                 f"s2c frames={dn['frames']} bytes={dn['bytes']} "
-                f"dropped={dn['dropped']} flipped={dn['flipped']}\n"
+                f"dropped={dn['dropped']} flipped={dn['flipped']} "
+                f"delayed={dn['delayed']}\n"
                 f"rules drop={self.rules['drop_pct']}% "
                 f"flip={self.rules['flip_pct']}% "
-                f"msgids={self.rules['msgids']}\n"
+                f"msgids={self.rules['msgids']} "
+                f"rate={bps * 10:g}baud\n"
                 f"{' '.join(state) or 'clean'}")
         if c == "quit":
             return "OK"

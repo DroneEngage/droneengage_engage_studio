@@ -342,6 +342,10 @@ VERBS = [
     V("fcb_stall", "fault", opt=["unit", "ms"],
       doc="hold the fcb link silent (sockets stay open)",
       eg="{t: 30, fault: fcb_stall, unit: c1, dur_s: 10}"),
+    V("fcb_rate", "fault", opt=["unit", "baud"],
+      doc="UART pacing on the fcb link: baud/10 bytes/s per direction "
+          "(SL-0101); dur_s clears it",
+      eg="{t: 10, fault: fcb_rate, unit: c1, baud: 9600}"),
     V("fcb_corrupt", "fault",
       opt=["unit", "byte_drop_pct", "bit_flip_pct", "seed"],
       doc="seeded frame-aware noise on the fcb link",

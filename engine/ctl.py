@@ -88,6 +88,8 @@ transport - the per-unit proxy is ours, not the server's):
   fcb_cut <unit> <s>              close both ends; reconnects are accepted
                                   then dropped until <s> expires
   fcb_stall <unit> <ms>           hold the link silent for ms, then resume
+  fcb_rate <unit> <baud>          UART pacing: cap each direction at
+                                  baud/10 bytes/s (SL-0101); 0 removes
   fcb_corrupt <unit> <drop%> <flip%> [seed]
                                   seeded frame drop / bit flips
   fcb_drop <unit> <msgid|all> <%> drop only frames of one msgid (all clears)
@@ -2248,8 +2250,8 @@ def main(argv):
                 print(f"{u['name']}: rc{a[1]} <- {a[2]}")
             finally:
                 m.close()
-    elif c in ("fcb_cut", "fcb_stall", "fcb_corrupt", "fcb_drop",
-               "fcb_inject", "fcb_clear", "fcb_stats"):
+    elif c in ("fcb_cut", "fcb_stall", "fcb_rate", "fcb_corrupt",
+               "fcb_drop", "fcb_inject", "fcb_clear", "fcb_stats"):
         # SL-0008: the per-unit fcb proxy's control port - the fault is
         # ours, no server involved (any transport works)
         us = with_fc(resolve(a[0]))
@@ -2260,6 +2262,8 @@ def main(argv):
                 fcb_ctrl(u, f"cut {a[1]}")
             elif c == "fcb_stall":
                 fcb_ctrl(u, f"stall {a[1]}")
+            elif c == "fcb_rate":
+                fcb_ctrl(u, f"rate {a[1]}")
             elif c == "fcb_corrupt":
                 fcb_ctrl(u, "corrupt %s %s %s"
                          % (a[1], a[2], a[3] if len(a) > 3 else 0))
