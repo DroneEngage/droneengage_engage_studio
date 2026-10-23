@@ -134,6 +134,7 @@ _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
                "link", "restart", "freeze", "unfreeze",
                "fcb_cut", "fcb_stall", "fcb_corrupt", "fcb_drop",
                "fcb_inject", "fcb_clear", "fcb_stats",
+               "fcb_unplug", "fcb_plug",
                "journal", "mode", "disarm", "fire", "fc",
                "write_file", "beacon",
                "takeoff", "param", "param_get",
@@ -338,6 +339,11 @@ def run_step(step, t, marks, log_events=None):
     if name == "fcb_inject":
         return run_ctl("fcb_inject", unit, arg["hex"])
     if name in ("fcb_clear", "fcb_stats"):
+        return run_ctl(name, unit)
+    if name in ("fcb_unplug", "fcb_plug"):
+        # SL-0107: the one-shot pull/plug of the serial bridge - the
+        # `fault: fcb_unplug` + dur_s form replugs on a timer; these
+        # steps let a timeline script the pair itself
         return run_ctl(name, unit)
     if name == "cpu_starve":
         # cpu_starve <unit> <proc> <duty_pct> [dur_s] [cycle_ms]

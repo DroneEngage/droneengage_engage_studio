@@ -588,19 +588,15 @@ def _fault(step, scn, ctx):
         if not us:
             print("  fcb_unplug needs an FC unit", flush=True)
             return False
-        if not all((u["fc"].get("fcb_link") or {}).get("kind", "tcp")
-                   != "tcp" for u in us):
+        if not all(simlib.bridge_proc(u) for u in us):
             print("  fcb_unplug needs an `fcb_link` serial unit "
                   "(kind pty/host_serial/bt_spp)", flush=True)
             return False
-        # the bridge proc name follows the link kind - record each
-        # unit's real one so no_unexpected_restart windows cover its
-        # pid changes
+        # record each unit's real bridge proc so no_unexpected_restart
+        # windows cover its pid changes (fcb_tty / bt_spp by kind)
         def _bridge_event():
             for u in us:
-                _proc_event("bt_spp" if (u["fc"].get("fcb_link") or {})
-                            .get("kind") == "bt_spp" else "fcb_tty",
-                            u["name"])
+                _proc_event(simlib.bridge_proc(u), u["name"])
         _bridge_event()
         ok = runner.run_ctl("fcb_unplug", unit)
         if ok and dur:

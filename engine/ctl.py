@@ -2322,17 +2322,17 @@ def main(argv):
             sys.exit(f"{a[0]}: no FC unit in the target set")
         ok = True
         for u in us:
-            kind = (u["fc"].get("fcb_link") or {}).get("kind", "tcp")
-            if kind == "tcp":
+            # the serial bridge's proc name follows the link kind
+            # (simlib.bridge_proc): socat fronts pty/host_serial,
+            # bt_spp_bridge.py fronts BT; kind tcp has no bridge
+            proc = simlib.bridge_proc(u)
+            if proc is None:
                 print(f"{u['name']}: {c} needs an `fcb_link` serial "
                       "unit (kind pty/host_serial/bt_spp) - kind tcp "
                       "dials the proxy, there is no device to unplug",
                       flush=True)
                 ok = False
                 continue
-            # the serial bridge's proc name follows the link kind:
-            # socat fronts pty/host_serial, bt_spp_bridge.py fronts BT
-            proc = "bt_spp" if kind == "bt_spp" else "fcb_tty"
             if c == "fcb_unplug":
                 ok &= kill_proc_group(u["name"], proc)
             else:
@@ -2340,11 +2340,9 @@ def main(argv):
         if c == "fcb_unplug" and len(a) > 1:
             time.sleep(float(a[1]))
             for u in us:
-                kind = (u["fc"].get("fcb_link") or {}).get("kind")
-                if kind and kind != "tcp":
-                    start_proc(
-                        u["name"],
-                        "bt_spp" if kind == "bt_spp" else "fcb_tty")
+                proc = simlib.bridge_proc(u)
+                if proc:
+                    start_proc(u["name"], proc)
         if not ok:
             sys.exit(1)
     elif c == "server_up":

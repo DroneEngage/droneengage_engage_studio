@@ -350,6 +350,15 @@ VERBS = [
       opt=["unit", "byte_drop_pct", "bit_flip_pct", "seed"],
       doc="seeded frame-aware noise on the fcb link",
       eg="{t: 0, fault: fcb_corrupt, unit: c1, byte_drop_pct: 1}"),
+    V("fcb_unplug", "step", req=["unit"],
+      doc="pull the serial device an `fcb_link` unit's client sits "
+          "on - one-shot, the fault: form's dur_s replugs on a "
+          "timer instead (SL-0103)",
+      eg="{t: 30, do: fcb_unplug, unit: c1}"),
+    V("fcb_plug", "step", req=["unit"],
+      doc="replug the serial bridge an fcb_unplug killed (same link "
+          "path/channel)",
+      eg="{t: 60, do: fcb_plug, unit: c1}"),
     V("fcb_unplug", "fault", opt=["unit"],
       doc="pull the serial device an `fcb_link` unit's de_mavlink sits "
           "on (SL-0103); dur_s replugs it",

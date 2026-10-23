@@ -208,7 +208,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `journal_unwritable` / `journal_writable` | `unit` — the journal dir goes read-only / is restored (SL-0014) |
 | `clock_step` | `unit`, `offset_s` — step a `faketime: true` unit's de_comm clock (SL-0014) |
 | `fcb_cut` / `fcb_stall` / `fcb_rate` / `fcb_corrupt` / `fcb_drop` / `fcb_inject` / `fcb_clear` / `fcb_stats` | `unit`, `seconds`/`ms`/`baud`/`drop_pct`/`flip_pct`/`msgid`/`hex` — one-shot fcb-proxy faults + rule/counter probes (need `fcb_proxy: true`) |
-| `fcb_unplug` / `fcb_plug` | `unit` [`s`] — pull/plug the serial device an `fcb_link` (pty/host_serial/bt_spp) unit's de_mavlink sits on: the serial bridge's (fcb_tty / bt_spp) whole process group is killed/restarted so the device node really vanishes (SL-0103); `[s]` blocks then replugs |
+| `fcb_unplug` / `fcb_plug` | `unit` — one-shot pull/replug of the serial device an `fcb_link` (pty/host_serial/bt_spp) unit's client sits on: the serial bridge's (fcb_tty / bt_spp) whole process group is killed/restarted so the device node really vanishes (SL-0103); `fault: fcb_unplug` + `dur_s` replugs on a timer — these steps script the pair by hand, e.g. replug after a `wait_journal` (SL-0107; `./sim ctl fcb_unplug <unit> [s]` is the blocking console form) |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
 ### `fault:` kinds
@@ -403,6 +403,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `journal_order` | `unit`, `first`, `then`, `proc` | ordering; `proc` reads `logs/<proc>.log` instead of the journal (module stdout lines) |
 | `journal_time_delta` | `u1`, `re1`, `u2`, `re2`, `max_s` | timing between lines |
 | `log_match_delta` | `unit`, `module`, `re1`, `re2` [`min_s` `max_s`] | elapsed between two observed wait_log/wait_journal matches on one unit (`module: journal` reads the journal) |
+| `obs_frames` | `unit`, `min_frames`, `cls`, `trk_stable`, `attrs` | the stub's 6546 obs frames: per-frame cls multiset, stable track set, attr bounds (SL-0034) |
 | `proc_alive` / `proc_dead` | `unit`, `proc` | process state at end |
 | `fcb_stats` | `unit`, `direction` (`both`\|`c2s`\|`s2c`), `min_bytes` (1), `min_frames` | the unit's fcb proxy counters read live off its ctrl port — did the wire carry MAVLink (SL-0104 host_serial evidence; `bytes` counts always, `frames` while corruption rules are armed) |
 | `adsb_vehicle` | `icao` (hex/dec), `tid` (world entity), `at_least` (1), `max_m` (50), `log`/`unit` | the GCS bridge (or `log:`/unit proc stdout) saw ≥ `at_least` `ADSB_VEHICLE` frames with this ICAO, each within `max_m` of the entity's truth position at frame time |

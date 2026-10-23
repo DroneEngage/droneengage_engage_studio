@@ -115,6 +115,17 @@ class DEAdapter(VehicleAdapter):
                  "unit": "server" if name == "server_up"
                  else str(a.get("unit", "all")),
                  "proc": "all"})
+        # `do:` fcb_unplug/fcb_plug (SL-0107): the serial bridge's pid
+        # changes on purpose - name each targeted unit's real bridge
+        # proc (fcb_tty / bt_spp) so the restart window covers it
+        if name in ("fcb_unplug", "fcb_plug"):
+            for u in ctl.resolve(str(a.get("unit", "all")),
+                                 ctx["manifest"]):
+                proc = simlib.bridge_proc(u)
+                if proc:
+                    ctx["proc_events"].append(
+                        {"t_ms": int(time.time() * 1000),
+                         "unit": u["name"], "proc": proc})
         # every other name: the runner.py step, unchanged semantics
         t = {"__file": scn["file"], "operation": scn.get("operation")}
         return runner.run_step({name: a}, t, ctx["marks"],

@@ -1871,12 +1871,24 @@ def faketime_rc_path(u):
     return os.path.join(unit_dir(u), "faketime.rc")
 
 
+def bridge_proc(u):
+    """The serial-bridge proc name a unit's `fcb_link` kind runs
+    through, or None for the plain tcp link (no bridge exists):
+    fcb_tty (socat) fronts pty/host_serial, bt_spp
+    (engine/bt_spp_bridge.py) fronts bt_spp - SL-0102/4/5. Every
+    place that resolves the bridge's process - launch order, ctl
+    fcb_unplug/fcb_plug, fault-window pid recording - goes through
+    this so a new kind is wired in one spot."""
+    kind = ((u.get("fc") or {}).get("fcb_link") or {}).get("kind")
+    return {"pty": "fcb_tty", "host_serial": "fcb_tty",
+            "bt_spp": "bt_spp"}.get(kind)
+
+
 def procs_of(u):
     """Process names of a unit in launch order. fcb_proxy (SL-0008) rides
     between sitl and the modules: it must listen before de_mavlink's
-    fcb_connection_uri is dialed. fcb_tty (SL-0102 `fcb_link: pty`,
-    SL-0104 `kind: host_serial`) / bt_spp (SL-0105 `kind: bt_spp`)
-    follows it: the serial bridge waits
+    fcb_connection_uri is dialed. The serial bridge (fcb_tty / bt_spp -
+    bridge_proc) follows it: the bridge waits
     for the proxy's ctrl port,
     arms the link baud as a rate rule, then execs - and it must exist
     before de_mavlink opens the device. link_proxy (SL-0009) starts
@@ -1886,12 +1898,8 @@ def procs_of(u):
     out = ["sitl"] if u["fc"] else []
     if u["fc"] and u["fc"].get("fcb_proxy"):
         out.append("fcb_proxy")
-    if u["fc"]:
-        bridge_proc = {"pty": "fcb_tty", "host_serial": "fcb_tty",
-                       "bt_spp": "bt_spp"}.get(
-                           (u["fc"].get("fcb_link") or {}).get("kind"))
-        if bridge_proc:
-            out.append(bridge_proc)
+    if u["fc"] and bridge_proc(u):
+        out.append(bridge_proc(u))
     if u.get("link_proxy"):
         out.append("link_proxy")
     for m in u["modules"]:
