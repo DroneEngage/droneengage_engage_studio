@@ -242,6 +242,72 @@ class T(unittest.TestCase):
             tx.alloc("unit.c1.bus", proto="udp")
             self.assertEqual(tx.commit()["unit.c1.bus"], p)
 
+    def test_prefer_skips_foreign_listener(self):
+        """a foreign bind on the prefer hint is skipped, not an error:
+        the lease lands on the next takeable port (the pool) - and the
+        same dry run reports no conflict"""
+        a, wt = _mk()
+        s = _bind(30020)
+        try:
+            with a.transaction("s1", wt) as tx:
+                tx.alloc("unit.c1.link_proxy", proto="tcp",
+                         prefer=30020)
+                ports = tx.commit()
+            self.assertNotEqual(ports["unit.c1.link_proxy"], 30020)
+            self.assertTrue(30000 <= ports["unit.c1.link_proxy"] <= 30099)
+        finally:
+            s.close()
+        s2 = _bind(30021)
+        try:
+            self.assertEqual(
+                a.check("s2", wt, [{"name": "y", "proto": "tcp",
+                                    "kind": "prefer",
+                                    "prefer": 30021}]), [])
+        finally:
+            s2.close()
+
+    def test_pick_lowest_free_base(self):
+        """first candidate whose pinned set is free wins; held ports and
+        other sims' leases disqualify a base, foreign binds too"""
+        a, wt = _mk()
+        wt2 = tempfile.mkdtemp(prefix="pam_wt2_")
+        # another worktree's lease blocks a pin of base 1
+        with a.transaction("other", wt2) as tx:
+            tx.alloc("x", proto="tcp", pin=30101)
+            tx.commit()
+        s = _bind(30202)                     # foreign listener on base 2
+        try:
+            cands = [(1, [(30101, "tcp")]),
+                     (2, [(30202, "tcp")]),
+                     (3, [(30303, "tcp")])]
+            self.assertEqual(a.pick("s1", wt, iter(cands)), 3)
+        finally:
+            s.close()
+        # held_ports (a live manifest's port set) disqualifies too
+        cands = [(1, [(30101, "tcp")]), (4, [(30404, "tcp")])]
+        self.assertEqual(a.pick("s1", wt, iter(cands),
+                                held_ports={30404}), None)
+        self.assertEqual(a.pick("s1", wt, iter(cands)), 4)
+
+    def test_pick_own_and_dropped_leases_do_not_block(self):
+        """the same-named sim's leases never block (up restarts it) and
+        drop_sims' leases do not either (an exclusive run downs them)"""
+        a, wt = _mk()
+        with a.transaction("s1", wt) as tx:
+            tx.alloc("p1", proto="tcp", pin=30110)
+            tx.commit()
+        with a.transaction("prev", wt) as tx:
+            tx.alloc("p2", proto="tcp", pin=30111)
+            tx.commit()
+        cands = [(1, [(30110, "tcp"), (30111, "tcp")])]
+        # s1 restarting: its own lease is free to retake, prev's lease
+        # still blocks unless it is being downed (drop_sims)
+        self.assertIsNone(a.pick("s1", wt, iter(cands)))
+        self.assertEqual(a.pick("s1", wt, iter(cands),
+                              drop_sims={"prev"}), 1)
+        # a different sim is refused either way
+        self.assertIsNone(a.pick("s2", wt, iter(cands)))
+
     def test_check_dry_run_writes_nothing(self):
         a, wt = _mk()
         wt2 = tempfile.mkdtemp(prefix='pam_wt2_')

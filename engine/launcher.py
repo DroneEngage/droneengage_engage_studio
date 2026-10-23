@@ -297,12 +297,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                     "--force / SIM_FORCE=1 to take it over"))
         down(name, quiet=True)
     if srv["type"] == "external":
-        # nothing local to bind except this sim's control port; but the
-        # user's server must be reachable or no unit ever comes online
-        if port_busy(srv["control_port"]):
-            sys.exit(simlib.col_red(
-                f"control port {srv['control_port']} is in use - set "
-                "`server: {control_port: ...}` in the sim"))
+        # nothing local to bind except this sim's control port (leased
+        # below); but the user's server must be reachable or no unit
+        # ever comes online
         host, port = (srv["auth_ip"], srv["auth_port"]) if srv["auth"] \
             else (srv["ip"], srv["port"])
         if not port_busy(port, host, timeout=5):
@@ -310,29 +307,37 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                 f"cannot reach the external server at {host}:{port} - "
                 "start your servers (servers/sh_start_servers.sh) or "
                 "fix the sim's server: block"))
-    else:
-        busy = [p for p in ([srv["port"], srv["control_port"]]
-                            + ([srv["auth_port"], srv["auth_s2s_port"]]
-                               if srv["auth"] else [])
-                            + ([srv["udp_relay"]["port"]]
-                               if srv.get("udp_relay") else []))
-                if port_busy(p)]
-        if busy:
-            sys.exit(simlib.col_red(
-                f"ports {busy} are in use by something else - either "
-                "down what holds them (./sim status), set "
-                "`server: {port: ...}` in the sim, or rerun with "
-                "--shared --slot-base any to park next to live sims "
-                "on a free port block (the server port rides the "
-                "slot for transport: scenarios)"))
+    # lease the whole port set atomically - all of it or none of it -
+    # and write the picks back into the resolved sim BEFORE generate():
+    # a prefer pick may differ from the resolved hint, and the configs
+    # and launch scripts below must carry what the procs will bind.
+    # (The pre-down lease_check above keeps the refusal-before-teardown
+    # semantics; the commit re-validates now that ours are freed.)
+    # Under --slot-base any a racing sim can win the picked base between
+    # the load-time pick and this commit: re-resolve for a fresh pick
+    # (the winner's leases disqualify that base now) instead of dying
+    # on the clash. An explicit base keeps fail-fast semantics.
+    retries = 3 \
+        if os.environ.get("SIM_SLOT_BASE_OVERRIDE") == "any" else 0
+    while True:
+        try:
+            simlib.lease_commit(sim)
+            break
+        except simlib.SimError:
+            if retries <= 0:
+                raise
+            retries -= 1
+            sim = simlib.load_sim(
+                sim_src, exclusive=exclusive and not _shared())
+            name = sim["name"]
+            srv = sim["server"]
+            simlib.check_conflicts(sim)
+            down(name, quiet=True)   # same name - a no-op when down
     rdir = simlib.run_dir(name)
     if fresh and os.path.isdir(rdir):
         shutil.rmtree(rdir)
     os.makedirs(simlib.pids_dir(name), exist_ok=True)
     m = simlib.generate(sim, _label(sim_src))
-    # lease the whole port set atomically - all of it or none of it,
-    # then the procs below bind what the registry already names ours
-    simlib.lease_commit(sim)
     conn = (f"external server {srv['ip']}:{srv['port']}"
             + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
                if srv["auth"] else "")

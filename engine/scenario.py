@@ -869,21 +869,26 @@ def load_scenario(path, seed=None, probe_ports=True):
 
 
 def _host_free_sim(sim_at, bases):
-    """The first seed-ordered slot block whose ports no foreign process
-    holds (live sims' own ports don't count - the run downs or refuses
-    them). Falls back to the seed's block when every one is held."""
-    live = set()
-    for n in simlib.live_sim_names():
-        live |= simlib.used_ports(simlib.load_manifest(n))
-    for sb in bases:
-        spec = sim_at(sb)
-        held = simlib.ports_held(
-            simlib.used_ports(simlib.load_sim(spec)) - live)
-        if not held:
-            return spec
-        print(f"slot_base {sb}: port(s) {held} held by another process "
-              "on this host - trying the next block", flush=True)
-    return sim_at(bases[0])
+    """The first seed-ordered slot block whose pinned ports no foreign
+    process, live sim manifest or other sim's lease holds (live sims'
+    own ports don't count - the run downs or refuses them; prefer
+    hints never disqualify a base, the allocator moves them into the
+    pool at commit): ONE locked registry transaction scans the
+    candidates, the pin sets shifted per base from the first resolve
+    so no load_sim runs inside the lock. Falls back to the seed's
+    block when every one is held. SIM_SHARED=1 (`--shared`) keeps the
+    run additive: live sims' ports count as real conflicts so the pick
+    lands on a disjoint base rather than a base it cannot lease."""
+    first = sim_at(bases[0])
+    sim0 = simlib.load_sim(first)
+    reqs0 = simlib.lease_requests(sim0)
+    base = simlib.slot_base_pick(
+        sim0.get("name", "sim"),
+        {u["name"] for u in sim0.get("units") or []},
+        ((sb, simlib._shifted_pins(reqs0, sb - bases[0]))
+         for sb in bases),
+        down_all=os.environ.get("SIM_SHARED") != "1")
+    return sim_at(base) if base is not None else first
 
 
 def _slot_fits(units):

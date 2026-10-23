@@ -22,6 +22,15 @@ sys.pycache_prefix = os.environ.setdefault(
         "var"), "pycache"))
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# the port allocator's machine-wide registry, isolated: slot-base picks
+# (SL-0075) run real locked transactions inside load_sim, so pointing
+# SIM_PORT_REGISTRY/LAST at a test dir keeps real sims' leases out and
+# the picks deterministic (simlib.allocator() reads these lazily)
+_pam_dir = tempfile.mkdtemp(prefix="test_checks_pam_")
+os.environ["SIM_PORT_REGISTRY"] = os.path.join(_pam_dir, "ports.json")
+os.environ["SIM_PORT_LAST"] = os.path.join(_pam_dir, "last_ports.json")
+
 import checks
 import simlib
 import scenario_runner
@@ -723,29 +732,115 @@ class T(unittest.TestCase):
                               sims["b"]["units"][0])
 
     def test_slot_block_skips_host_held_port(self):
-        import socket
+        """A host-held pinned port on the seed's block moves the pick to
+        the next base (SL-0075: one allocator transaction evaluates the
+        candidates; ports_held stays the host-probe seam); with no free
+        candidate the seed's block stands."""
         import scenario
         import simlib
-        held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        held.bind(("0.0.0.0", 0))
-        port = held.getsockname()[1]
-        orig = (simlib.load_sim, simlib.used_ports, simlib.live_sim_names)
-        try:
-            simlib.load_sim = lambda spec: spec
-            simlib.used_ports = lambda sim: sim["ports"]
-            simlib.live_sim_names = lambda: []
 
-            def sim_at(sb):
-                return {"slot_base": sb,
-                        "ports": {port} if sb == 10 else set()}
+        def sim_at(sb):
+            return {"version": 1, "name": "slot_probe",
+                    "server": {"type": "fake"},
+                    "slot_base": sb,
+                    "units": [{"name": "u1", "block": "copter"}]}
+        # slot_base 10 puts u1's pilot pin at 5860; hold exactly that
+        with mock.patch.object(simlib, "live_sim_names",
+                               lambda: []), \
+                mock.patch.object(simlib, "ports_held",
+                                  lambda ps: [p for p in ps
+                                              if p == 5860]):
             self.assertEqual(
                 scenario._host_free_sim(sim_at, [10, 35])["slot_base"], 35)
             self.assertEqual(
                 scenario._host_free_sim(sim_at, [10])["slot_base"], 10)
+        self.assertEqual(simlib.ports_held({5860}), [])
+
+    def test_lease_requests_phase1_kinds(self):
+        """SL-0075 request kinds: the side ports generation writes back
+        (server/bridge control, auth, link/fcb/udp proxies, SITL RC-in)
+        lease as `prefer` on the legacy hint; the unit core, comm-server
+        wss and yaml-explicit values stay `pin`. `shift` is the per
+        slot_base stride the --slot-base any pick applies."""
+        import simlib
+        spec = {"version": 1, "name": "lease_kinds",
+                "server": {"type": "real", "link_proxy": True,
+                           "port": simlib.SERVER_PORT + 40},
+                "slot_base": 40,
+                "units": [{"name": "u1", "block": "copter",
+                           "fcb_proxy": True,
+                           "udp_proxy": ["de_mavlink"]}]}
+        reqs = {r["name"]: r for r in simlib.lease_requests(
+            simlib.load_sim(spec))}
+        self.assertEqual(reqs["server.wss"]["kind"], "pin")
+        self.assertEqual(reqs["server.wss"]["shift"], 1)
+        self.assertEqual(reqs["server.ctrl"]["kind"], "prefer")
+        self.assertEqual(reqs["server.ctrl"]["prefer"], 62049)
+        for name in ("unit.u1.link_proxy", "unit.u1.link_proxy.ctrl",
+                     "unit.u1.fcb_proxy", "unit.u1.fcb_proxy.ctrl",
+                     "unit.u1.udp_proxy_de_mavlink", "unit.u1.sitl.rcin"):
+            self.assertEqual(reqs[name]["kind"], "prefer", name)
+            self.assertEqual(reqs[name]["shift"], 10, name)
+        for name in ("unit.u1.de_comm", "unit.u1.de_mavlink",
+                     "unit.u1.sitl.pilot", "unit.u1.sitl.aux",
+                     "unit.u1.sitl.fcb"):
+            self.assertEqual(reqs[name]["kind"], "pin", name)
+            self.assertEqual(reqs[name]["shift"], 10, name)
+        # a fake server binds wss+1 itself: its ctrl is a pin like the
+        # SITL-internal ports (phase 3 adds a --ctrl-port flag)
+        fake_reqs = {r["name"]: r for r in simlib.lease_requests(
+            simlib.load_sim(dict(spec, server={"type": "fake"})))}
+        self.assertEqual(fake_reqs["server.ctrl"]["kind"], "pin")
+        self.assertNotIn("auth.https", fake_reqs)
+
+    def test_shifted_pins_follows_slot(self):
+        """_shifted_pins moves every pin by shift*dslot - the pins the
+        sim would request on another base without resolving it again"""
+        import simlib
+        spec = {"version": 1, "name": "shift_pins",
+                "server": {"type": "fake"},
+                "slot_base": 10,
+                "units": [{"name": "u1", "block": "copter"}]}
+        reqs = simlib.lease_requests(simlib.load_sim(spec))
+        at10 = dict(simlib._shifted_pins(reqs, 0))
+        at12 = dict(simlib._shifted_pins(reqs, 2))
+        # unit pins stride 10/slot, the prefer rcin hint never votes
+        self.assertEqual(at10[5860], "tcp")
+        self.assertNotIn(5601, at10)
+        pins12 = set(at12)
+        self.assertIn(5860 + 20, pins12)
+        self.assertIn(62100 + 20, pins12)
+        # a flat fake-server wss pin does not move with the slot
+        self.assertIn(62008, pins12)
+
+    def test_lease_commit_applies_pool_port(self):
+        """A foreign listener on a prefer hint is skipped at commit:
+        the lease lands on a pool port and _apply_ports writes it into
+        the field generation reads - while pinned ports stay fixed and
+        the flat map records every request."""
+        import socket
+        import simlib
+        spec = {"version": 1, "name": "lease_apply",
+                "server": {"type": "real"},
+                "slot_base": 40,
+                "units": [{"name": "u1", "block": "copter"}]}
+        sim = simlib.load_sim(spec)
+        foreign = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        foreign.bind(("0.0.0.0", 62009))   # sit on the ctrl hint
+        try:
+            ports = simlib.lease_commit(sim)
         finally:
-            simlib.load_sim, simlib.used_ports, simlib.live_sim_names = orig
-            held.close()
-        self.assertEqual(simlib.ports_held({port}), [])
+            foreign.close()
+            simlib.lease_release(sim["name"])
+        ctrl = ports["server.ctrl"]
+        self.assertNotEqual(ctrl, 62009)
+        self.assertTrue(20000 <= ctrl <= 32767)
+        self.assertEqual(sim["server"]["control_port"], ctrl)
+        self.assertEqual(sim["ports"]["server.ctrl"]["port"], ctrl)
+        # the pin path is exact: unit ports are the formula values
+        self.assertEqual(ports["unit.u1.de_comm"], 62400)
+        self.assertEqual(sim["units"][0]["ports"]["de_comm"], 62400)
+        self.assertIn(ctrl, simlib.used_ports(sim))
 
     # -------------------------------------- P5-10 recall / time to find
 

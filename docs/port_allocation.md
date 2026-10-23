@@ -2,15 +2,15 @@
 
 > DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
 
-Status: **design, not implemented** — except `./sim ports [name|--all]`,
-which already exists in the lightweight form (no allocator): it lists
-every port a generated sim declares (from `var/run/*/sim.json`) and probes
-whether it is bound right now, including `udp_relay.relay.wss` and its whole
-`udp_relay.relay.range` as an `n/N bound` row (SL-0088). The allocator described
-below would replace that probe with real lease records. Task 2 of 3 in the
-"real servers + mesh in the sim" work. Task 1 is the comm-server plugin
-events (`droneengage_server/wiki/PluginEvents.md`). Task 3, the `servers:`
-topology / mesh design, uses the request API defined here.
+Status: **phase 0 + phase 1 implemented** (SL-0074, SL-0075) — the
+allocator (`engine/port_allocation_management.py`), the machine-wide
+registry and the lease lifecycle are live; phase-1 request kinds,
+`--slot-base any` / `scenario._host_free_sim` as one locked transaction
+(`Allocator.pick`), and the seed/recording/scoreboard audit (§4.1) are
+done. `./sim ports [name|--all|gc]` shows the real leases. Task 2 of 3 in
+the "real servers + mesh in the sim" work. Task 1 is the comm-server
+plugin events (`droneengage_server/wiki/PluginEvents.md`). Task 3, the
+`servers:` topology / mesh design, uses the request API defined here.
 
 ## Goal
 
@@ -51,8 +51,8 @@ called "the allocator" below.
 | SITL serial2 (aux) | `5762 + 10k` | TCP | SITL | telemetry |
 | SITL serial1 (fcb) | `7660 + 10k` (explicit `--serial1 tcp:P`) | TCP | SITL | de_mavlink `{fcb_port}` |
 | SITL serial5 (pose) | `5765 + 10k` (only with a `pose` module) | TCP | SITL | P5-08 stubs (`stub.pose_port`) |
-| SITL RC in | `5501 + 10k` (SITL internal, from `-I`) | UDP | SITL | **not tracked** by `used_ports` |
-| SITL sim in/out, irlock | `9003/9002/9005 + 10k` (SITL internal) | UDP | SITL, only for external physics / irlock | **not tracked**; verify which ones the internal model binds |
+| SITL RC in | `5501 + 10k` (SITL internal, from `-I`) | UDP | SITL | tracked + leased (`unit.<u>.sitl.rcin`, prefer) since SL-0075 |
+| SITL sim in/out, irlock | `9003/9002/9005 + 10k` (SITL internal) | UDP | SITL, only for external physics / irlock | **not bound** by the internal model (verified); not leased |
 | fcb_proxy data (SL-0008) | `7760 + 10k` | TCP | `engine/fcb_proxy.py` | de_mavlink `{fcb_connect_port}` |
 | fcb_proxy ctrl | `7860 + 10k` | TCP | fcb_proxy | ctl |
 | MAVLink sysid | `= k` (an ID, not a port; must be 1..250) | — | SITL `--sysid`, `-I` | de_mavlink, stubs, GCS |
@@ -103,10 +103,13 @@ These use a stride of **1 per sim**, not 10 per unit.
 - `simlib.ports_held(ports)`: a test bind on 0.0.0.0, TCP and UDP. It
   exists because the module blocks 54000–60999 sit **inside Linux's
   ephemeral range** (`ip_local_port_range` = 32768–60999 on this host).
-- `simlib.check_conflicts`: compares against live sims' manifests at `up`.
-- `simlib._load_sim_free_slot` (`--slot-base any`): resolves the whole sim
-  for up to 200 candidate bases and keeps the first with no clash.
-- `scenario._host_free_sim`: the same idea, over seed-ordered bases.
+- `simlib.check_conflicts`: compares against live sims' manifests at `up`
+  (now over the pinned request set; `simlib.lease_check` adds the
+  cross-worktree registry view).
+- `simlib._load_sim_free_slot` (`--slot-base any`) and
+  `scenario._host_free_sim`: one locked `Allocator.pick` transaction
+  per candidate scan since SL-0075 (was: resolve + bind-probe up to
+  200 bases).
 - `launcher.port_busy`: connect probes for the server and control ports.
 
 ### 1.5 Consumers that hard-code ports
@@ -498,6 +501,40 @@ scoreboards must not compare ports. Once that holds, the seed→slot
 mapping (`_seed_slot_base`) only picks `sysid` / `prefer` hints, and
 `--seeds` runs in parallel need no slot blocks at all.
 
+#### 4.1 Port-independence audit (SL-0075, confirmed)
+
+- **`link_model.Link`** (`engine/link_model.py`): every directional
+  impairment stream is `random.Random(f"{seed}:{party}:{d}")` - party
+  id + run seed + direction. No port enters the seed.
+- **`link_proxy`** (`engine/link_proxy.py`): `Link(party, seed)` where
+  `party` is the unit's party_id and `seed` comes from `--seed` (the
+  run seed `simlib` writes into the launch line). `--listen`/`--ctrl`/
+  `--target` are wiring only.
+- **Fake fleet server** (`engine/fake_fleet_server.py`): `links{}` is
+  keyed by party_id and each `link_model.Link` gets the server's
+  `--seed`. Message loss/GE/stall draws are identical for identical
+  (seed, party) regardless of ports.
+- **udp_proxy** (`engine/udp_proxy.py`): chunk faults draw from
+  `random.Random(knobs["seed"])`; the scenario runner passes the run
+  seed (`a.get("seed", scn["seed"])`).
+- **fcb_proxy** (`engine/fcb_proxy.py`): two directional streams
+  `random.Random(seed)` / `random.Random(seed + 7919)`; the launch line
+  passes `--seed u["slot"]` - the unit's slot, which is a deterministic
+  function of the scenario seed, not a port.
+- **Recordings** (`engine/record.py`): a recording replays journal/
+  step content; ports appear only as resolved connection arguments
+  (e.g. `wait_port` reachability), never in identity or comparison.
+- **Scoreboards** (`tools/verify_challenge.py`, `docs/SCOREBOARD.md`):
+  verification checks `summary.json`'s `seed` field and journal/selftest
+  counts - ports are not read, compared or scored.
+- **Assertions** (`engine/checks.py`): journal-line matching; port
+  numbers appear only inside message payloads (e.g. the udp_relay
+  heartbeat check dials the resolved port), not in pass/fail identity.
+
+So a `prefer` pick that moves into the pool changes nothing
+deterministic: same seed + same party ids → same faults, recordings
+and scores.
+
 ---
 
 ## 5. Migration
@@ -509,12 +546,12 @@ At every phase, existing `sims/*.yaml`, scenarios, `--slot-base N` and
 today** unless a run opts into the new behaviour. The final phase
 removes that guarantee, and only after its acceptance criteria pass.
 
-| Flag | Phase 0–1 | Phase 2+ |
-|---|---|---|
-| (none) | legacy formulas as **pin**: clash → error, as today | formulas as **prefer**: clash → a free port instead (behaviour change, announced) |
-| `--slot-base N` | legacy formulas at N as **pin** | the same (explicit means explicit) |
-| `--slot-base any` | allocator picks a base whose whole pinned set is free (replaces the 200-candidate search with one registry transaction plus probes) | allocator, all **free** with prefer hints; `any` becomes an alias for the default |
-| `server.port: P` in yaml | pin | pin |
+| Flag | Phase 0 | Phase 1 | Phase 2+ |
+|---|---|---|---|
+| (none) | legacy formulas as **pin**: clash → error, as today | side ports **prefer** on the formula hint (ctrl/auth/proxies/rcin), the rest still pin | formulas as **prefer**: clash → a free port instead (behaviour change, announced) |
+| `--slot-base N` | legacy formulas at N as **pin** | the same | the same (explicit means explicit) |
+| `--slot-base any` | 200-candidate resolve + probe | allocator picks a base whose whole pinned set is free, in one registry transaction (`Allocator.pick`) | allocator, all **free** with prefer hints; `any` becomes an alias for the default |
+| `server.port: P` in yaml | pin | pin | pin |
 
 `slot_base` survives as a **hint**: the sysid base, the formula-prefer
 base, and unit positions (`SPACING_M * (slot - slot_base)`). It stops
@@ -570,12 +607,37 @@ allocator never needs to know what a parent is.
 
 ### Phase 1: free allocation for new and side ports, `--slot-base any` on the allocator
 
-- Server control, auth https/s2s, link_proxy, fcb_proxy, udp_proxy, the
-  bridge control port, and SITL RC-in / sim ports switch to **free**
-  (pool 20000–32767), with legacy `prefer` hints.
-- `--slot-base any` and `scenario._host_free_sim` are reimplemented as one
-  transaction (no more resolving the sim 200 times).
-- Port-independence audit (seeds, recordings, scoreboards).
+**Implemented (SL-0075).**
+
+- Server control (`server.ctrl`), auth https/s2s (`auth.https`,
+  `auth.s2s`), per-unit `link_proxy`/`link_proxy.ctrl`,
+  `fcb_proxy`/`fcb_proxy.ctrl`, `udp_proxy_<module>` listens, the
+  external-server bridge control (`bridge.ctrl`), and the SITL RC-in
+  UDP (`unit.<u>.sitl.rcin`) lease as **prefer** on the legacy formula
+  hint, falling back to the pool (20000–32767, ephemeral-safe,
+  deny-listed). A held or denied hint is skipped, never an error; the
+  committed value is written back into the resolved fields
+  (`simlib._apply_ports`) before `generate()`, so every generated
+  config and launch script binds what the lease names. The flat lease
+  map lands in `sim.json` as `ports`.
+- Verified on a live `-I` SITL: the internal physics model binds the
+  TCP serials and the RC-in UDP only - the 9002/9003/9005 sim/irlock
+  ports stay unbound, so they are **not** leased. `fc.rcin_port` keeps
+  the formula value (what SITL really binds) until phase 2 passes
+  `--rc-in-port`; the lease reserves it meanwhile.
+- Still `pin` in phase 1: module s2s ports, the SITL TCP serials
+  (pilot/aux/fcb/pose), the comm-server wss, the udp_relay port + range
+  block, render ports, and every yaml-explicit value.
+- `--slot-base any` (`simlib._load_sim_free_slot`) and
+  `scenario._host_free_sim` now run one `Allocator.pick`: a single
+  locked transaction evaluates each candidate's **pinned** set against
+  live manifests, other sims' leases (any worktree), and a bind probe,
+  lowest-first - no more resolving the sim 200 times. Requests carry a
+  `shift` stride (`simlib._shifted_pins`): 10/slot for unit ports, 1
+  for slot-derived server-side ports, 40 for the relay range, 0 for
+  explicit values. A yaml-less `server.port` is injected as
+  `SERVER_PORT + slot_base` so `any` moves the comm server too.
+- Port-independence audit (seeds, recordings, scoreboards): §4.1.
 
 **Acceptance**
 - `./sim up copters3` plus `./sim up --shared --slot-base any --with faults
