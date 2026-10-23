@@ -121,14 +121,19 @@ Global flags for show/up/run/view/suite/validate/studio:
                                    still owns: up/run down it instead of
                                    refusing, `down` stops it (every
                                    command takes it; = SIM_FORCE=1)
-  --slot-base <N|any>              the slot every port derives from (wins
+  --slot-base <N|any>              the slot the fleet identity derives
+                                   from (SITL -I/sysid, unit index; wins
                                    over the sim yaml's slot_base: and
-                                   SIM_SLOT_BASE); `any` picks the lowest
-                                   base whose ports no live sim or other
-                                   process holds - a shifted pick changes
-                                   the sim hash, so `run` does a fresh up
-                                   instead of reusing (pin a number when
-                                   iterating)
+                                   SIM_SLOT_BASE). A number pins every
+                                   port to its legacy formula - exact or
+                                   fail. `any` and a bare slot_base:
+                                   lease the formulas as prefer hints -
+                                   the lowest base whose legacy set is
+                                   free wins, held hints move into the
+                                   pool (`moved <name> a -> b` prints).
+                                   Port values are no longer in the sim
+                                   hash, so a moved fleet still reuses
+                                   the warm sim
   --with <a[,b...]>                sims/overlays/<name>.yaml twists applied
                                    on top of the sim (server swap, extra
                                    units, config/fc pushes); each applied
@@ -506,29 +511,35 @@ def main(argv):
                                       []).append(l)
                 for (sn, wt), rows in sorted(groups.items()):
                     rows.sort(key=lambda l: (l["port"], l["name"]))
-                    # collapse a block's members into one range row
+                    # collapse each block's members into one range row,
+                    # named after the block (unit.<u>.sitl,
+                    # udp_relay.relay.range, server.fake, ...)
                     members = [l for l in rows if l.get("block")]
                     rows = [l for l in rows if not l.get("block")]
+                    blocks = {}
+                    for l in members:
+                        blocks.setdefault(
+                            re.sub(r"\.p\d+$", "", l["name"]), l)
                     own = os.path.realpath(wt) == \
                         os.path.realpath(simlib.SIM_ROOT)
                     alive = len(simlib.read_pids(sn)) if own else 0
                     print(f"{sn}" + ("" if own else f" @ {wt}")
                           + f" ({alive} proc(s) alive)")
                     w = max([len(l["name"]) for l in rows]
-                            + [len(simlib.UDP_RELAY_LEASE + ".range")]
-                            if members else
-                            [len(l["name"]) for l in rows] or [0])
+                            + [len(n) for n in blocks] or [0])
                     for l in rows:
                         state = l["state"] + \
                             (" (stale)" if l.get("stale") else "")
                         print(f"  {l['name']:{w}s}  {l['port']:>6}  "
                               f"{l['proto']:3s} {state}")
-                    for b in sorted({(l['block']['base'],
-                                      l['block']['size'])
-                                     for l in members}):
-                        print(f"  {simlib.UDP_RELAY_LEASE + '.range':{w}s}"
-                              f"  {b[0]}-{b[0] + b[1] - 1}  udp "
-                              f"{members[0]['state']}")
+                    for bn in sorted(blocks):
+                        l = blocks[bn]
+                        b = l["block"]
+                        state = l["state"] + \
+                            (" (stale)" if l.get("stale") else "")
+                        print(f"  {bn:{w}s}  "
+                              f"{b['base']}-{b['base'] + b['size'] - 1}"
+                              f"  {l['proto']:3s} {state}")
         elif c == "status":
             import ctl
             # ctl parses `-s <sim>` only ahead of the command word -

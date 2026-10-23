@@ -346,6 +346,12 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
             f"on {srv['port']}")
     print(f"sim {simlib.col_bold(name)}: {len(m['units'])} unit(s), "
           f"slot {sim['slot_base']}, " + simlib.col_cyan(conn))
+    # SL-0076 - each prefer hint the allocator could not take landed on
+    # a pool port instead; print them so the fleet's real ports are
+    # never a surprise
+    for mv in sim.get("moved_ports") or ():
+        print(simlib.col_yellow(
+            f"  moved {mv['name']} {mv['hint']} -> {mv['port']}"))
     # the resolved fleet: unit, vehicle and ports - the initial settings
     # the run is about to launch with
     for u in m["units"]:

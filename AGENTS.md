@@ -165,25 +165,32 @@ Machine paths come only from `simlib.setting()`: environment variable >
 
 ## Ports
 
-Slot `k = slot_base (10) + unit index`. SITL `-I k`, sysid `k`, pilot
-`5760+10k`, fcb `7660+10k`. The opt-in fcb proxy (`fcb_proxy: true`,
-SL-0008) takes `7760+10k` (de_mavlink dials it instead of `fcb_port`) and
-`7860+10k` (fault control port). Module s2s ports are `port_base + 10k`
-(de_comm 62000, de_mavlink 63000, de_camera 64000, de_tracker 65000). Server
-wss 62008, control 62009, authenticator +10/+11. The opt-in link proxy
-(SL-0009) takes `61500+10k` (de_comm dials it instead of the server wss)
-and `61501+10k` (fault control port). Keep `slot_base` >= 10 so
-sim ports never collide with the developer's own servers.
+Slot `k = slot_base (10) + unit index` is the fleet's IDENTITY (SITL
+`-I k`, sysid `k`); it is no longer what ports are bound. The legacy
+formulas - SITL block `5760+10k..5769+10k`, fcb `7660+10k`, RC-in /
+sim out / sim in / irlock `5501 / 9002 / 9003 / 9005 + 10k`, fcb proxy
+`7760`/`7860+10k` (`fcb_proxy: true`, SL-0008), module s2s `port_base +
+10k` (de_comm 62000, de_mavlink 63000, de_camera 64000, de_tracker
+65000), link proxy `61500`/`61501+10k` (SL-0009), server wss 62008,
+control 62009, authenticator +10/+11 - are allocator **prefer hints**:
+free they win, held or out-of-range the port moves into the free pool
+and `sim up` prints `moved <name> <hint> -> <port>`. SITL launches with
+`--base-port/--rc-in-port/--sim-port-*/--irlock-port` before `-I`, so
+every socket is the leased value. The committed map is
+`var/run/<sim>/sim.json` `ports` - read it (or `./sim ctl status`),
+never the formulas, for what a live sim actually bound. yaml-explicit
+ports and `--slot-base <N>` still pin - exact or fail.
 
 **Port leases (allocator):** `engine/port_allocation_management.py` keeps
 the machine-wide registry every worktree shares -
 `$XDG_RUNTIME_DIR/de_sim/ports.json` (fallback `~/.cache/de_sim/ports.json`;
 `SIM_PORT_REGISTRY`/`SIM_PORT_LAST` override; never under `var/`). `sim up`
-leases the whole port set in one atomic transaction - phase 0 pins the
-legacy-derived values (`simlib.lease_requests`), so ports/sim_hash are
-unchanged, but ports a *different worktree's* sim leases are refused too.
-`down`/`clean` release; stale leases (dead holder, dead sim, gone
-worktree) are swept by the next transaction or `./sim ports gc`. See
+leases the whole port set in one atomic transaction
+(`simlib.lease_requests` -> `lease_commit` -> `_apply_ports` write-back
+before `generate`). `down`/`clean` release; stale leases (dead holder,
+dead sim, gone worktree) are swept by the next transaction or
+`./sim ports gc`. `sim_hash` covers the request set, not the allocated
+values, so a moved fleet still warm-reuses. See
 `docs/port_allocation.md` before touching port logic.
 
 ## Extending

@@ -279,14 +279,16 @@ search live sims first - a bare unit name that exists in several live
 sims is refused as ambiguous, pin it with `-s`. `sim run` stays exclusive for tests - a test
 owns the machine and downs the other sims (a bare `sims/*.yaml`
 `run`/`view` is additive, like `up`). `--shared` applies the additive
-rules to a `run`/`view`/`suite` instead, and `--slot-base <N>` overrides
-the slot every port derives from for that invocation (wins over the
-sim's `slot_base:` and `SIM_SLOT_BASE`); `--slot-base any` picks the
-lowest base whose ports are all free - both against live sims and ports
-already bound on the host. Note the reuse caveat: the slot feeds the sim
-hash, so when `any` picks a different slot than last time the run does a
-fresh `up` (~1-2 min SITL warm-up) rather than reusing - pin a number
-when iterating, use `any` when you don't care.
+rules to a `run`/`view`/`suite` instead. `--slot-base <N>` overrides
+the slot the fleet identity derives from for that invocation (wins over
+the sim's `slot_base:` and `SIM_SLOT_BASE`) and pins every port to its
+legacy formula - exact or fail, the pre-allocator behaviour.
+`--slot-base any` picks the lowest base whose whole legacy port set is
+free - both against live sims and ports already bound on the host - and
+falls back to the sim's own base when none is, letting the allocator
+move held ports into the pool. Allocated port values are not part of
+the sim hash, so a moved or shifted fleet still warm-reuses - `run`
+does not pay the ~1-2 min SITL warm-up for a port move alone.
 
 ```bash
 ./sim run tests/smoke_copters.yaml --shared --slot-base 90   # next to a live sim
@@ -331,20 +333,33 @@ online, record file - and it parks until Ctrl-C.
 
 ### Ports (slot k = slot_base + unit index; slot_base defaults to 10)
 
-| use | port |
+These are the **preferred** values - what a sim gets when they are free
+(the usual case on a quiet machine). When a preferred port is held, the
+allocator moves it into the free pool and `sim up` prints
+`moved <name> <old> -> <new>`; read `var/run/<sim>/sim.json`'s `ports`
+map or `./sim ctl status` for the values a running sim actually bound.
+
+| use | preferred port |
 |---|---|
-| SITL pilot (serial0) / aux (serial2) | 5760+10k / 5762+10k |
+| SITL serials (10-port block: serial0 pilot +0, serial2 aux +2, serial5 pose +5) | 5760+10k .. 5769+10k |
 | de_mavlink -> SITL (serial1) | 7660+10k, sysid k |
+| SITL RC-in / sim out / sim in / irlock (UDP) | 5501 / 9002 / 9003 / 9005 + 10k |
 | fcb proxy listen / control (`fcb_proxy: true`) | 7760+10k / 7860+10k |
 | de_comm / de_mavlink / de_camera s2s | 62000 / 63000 / 64000 + 10k |
 | link proxy relay / control (`link_proxy`) | 61500 / 61501 + 10k |
 | comm server wss / control | 62008 / 62009 (`server.port`) |
 | authenticator https / s2s | port+10 / port+11 |
 
-The default slot base keeps clear of low-numbered ports so sims never
-collide with a developer's own servers. Sims meant to run **in parallel**
-need disjoint `slot_base`s - `up` verifies there is no overlap with a
-live sim before starting anything.
+SITL launches with `--base-port <block> --rc-in-port <leased>` (and
+`--sim-port-in/--sim-port-out/--irlock-port`) *before* `-I`, so `-I`
+stays the eeprom/identity slot only and every socket is the leased
+value.
+
+Two rules survive the allocator: yaml-explicit ports (`server.port`,
+render ports, a relay `udp_port_range`) pin - exact value or `up`
+refuses - and `--slot-base <N>` pins the whole set. Sim names and unit
+names still disambiguate fleets; sims meant to run **in parallel** no
+longer need disjoint `slot_base`s, only `--shared`/`any` discipline.
 
 ### Port leases
 
@@ -357,7 +372,10 @@ registry lives at `$XDG_RUNTIME_DIR/de_sim/ports.json` (fallback
 worktree of this repo shares it: a sim brought up in a `_wt/` worktree
 blocks the same ports for a sim `up`ed here. `sim down`/`sim clean`
 release the leases; a `sim up` killed with `kill -9` leaves `reserved`
-leases the next transaction sweeps away on its own.
+leases the next transaction sweeps away on its own. The transaction
+result - the flat request-name -> port map - is written to
+`var/run/<sim>/sim.json` as `ports`, so post-mortems and `ctl` read the
+real values, not the formulas.
 
 ```bash
 ./sim ports            # this worktree's leases

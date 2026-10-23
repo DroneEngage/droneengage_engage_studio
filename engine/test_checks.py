@@ -541,15 +541,24 @@ class T(unittest.TestCase):
         self.assertFalse(bot.op_revoke_launch("p2"))
         self.assertEqual(len(sent), 2)
 
-    def test_seed_slot_base_fits_camera_fleets(self):
+    def test_seed_slot_base_fits_fleets(self):
+        """SL-0076: ports are prefer hints now - only FC sysids (<= 250)
+        still bound the seed pick, so a camera fleet lands on its
+        canonical block even where 64000+10*k would have overflowed."""
         import scenario
         units = [{"block": "copter_camera"}, {"block": "copter_camera"}]
         for s in range(9):
-            sb = scenario._seed_slot_base(s, units)
-            self.assertLessEqual(64000 + 10 * (sb + 1), 65535)
+            self.assertEqual(scenario._seed_slot_base(s, units),
+                             10 + 25 * (s % 9))
         # a fleet that fits keeps the historical block
         self.assertEqual(scenario._seed_slot_base(7, [{"block": "copter"}]),
                          10 + 7 * 25)
+        # the sysid bound still bites: a 60-copter fleet fits only the
+        # canonical bases <= 191
+        fleet = [{"block": "copter"}] * 60
+        for s in range(9):
+            self.assertLessEqual(
+                scenario._seed_slot_base(s, fleet) + 59, 250)
 
     def test_slot_override_moves_derived_server_port(self):
         import scenario
@@ -756,46 +765,61 @@ class T(unittest.TestCase):
                 scenario._host_free_sim(sim_at, [10])["slot_base"], 10)
         self.assertEqual(simlib.ports_held({5860}), [])
 
-    def test_lease_requests_phase1_kinds(self):
-        """SL-0075 request kinds: the side ports generation writes back
-        (server/bridge control, auth, link/fcb/udp proxies, SITL RC-in)
-        lease as `prefer` on the legacy hint; the unit core, comm-server
-        wss and yaml-explicit values stay `pin`. `shift` is the per
-        slot_base stride the --slot-base any pick applies."""
+    def test_lease_requests_phase2_kinds(self):
+        """SL-0076 request kinds: every formula-derived value leases
+        `prefer` on its legacy hint - module s2s, proxies, SITL, server
+        and auth side ports, render. yaml-explicit values keep `pin`
+        (server.port here), and an explicit --slot-base N pins all
+        (pin_all). SITL TCP serials are one 10-port block."""
         import simlib
         spec = {"version": 1, "name": "lease_kinds",
                 "server": {"type": "real", "link_proxy": True,
-                           "port": simlib.SERVER_PORT + 40},
+                           "port": 61990},
                 "slot_base": 40,
                 "units": [{"name": "u1", "block": "copter",
                            "fcb_proxy": True,
                            "udp_proxy": ["de_mavlink"]}]}
         reqs = {r["name"]: r for r in simlib.lease_requests(
             simlib.load_sim(spec))}
+        # a yaml port that is not the slot formula is an explicit pin
         self.assertEqual(reqs["server.wss"]["kind"], "pin")
-        self.assertEqual(reqs["server.wss"]["shift"], 1)
+        self.assertEqual(reqs["server.wss"]["pin"], 61990)
+        self.assertEqual(reqs["server.wss"]["shift"], 0)
         self.assertEqual(reqs["server.ctrl"]["kind"], "prefer")
-        self.assertEqual(reqs["server.ctrl"]["prefer"], 62049)
+        self.assertEqual(reqs["server.ctrl"]["prefer"], 61991)
         for name in ("unit.u1.link_proxy", "unit.u1.link_proxy.ctrl",
                      "unit.u1.fcb_proxy", "unit.u1.fcb_proxy.ctrl",
-                     "unit.u1.udp_proxy_de_mavlink", "unit.u1.sitl.rcin"):
+                     "unit.u1.udp_proxy_de_mavlink",
+                     "unit.u1.de_comm", "unit.u1.de_mavlink",
+                     "unit.u1.sitl.fcb",
+                     "unit.u1.sitl.rcin", "unit.u1.sitl.irlock",
+                     "unit.u1.sitl.sim_in", "unit.u1.sitl.sim_out"):
             self.assertEqual(reqs[name]["kind"], "prefer", name)
             self.assertEqual(reqs[name]["shift"], 10, name)
-        for name in ("unit.u1.de_comm", "unit.u1.de_mavlink",
-                     "unit.u1.sitl.pilot", "unit.u1.sitl.aux",
-                     "unit.u1.sitl.fcb"):
-            self.assertEqual(reqs[name]["kind"], "pin", name)
-            self.assertEqual(reqs[name]["shift"], 10, name)
-        # a fake server binds wss+1 itself: its ctrl is a pin like the
-        # SITL-internal ports (phase 3 adds a --ctrl-port flag)
+        # the SITL TCP decade is one block: pilot=+0, aux=+2, pose=+5
+        sitl = reqs["unit.u1.sitl"]
+        self.assertEqual((sitl["kind"], sitl["size"], sitl["proto"]),
+                         ("block", 10, "tcp"))
+        self.assertEqual(sitl["prefer"], 5760 + 10 * 40)
+        # a fake server binds wss and wss+1 itself: a 2-port block so
+        # the pair never straddles another sim's lease
         fake_reqs = {r["name"]: r for r in simlib.lease_requests(
             simlib.load_sim(dict(spec, server={"type": "fake"})))}
-        self.assertEqual(fake_reqs["server.ctrl"]["kind"], "pin")
+        self.assertEqual((fake_reqs["server.fake"]["kind"],
+                          fake_reqs["server.fake"]["size"]),
+                         ("block", 2))
+        self.assertNotIn("server.ctrl", fake_reqs)
         self.assertNotIn("auth.https", fake_reqs)
+        # --slot-base N pins everything (phase-0 semantics)
+        with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "42"}):
+            pin_reqs = simlib.lease_requests(
+                simlib.load_sim(dict(spec, name="pinned")))
+        self.assertTrue(all(r["kind"] == "pin" for r in pin_reqs))
 
     def test_shifted_pins_follows_slot(self):
-        """_shifted_pins moves every pin by shift*dslot - the pins the
-        sim would request on another base without resolving it again"""
+        """_shifted_pins moves every request value by shift*dslot -
+        pins AND prefer hints: the legacy set a base must have free for
+        the pick to land the formulas (SL-0076)"""
         import simlib
         spec = {"version": 1, "name": "shift_pins",
                 "server": {"type": "fake"},
@@ -804,13 +828,13 @@ class T(unittest.TestCase):
         reqs = simlib.lease_requests(simlib.load_sim(spec))
         at10 = dict(simlib._shifted_pins(reqs, 0))
         at12 = dict(simlib._shifted_pins(reqs, 2))
-        # unit pins stride 10/slot, the prefer rcin hint never votes
+        # the prefer hints vote too now: pilot block p0 and the rcin UDP
         self.assertEqual(at10[5860], "tcp")
-        self.assertNotIn(5601, at10)
+        self.assertEqual(at10[5601], "udp")
         pins12 = set(at12)
         self.assertIn(5860 + 20, pins12)
         self.assertIn(62100 + 20, pins12)
-        # a flat fake-server wss pin does not move with the slot
+        # a flat fake-server wss hint does not move with the slot
         self.assertIn(62008, pins12)
 
     def test_lease_commit_applies_pool_port(self):
@@ -837,9 +861,17 @@ class T(unittest.TestCase):
         self.assertTrue(20000 <= ctrl <= 32767)
         self.assertEqual(sim["server"]["control_port"], ctrl)
         self.assertEqual(sim["ports"]["server.ctrl"]["port"], ctrl)
-        # the pin path is exact: unit ports are the formula values
+        # a free prefer hint is honored: unit ports land on the
+        # formulas, and the flat map records block members too
         self.assertEqual(ports["unit.u1.de_comm"], 62400)
         self.assertEqual(sim["units"][0]["ports"]["de_comm"], 62400)
+        self.assertEqual(ports["unit.u1.sitl"],
+                         ports["unit.u1.sitl.p0"])
+        self.assertEqual(sim["ports"]["unit.u1.sitl.p9"]["port"],
+                         ports["unit.u1.sitl"] + 9)
+        # the move is recorded for the `moved <name> a -> b` line
+        self.assertIn({"name": "server.ctrl", "hint": 62009,
+                       "port": ctrl}, sim["moved_ports"])
         self.assertIn(ctrl, simlib.used_ports(sim))
 
     # -------------------------------------- P5-10 recall / time to find
@@ -1368,6 +1400,11 @@ class TFreeze(unittest.TestCase):
                 with open(self._pidfile(td), "w") as f:
                     f.write(str(child.pid))
                 self.assertTrue(ctl_mod.freeze_proc("u1", "de_mavlink"))
+                # SIGSTOP delivery can lag on a loaded box
+                for _ in range(20):
+                    if self._proc_state(child.pid) == "T":
+                        break
+                    time.sleep(0.1)
                 self.assertEqual(self._proc_state(child.pid), "T")
                 self.assertTrue(
                     ctl_mod._signal_proc("u1", "de_mavlink",

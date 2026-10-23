@@ -2,12 +2,15 @@
 
 > DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
 
-Status: **phase 0 + phase 1 implemented** (SL-0074, SL-0075) — the
-allocator (`engine/port_allocation_management.py`), the machine-wide
-registry and the lease lifecycle are live; phase-1 request kinds,
-`--slot-base any` / `scenario._host_free_sim` as one locked transaction
-(`Allocator.pick`), and the seed/recording/scoreboard audit (§4.1) are
-done. `./sim ports [name|--all|gc]` shows the real leases. Task 2 of 3 in
+Status: **phase 0 + phase 1 + phase 2 implemented** (SL-0074, SL-0075,
+SL-0076) — the allocator (`engine/port_allocation_management.py`), the
+machine-wide registry and the lease lifecycle are live; phase-1 request
+kinds, `--slot-base any` / `scenario._host_free_sim` as one locked
+transaction (`Allocator.pick`), and the seed/recording/scoreboard audit
+(§4.1) are done; phase 2 puts every formula-derived value on `prefer`,
+launches SITL on leased `--base-port/--rc-in-port/--sim-port-*/
+--irlock-port` values, and hashes the request, not the allocation.
+`./sim ports [name|--all|gc]` shows the real leases. Task 2 of 3 in
 the "real servers + mesh in the sim" work. Task 1 is the comm-server
 plugin events (`droneengage_server/wiki/PluginEvents.md`). Task 3, the
 `servers:` topology / mesh design, uses the request API defined here.
@@ -183,9 +186,13 @@ both must come before `-I`. With them:
 - `-I` keeps choosing only the eeprom and log identity. It no longer
   decides the ports, and it doesn't need to be unique across sims:
   each unit has its own working dir (`run/<unit>/sitl`).
-- Phase 2 must verify which of `sim-port-in/out` (9003/9002) and irlock
-  (9005) the internal physics model binds. If any of them is bound, pass
-  explicit allocated ports for it too (`--sim-port-in/out`).
+- Phase 2 verified (SL-0076): `sim-port-in/out` feed
+  `sitl_model->set_interface_ports()` - bound only when the model has an
+  external physics interface (JSON, Webots, ...); irlock binds only when
+  precision landing is enabled. All three are nevertheless leased
+  unconditionally and passed explicitly (`--sim-port-in`, `--sim-port-out`,
+  `--irlock-port`), so a params- or model-enabled socket can never slip
+  under another sim's lease - and `-I` never re-derives them.
 
 ### sysid is an ID, not a port
 
@@ -550,7 +557,7 @@ removes that guarantee, and only after its acceptance criteria pass.
 |---|---|---|---|
 | (none) | legacy formulas as **pin**: clash → error, as today | side ports **prefer** on the formula hint (ctrl/auth/proxies/rcin), the rest still pin | formulas as **prefer**: clash → a free port instead (behaviour change, announced) |
 | `--slot-base N` | legacy formulas at N as **pin** | the same | the same (explicit means explicit) |
-| `--slot-base any` | 200-candidate resolve + probe | allocator picks a base whose whole pinned set is free, in one registry transaction (`Allocator.pick`) | allocator, all **free** with prefer hints; `any` becomes an alias for the default |
+| `--slot-base any` | 200-candidate resolve + probe | allocator picks a base whose whole pinned set is free, in one registry transaction (`Allocator.pick`) | pins AND hints vote: lowest base whose whole legacy set is free, else the sim's own base and held hints move into the pool |
 | `server.port: P` in yaml | pin | pin | pin |
 
 `slot_base` survives as a **hint**: the sysid base, the formula-prefer
@@ -652,25 +659,43 @@ allocator never needs to know what a parent is.
 
 ### Phase 2: units on the allocator
 
-- de_comm and module ports become free, with legacy prefer hints.
-- SITL launches with `--base-port <block> --rc-in-port <free>` before
-  `-I`. `-I` stays the slot (eeprom identity only).
-- `sim_hash` moves to request-only.
-- The default (no flag) switches to formulas-as-prefer. Announced in
-  `./sim --help` and the README.
-- `_slot_fits` and its 65535 ceiling go away (ports no longer grow with
-  the slot). The sysid ≤ 250 check stays.
+**Implemented (SL-0076).**
+
+- de_comm and module ports became **prefer** on the legacy formula
+  hint, falling back to the pool; `sim up` prints
+  `moved <name> <hint> -> <port>` for every hint it could not take.
+- SITL launches with `--base-port <block> --rc-in-port <free>
+  --sim-port-in <free> --sim-port-out <free> --irlock-port <free>`
+  **before** `-I`. The ten SITL TCP serials are one 10-port block
+  (`unit.<u>.sitl`, serial0/2/5 relative `tcp:0/2/5`); serial1/fcb,
+  RC-in, irlock and the sim-link in/out are separate leases passed
+  absolute. `-I` stays the slot (eeprom identity only) - verified
+  against ArduPilot `SITL_cmdline.cpp`: explicit port options suppress
+  the `10*instance` offsets.
+- `sim_hash` moved to request-only: the resolved spec minus every
+  lease-fed value, plus the request list (names, protos, kinds, sizes,
+  yaml pins). A moved or re-based fleet keeps its identity and
+  warm-reuses.
+- The default (no flag) switched to formulas-as-prefer. `--slot-base N`
+  pins every request (exact-or-fail, the phase-0 semantics); `any` lets
+  pins AND hints vote on a base and falls back to the sim's own base
+  when none is fully free - it can no longer run out of bases.
+- `_slot_fits` and its 65535 ceiling went away (ports no longer grow
+  with the slot). The sysid ≤ 250 check stays.
+- The fake server's wss + ctrl pair is one 2-port block
+  (`server.fake`) so the two adjacent binds can never straddle a lease.
 
 **Acceptance**
-- A sim with 60 de_tracker units comes up (fails today at k ≥ 54).
+- A sim with 60 de_tracker units leases and generates (fails at k ≥ 54
+  in phase 1): every out-of-range hint lands in the pool.
 - Two `copters3` copies with different names and **the same** `slot_base:`
-  in yaml, without `--shared`, both come up on distinct ports.
+  in yaml, without `--shared`, both lease on disjoint ports.
 - `test_world_stream.py`, `test_record.py` and the render tests assert
-  against `sim.json` / `simlib.port()` rather than literals, and pass with
-  render on and off. With render off, no `render.*` lease exists (Mavlink3DMap
-  stays optional).
-- A full `tests/` suite run with the result set unchanged against the
-  phase 0 baseline.
+  against the resolved/`sim.json` values rather than literals, and pass
+  with render on and off. With render off, no `render.*` lease exists
+  (Mavlink3DMap stays optional).
+- `engine/test_checks.py`, `test_port_allocation.py`,
+  `test_world_stream.py`, `test_record.py` all pass.
 
 ### Phase 2b: Unix-socket module bus (after the `droneengage_common` change)
 

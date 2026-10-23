@@ -15,6 +15,7 @@
 import asyncio
 import json
 import os
+import socket
 import sys
 import tempfile
 import time
@@ -243,17 +244,20 @@ class T(unittest.TestCase):
 
     def test_render_ports_and_serial4(self):
         on = _sim(render={"mode": "viewer"}, slot_base=10)
-        self.assertEqual(on["render"]["stream_port"], 61010)
-        self.assertEqual(on["render"]["mav_port"], 16460)
-        self.assertEqual(on["render"]["mav_ws_port"], 8811)
-        self.assertEqual(on["render"]["web_port"], 8080)
+        # the resolved values are the prefer hints - lease_commit may
+        # still move them, but the hints ride the slot block
+        r = on["render"]
+        self.assertEqual(r["stream_port"], simlib.STREAM_PORT_BASE + 10)
+        self.assertEqual(r["mav_port"], simlib.MAV_PORT_BASE + 10)
+        self.assertEqual(r["mav_ws_port"], simlib.MAV_WS_PORT_BASE + 10)
+        self.assertEqual(r["web_port"], simlib.WEB_PORT_BASE + 10)
+        self.assertEqual(r["sink_port"], simlib.SINK_PORT_BASE + 10)
         ports = simlib.used_ports(on)
-        self.assertIn(61010, ports)
-        self.assertIn(16460, ports)
-        self.assertIn(8811, ports)
-        self.assertIn(8080, ports)
+        for key in ("stream_port", "mav_port", "mav_ws_port", "web_port",
+                    "sink_port"):
+            self.assertIn(r[key], ports)
         cam1 = next(u for u in on["units"] if u["name"] == "cam1")
-        self.assertEqual(cam1["fc"]["mav_port"], 16460)
+        self.assertEqual(cam1["fc"]["mav_port"], r["mav_port"])
         self.assertEqual(cam1["fc"]["params"]["SR4_POSITION"], 10)
         self.assertEqual(cam1["fc"]["params"]["MAV4_POSITION"], 10)
         self.assertEqual(cam1["fc"]["params"]["SERIAL4_PROTOCOL"], 2)
@@ -291,7 +295,8 @@ class T(unittest.TestCase):
         off = _sim(render=None, slot_base=10)
         self.assertIsNone(off["render"])
         ports = simlib.used_ports(off)
-        for p in (61010, 16460, 8811, 8080):
+        for p in (simlib.STREAM_PORT_BASE + 10, simlib.MAV_PORT_BASE + 10,
+                  simlib.MAV_WS_PORT_BASE + 10, simlib.WEB_PORT_BASE + 10):
             self.assertNotIn(p, ports)
         for u in off["units"]:
             if u["fc"]:
@@ -357,12 +362,18 @@ class T(unittest.TestCase):
         open(truth, "w").close()
         log = os.path.join(d, "worldstream.log")
         epoch = int(time.time() * 1000) - 3000
+        # an ephemeral port - never a sim formula value that another
+        # sim's lease or a foreign listener could already hold
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()
 
         class _Bot:
             def targets(self):
                 return {"tid_42": {"cls": "person",
                                    "pos": {"lat": 1.5, "lng": 2.5}}}
-        stream = world_stream.WorldStream(w, sim, epoch, 61999,
+        stream = world_stream.WorldStream(w, sim, epoch, port,
                                           truth, log, bot=_Bot())
         stream.start()
         # the serve coroutine binds on the thread's own loop - connect
@@ -370,7 +381,7 @@ class T(unittest.TestCase):
         self.assertTrue(stream.wait_ready(10))
         try:
             hello, frames = asyncio.run(
-                _client(61999, truth, seconds=1.4))
+                _client(port, truth, seconds=1.4))
         finally:
             stream.stop()
         self.assertEqual(hello["schema"], world_stream.SCHEMA)

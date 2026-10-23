@@ -869,15 +869,16 @@ def load_scenario(path, seed=None, probe_ports=True):
 
 
 def _host_free_sim(sim_at, bases):
-    """The first seed-ordered slot block whose pinned ports no foreign
-    process, live sim manifest or other sim's lease holds (live sims'
-    own ports don't count - the run downs or refuses them; prefer
-    hints never disqualify a base, the allocator moves them into the
-    pool at commit): ONE locked registry transaction scans the
-    candidates, the pin sets shifted per base from the first resolve
-    so no load_sim runs inside the lock. Falls back to the seed's
-    block when every one is held. SIM_SHARED=1 (`--shared`) keeps the
-    run additive: live sims' ports count as real conflicts so the pick
+    """The first seed-ordered slot block whose whole request set - pins
+    AND prefer hints (SL-0076: a fully-free base lets the commit land
+    the legacy formulas) - no foreign process, live sim manifest or
+    other sim's lease holds (live sims' own ports don't count - the
+    run downs or refuses them): ONE locked registry transaction scans
+    the candidates, the request values shifted per base from the first
+    resolve so no load_sim runs inside the lock. Falls back to the
+    seed's block when every one is held - prefer hints still move into
+    the pool at commit. SIM_SHARED=1 (`--shared`) keeps the run
+    additive: live sims' ports count as real conflicts so the pick
     lands on a disjoint base rather than a base it cannot lease."""
     first = sim_at(bases[0])
     sim0 = simlib.load_sim(first)
@@ -892,27 +893,20 @@ def _host_free_sim(sim_at, bases):
 
 
 def _slot_fits(units):
-    """fits(sb) for _seed_slot_base/_seed_slot_bases: the fleet's highest
-    module port must stay <= 65535 and its FC sysids <= 250 (de_camera
-    64000 + 10*k overflows from k=154)."""
-    cat = simlib.load_catalog()
-    top = simlib.DE_COMM_PORT_BASE
-    has_fc = False
-    for u in units:
-        b = simlib.load_block(u["block"])
-        has_fc |= bool(b["fc"])
-        for m in b["modules"] + list(u.get("add_modules", [])):
-            if m in cat:
-                top = max(top, int(cat[m]["port_base"]))
+    """fits(sb) for _seed_slot_base/_seed_slot_bases: only FC sysids
+    still bound a base (sysid = sb + index, ArduPilot tops out at 250) -
+    every port is an allocator prefer hint now (SL-0076), so no port
+    formula can overflow and no fleet is refused for its size."""
+    has_fc = any(simlib.load_block(u["block"])["fc"] for u in units)
     last = len(units) - 1
-    return lambda sb: (top + 10 * (sb + last) <= 65535
-                       and (not has_fc or sb + last <= 250))
+    return lambda sb: not has_fc or sb + last <= 250
 
 
 def _seed_slot_base(seed, units):
-    """10 + 25*(seed % 9), unless that block pushes this fleet's highest
-    module port past 65535 or an FC sysid past 250 - then the seed picks
-    among the blocks that fit, so a camera fleet runs on every seed."""
+    """10 + 25*(seed % 9), unless that block pushes an FC sysid past
+    250 - then the seed picks among the blocks that fit. Ports no
+    longer bound the pick: they are allocator prefer hints (SL-0076)
+    that move into the pool at commit."""
     fits = _slot_fits(units)
     cands = [10 + 25 * i for i in range(9)]
     pick = cands[seed % 9]

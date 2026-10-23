@@ -26,7 +26,11 @@ MANIFEST = {
     "sim_file": "/x/sims/t_sim.yaml",
     "units": [{"name": "c1", "party_id": "copter1", "block": "copter"},
               {"name": "c2", "party_id": "copter2", "block": "copter"}],
-    "server": {"type": "real", "port": 62008, "gcs_party": "GCS_FLEET"},
+    # record() only reads manifest fields - a pool port (a prefer hint
+    # that moved, SL-0076) and its flat lease map, not a formula value
+    "server": {"type": "real", "port": 20431, "gcs_party": "GCS_FLEET"},
+    "ports": {"server.wss": {"port": 20431, "proto": "tcp"},
+              "server.ctrl": {"port": 20432, "proto": "tcp"}},
 }
 
 T0 = 1_000_000
