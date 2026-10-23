@@ -96,6 +96,14 @@ transport - the per-unit proxy is ours, not the server's):
   fcb_inject <unit> <hex>         raw MAVLink bytes towards de_mavlink
   fcb_clear <unit>                remove rules, end any cut/stall
   fcb_stats <unit>                proxy counters + active rules
+  fcb_unplug <unit> [s]           pull the serial cable a `fcb_link`
+                                  (kind pty/host_serial/bt_spp) unit's
+                                  de_mavlink sits on: the unit's fcb_tty
+                                  bridge is killed, so the device node
+                                  vanishes (pty link + /dev/pts/N). [s]
+                                  blocks and replugs after it (SL-0103)
+  fcb_plug <unit>                 plug the device back: restart the
+                                  unit's fcb_tty bridge (same link path)
 
 Pilot (units with an fc, cont'd):
   takeoff <unit> [alt_m]            MAV_CMD_NAV_TAKEOFF (arm in GUIDED first)
@@ -756,6 +764,30 @@ def kill_proc(owner, proc):
     try:
         os.kill(pid, signal.SIGKILL)
         print(f"{owner}.{proc}: killed pid {pid}")
+    except OSError:
+        print(f"{owner}.{proc}: pid {pid} already gone")
+    os.unlink(pf)
+    return True
+
+
+def kill_proc_group(owner, proc):
+    """kill_proc's whole-process-group variant: the pidfile names a
+    setsid'd launch wrapper whose children (e.g. fcb_tty's socat) would
+    otherwise outlive it - and for fcb_tty an orphaned socat keeps the
+    pty master open, so the device never actually 'unplugs'."""
+    pf = simlib.pid_path(owner_sim(owner), owner, proc)
+    if not os.path.isfile(pf):
+        print(f"{owner}.{proc}: no pidfile")
+        return False
+    pid = int(open(pf).read().strip())
+    if os.path.isdir(f"/proc/{pid}") and not simlib.pid_is_ours(pid):
+        print(f"{owner}.{proc}: pid {pid} is not a sim process "
+              "(recycled) - not killed")
+        os.unlink(pf)
+        return True
+    try:
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
+        print(f"{owner}.{proc}: killed process group {pid}")
     except OSError:
         print(f"{owner}.{proc}: pid {pid} already gone")
     os.unlink(pf)
@@ -2276,6 +2308,37 @@ def main(argv):
                 fcb_ctrl(u, "clear")
             else:
                 fcb_ctrl(u, "stats")
+    elif c in ("fcb_unplug", "fcb_plug"):
+        # SL-0103: the serial-device fault for `fcb_link` units - kill
+        # the unit's fcb_tty bridge so the device node vanishes (pty:
+        # the link file and /dev/pts/N go with the bridge), plug it back
+        # with the same link path. `fcb_unplug <unit> <s>` blocks like
+        # `freeze <s>`; the scenario's dur_s schedules `fcb_plug`
+        # instead so the timeline is not held.
+        us = with_fc(resolve(a[0]))
+        if not us:
+            sys.exit(f"{a[0]}: no FC unit in the target set")
+        ok = True
+        for u in us:
+            kind = (u["fc"].get("fcb_link") or {}).get("kind", "tcp")
+            if kind == "tcp":
+                print(f"{u['name']}: {c} needs an `fcb_link` serial "
+                      "unit (kind pty/host_serial/bt_spp) - kind tcp "
+                      "dials the proxy, there is no device to unplug",
+                      flush=True)
+                ok = False
+                continue
+            if c == "fcb_unplug":
+                ok &= kill_proc_group(u["name"], "fcb_tty")
+            else:
+                start_proc(u["name"], "fcb_tty")
+        if c == "fcb_unplug" and len(a) > 1:
+            time.sleep(float(a[1]))
+            for u in us:
+                if (u["fc"].get("fcb_link") or {}).get("kind") != "tcp":
+                    start_proc(u["name"], "fcb_tty")
+        if not ok:
+            sys.exit(1)
     elif c == "server_up":
         for p in server_procs("all"):
             if p not in {k.split(".", 1)[1]

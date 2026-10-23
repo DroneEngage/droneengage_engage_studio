@@ -576,6 +576,31 @@ def _fault(step, scn, ctx):
             _schedule(ctx, float(dur), runner.run_ctl, "fcb_clear", unit)
             _restore_at(float(dur))
         return ok
+    if kind == "fcb_unplug":
+        # SL-0103: yank the serial device a `fcb_link` unit's de_mavlink
+        # sits on - the fcb_tty bridge's whole process group is killed,
+        # so the device node goes away (pty link + /dev/pts/N), like a
+        # USB cable pull. dur_s schedules the replug (same link path)
+        # like every timed fault's restore; both pid changes are marked
+        # for no_unexpected_restart.
+        us = [u for u in ctl.resolve(unit, ctx["manifest"]) if u["fc"]]
+        if not us:
+            print("  fcb_unplug needs an FC unit", flush=True)
+            return False
+        if not all((u["fc"].get("fcb_link") or {}).get("kind", "tcp")
+                   != "tcp" for u in us):
+            print("  fcb_unplug needs an `fcb_link` serial unit "
+                  "(kind pty/host_serial/bt_spp)", flush=True)
+            return False
+        _proc_event("fcb_tty")
+        ok = runner.run_ctl("fcb_unplug", unit)
+        if ok and dur:
+            def _replug():
+                _proc_event("fcb_tty")
+                runner.run_ctl("fcb_plug", unit)
+            _schedule(ctx, float(dur), _replug)
+            _restore_at(float(dur))
+        return ok
     if kind == "cpu_starve":
         # SL-0014: SIGSTOP/SIGCONT duty cycle - the proc keeps its pid
         # and sockets but gets (100-duty_pct)% of each cycle_ms window.

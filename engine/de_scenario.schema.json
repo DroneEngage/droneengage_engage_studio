@@ -204,7 +204,7 @@
                            "re": {"type": "string"}}},
           "do": {"type": "string"},
           "fault": {"type": "string",
-            "description": "link_cut|loss|delay|gcs_disconnect|server_down|kill|restart|module_kill|freeze|server_clock|no_time_sync|rc_override|mode|param (set: {NAME: value}) | FC presets: battery|gps_off|gps_jam|gps_glitch|gps_degrade|motor_out|rc_fail|compass_fail|vibration | fcb link (needs fcb_proxy: true): fcb_cut|fcb_stall|fcb_corrupt|fcb_rate (baud)"},
+            "description": "link_cut|loss|delay|gcs_disconnect|server_down|kill|restart|module_kill|freeze|server_clock|no_time_sync|rc_override|mode|param (set: {NAME: value}) | FC presets: battery|gps_off|gps_jam|gps_glitch|gps_degrade|motor_out|rc_fail|compass_fail|vibration | fcb link (needs fcb_proxy: true): fcb_cut|fcb_stall|fcb_corrupt|fcb_rate (baud) | fcb_unplug (needs fcb_link kind pty/host_serial/bt_spp)"},
           "once": {"type": "boolean"}
         }
       }

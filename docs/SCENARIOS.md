@@ -201,6 +201,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `journal_unwritable` / `journal_writable` | `unit` — the journal dir goes read-only / is restored (SL-0014) |
 | `clock_step` | `unit`, `offset_s` — step a `faketime: true` unit's de_comm clock (SL-0014) |
 | `fcb_cut` / `fcb_stall` / `fcb_rate` / `fcb_corrupt` / `fcb_drop` / `fcb_inject` / `fcb_clear` / `fcb_stats` | `unit`, `seconds`/`ms`/`baud`/`drop_pct`/`flip_pct`/`msgid`/`hex` — one-shot fcb-proxy faults + rule/counter probes (need `fcb_proxy: true`) |
+| `fcb_unplug` / `fcb_plug` | `unit` [`s`] — pull/plug the serial device an `fcb_link` (pty/host_serial/bt_spp) unit's de_mavlink sits on: the fcb_tty bridge's whole process group is killed/restarted so the device node really vanishes (SL-0103); `[s]` blocks then replugs |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
 ### `fault:` kinds
@@ -236,6 +237,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `fcb_stall` | `unit`, `ms` or `dur_s` — hold the fcb link silent (sockets stay open) |
 | `fcb_rate` | `unit`, `baud` (9600), `dur_s` — UART pacing on the fcb link: baud/10 bytes/s per direction, whole frames only (SL-0101) |
 | `fcb_corrupt` | `unit`, `byte_drop_pct`/`bit_flip_pct`, `seed`, `dur_s` — seeded frame-aware noise on the fcb link |
+| `fcb_unplug` | `unit`, `dur_s` — yank the serial device an `fcb_link` unit's de_mavlink sits on (kills the fcb_tty bridge group; the device node disappears); `dur_s` replugs it at the same link path (SL-0103) |
 | `cpu_starve` | `unit`, `proc`\|`module`, `duty_pct` (80), `cycle_ms` (1000), `dur_s` — SL-0014: a detached SIGSTOP/SIGCONT worker holds the proc stopped `duty_pct`% of each cycle (pid + sockets kept); `dur_s` ends the cycle, without it `cpu_unstarve` or teardown does |
 | `journal_unwritable` | `unit`, `dur_s` — SL-0014: the unit's journal dir + files go read-only; open fds still write but every new journal sink open fails. `dur_s` restores, `sim down` always restores |
 | `clock_step` | `unit`, `offset_s`, `dur_s` — SL-0014: step a `faketime: true` unit's de_comm clock by signed seconds via its `FAKETIME_TIMESTAMP_FILE` (per-process libfaketime, no adjtimex); `dur_s` steps back to `+0` |
@@ -243,9 +245,9 @@ takes a name, `all`, a comma list, or `block:<name>`):
 
 `dur_s` auto-restores where it applies: `link_cut` expires server-side;
 `loss`/`delay` run `link_clear`; `kill`/`module_kill` restart the proc;
-`server_down` relaunches the server; `freeze`/`battery`/`gps_off`/
-`no_time_sync`/`server_clock`/`rc_override`/`gcs_disconnect` undo
-themselves. `unit` accepts `all`.
+`fcb_unplug` replugs the serial bridge; `server_down` relaunches the
+server; `freeze`/`battery`/`gps_off`/`no_time_sync`/`server_clock`/
+`rc_override`/`gcs_disconnect` undo themselves. `unit` accepts `all`.
 
 ## `chaos:` — a seeded fault schedule (optional)
 

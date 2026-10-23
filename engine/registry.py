@@ -350,6 +350,10 @@ VERBS = [
       opt=["unit", "byte_drop_pct", "bit_flip_pct", "seed"],
       doc="seeded frame-aware noise on the fcb link",
       eg="{t: 0, fault: fcb_corrupt, unit: c1, byte_drop_pct: 1}"),
+    V("fcb_unplug", "fault", opt=["unit"],
+      doc="pull the serial device an `fcb_link` unit's de_mavlink sits "
+          "on (SL-0103); dur_s replugs it",
+      eg="{t: 30, fault: fcb_unplug, unit: c1, dur_s: 10}"),
     V("cpu_starve", "fault",
       opt=["unit", "proc", "module", "duty_pct", "cycle_ms"],
       doc="SIGSTOP/SIGCONT duty cycle on a proc (SL-0014)",

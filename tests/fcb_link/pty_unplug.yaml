@@ -1,0 +1,53 @@
+# pty_unplug: the SL-0103 `fcb_unplug` fault on a `fcb_link: pty` unit -
+# kill the unit's fcb_tty bridge (its whole process group, socat
+# included) so the serial device de_mavlink sits on disappears: the
+# fcb.tty link dangles and /dev/pts/N vanishes, exactly like a USB
+# cable pull. mavlink_sdk's SerialPort then logs the read failure and
+# loops _try_reopen ("Try to open serial port" / "failure, could not
+# configure port") until dur_s replugs the bridge - a fresh pty at the
+# same link path - and "SUCCESS: Connection attempt to port" plus
+# POS_SOURCE_BACK mark the recovery (heartbeats back on the wire).
+# The copter holds a LOITER hover through the whole window.
+version: 1
+name: f_pty_unplug
+transport: real
+realtime: true
+settle_s: 30
+fleet:
+  - {id: c1, cls: copter, fcb_link: {kind: pty, baud: 57600}}
+timeline:
+  - {t: 0, do: mode, unit: c1, mode: GUIDED}
+  - {t: 0, do: arm, unit: c1}
+  - {t: 0, do: takeoff, unit: c1, alt: 15}
+  - {t: 0, do: mode, unit: c1, mode: LOITER}
+  - {t: 5, fault: fcb_unplug, unit: c1, dur_s: 10}
+  # the open failure proves the device really vanished (dangling link)
+  - {t: 10, do: wait_log, unit: c1, module: de_mavlink,
+     re: "failure, could not configure port", timeout: 60}
+  # and a fresh open once the bridge is back
+  - {t: 20, do: wait_log, unit: c1, module: de_mavlink,
+     re: "SUCCESS: Connection attempt to port", timeout: 90}
+assert:
+  # de_mavlink logged the serial loss...
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "Could not read from serial port",
+                       at_least: 1}
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "failure, could not configure port",
+                       at_least: 1}
+  # ...then re-opened the replugged device within the window
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "SUCCESS: Connection attempt to port",
+                       at_least: 1}
+  # only fcb_tty changed pids, both times inside a recorded fault
+  # window - de_mavlink rides the whole unplug in-process
+  - no_unexpected_restart: {}
+  # telemetry recovered inside the recovery window (the bridge restart
+  # is scheduled at t + dur_s by the fault itself)
+  - recovers_after_fault: {within_s: 90}
+  - telemetry_value: {unit: c1, field: ekf_ok, equals: true}
+  - proc_alive: {unit: c1, proc: fcb_tty}
+  - proc_alive: {unit: c1, proc: fcb_proxy}
+  - proc_alive: {unit: c1, proc: de_mavlink}
+  - proc_alive: {unit: c1, proc: sitl}
+teardown: land
