@@ -375,3 +375,53 @@ Use 3.3 V adapters (ArduPilot-level signalling); a 5 V adapter into a
 3.3 V client pin can damage it. `/dev/serial/by-id/...` paths are
 preferred over `/dev/ttyUSBn` on benches where several adapters move
 around — the kernel never renumbers them.
+
+## bt_spp — an off-host FC client over Bluetooth SPP (SL-0105)
+
+`fcb_link: {kind: bt_spp, channel: N}` is the wireless twin of
+`host_serial`: the pidfile'd `bt_spp` proc runs
+`engine/bt_spp_bridge.py` — an RFCOMM SPP server on the host's
+Bluetooth controller, piped to the fcb proxy, one client at a time.
+
+```yaml
+fleet:
+  - {id: c1, cls: copter, fc_client: external,
+     fcb_link: {kind: bt_spp, channel: 1}}
+```
+
+### Host setup
+
+1. The controller must be **UP** — `bluetoothctl power on` (check
+   `hciconfig hci0` for `UP RUNNING`). `./sim doctor` reports this.
+2. Keep the host **discoverable** while pairing:
+   `bluetoothctl discoverable on`.
+3. SPP discovery needs the BlueZ **--compat** sdpd socket
+   (`/var/run/sdp`). Modern BlueZ (>= 5) ships it off by default, so
+   `sdptool add --channel=N SP` fails and a phone's SPP-UUID lookup
+   finds nothing. Fix once per bench — `systemctl edit bluetooth`:
+   ```
+   [Service]
+   ExecStart=
+   ExecStart=/usr/libexec/bluetooth/bluetoothd --compat
+   ```
+   (path may be `/usr/lib/bluetooth/bluetoothd` on Debian-family
+   systems — check the unit's existing ExecStart), then
+   `systemctl daemon-reload && systemctl restart bluetooth`.
+   `./sim doctor` reports the compat socket state; the bridge still
+   serves the channel without it, so a client that dials the channel
+   directly (no SDP lookup) works regardless.
+
+### Pairing the client
+
+- **Android / Andruav**: pair the phone with the host in the system
+  Bluetooth settings (host appears by its adapter name), then point
+  the app's Bluetooth FC connection at the host — the SPP record
+  resolves the channel. MAVLink heartbeats and mode should appear.
+- **Pi / de_comm+de_mavlink**: `bluetoothctl pair <host-mac>` +
+  `rfcomm bind /dev/rfcomm0 <host-mac> <channel>` gives the Pi a
+  `/dev/rfcomm0` serial node — the app stack opens it like a UART.
+
+`fcb_unplug` stops the bridge (the RFCOMM listener disappears — the
+client's socket dies like a dropped link) and `dur_s` replugs it on
+the same channel; `fcb_rate` still paces the proxy when `baud` is
+set on the link. Two units must not share a channel.

@@ -98,12 +98,14 @@ transport - the per-unit proxy is ours, not the server's):
   fcb_stats <unit>                proxy counters + active rules
   fcb_unplug <unit> [s]           pull the serial cable a `fcb_link`
                                   (kind pty/host_serial/bt_spp) unit's
-                                  de_mavlink sits on: the unit's fcb_tty
-                                  bridge is killed, so the device node
-                                  vanishes (pty link + /dev/pts/N). [s]
-                                  blocks and replugs after it (SL-0103)
+                                  de_mavlink sits on: the unit's serial
+                                  bridge (fcb_tty / bt_spp) is killed,
+                                  so the device node vanishes (pty link
+                                  + /dev/pts/N, adapter socket, RFCOMM
+                                  channel). [s] blocks and replugs
+                                  after it (SL-0103)
   fcb_plug <unit>                 plug the device back: restart the
-                                  unit's fcb_tty bridge (same link path)
+                                  unit's serial bridge (same link path)
 
 Pilot (units with an fc, cont'd):
   takeoff <unit> [alt_m]            MAV_CMD_NAV_TAKEOFF (arm in GUIDED first)
@@ -2328,15 +2330,21 @@ def main(argv):
                       flush=True)
                 ok = False
                 continue
+            # the serial bridge's proc name follows the link kind:
+            # socat fronts pty/host_serial, bt_spp_bridge.py fronts BT
+            proc = "bt_spp" if kind == "bt_spp" else "fcb_tty"
             if c == "fcb_unplug":
-                ok &= kill_proc_group(u["name"], "fcb_tty")
+                ok &= kill_proc_group(u["name"], proc)
             else:
-                start_proc(u["name"], "fcb_tty")
+                start_proc(u["name"], proc)
         if c == "fcb_unplug" and len(a) > 1:
             time.sleep(float(a[1]))
             for u in us:
-                if (u["fc"].get("fcb_link") or {}).get("kind") != "tcp":
-                    start_proc(u["name"], "fcb_tty")
+                kind = (u["fc"].get("fcb_link") or {}).get("kind")
+                if kind and kind != "tcp":
+                    start_proc(
+                        u["name"],
+                        "bt_spp" if kind == "bt_spp" else "fcb_tty")
         if not ok:
             sys.exit(1)
     elif c == "server_up":

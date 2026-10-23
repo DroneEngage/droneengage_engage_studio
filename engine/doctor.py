@@ -19,6 +19,7 @@ import json
 import os
 import shutil
 import socket
+import subprocess
 import sys
 
 import simlib
@@ -257,14 +258,64 @@ def gather(sim=None):
             bool(sim and any(u.get("faketime") for u in sim["units"])))
 
     # socat: the serial fcb_link bridge (SL-0102 pty, SL-0104
-    # host_serial) - required only by a sim whose units use a serial
-    # fcb_link kind
+    # host_serial) - required only by a sim whose units use those
+    # fcb_link kinds (bt_spp runs engine/bt_spp_bridge.py instead)
     d.check("socat", _which("socat"), "",
             "apt install socat",
             bool(sim and any(
                 u.get("fc") and (u["fc"].get("fcb_link") or {})
                 .get("kind") in ("pty", "host_serial")
                 for u in sim["units"])))
+
+    # bt_spp fcb_link (SL-0105): an RFCOMM server needs a controller
+    # that is UP, a python with AF_BLUETOOTH, and the sdptool compat
+    # socket for the SPP record a phone's SDP lookup needs
+    uses_spp = bool(sim and any(
+        u.get("fc") and (u["fc"].get("fcb_link") or {})
+        .get("kind") == "bt_spp" for u in sim["units"]))
+    adapters = simlib.bt_adapters() if uses_spp else []
+    ups = [a["name"] for a in adapters if a["up"]]
+    d.check("bluetooth adapter",
+            bool(ups),
+            ("up: " + ", ".join(ups)) if ups else
+            (", ".join(a["name"] for a in adapters) + " (not UP)"
+             if adapters else "no controller"),
+            "attach/enable a Bluetooth controller: "
+            "`bluetoothctl power on` (or hciconfig hciN up)",
+            uses_spp)
+    if uses_spp:
+        probe = "import socket,sys;sys.exit(" \
+            "0 if hasattr(socket,'AF_BLUETOOTH') else 1)"
+        btpy = None
+        for cand in (sys.executable, "/usr/bin/python3.14",
+                     "/usr/bin/python3.13", "/usr/bin/python3.12",
+                     "/usr/bin/python3.11", "/usr/bin/python3"):
+            if cand == "python3" or not os.path.isfile(cand):
+                continue
+            try:
+                if subprocess.call([cand, "-c", probe],
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL) == 0:
+                    btpy = cand
+                    break
+            except OSError:
+                continue
+        d.check("python AF_BLUETOOTH", btpy, btpy or "none found",
+                "install a distro python3 (BlueZ sockets need "
+                "AF_BLUETOOTH; conda builds often lack it)", True)
+        # BlueZ >= 5 only opens the legacy sdpd socket /var/run/sdp
+        # when bluetoothd runs with --compat; sdptool writes the SPP
+        # record through it
+        sdp_sock = os.path.exists("/var/run/sdp")
+        d.check("sdptool compat", sdp_sock,
+                "/var/run/sdp " + ("present" if sdp_sock else "absent"),
+                "BlueZ has no sdptool socket: add --compat to "
+                "bluetoothd's ExecStart (systemctl edit bluetooth, or "
+                "edit /lib/systemd/system/bluetooth.service), then "
+                "systemctl daemon-reload && systemctl restart "
+                "bluetooth - without it the SPP record never reaches "
+                "the phone's SDP lookup (the channel still serves)",
+                True)
 
     # host_serial fcb_link (SL-0104): the bridged USB-serial adapter
     # must exist and be openable - the dialout group hint is the

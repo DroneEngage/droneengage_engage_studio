@@ -331,6 +331,8 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         if fl.get("kind") == "host_serial":
             return (f"host:{os.path.basename(fl['device'])}:"
                     f"{fl['baud']}")
+        if fl.get("kind") == "bt_spp":
+            return f"bt:ch{fl['channel']}"
         return f"{fl.get('kind', '?')}:{fl.get('baud')}"
     for u in m["units"]:
         fc = u["fc"]

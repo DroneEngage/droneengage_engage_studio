@@ -115,9 +115,11 @@ fleet:
                              # forces fcb_proxy on. kind host_serial +
                              # fc_client: external bridges a real host
                              # USB-serial adapter instead (SL-0104, see
-                             # docs/HIL.md - no local de_comm/de_mavlink)
-    fc_client: external      # SL-0104: the FC client is off-host
-                             # (needs fcb_link kind host_serial)
+                             # docs/HIL.md - no local de_comm/de_mavlink),
+                             # kind bt_spp a host Bluetooth RFCOMM/SPP
+                             # server on `channel` (SL-0105)
+    fc_client: external      # SL-0104/5: the FC client is off-host
+                             # (needs fcb_link kind host_serial or bt_spp)
     faketime: true           # launch de_comm under libfaketime - needed
                              # by the clock_step fault (SL-0014)
 ```
@@ -206,7 +208,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `journal_unwritable` / `journal_writable` | `unit` — the journal dir goes read-only / is restored (SL-0014) |
 | `clock_step` | `unit`, `offset_s` — step a `faketime: true` unit's de_comm clock (SL-0014) |
 | `fcb_cut` / `fcb_stall` / `fcb_rate` / `fcb_corrupt` / `fcb_drop` / `fcb_inject` / `fcb_clear` / `fcb_stats` | `unit`, `seconds`/`ms`/`baud`/`drop_pct`/`flip_pct`/`msgid`/`hex` — one-shot fcb-proxy faults + rule/counter probes (need `fcb_proxy: true`) |
-| `fcb_unplug` / `fcb_plug` | `unit` [`s`] — pull/plug the serial device an `fcb_link` (pty/host_serial/bt_spp) unit's de_mavlink sits on: the fcb_tty bridge's whole process group is killed/restarted so the device node really vanishes (SL-0103); `[s]` blocks then replugs |
+| `fcb_unplug` / `fcb_plug` | `unit` [`s`] — pull/plug the serial device an `fcb_link` (pty/host_serial/bt_spp) unit's de_mavlink sits on: the serial bridge's (fcb_tty / bt_spp) whole process group is killed/restarted so the device node really vanishes (SL-0103); `[s]` blocks then replugs |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
 ### `fault:` kinds
@@ -242,7 +244,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `fcb_stall` | `unit`, `ms` or `dur_s` — hold the fcb link silent (sockets stay open) |
 | `fcb_rate` | `unit`, `baud` (9600), `dur_s` — UART pacing on the fcb link: baud/10 bytes/s per direction, whole frames only (SL-0101) |
 | `fcb_corrupt` | `unit`, `byte_drop_pct`/`bit_flip_pct`, `seed`, `dur_s` — seeded frame-aware noise on the fcb link |
-| `fcb_unplug` | `unit`, `dur_s` — yank the serial device an `fcb_link` unit's de_mavlink sits on (kills the fcb_tty bridge group; the device node disappears); `dur_s` replugs it at the same link path (SL-0103) |
+| `fcb_unplug` | `unit`, `dur_s` — yank the serial device an `fcb_link` unit's de_mavlink sits on (kills the serial bridge group; the device/channel disappears); `dur_s` replugs it at the same link path (SL-0103) |
 | `cpu_starve` | `unit`, `proc`\|`module`, `duty_pct` (80), `cycle_ms` (1000), `dur_s` — SL-0014: a detached SIGSTOP/SIGCONT worker holds the proc stopped `duty_pct`% of each cycle (pid + sockets kept); `dur_s` ends the cycle, without it `cpu_unstarve` or teardown does |
 | `journal_unwritable` | `unit`, `dur_s` — SL-0014: the unit's journal dir + files go read-only; open fds still write but every new journal sink open fails. `dur_s` restores, `sim down` always restores |
 | `clock_step` | `unit`, `offset_s`, `dur_s` — SL-0014: step a `faketime: true` unit's de_comm clock by signed seconds via its `FAKETIME_TIMESTAMP_FILE` (per-process libfaketime, no adjtimex); `dur_s` steps back to `+0` |
@@ -354,6 +356,20 @@ does not wait for it online (its party never joins the roster).
 de_mavlink opening the same adapter would fight the bridge for it.
 A scenario whose fleet wants a missing device SKIPs cleanly before
 bring-up (`tests/fcb_link/host_serial_external.yaml`).
+
+`fcb_link: {kind: bt_spp, channel: <1-30>}` (SL-0105) is the wireless
+twin: instead of a socat bridge, the pidfile'd `bt_spp` proc runs
+`engine/bt_spp_bridge.py` — an RFCOMM SPP server on the host's
+Bluetooth adapter piped to the proxy's listen port, one client at a
+time. The `fc_client: external` device pairs with the host and dials
+the channel like a drone FC port (pairing in docs/HIL.md). `baud` is
+optional — when given it arms the same proxy `rate` rule the wired
+kinds use. `fcb_unplug`/`fcb_plug` kill and restart the bridge proc,
+`fcb_stats` proves the traffic. A run skips cleanly when the host has
+no UP Bluetooth controller
+(`tests/fcb_link/bt_spp_external.yaml`), and `./sim doctor` reports
+the adapter, a bluetooth-capable python, and the sdptool/`--compat`
+state SPP discovery needs.
 
 `clock_step` needs the unit's fleet entry to carry `faketime: true` —
 de_comm must launch under libfaketime (there is no retroactive

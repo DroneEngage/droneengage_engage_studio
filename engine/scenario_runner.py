@@ -593,11 +593,19 @@ def _fault(step, scn, ctx):
             print("  fcb_unplug needs an `fcb_link` serial unit "
                   "(kind pty/host_serial/bt_spp)", flush=True)
             return False
-        _proc_event("fcb_tty")
+        # the bridge proc name follows the link kind - record each
+        # unit's real one so no_unexpected_restart windows cover its
+        # pid changes
+        def _bridge_event():
+            for u in us:
+                _proc_event("bt_spp" if (u["fc"].get("fcb_link") or {})
+                            .get("kind") == "bt_spp" else "fcb_tty",
+                            u["name"])
+        _bridge_event()
         ok = runner.run_ctl("fcb_unplug", unit)
         if ok and dur:
             def _replug():
-                _proc_event("fcb_tty")
+                _bridge_event()
                 runner.run_ctl("fcb_plug", unit)
             _schedule(ctx, float(dur), _replug)
             _restore_at(float(dur))
@@ -1169,26 +1177,36 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
                           scenario.expanded_text(scn))
     # SL-0104 hardware gate: a `fcb_link: {kind: host_serial}` unit
     # needs its USB-serial adapter on this host (char device, rw for
-    # us) - without it the run can prove nothing, so the whole
-    # scenario skips cleanly before the fleet even starts.
+    # us); SL-0105's `kind: bt_spp` needs an UP Bluetooth controller -
+    # without them the run can prove nothing, so the whole scenario
+    # skips cleanly before the fleet even starts.
     missing = []
+    bt_ok = None
     for ent in scn["sim"].get("units") or []:
         fl = ent.get("fcb_link") or scn["sim"].get("fcb_link") or {}
-        if fl.get("kind") != "host_serial":
-            continue
-        dev = str(fl.get("device") or "")
-        try:
-            usable = stat.S_ISCHR(os.stat(dev).st_mode) and \
-                os.access(dev, os.R_OK | os.W_OK)
-        except OSError:
-            usable = False
-        if not usable:
-            missing.append(f"{ent.get('name', '?')}:{dev or '?'}")
+        if fl.get("kind") == "host_serial":
+            dev = str(fl.get("device") or "")
+            try:
+                usable = stat.S_ISCHR(os.stat(dev).st_mode) and \
+                    os.access(dev, os.R_OK | os.W_OK)
+            except OSError:
+                usable = False
+            if not usable:
+                missing.append(
+                    f"{ent.get('name', '?')}:{dev or '?'} - attach the "
+                    "USB-serial adapter (dialout group for rw)")
+        elif fl.get("kind") == "bt_spp":
+            if bt_ok is None:
+                bt_ok = simlib.bt_adapter_up()
+            if not bt_ok:
+                missing.append(
+                    f"{ent.get('name', '?')}:ch{fl.get('channel')} - "
+                    "no UP Bluetooth controller (attach/enable one: "
+                    "bluetoothctl power on)")
     if missing:
         return _skipped_result(
             scn, t_file, out, t0_wall,
-            "host_serial device(s) not usable: " + ", ".join(missing)
-            + " - attach the USB-serial adapter (dialout group for rw)")
+            "serial link hardware not usable: " + ", ".join(missing))
 
     # P5-08: load the world and inject it into the sim spec BEFORE the
     # fleet is ensured - the stub config blocks (world path, seed, unit,

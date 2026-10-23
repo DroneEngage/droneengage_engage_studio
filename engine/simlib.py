@@ -624,18 +624,27 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         seen.add(u["name"])
     # one host_serial adapter can only front one unit's wire - a
     # sim-level `fcb_link:` fan-out or a duplicated device: must not
-    # silently bridge two units onto the same tty
+    # silently bridge two units onto the same tty. The same goes for a
+    # bt_spp RFCOMM channel: it can only serve one unit's bridge.
     dev_owner = {}
+    chan_owner = {}
     for u in sim["units"]:
         fl = (u.get("fc") or {}).get("fcb_link") or {}
-        if fl.get("kind") != "host_serial":
-            continue
-        if fl["device"] in dev_owner:
-            raise SimError(
-                f"sim: units {dev_owner[fl['device']]} and {u['name']} "
-                f"share fcb_link device {fl['device']} - each "
-                "host_serial unit needs its own adapter")
-        dev_owner[fl["device"]] = u["name"]
+        if fl.get("kind") == "host_serial":
+            if fl["device"] in dev_owner:
+                raise SimError(
+                    f"sim: units {dev_owner[fl['device']]} and "
+                    f"{u['name']} share fcb_link device {fl['device']} "
+                    "- each host_serial unit needs its own adapter")
+            dev_owner[fl["device"]] = u["name"]
+        elif fl.get("kind") == "bt_spp":
+            if fl["channel"] in chan_owner:
+                raise SimError(
+                    f"sim: units {chan_owner[fl['channel']]} and "
+                    f"{u['name']} share fcb_link channel "
+                    f"{fl['channel']} - each bt_spp unit needs its "
+                    "own RFCOMM channel")
+            chan_owner[fl["channel"]] = u["name"]
     sim["hash"] = sim_hash(sim, _MODULE_BINS)
     return sim
 
@@ -1251,21 +1260,25 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         fl = sim.get("fcb_link") if fc else None
     if fl and not fc:
         raise SimError(f"unit {name}: `fcb_link` but the block has no fc")
-    bad = set(fl or ()) - {"kind", "baud", "device"}
+    bad = set(fl or ()) - {"kind", "baud", "device", "channel"}
     if bad:
         raise SimError(f"unit {name}: `fcb_link` unknown keys "
                        f"{sorted(bad)}")
     link_kind = (fl or {}).get("kind", "tcp")
-    if link_kind not in ("tcp", "pty", "host_serial"):
+    if link_kind not in ("tcp", "pty", "host_serial", "bt_spp"):
         raise SimError(f"unit {name}: `fcb_link` kind {link_kind!r} "
-                       "(have: tcp, pty, host_serial)")
+                       "(have: tcp, pty, host_serial, bt_spp)")
     if link_kind != "host_serial" and "device" in (fl or {}):
         raise SimError(f"unit {name}: `fcb_link` device only applies "
                        "to kind host_serial")
+    if link_kind != "bt_spp" and "channel" in (fl or {}):
+        raise SimError(f"unit {name}: `fcb_link` channel only applies "
+                       "to kind bt_spp")
     # SL-0104: `fc_client: external` - the FC client lives off-host (an
-    # Android/Pi wired to the host's USB-serial adapter): the unit runs
-    # SITL + the bridge but no local de_comm/de_mavlink. It only makes
-    # sense with a link kind the client can physically attach to.
+    # Android/Pi wired to the host's USB-serial adapter, or paired over
+    # Bluetooth SPP - SL-0105): the unit runs SITL + the bridge but no
+    # local de_comm/de_mavlink. It only makes sense with a link kind
+    # the client can physically attach to.
     fc_client = str(entry.get("fc_client", "local"))
     if fc_client not in ("local", "external"):
         raise SimError(f"unit {name}: `fc_client` {fc_client!r} "
@@ -1274,11 +1287,11 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         if not fc:
             raise SimError(f"unit {name}: `fc_client: external` but "
                            "the block has no fc")
-        if link_kind != "host_serial":
+        if link_kind not in ("host_serial", "bt_spp"):
             raise SimError(f"unit {name}: `fc_client: external` needs "
-                           "`fcb_link` kind host_serial - the only "
-                           "kind that wires a client in from outside "
-                           "the host")
+                           "`fcb_link` kind host_serial or bt_spp - "
+                           "the kinds that wire a client in from "
+                           "outside the host")
     if fc:
         if not 1 <= slot <= 250:
             raise SimError(f"unit {name}: slot {slot} is not a valid MAVLink sysid")
@@ -1368,6 +1381,32 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                                "positive")
             u["fc"]["fcb_link"] = {"kind": "host_serial",
                                    "device": device, "baud": baud}
+        elif link_kind == "bt_spp":
+            # SL-0105: the host's Bluetooth adapter runs an RFCOMM SPP
+            # server (engine/bt_spp_bridge.py, proc `bt_spp`) bridged
+            # to the fcb proxy - the client device pairs with the host
+            # and dials the channel like a drone's FC serial port.
+            if fc_client != "external":
+                raise SimError(f"unit {name}: `fcb_link` kind "
+                               "bt_spp needs `fc_client: external` - "
+                               "the bridge owns the adapter channel; "
+                               "a local client cannot dial it")
+            try:
+                channel = int(fl.get("channel"))
+            except (TypeError, ValueError):
+                channel = -1
+            if not 1 <= channel <= 30:
+                raise SimError(f"unit {name}: `fcb_link` kind bt_spp "
+                               "needs `channel:` in 1-30 (the RFCOMM "
+                               "channel the client dials)")
+            link = {"kind": "bt_spp", "channel": channel}
+            if "baud" in fl:
+                baud = int(fl["baud"])
+                if baud <= 0:
+                    raise SimError(f"unit {name}: `fcb_link` baud "
+                                   "must be positive")
+                link["baud"] = baud
+            u["fc"]["fcb_link"] = link
         if fc_client == "external":
             u["fc_client"] = "external"
             u["modules"] = [m for m in u["modules"]
@@ -1375,7 +1414,7 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         px = entry.get("fcb_proxy")
         if px is None:
             px = bool(sim.get("fcb_proxy"))
-        if px or link_kind in ("pty", "host_serial"):
+        if px or link_kind in ("pty", "host_serial", "bt_spp"):
             # a pty link only fronts the proxy - it cannot exist alone
             u["fc"]["fcb_proxy"] = {"port": 7760 + 10 * slot,
                                     "ctrl": 7860 + 10 * slot}
@@ -1798,6 +1837,34 @@ def faketime_lib():
     return hits[0] if hits else None
 
 
+def bt_adapters():
+    """[{name, up}] of the host's Bluetooth controllers (SL-0105) -
+    /sys/class/bluetooth/hciN is the presence test, `hciconfig <hci>`
+    the UP/RUNNING state. An absent hciconfig reports up=unknown."""
+    import subprocess
+    out = []
+    hdir = "/sys/class/bluetooth"
+    names = sorted(n for n in os.listdir(hdir)
+                   if n.startswith("hci")) \
+        if os.path.isdir(hdir) else []
+    for n in names:
+        up = None
+        try:
+            r = subprocess.run(["hciconfig", n], capture_output=True,
+                               text=True, timeout=5)
+            up = "UP RUNNING" in r.stdout
+        except (OSError, subprocess.SubprocessError):
+            pass
+        out.append({"name": n, "up": up})
+    return out
+
+
+def bt_adapter_up():
+    """A bt_spp bridge can serve when some controller is UP (it binds
+    on every local adapter anyway)."""
+    return any(a["up"] for a in bt_adapters())
+
+
 def faketime_rc_path(u):
     """Per-unit FAKETIME_TIMESTAMP_FILE - `ctl clock_step` rewrites it
     at runtime, libfaketime re-reads it."""
@@ -1808,7 +1875,8 @@ def procs_of(u):
     """Process names of a unit in launch order. fcb_proxy (SL-0008) rides
     between sitl and the modules: it must listen before de_mavlink's
     fcb_connection_uri is dialed. fcb_tty (SL-0102 `fcb_link: pty`,
-    SL-0104 `kind: host_serial`) follows it: the socat bridge waits
+    SL-0104 `kind: host_serial`) / bt_spp (SL-0105 `kind: bt_spp`)
+    follows it: the serial bridge waits
     for the proxy's ctrl port,
     arms the link baud as a rate rule, then execs - and it must exist
     before de_mavlink opens the device. link_proxy (SL-0009) starts
@@ -1818,9 +1886,12 @@ def procs_of(u):
     out = ["sitl"] if u["fc"] else []
     if u["fc"] and u["fc"].get("fcb_proxy"):
         out.append("fcb_proxy")
-    if u["fc"] and (u["fc"].get("fcb_link") or {}).get("kind") in \
-            ("pty", "host_serial"):
-        out.append("fcb_tty")
+    if u["fc"]:
+        bridge_proc = {"pty": "fcb_tty", "host_serial": "fcb_tty",
+                       "bt_spp": "bt_spp"}.get(
+                           (u["fc"].get("fcb_link") or {}).get("kind"))
+        if bridge_proc:
+            out.append(bridge_proc)
     if u.get("link_proxy"):
         out.append("link_proxy")
     for m in u["modules"]:
@@ -2208,6 +2279,25 @@ def gen_unit(u, sim, catalog):
                 "%s tcp:127.0.0.1:%d; sleep 1; "
                 "done\""
                 % (pdir, px["ctrl"], fl["baud"], peer, px["port"]))
+        elif fl and fl["kind"] == "bt_spp":
+            # SL-0105: a host-side RFCOMM SPP server bridged to the
+            # proxy. The bridge re-execs under a bluetooth-capable
+            # python when needed; its --statedir arg also marks the
+            # cmdline for pid_is_ours/stray-sweep. The wrapper retries
+            # on exit - adapter hiccup or fcb_plug restart both end up
+            # listening on the same channel again.
+            pdir = os.path.join(udir, "bt_spp")
+            os.makedirs(pdir, exist_ok=True)
+            _launch_script(
+                u, "bt_spp", pdir,
+                "bash -c \": '%s'; while true; do '%s' '%s' "
+                "--channel %d --target %d --ctrl %d "
+                "--statedir '%s'%s; sleep 1; done\""
+                % (pdir, sys.executable,
+                   os.path.join(ENGINE_DIR, "bt_spp_bridge.py"),
+                   fl["channel"], px["port"], px["ctrl"], pdir,
+                   " --baud %d" % fl["baud"] if fl.get("baud")
+                   else ""))
     u.pop("config", None)
     u.pop("parm_files", None)
 
