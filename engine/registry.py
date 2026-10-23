@@ -397,6 +397,15 @@ VERBS = [
       doc="timing between a journal line on u1 and one on u2",
       eg="{journal_time_delta: {u1: c1, re1: 'a', u2: c2, re2: 'b',"
          " max_s: 5}}"),
+    V("log_match_delta", "check",
+      req=["unit", "module", "re1", "re2"],
+      opt=["min_s", "max_s"],
+      doc="elapsed between the runner observing two wait_log/"
+          "wait_journal matches on the unit (module 'journal' reads "
+          "the journal); proves a paced path really took the time",
+      eg="{log_match_delta: {unit: c1, module: de_mavlink,"
+         " re1: 'TCP Client connected', re2: 'Parameter LOADED',"
+         " min_s: 30}}"),
     V("clock_spread", "check", opt=["unit", "max_ms", "min_ms"],
       doc="spread of the units' latest CLOCK fleet_minus_unix_ms "
           "(min_ms proves a clock_step landed)",

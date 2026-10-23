@@ -61,7 +61,8 @@ class DEAdapter(VehicleAdapter):
                     {"deploy": {k: v for k, v in a.items()
                                 if k in ("package", "unit", "vehicle")}},
                     {"__file": scn["file"],
-                     "operation": scn.get("operation")}, ctx["marks"])
+                     "operation": scn.get("operation")}, ctx["marks"],
+                    ctx.get("log_events"))
             return runner.run_ctl("deploy", op)
         if name == "start":
             # the scenario's own t0: time_to_detect measures from the
@@ -116,7 +117,8 @@ class DEAdapter(VehicleAdapter):
                  "proc": "all"})
         # every other name: the runner.py step, unchanged semantics
         t = {"__file": scn["file"], "operation": scn.get("operation")}
-        return runner.run_step({name: a}, t, ctx["marks"])
+        return runner.run_step({name: a}, t, ctx["marks"],
+                               ctx.get("log_events"))
 
     def operator_act(self, a, ctx):
         """do: operator - act: approve|deny|confirm|dismiss|fire|<1086 a>."""

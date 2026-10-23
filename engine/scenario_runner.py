@@ -1251,7 +1251,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
            "run_start_ms": int(t0_wall * 1000),
            "operator_log": os.path.join(out, "operator.log"),
            "samples_file": os.path.join(out, "samples.jsonl"),
-           "proc_events": [], "restore_events": []}
+           "proc_events": [], "restore_events": [], "log_events": []}
     _CTX[0] = ctx
     # link-capable transports start clean: the fake server's links{} and
     # every unit's link_proxy survive sim reuse

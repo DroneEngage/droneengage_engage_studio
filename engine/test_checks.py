@@ -1218,6 +1218,73 @@ class TModuleLog(unittest.TestCase):
             self.assertTrue(_wait_log(u, "de_precland", "EVENT_OUT", 3,
                                       marks))
 
+    def test_wait_log_records_a_match_event(self):
+        from runner import _wait_log
+        with tempfile.TemporaryDirectory() as td, \
+                mock.patch.object(simlib, "RUN_DIR", td):
+            u = _module_log_unit(td)
+            _append_log(u, "de_precland", self.LINES)
+            marks = {u["name"]: {}}
+            events = []
+            self.assertTrue(_wait_log(u, "de_precland", "EVENT_OUT", 5,
+                                      marks, events))
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0]["unit"], "u1")
+            self.assertEqual(events[0]["src"], "de_precland")
+            self.assertIn("precision_landing.enabled",
+                          events[0]["line"])
+            # a timed-out wait records nothing
+            self.assertFalse(_wait_log(u, "de_precland", "NEVER", 1.0,
+                                       marks, events))
+            self.assertEqual(len(events), 1)
+
+
+class TLogMatchDelta(unittest.TestCase):
+    """SL-0106: log_match_delta - elapsed between two runner-observed
+    wait_* matches on one unit's stream."""
+
+    EVENTS = [{"t_ms": 100_000, "unit": "u1", "src": "de_mavlink",
+               "re": "connected", "line": "TCP Client connected to x"},
+              {"t_ms": 140_000, "unit": "u1", "src": "de_mavlink",
+               "re": "LOADED", "line": "* Parameter LOADED *"}]
+
+    def _run(self, a, events=None):
+        return run({"log_match_delta": a}, {},
+                   log_events=self.EVENTS if events is None else events)
+
+    def test_min_s_pass(self):
+        a = {"unit": "u1", "module": "de_mavlink",
+             "re1": "connected", "re2": "Parameter LOADED", "min_s": 30}
+        r = self._run(a)
+        self.assertEqual(r["status"], "PASS", r)
+        self.assertAlmostEqual(r["value"], 40.0)
+
+    def test_min_s_fail_when_too_fast(self):
+        a = {"unit": "u1", "module": "de_mavlink",
+             "re1": "connected", "re2": "Parameter LOADED", "min_s": 60}
+        self.assertEqual(self._run(a)["status"], "FAIL")
+
+    def test_missing_match_fails(self):
+        a = {"unit": "u1", "module": "de_mavlink",
+             "re1": "connected", "re2": "Parameter LOADED", "min_s": 30}
+        self.assertEqual(self._run(a, events=[])["status"], "FAIL")
+        # re2 observed BEFORE re1 does not count
+        early = [dict(self.EVENTS[1], t_ms=50_000), self.EVENTS[0]]
+        self.assertEqual(self._run(a, events=early)["status"], "FAIL")
+
+    def test_module_selects_the_stream(self):
+        a = {"unit": "u1", "re1": "connected", "re2": "LOADED",
+             "min_s": 30}
+        # default src "journal" - the events are on de_mavlink's log
+        self.assertEqual(self._run(a)["status"], "FAIL")
+        a["module"] = "journal"
+        self.assertEqual(self._run(a)["status"], "FAIL")
+
+    def test_needs_a_bound(self):
+        a = {"unit": "u1", "module": "de_mavlink",
+             "re1": "connected", "re2": "Parameter LOADED"}
+        self.assertEqual(self._run(a)["status"], "FAIL")
+
 
 class TFreeze(unittest.TestCase):
     """TASK-04: ctl freeze/unfreeze signal only pidfile pids that

@@ -402,6 +402,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `module_log_count` | same + `module` | a module's stdout log |
 | `journal_order` | `unit`, `first`, `then`, `proc` | ordering; `proc` reads `logs/<proc>.log` instead of the journal (module stdout lines) |
 | `journal_time_delta` | `u1`, `re1`, `u2`, `re2`, `max_s` | timing between lines |
+| `log_match_delta` | `unit`, `module`, `re1`, `re2` [`min_s` `max_s`] | elapsed between two observed wait_log/wait_journal matches on one unit (`module: journal` reads the journal) |
 | `proc_alive` / `proc_dead` | `unit`, `proc` | process state at end |
 | `fcb_stats` | `unit`, `direction` (`both`\|`c2s`\|`s2c`), `min_bytes` (1), `min_frames` | the unit's fcb proxy counters read live off its ctrl port — did the wire carry MAVLink (SL-0104 host_serial evidence; `bytes` counts always, `frames` while corruption rules are armed) |
 | `adsb_vehicle` | `icao` (hex/dec), `tid` (world entity), `at_least` (1), `max_m` (50), `log`/`unit` | the GCS bridge (or `log:`/unit proc stdout) saw ≥ `at_least` `ADSB_VEHICLE` frames with this ICAO, each within `max_m` of the entity's truth position at frame time |

@@ -66,7 +66,8 @@ import geo_projection as gp
 # assertions that are only meaningful when SITL really runs at ~1x; when
 # the scenario asks realtime: true and the measured speed-up is off,
 # these report SKIP instead of a misleading number
-REALTIME_SENSITIVE = {"max_latency", "journal_time_delta", "time_to_detect"}
+REALTIME_SENSITIVE = {"max_latency", "journal_time_delta",
+                      "log_match_delta", "time_to_detect"}
 
 # only a WRITE can change FC mission items - a download/read never does
 CAUSE_RE = r"MISSION_(WRITE|UPLOAD|ACK)|fc mission|mission.*upload"
@@ -83,6 +84,7 @@ UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
                 "udp_proxy_rejects",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
+                "log_match_delta",
                 "detection_recall", "status_field", "obs_frames"}
 
 DEFAULT_TRUTH_TOL_MS = 10000      # truth row must be this close in time
@@ -617,6 +619,52 @@ def _journal_delta_pair(name, a, ctx, u1, u2, marks, ms=False):
     return _r(name, "PASS" if good else "FAIL", dt,
               f"|{u1['name']}:{a['re1']!r} - {u2['name']}:{a['re2']!r}|"
               f" = {dt:.1f}s (min {lo}, max {hi})")
+
+
+def _log_match_delta(name, a, ctx):
+    """log_match_delta {unit, module ("journal"), re1, re2,
+    min_s|max_s}: the elapsed wall time between the instants the
+    timeline's wait_log/wait_journal steps observed a line matching
+    re1 then one matching re2 on the unit's stream - SL-0106's 'the
+    throttled download really took longer' assert for fcb_rate.
+    Module stdout carries no per-line clock, so the runner stamps
+    every successful wait_* match (unit, source, the matched line's
+    text) into ctx["log_events"]; the delta is between those
+    observation instants, which also means a line a wait saw
+    instantly after being printed counts from when it was seen, not
+    when the module wrote it. `unit` may resolve to several units -
+    the bounds must hold on each."""
+    src = str(a.get("module", "journal"))
+    r1, r2 = re.compile(a["re1"]), re.compile(a["re2"])
+    lo, hi = a.get("min_s"), a.get("max_s")
+    if lo is None and hi is None:
+        return _r(name, "FAIL", None, "needs max_s and/or min_s")
+    ok, bits, vals = True, [], []
+    for u in _units(a, ctx):
+        evs = [e for e in ctx.get("log_events") or []
+               if e["unit"] == u["name"] and e["src"] == src]
+        e1 = next((e for e in evs if r1.search(e["line"])), None)
+        if e1 is None:
+            ok = False
+            bits.append(f"{u['name']}.{src}: no observed match for "
+                        f"{a['re1']!r} ({len(evs)} event(s))")
+            continue
+        e2 = next((e for e in evs
+                   if e["t_ms"] >= e1["t_ms"] and r2.search(e["line"])),
+                  None)
+        if e2 is None:
+            ok = False
+            bits.append(f"{u['name']}.{src}: no observed {a['re2']!r} "
+                        f"at/after {a['re1']!r}")
+            continue
+        dt = (e2["t_ms"] - e1["t_ms"]) / 1000.0
+        vals.append(dt)
+        good = (lo is None or dt >= lo) and (hi is None or dt <= hi)
+        ok &= good
+        bits.append(f"{u['name']}.{src}: {a['re1']!r} -> {a['re2']!r}"
+                    f" = {dt:.1f}s (min {lo}, max {hi})")
+    return _r(name, "PASS" if ok else "FAIL",
+              sum(vals) / len(vals) if vals else None, "; ".join(bits))
 
 
 def _clock_spread(name, a, ctx):
@@ -2611,6 +2659,7 @@ DISPATCH = {
     "no_journal": _no_journal,
     "journal_order": _journal_order,
     "journal_time_delta": _journal_delta,
+    "log_match_delta": _log_match_delta,
     "clock_spread": _clock_spread,
     "mission_current": _mission_current,
     "distance_to": _distance_to,

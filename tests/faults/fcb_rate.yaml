@@ -8,11 +8,13 @@
 # squeeze through 960 B/s instead of wire speed: ~52 s of airtime where
 # an unthrottled download finishes in ~3 s. The window lifts at ~45 s
 # while the download is still running, so "Parameter LOADED" can only
-# land after the restore - the wait_log step prints its own elapsed
-# time, which is the measurement the acceptance asks for. Position
-# telemetry interleaves through the throttled link the whole time:
-# the FC position source reports lost while de_mavlink is dead, then
-# recovers mid-download (POS_SOURCE_BACK while the rule is still on).
+# land after the restore - log_match_delta below is the acceptance's
+# elapsed-time proof: it measures between the runner's "TCP Client
+# connected" and "Parameter LOADED" wait observations, and a rate rule
+# regressed to a no-op cannot satisfy its min_s. Position telemetry
+# interleaves through the throttled link the whole time: the FC
+# position source reports lost while de_mavlink is dead, then recovers
+# mid-download (POS_SOURCE_BACK while the rule is still on).
 version: 1
 name: f_fcb_rate
 transport: real          # the proxy is ours - no fake server needed
@@ -31,6 +33,14 @@ assert:
   # the parameter download completed through the throttle...
   - module_log_count: {unit: c1, module: de_mavlink,
                        re: "Parameter LOADED", at_least: 1}
+  # ...and it really was throttled: the observed interval between
+  # de_mavlink's reconnect and the parameter table landing is ~40 s+
+  # at 960 B/s; a rate rule regressed to a no-op finishes in ~3 s and
+  # both wait_log steps then observe their lines instantly, so the
+  # measured delta collapses to the t=8 -> t=15 step gap alone (~7 s)
+  - log_match_delta: {unit: c1, module: de_mavlink,
+                      re1: "TCP Client connected",
+                      re2: "Parameter LOADED", min_s: 30}
   # ...and FC telemetry still reached de_mavlink through it: the FC
   # position source recovered promptly while the rate rule was on
   - journal_time_delta: {u1: c1, re1: "POS_SOURCE_LOST",

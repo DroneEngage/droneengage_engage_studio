@@ -142,18 +142,32 @@ _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
                "journal_unwritable", "journal_writable"}
 
 
-def _wait_journal(u, rx, timeout, marks):
+def _log_event(log_events, unit, src, rx, line):
+    """Stamp one wait_journal/wait_log observation for the
+    log_match_delta assertion (SL-0106): module/journal lines carry no
+    usable clock of their own, so the instant the runner SAW the match
+    is the measurement - unit + source + the matched line's text."""
+    if log_events is not None:
+        log_events.append({"t_ms": int(time.time() * 1000),
+                           "unit": unit, "src": src, "re": rx,
+                           "line": line})
+
+
+def _wait_journal(u, rx, timeout, marks, log_events=None):
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if simlib.journal_match(u, rx, marks.get(u["name"])):
+        hits = simlib.journal_match(u, rx, marks.get(u["name"]))
+        if hits:
             print(f"  {u['name']}: matched {rx!r} after {time.time()-t0:.1f}s", flush=True)
+            _log_event(log_events, u["name"], "journal", rx,
+                       f"{hits[0][4]} {hits[0][5]}")
             return True
         time.sleep(1)
     print(f"  TIMEOUT: {rx!r} not in {u['name']} journal after {timeout}s", flush=True)
     return False
 
 
-def _wait_log(u, proc, rx, timeout, marks):
+def _wait_log(u, proc, rx, timeout, marks, log_events=None):
     """wait_log: block until the unit's logs/<proc>.log (the module's
     stdout) has a line matching rx since the test mark. The module-log
     sibling of _wait_journal - module stdout never reaches the de_comm
@@ -161,9 +175,11 @@ def _wait_log(u, proc, rx, timeout, marks):
     rxc = re.compile(rx)
     t0 = time.time()
     while time.time() - t0 < timeout:
-        if simlib.log_match(u, proc, rxc, marks.get(u["name"])):
+        hits = simlib.log_match(u, proc, rxc, marks.get(u["name"]))
+        if hits:
             print(f"  {u['name']}.{proc}: matched {rx!r} after "
                   f"{time.time() - t0:.1f}s", flush=True)
+            _log_event(log_events, u["name"], str(proc), rx, hits[0])
             return True
         time.sleep(1)
     print(f"  TIMEOUT: {rx!r} not in {u['name']} logs/{proc}.log after "
@@ -171,14 +187,17 @@ def _wait_log(u, proc, rx, timeout, marks):
     return False
 
 
-def _wait_journal_any(units, rx, timeout, marks):
+def _wait_journal_any(units, rx, timeout, marks, log_events=None):
     """any: true - done as soon as ONE of the units journals rx (a line
     whose unit is decided at runtime, e.g. which searcher adopts)."""
     t0 = time.time()
     while time.time() - t0 < timeout:
         for u in units:
-            if simlib.journal_match(u, rx, marks.get(u["name"])):
+            hits = simlib.journal_match(u, rx, marks.get(u["name"]))
+            if hits:
                 print(f"  {u['name']}: matched {rx!r} after {time.time()-t0:.1f}s", flush=True)
+                _log_event(log_events, u["name"], "journal", rx,
+                           f"{hits[0][4]} {hits[0][5]}")
                 return True
         time.sleep(1)
     names = ",".join(u["name"] for u in units)
@@ -186,7 +205,7 @@ def _wait_journal_any(units, rx, timeout, marks):
     return False
 
 
-def run_step(step, t, marks):
+def run_step(step, t, marks, log_events=None):
     if isinstance(step, str):
         step = {step: True}
     if not isinstance(step, dict) or len(step) != 1:
@@ -261,12 +280,15 @@ def run_step(step, t, marks):
     if name == "wait_journal":
         if arg.get("any"):
             return _wait_journal_any(ctl.resolve(unit), arg["re"],
-                                     float(arg.get("timeout", 60)), marks)
-        return all(_wait_journal(u, arg["re"], float(arg.get("timeout", 60)), marks)
+                                     float(arg.get("timeout", 60)), marks,
+                                     log_events)
+        return all(_wait_journal(u, arg["re"], float(arg.get("timeout", 60)),
+                                 marks, log_events)
                    for u in ctl.resolve(unit))
     if name == "wait_log":
         return all(_wait_log(u, str(arg["module"]), arg["re"],
-                             float(arg.get("timeout", 60)), marks)
+                             float(arg.get("timeout", 60)), marks,
+                             log_events)
                    for u in ctl.resolve(unit))
     if name in ("arm", "land", "reset", "disarm", "journal", "kick",
                 "link_clear", "fc"):
