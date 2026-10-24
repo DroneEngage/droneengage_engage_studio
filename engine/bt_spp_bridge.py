@@ -27,6 +27,7 @@ same convention as fcb_proxy's --statedir).
 import argparse
 import atexit
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -121,6 +122,50 @@ def handle_client(client, target_port, ctrl_port, baud):
         tcp.close()
 
 
+def squatter_scan():
+    """Names of foreign processes holding RFCOMM sockets other than
+    ours. This bridge binds its channel LAST, so a listener already on
+    it (kdeconnectd's SPP server is the known thief) keeps winning the
+    client's dials - every byte lands there and our accept() never
+    fires. The kernel exposes no per-socket channel in /proc, so any
+    foreign non-root holder is a candidate. Mirrors
+    simlib.bt_rfcomm_squatters, kept self-contained (the bridge runs
+    as a standalone proc)."""
+    try:
+        with open("/proc/net/rfcomm") as f:
+            rows = [l.split() for l in f.read().splitlines()[1:]
+                    if l.split()]
+    except OSError:
+        return []
+    nonroot = {r[5] for r in rows if len(r) >= 6 and r[4] != "0"}
+    out = []
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit() or int(pid) in (os.getpid(),
+                                             os.getppid()):
+            continue
+        fdd = f"/proc/{pid}/fd"
+        try:
+            comm = open(f"/proc/{pid}/comm").read().strip()
+        except OSError:
+            continue
+        try:
+            fds = os.listdir(fdd)
+        except OSError:
+            continue
+        n = 0
+        for fd in fds:
+            try:
+                tgt = os.readlink(os.path.join(fdd, fd))
+            except OSError:
+                continue
+            m = re.fullmatch(r"socket:\[(\d+)\]", tgt)
+            if m and m.group(1) in nonroot:
+                n += 1
+        if n:
+            out.append(f"{comm}({pid})x{n}")
+    return out
+
+
 def serve(channel, target_port, ctrl_port, baud):
     """The RFCOMM server: accept one client, bridge it, accept again."""
     srv = socket.socket(AF_BLUETOOTH, socket.SOCK_STREAM,
@@ -129,6 +174,10 @@ def serve(channel, target_port, ctrl_port, baud):
     srv.listen(1)
     log(f"RFCOMM channel {channel} listening -> "
         f"tcp:127.0.0.1:{target_port}")
+    sq = squatter_scan()
+    log("squatter check: " + (
+        ", ".join(sq) + " - a dial to this channel may land on it"
+        if sq else "clean"))
     while True:
         try:
             client, addr = srv.accept()

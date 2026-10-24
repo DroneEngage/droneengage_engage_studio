@@ -1,0 +1,46 @@
+# tcp_andruav: the SL-0106 `fcb_link: {kind: tcp}` + `fc_client:
+# external` path - an Android phone running Andruav's TCP FC
+# connection dials the host's LAN address at the fcb proxy's listen
+# port. The unit runs SITL + the proxy only (forced on, bound to
+# 0.0.0.0 - an off-host client must reach it); no local
+# de_comm/de_mavlink, no bridge proc - TCP needs no front.
+#
+# Manual part: on the phone, in the app's TCP FC connection, point
+# the server address at the host's LAN ip and the port `sim status`
+# prints as `tcp:<port>` (the unit's fcb_proxy listen port,
+# 7760+10*slot), then connect inside the first wait window - the
+# timeline then cuts the link for 5s (fault fcb_cut closes the socket)
+# and the app's redial is part of the proof.
+#
+# What it proves: MAVLink moves BOTH ways over the TCP link (s2c
+# telemetry, c2s heartbeats/param requests) between the off-host app
+# and SITL through the proxy.
+#
+# Not gated: only the LAN needs to work - the phone and host must
+# share a network.
+version: 1
+name: tcp_andruav
+transport: real
+realtime: true
+settle_s: 15
+fleet:
+  - {id: c1, cls: copter, fc_client: external,
+     fcb_link: {kind: tcp}}
+timeline:
+  # give the human time to enter the host ip:port and connect in the
+  # app - SITL emits s2c the whole time, the client's
+  # heartbeats/requests are the c2s half
+  - {t: 0, do: wait, seconds: 45}
+  # fcb_cut severs the socket at the proxy (there is no serial bridge
+  # to unplug on kind tcp) - the app redials once the cut expires
+  - {t: 0, fault: fcb_cut, unit: c1, dur_s: 5}
+  - {t: 0, do: wait, seconds: 25}
+assert:
+  # the proxy counted real bytes each way (bytes are cumulative, so
+  # the cut window cannot erase pre-fault evidence)
+  - fcb_stats: {unit: c1, direction: c2s, min_bytes: 1}
+  - fcb_stats: {unit: c1, direction: s2c, min_bytes: 1}
+  - proc_alive: {unit: c1, proc: fcb_proxy}
+  - proc_alive: {unit: c1, proc: sitl}
+  - no_unexpected_restart: {}
+teardown: none

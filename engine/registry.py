@@ -589,6 +589,11 @@ VERBS = [
       doc="the unit's fcb proxy counters read live off its ctrl port "
           "(SL-0104: bytes moved through a bridged serial adapter)",
       eg="{fcb_stats: {unit: c1, direction: both, min_bytes: 1}}"),
+    V("bt_no_squatters", "check", opt=["unit"],
+      doc="no foreign process holds an RFCOMM socket - a squatter "
+          "(kdeconnectd is the known thief) steals a bt_spp unit's "
+          "dials while fcb_stats reads zero (SL-0105)",
+      eg="{bt_no_squatters: {unit: c1}}"),
     V("adsb_vehicle", "check", req=["icao"],
       opt=["tid", "at_least", "max_m", "log", "unit"],
       doc="the GCS bridge (or log:/unit stdout) saw >= at_least "

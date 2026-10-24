@@ -208,7 +208,7 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `journal_unwritable` / `journal_writable` | `unit` — the journal dir goes read-only / is restored (SL-0014) |
 | `clock_step` | `unit`, `offset_s` — step a `faketime: true` unit's de_comm clock (SL-0014) |
 | `fcb_cut` / `fcb_stall` / `fcb_rate` / `fcb_corrupt` / `fcb_drop` / `fcb_inject` / `fcb_clear` / `fcb_stats` | `unit`, `seconds`/`ms`/`baud`/`drop_pct`/`flip_pct`/`msgid`/`hex` — one-shot fcb-proxy faults + rule/counter probes (need `fcb_proxy: true`) |
-| `fcb_unplug` / `fcb_plug` | `unit` — one-shot pull/replug of the serial device an `fcb_link` (pty/host_serial/bt_spp) unit's client sits on: the serial bridge's (fcb_tty / bt_spp) whole process group is killed/restarted so the device node really vanishes (SL-0103); `fault: fcb_unplug` + `dur_s` replugs on a timer — these steps script the pair by hand, e.g. replug after a `wait_journal` (SL-0107; `./sim ctl fcb_unplug <unit> [s]` is the blocking console form) |
+| `fcb_unplug` / `fcb_plug` | `unit` — one-shot pull/replug of the serial device an `fcb_link` (pty/host_serial/bt_spp/udp) unit's client sits on: the serial bridge's (fcb_tty / bt_spp) whole process group is killed/restarted so the device node really vanishes (SL-0103); `fault: fcb_unplug` + `dur_s` replugs on a timer — these steps script the pair by hand, e.g. replug after a `wait_journal` (SL-0107; `./sim ctl fcb_unplug <unit> [s]` is the blocking console form) |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
 ### `fault:` kinds
@@ -340,11 +340,31 @@ works on the link — it is the same proxy, just with a serial front:
 
     de_mavlink --/dev/fcb.tty--> socat --> proxy 7760+10k --> SITL serial1
 
-`kind: tcp` (the default) is today's wiring and records nothing —
-`fcb_link` with any other kind on a no-fc unit is a spec error, and a
-serial kind forces `fcb_proxy` on. `sim down` kills the socat (the
-pty and its link file die with it); `./sim doctor` requires `socat`
-only when a sim uses a serial kind.
+`kind: tcp` (the default) is today's wiring and records nothing for a
+local client — `fcb_link` with any other kind on a no-fc unit is a
+spec error, and a serial kind forces `fcb_proxy` on. `sim down` kills
+the socat (the pty and its link file die with it); `./sim doctor`
+requires `socat` only when a sim uses a serial kind.
+
+`kind: tcp` *with* `fc_client: external` (SL-0106) is the off-host
+twin: the unit runs SITL + the fcb proxy (forced on, bound to
+`0.0.0.0` — external units always bind the listen port on every
+interface) and the client dials `<host-LAN-ip>:7760+10k` like a FC
+TCP endpoint. No bridge proc exists (TCP needs no front), so
+`fcb_unplug` refuses — use `fault: fcb_cut` for the drop/redial
+cycle; `fcb_stats` proves the traffic
+(`tests/fcb_link/tcp_andruav.yaml`).
+
+`fcb_link: {kind: udp, peer: <client-ip>:<port>}` (SL-0106) is for a
+client that only listens — Andruav's UDP FCB connection learns its
+peer from the first inbound datagram and never sends first, so the
+sim must push. A pidfile'd `fcb_udp` socat proc pushes the proxy's
+byte stream to `peer` (the phone's LAN ip + its configured UDP port)
+and pipes replies back into the proxy; its own UDP source port is
+ephemeral. `fcb_unplug`/`fcb_plug` kill and restart the bridge —
+the client sees the stream stop and resume. `peer` is required and
+bench-specific, like `device:` on host_serial
+(`tests/fcb_link/udp_andruav.yaml`).
 
 `fcb_link: {kind: host_serial, device: /dev/ttyUSBn, baud: <N>}`
 (SL-0104) swaps the virtual pty for a real host USB-serial adapter —
@@ -406,6 +426,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `obs_frames` | `unit`, `min_frames`, `cls`, `trk_stable`, `attrs` | the stub's 6546 obs frames: per-frame cls multiset, stable track set, attr bounds (SL-0034) |
 | `proc_alive` / `proc_dead` | `unit`, `proc` | process state at end |
 | `fcb_stats` | `unit`, `direction` (`both`\|`c2s`\|`s2c`), `min_bytes` (1), `min_frames` | the unit's fcb proxy counters read live off its ctrl port — did the wire carry MAVLink (SL-0104 host_serial evidence; `bytes` counts always, `frames` while corruption rules are armed) |
+| `bt_no_squatters` | `unit` | no foreign (non-sim, non-root) process holds an RFCOMM socket — a squatter on a `bt_spp` unit's channel accepts the client's dial instead of our bridge (kdeconnectd's SPP listener is the known thief; SL-0105) |
 | `adsb_vehicle` | `icao` (hex/dec), `tid` (world entity), `at_least` (1), `max_m` (50), `log`/`unit` | the GCS bridge (or `log:`/unit proc stdout) saw ≥ `at_least` `ADSB_VEHICLE` frames with this ICAO, each within `max_m` of the entity's truth position at frame time |
 | `link_offline` | `unit`, `at_least`, `min_s` | monitor saw it drop |
 | `no_unexpected_restart` | `proc` (+`unit`, `tol_s`) | every pid change in `samples.jsonl` sits inside a `fault:` kill/restart/module_kill/server_down window (or a `do:` reset/server_up/land) |

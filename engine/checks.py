@@ -84,7 +84,7 @@ UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
                 "udp_proxy_rejects",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
-                "log_match_delta",
+                "log_match_delta", "bt_no_squatters",
                 "detection_recall", "status_field", "obs_frames"}
 
 DEFAULT_TRUTH_TOL_MS = 10000      # truth row must be this close in time
@@ -485,6 +485,23 @@ def _fcb_stats(name, a, ctx):
                         f" (>={min_frames})")
     return _r(name, "PASS" if ok else "FAIL",
               sum(vals) / len(vals) if vals else 0, "; ".join(bits))
+
+
+def _bt_no_squatters(name, a, ctx):
+    """bt_no_squatters {unit}: no foreign process holds an RFCOMM
+    socket on this host (SL-0105). A bt_spp unit's bridge binds its
+    channel last; a pre-existing foreign listener on the same channel
+    keeps winning the phone's dials (connect, garbage-read, reset -
+    kdeconnectd is the known thief) while fcb_stats stays at zero.
+    FAILs with the culprit's name/pid so the cause is not a bare
+    zero-bytes miss."""
+    squats = simlib.bt_rfcomm_squatters()
+    if not squats:
+        return _r(name, "PASS", 0, "no foreign RFCOMM sockets")
+    return _r(name, "FAIL", len(squats),
+              "foreign RFCOMM holder(s) may steal the channel: "
+              + ", ".join(f"{s['name']}({s['pid']})x{s['sockets']}"
+                          for s in squats))
 
 
 def _no_journal(name, a, ctx):
@@ -2705,6 +2722,7 @@ DISPATCH = {
     "status_field": _status_field,
     "adsb_vehicle": _adsb_vehicle,
     "fcb_stats": _fcb_stats,
+    "bt_no_squatters": _bt_no_squatters,
 }
 
 # the SL-0011 run-wide invariants: they read run evidence (samples.jsonl,

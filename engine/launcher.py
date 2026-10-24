@@ -327,12 +327,17 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
           f"slot {sim['slot_base']}, " + simlib.col_cyan(conn))
     # the resolved fleet: unit, vehicle and ports - the initial settings
     # the run is about to launch with
-    def _link_label(fl):
+    def _link_label(fl, fc):
         if fl.get("kind") == "host_serial":
             return (f"host:{os.path.basename(fl['device'])}:"
                     f"{fl['baud']}")
         if fl.get("kind") == "bt_spp":
             return f"bt:ch{fl['channel']}"
+        if fl.get("kind") == "udp":
+            return f"udp:{fl['peer']}"
+        if fl.get("kind") == "tcp" and fc.get("fcb_proxy"):
+            # an external client dials this port on the host's LAN IP
+            return f"tcp:{fc['fcb_proxy']['port']}"
         return f"{fl.get('kind', '?')}:{fl.get('baud')}"
     for u in m["units"]:
         fc = u["fc"]
@@ -344,7 +349,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                  + (f"fcbpx={simlib.col_cyan(fc['fcb_proxy']['port'])}/"
                     f"{simlib.col_cyan(fc['fcb_proxy']['ctrl'])} "
                     if fc.get("fcb_proxy") else "")
-                 + (f"{simlib.col_cyan(_link_label(fc['fcb_link']))} "
+                 + (f"{simlib.col_cyan(_link_label(fc['fcb_link'], fc))} "
                     if fc.get("fcb_link") else "")
                  if fc else "no-fc ")
               + " ".join(f"{mod}:{simlib.col_cyan(p)}"

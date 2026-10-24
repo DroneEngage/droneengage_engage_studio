@@ -425,3 +425,15 @@ fleet:
 client's socket dies like a dropped link) and `dur_s` replugs it on
 the same channel; `fcb_rate` still paces the proxy when `baud` is
 set on the link. Two units must not share a channel.
+
+**Channel squatters.** RFCOMM delivers a dial to whichever listener
+bound the channel first — our bridge binds *last*. A desktop app with
+its own SPP listener on the same channel (kdeconnectd is the known
+thief: it accepts the phone's dial, reads MAVLink as garbage and
+resets — the app shows a connect/close loop while `fcb_stats` stays
+at zero and the bridge log never prints `client connected`). Diagnose
+with `./sim ctl bt_squatters <unit>` — it names foreign RFCOMM
+holders — then kill the culprit. The `bt_no_squatters` assertion
+(see `tests/fcb_link/bt_spp_andruav.yaml`) makes a run FAIL with the
+thief's name instead of a bare zero-bytes miss, and the scenario
+runner prints the same warning at bring-up.

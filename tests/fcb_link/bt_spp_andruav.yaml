@@ -1,0 +1,54 @@
+# bt_spp_andruav: the SL-0105 `fcb_link: {kind: bt_spp}` path proven
+# against the client it exists for - an Android phone running Andruav.
+# SITL's serial1 fronts the fcb proxy, the proxy fronts a host RFCOMM
+# SPP server (engine/bt_spp_bridge.py, proc `bt_spp`), and the FC
+# client is `fc_client: external`: no local de_comm/de_mavlink - the
+# phone pairs with the host and dials the SPP channel like a drone FC
+# port (docs/HIL.md).
+#
+# Manual part: pair the phone with the host, pick it in the app's
+# Bluetooth FC connection and hit connect inside the first wait window
+# - the timeline then pulls the link for 5s (fcb_unplug) and the app's
+# redial on replug is part of the proof.
+#
+# What it proves: MAVLink moves BOTH ways over the Bluetooth serial
+# link (s2c telemetry, c2s heartbeats/param requests), and - the part
+# this variant adds - no foreign process squats the channel:
+# bt_no_squatters names an RFCOMM thief (kdeconnectd's SPP listener is
+# the known one - it accepts the phone's dial, reads MAVLink as
+# garbage, resets) instead of leaving a bare zero-bytes FAIL.
+#
+# HARDWARE-GATED: SKIPs cleanly (exit 0) when no UP Bluetooth
+# controller is on this host. SPP discovery needs BlueZ --compat
+# (the /var/run/sdp socket) - see docs/HIL.md.
+version: 1
+name: bt_spp_andruav
+transport: real
+realtime: true
+settle_s: 15
+fleet:
+  - {id: c1, cls: copter, fc_client: external,
+     fcb_link: {kind: bt_spp, channel: 1}}
+timeline:
+  # give the human time to pair + tap connect in the app - SITL emits
+  # s2c the whole time, the client's heartbeats/requests are the c2s
+  # half
+  - {t: 0, do: wait, seconds: 45}
+  # SL-0103's fault applies to the serial bridge on this kind too:
+  # stopping it closes the RFCOMM channel - the app sees the link
+  # drop, then a redial lands once replug brings the listener back
+  - {t: 0, fault: fcb_unplug, unit: c1, dur_s: 5}
+  - {t: 0, do: wait, seconds: 25}
+assert:
+  # first the channel-ownership check: a squatter here fails with a
+  # named culprit rather than a mysterious zero on the byte counters
+  - bt_no_squatters: {unit: c1}
+  # the bridge counted real bytes each way (counters are cumulative,
+  # so the unplug window cannot erase pre-fault evidence)
+  - fcb_stats: {unit: c1, direction: c2s, min_bytes: 1}
+  - fcb_stats: {unit: c1, direction: s2c, min_bytes: 1}
+  - proc_alive: {unit: c1, proc: bt_spp}
+  - proc_alive: {unit: c1, proc: fcb_proxy}
+  - proc_alive: {unit: c1, proc: sitl}
+  - no_unexpected_restart: {}
+teardown: none

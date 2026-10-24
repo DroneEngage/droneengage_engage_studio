@@ -589,8 +589,8 @@ def _fault(step, scn, ctx):
             print("  fcb_unplug needs an FC unit", flush=True)
             return False
         if not all(simlib.bridge_proc(u) for u in us):
-            print("  fcb_unplug needs an `fcb_link` serial unit "
-                  "(kind pty/host_serial/bt_spp)", flush=True)
+            print("  fcb_unplug needs an `fcb_link` bridged unit "
+                  "(kind pty/host_serial/bt_spp/udp)", flush=True)
             return False
         # record each unit's real bridge proc so no_unexpected_restart
         # windows cover its pid changes (fcb_tty / bt_spp by kind)
@@ -1199,6 +1199,20 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
                     f"{ent.get('name', '?')}:ch{fl.get('channel')} - "
                     "no UP Bluetooth controller (attach/enable one: "
                     "bluetoothctl power on)")
+            else:
+                # SL-0105: our bridge binds the channel LAST - a
+                # foreign RFCOMM listener already on it (kdeconnectd's
+                # SPP server is the known thief) keeps winning the
+                # client's dials and fcb_stats stays zero. Warn now so
+                # the connect window is not wasted.
+                sq = simlib.bt_rfcomm_squatters()
+                if sq:
+                    print("  WARNING: foreign RFCOMM holder(s) may "
+                          "steal the bt_spp channel: " + ", ".join(
+                              f"{s['name']}({s['pid']})x{s['sockets']}"
+                              for s in sq) +
+                          " - kill them or the client dial lands "
+                          "elsewhere", flush=True)
     if missing:
         return _skipped_result(
             scn, t_file, out, t0_wall,

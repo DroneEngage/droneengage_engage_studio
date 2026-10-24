@@ -1260,20 +1260,23 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         fl = sim.get("fcb_link") if fc else None
     if fl and not fc:
         raise SimError(f"unit {name}: `fcb_link` but the block has no fc")
-    bad = set(fl or ()) - {"kind", "baud", "device", "channel"}
+    bad = set(fl or ()) - {"kind", "baud", "device", "channel", "peer"}
     if bad:
         raise SimError(f"unit {name}: `fcb_link` unknown keys "
                        f"{sorted(bad)}")
     link_kind = (fl or {}).get("kind", "tcp")
-    if link_kind not in ("tcp", "pty", "host_serial", "bt_spp"):
+    if link_kind not in ("tcp", "pty", "host_serial", "bt_spp", "udp"):
         raise SimError(f"unit {name}: `fcb_link` kind {link_kind!r} "
-                       "(have: tcp, pty, host_serial, bt_spp)")
+                       "(have: tcp, pty, host_serial, bt_spp, udp)")
     if link_kind != "host_serial" and "device" in (fl or {}):
         raise SimError(f"unit {name}: `fcb_link` device only applies "
                        "to kind host_serial")
     if link_kind != "bt_spp" and "channel" in (fl or {}):
         raise SimError(f"unit {name}: `fcb_link` channel only applies "
                        "to kind bt_spp")
+    if link_kind != "udp" and "peer" in (fl or {}):
+        raise SimError(f"unit {name}: `fcb_link` peer only applies "
+                       "to kind udp")
     # SL-0104: `fc_client: external` - the FC client lives off-host (an
     # Android/Pi wired to the host's USB-serial adapter, or paired over
     # Bluetooth SPP - SL-0105): the unit runs SITL + the bridge but no
@@ -1287,11 +1290,11 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         if not fc:
             raise SimError(f"unit {name}: `fc_client: external` but "
                            "the block has no fc")
-        if link_kind not in ("host_serial", "bt_spp"):
+        if link_kind not in ("tcp", "host_serial", "bt_spp", "udp"):
             raise SimError(f"unit {name}: `fc_client: external` needs "
-                           "`fcb_link` kind host_serial or bt_spp - "
-                           "the kinds that wire a client in from "
-                           "outside the host")
+                           "`fcb_link` kind tcp, host_serial, bt_spp "
+                           "or udp - the kinds that wire a client in "
+                           "from outside the host")
     if fc:
         if not 1 <= slot <= 250:
             raise SimError(f"unit {name}: slot {slot} is not a valid MAVLink sysid")
@@ -1407,6 +1410,39 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                                    "must be positive")
                 link["baud"] = baud
             u["fc"]["fcb_link"] = link
+        elif link_kind == "tcp" and fc_client == "external":
+            # SL-0106: the client dials the host's LAN address at the
+            # fcb proxy's listen port - the proxy is forced on below
+            # and binds 0.0.0.0 for external units so the off-host
+            # dial reaches it. Recorded so status shows the dial point
+            # and the link kind lands in the sim hash.
+            u["fc"]["fcb_link"] = {"kind": "tcp"}
+        elif link_kind == "udp":
+            # SL-0106: the client is a UDP listener (Andruav's
+            # UdpConnection learns its peer from the first inbound
+            # datagram and never sends first), so a socat bridge
+            # (proc fcb_udp) pushes the proxy's byte stream to `peer`
+            # (phone-ip:port) and pipes the replies back into the
+            # proxy. The bridge's UDP source port is ephemeral - no
+            # host port is allocated.
+            if fc_client != "external":
+                raise SimError(f"unit {name}: `fcb_link` kind udp "
+                               "needs `fc_client: external` - the "
+                               "bridge pushes to a remote listener; "
+                               "a local de_mavlink is tcp instead")
+            peer = str(fl.get("peer") or "").strip()
+            p_host, _, p_port = peer.rpartition(":")
+            try:
+                peer_port = int(p_port)
+            except ValueError:
+                peer_port = 0
+            if not p_host or not 1 <= peer_port <= 65535:
+                raise SimError(f"unit {name}: `fcb_link` kind udp "
+                               "needs `peer:` as <phone-ip>:<port> "
+                               "(e.g. 192.168.1.20:14550) - the "
+                               "client listens, the bridge pushes")
+            u["fc"]["fcb_link"] = {"kind": "udp",
+                                   "peer": f"{p_host}:{peer_port}"}
         if fc_client == "external":
             u["fc_client"] = "external"
             u["modules"] = [m for m in u["modules"]
@@ -1414,8 +1450,11 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         px = entry.get("fcb_proxy")
         if px is None:
             px = bool(sim.get("fcb_proxy"))
-        if px or link_kind in ("pty", "host_serial", "bt_spp"):
-            # a pty link only fronts the proxy - it cannot exist alone
+        if px or link_kind in ("pty", "host_serial", "bt_spp", "udp") \
+                or (link_kind == "tcp" and fc_client == "external"):
+            # a serial/udp link only fronts the proxy - it cannot
+            # exist alone; an external tcp client dials the proxy
+            # directly, so it too must exist
             u["fc"]["fcb_proxy"] = {"port": 7760 + 10 * slot,
                                     "ctrl": 7860 + 10 * slot}
         # world.prepare_sim stamps config.<stub>.stub.{sysid,pose_port}
@@ -1865,6 +1904,61 @@ def bt_adapter_up():
     return any(a["up"] for a in bt_adapters())
 
 
+def bt_rfcomm_squatters():
+    """[{pid, name, sockets}] of foreign non-root processes holding an
+    RFCOMM socket (SL-0105). Our bt_spp bridge binds its channel last -
+    a pre-existing foreign listener on the same channel keeps winning
+    the dials (the phone connects, the squatter reads MAVLink as
+    garbage, resets; kdeconnectd's SPP listener is the known thief).
+    Kernel delivers by channel, which /proc does not expose, so any
+    foreign RFCOMM socket is reported as a candidate - on a bench they
+    are rare enough that naming the process is the useful part.
+    Root-owned sockets (bluetoothd's HFP/GATT profile listeners) are
+    system services on their own channels and are skipped."""
+    try:
+        with open("/proc/net/rfcomm") as f:
+            rows = [l.split() for l in f.read().splitlines()[1:]
+                    if l.split()]
+    except OSError:
+        return []
+    nonroot = {r[5] for r in rows if len(r) >= 6 and r[4] != "0"}
+    if not nonroot:
+        return []
+    owners = {}                                # pid -> {"name", "n"}
+    claimed = set()
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        fdd = f"/proc/{pid}/fd"
+        try:
+            fds = os.listdir(fdd)
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                tgt = os.readlink(os.path.join(fdd, fd))
+            except OSError:
+                continue
+            m = re.fullmatch(r"socket:\[(\d+)\]", tgt)
+            if not m or m.group(1) not in nonroot:
+                continue
+            claimed.add(m.group(1))
+            e = owners.setdefault(int(pid), {"name": "?", "n": 0})
+            e["n"] += 1
+    for pid, e in owners.items():
+        try:
+            with open(f"/proc/{pid}/comm") as c:
+                e["name"] = c.read().strip()
+        except OSError:
+            pass
+    out = [{"pid": p, "name": o["name"], "sockets": o["n"]}
+           for p, o in sorted(owners.items()) if not pid_is_ours(p)]
+    for inode in nonroot - claimed:
+        out.append({"pid": 0, "name": f"unattributed (inode {inode})",
+                    "sockets": 1})
+    return out
+
+
 def faketime_rc_path(u):
     """Per-unit FAKETIME_TIMESTAMP_FILE - `ctl clock_step` rewrites it
     at runtime, libfaketime re-reads it."""
@@ -1872,16 +1966,17 @@ def faketime_rc_path(u):
 
 
 def bridge_proc(u):
-    """The serial-bridge proc name a unit's `fcb_link` kind runs
+    """The serial/udp-bridge proc name a unit's `fcb_link` kind runs
     through, or None for the plain tcp link (no bridge exists):
     fcb_tty (socat) fronts pty/host_serial, bt_spp
-    (engine/bt_spp_bridge.py) fronts bt_spp - SL-0102/4/5. Every
+    (engine/bt_spp_bridge.py) fronts bt_spp, fcb_udp (socat) fronts
+    udp - SL-0102/4/5/6. Every
     place that resolves the bridge's process - launch order, ctl
     fcb_unplug/fcb_plug, fault-window pid recording - goes through
     this so a new kind is wired in one spot."""
     kind = ((u.get("fc") or {}).get("fcb_link") or {}).get("kind")
     return {"pty": "fcb_tty", "host_serial": "fcb_tty",
-            "bt_spp": "bt_spp"}.get(kind)
+            "bt_spp": "bt_spp", "udp": "fcb_udp"}.get(kind)
 
 
 def procs_of(u):
@@ -2244,13 +2339,19 @@ def gen_unit(u, sim, catalog):
         if px:
             pdir = os.path.join(udir, "fcb_proxy")
             os.makedirs(pdir, exist_ok=True)
+            # an external client (SL-0104/5/6) may dial the listen port
+            # from off-host - bind every interface then; a local
+            # de_mavlink only ever needs loopback. The ctrl port stays
+            # loopback-only in all cases.
             _launch_script(
                 u, "fcb_proxy", pdir,
                 "'%s' -u '%s' --unit %s --listen %d --ctrl %d "
-                "--target 127.0.0.1:%d --statedir '%s' --seed %d"
+                "--target 127.0.0.1:%d --statedir '%s' --seed %d%s"
                 % (sys.executable, os.path.join(ENGINE_DIR, "fcb_proxy.py"),
                    u["name"], px["port"], px["ctrl"], fc["fcb_port"],
-                   pdir, u["slot"]))
+                   pdir, u["slot"],
+                   " --bind 0.0.0.0"
+                   if u.get("fc_client") == "external" else ""))
 
         # ---- fcb serial link (SL-0102 pty, SL-0104 host_serial) ----
         # `fcb_link: {kind: pty}` gives de_mavlink a real serial device:
@@ -2306,6 +2407,24 @@ def gen_unit(u, sim, catalog):
                    fl["channel"], px["port"], px["ctrl"], pdir,
                    " --baud %d" % fl["baud"] if fl.get("baud")
                    else ""))
+        elif fl and fl["kind"] == "udp":
+            # SL-0106: the client is a UDP listener, so a socat bridge
+            # (proc fcb_udp) plays the active side - it pushes the
+            # proxy's byte stream to `peer` (phone-ip:port) on a
+            # connected UDP socket and pipes the client's replies back
+            # into the proxy. Its UDP source port is ephemeral, so a
+            # replug just starts it again on the same peer. The
+            # wrapper waits for the proxy's ctrl port first - socat
+            # must not dial a proxy that is not up yet.
+            pdir = os.path.join(udir, "fcb_udp")
+            os.makedirs(pdir, exist_ok=True)
+            _launch_script(
+                u, "fcb_udp", pdir,
+                "bash -c \": '%s'; while true; do until (exec 3<>/dev/tcp/"
+                "127.0.0.1/%d && exec 3>&-) 2>/dev/null; do sleep 1; "
+                "done; socat -d -d UDP4:%s tcp:127.0.0.1:%d; "
+                "sleep 1; done\""
+                % (pdir, px["ctrl"], fl["peer"], px["port"]))
     u.pop("config", None)
     u.pop("parm_files", None)
 

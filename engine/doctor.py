@@ -260,14 +260,15 @@ def gather(sim=None, esp32=False):
             "sim.local.env",
             bool(sim and any(u.get("faketime") for u in sim["units"])))
 
-    # socat: the serial fcb_link bridge (SL-0102 pty, SL-0104
-    # host_serial) - required only by a sim whose units use those
-    # fcb_link kinds (bt_spp runs engine/bt_spp_bridge.py instead)
+    # socat: the serial/udp fcb_link bridge (SL-0102 pty, SL-0104
+    # host_serial, SL-0106 udp) - required only by a sim whose units
+    # use those fcb_link kinds (bt_spp runs engine/bt_spp_bridge.py
+    # instead)
     d.check("socat", _which("socat"), "",
             "apt install socat",
             bool(sim and any(
                 u.get("fc") and (u["fc"].get("fcb_link") or {})
-                .get("kind") in ("pty", "host_serial")
+                .get("kind") in ("pty", "host_serial", "udp")
                 for u in sim["units"])))
 
     # bt_spp fcb_link (SL-0105): an RFCOMM server needs a controller

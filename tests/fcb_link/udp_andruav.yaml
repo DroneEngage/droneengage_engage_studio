@@ -1,0 +1,49 @@
+# udp_andruav: the SL-0106 `fcb_link: {kind: udp, peer: <ip>:<port>}`
+# path - an Android phone running Andruav's UDP FC connection listens
+# on `peer` (its LAN ip + the app's UDP server port, default 14550)
+# while a pidfile'd `fcb_udp` socat proc pushes the fcb proxy's byte
+# stream to it and pipes the app's replies back into the proxy. The
+# client never sends first (Andruav's UdpConnection learns its peer
+# from the first inbound datagram), so the sim always plays the active
+# side.
+#
+# Manual part: set `peer:` to the phone's CURRENT LAN ip (check
+# Settings/WiFi or `adb shell ip addr` - phones move between
+# networks), set the app's UDP server port to match, then connect
+# inside the first wait window - the timeline then kills the bridge
+# for 5s (fcb_unplug - the stream stops like a link drop) and the
+# stream's resume on replug is part of the proof.
+#
+# What it proves: MAVLink moves BOTH ways over UDP (s2c telemetry,
+# c2s heartbeats/param requests) between the off-host app and SITL
+# through the proxy + bridge.
+#
+# Not gated: only the LAN needs to work - `peer` unreachable fails
+# honestly as zero bytes (UDP has no connect to refuse).
+version: 1
+name: udp_andruav
+transport: real
+realtime: true
+settle_s: 15
+fleet:
+  - {id: c1, cls: copter, fc_client: external,
+     fcb_link: {kind: udp, peer: "10.52.224.64:14550"}}
+timeline:
+  # give the human time to check the phone's ip and connect in the
+  # app - the bridge pushes s2c the whole time, the client's
+  # heartbeats/requests are the c2s half
+  - {t: 0, do: wait, seconds: 45}
+  # SL-0103's fault applies to the udp bridge too: stopping it halts
+  # the stream the phone sees, replug pushes to the same peer again
+  - {t: 0, fault: fcb_unplug, unit: c1, dur_s: 5}
+  - {t: 0, do: wait, seconds: 25}
+assert:
+  # the proxy counted real bytes each way (bytes are cumulative, so
+  # the unplug window cannot erase pre-fault evidence)
+  - fcb_stats: {unit: c1, direction: c2s, min_bytes: 1}
+  - fcb_stats: {unit: c1, direction: s2c, min_bytes: 1}
+  - proc_alive: {unit: c1, proc: fcb_udp}
+  - proc_alive: {unit: c1, proc: fcb_proxy}
+  - proc_alive: {unit: c1, proc: sitl}
+  - no_unexpected_restart: {}
+teardown: none

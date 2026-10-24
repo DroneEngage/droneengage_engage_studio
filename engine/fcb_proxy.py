@@ -163,8 +163,9 @@ class RateBucket:
 
 class FcbProxy:
     def __init__(self, listen_port, target_host, target_port, ctrl_port,
-                 unit, seed):
+                 unit, seed, bind="127.0.0.1"):
         self.listen_port = listen_port
+        self.bind = bind
         self.target = (target_host, target_port)
         self.ctrl_port = ctrl_port
         self.unit = unit
@@ -584,7 +585,7 @@ class FcbProxy:
     def run(self):
         listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listen.bind(("127.0.0.1", self.listen_port))
+        listen.bind((self.bind, self.listen_port))
         listen.listen(4)
         ctrl = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         ctrl.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -592,7 +593,7 @@ class FcbProxy:
         ctrl.listen(4)
         threading.Thread(target=self._ctrl_loop, args=(ctrl,),
                          daemon=True).start()
-        self.log(f"listen :{self.listen_port} -> "
+        self.log(f"listen {self.bind}:{self.listen_port} -> "
                  f"{self.target[0]}:{self.target[1]}  ctrl :{self.ctrl_port}")
         try:
             while not self.stopping.is_set():
@@ -627,10 +628,13 @@ def main():
                    help="per-unit run dir (keeps the sim's var/run path "
                         "on the cmdline so stray-pid sweeps see us)")
     p.add_argument("--seed", type=int, default=1)
+    p.add_argument("--bind", default="127.0.0.1",
+                   help="listen address - 0.0.0.0 lets an off-host "
+                        "(fc_client: external) client dial in")
     a = p.parse_args()
     host, _, port = a.target.rpartition(":")
     FcbProxy(a.listen, host or "127.0.0.1", int(port), a.ctrl,
-             a.unit, a.seed).run()
+             a.unit, a.seed, bind=a.bind).run()
 
 
 if __name__ == "__main__":

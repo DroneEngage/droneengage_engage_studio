@@ -97,7 +97,8 @@ transport - the per-unit proxy is ours, not the server's):
   fcb_clear <unit>                remove rules, end any cut/stall
   fcb_stats <unit>                proxy counters + active rules
   fcb_unplug <unit> [s]           pull the serial cable a `fcb_link`
-                                  (kind pty/host_serial/bt_spp) unit's
+                                  (kind pty/host_serial/bt_spp/udp)
+                                  unit's
                                   de_mavlink sits on: the unit's serial
                                   bridge (fcb_tty / bt_spp) is killed,
                                   so the device node vanishes (pty link
@@ -106,6 +107,12 @@ transport - the per-unit proxy is ours, not the server's):
                                   after it (SL-0103)
   fcb_plug <unit>                 plug the device back: restart the
                                   unit's serial bridge (same link path)
+  bt_squatters <unit>             list foreign (non-sim, non-root)
+                                  processes holding RFCOMM sockets - a
+                                  squatter (kdeconnectd is the known
+                                  thief) on a bt_spp unit's channel
+                                  accepts the phone's dial instead of
+                                  our bridge (SL-0105)
 
 Pilot (units with an fc, cont'd):
   takeoff <unit> [alt_m]            MAV_CMD_NAV_TAKEOFF (arm in GUIDED first)
@@ -2327,9 +2334,9 @@ def main(argv):
             # bt_spp_bridge.py fronts BT; kind tcp has no bridge
             proc = simlib.bridge_proc(u)
             if proc is None:
-                print(f"{u['name']}: {c} needs an `fcb_link` serial "
-                      "unit (kind pty/host_serial/bt_spp) - kind tcp "
-                      "dials the proxy, there is no device to unplug",
+                print(f"{u['name']}: {c} needs an `fcb_link` bridged "
+                      "unit (kind pty/host_serial/bt_spp/udp) - kind "
+                      "tcp dials the proxy, there is no device to unplug",
                       flush=True)
                 ok = False
                 continue
@@ -2344,6 +2351,29 @@ def main(argv):
                 if proc:
                     start_proc(u["name"], proc)
         if not ok:
+            sys.exit(1)
+    elif c == "bt_squatters":
+        # SL-0105: name foreign (non-sim, non-root) processes holding
+        # RFCOMM sockets - one bound before our bt_spp bridge on the
+        # same channel keeps winning the client's dials (the kernel
+        # does not expose the bound channel in /proc, so any foreign
+        # holder is a candidate; the unit's channel is printed for
+        # context)
+        us = with_fc(resolve(a[0]))
+        if not us:
+            sys.exit(f"{a[0]}: no FC unit in the target set")
+        squats = simlib.bt_rfcomm_squatters()
+        for u in us:
+            ch = ((u.get("fc") or {}).get("fcb_link") or {}).get(
+                "channel", "-")
+            if not squats:
+                print(f"{u['name']}: ch{ch} clean - no foreign "
+                      "RFCOMM sockets")
+                continue
+            print(f"{u['name']}: ch{ch} squatter candidate(s): "
+                  + ", ".join(f"{s['name']}({s['pid']})"
+                              f"x{s['sockets']}" for s in squats))
+        if squats:
             sys.exit(1)
     elif c == "server_up":
         for p in server_procs("all"):
