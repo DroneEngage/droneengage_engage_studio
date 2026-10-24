@@ -1644,6 +1644,17 @@ def _udp_relay_size(sim):
     return max(4, 2 * n_pairs)
 
 
+def port(sim, name, fallback=None):
+    """SL-0080: the committed lease value for `name` from the manifest's
+    flat ports map (docs/port_allocation.md §4), e.g.
+    port(sim, "server.wss"). `fallback` is the resolved spec field the
+    pre-commit path (`./sim show`, hints) still carries."""
+    v = (sim.get("ports") or {}).get(name)
+    if isinstance(v, dict):
+        v = v.get("port")
+    return fallback if v is None else v
+
+
 def used_ports(sim):
     """Every local port a sim binds: unit s2s + SITL ports, and (for
     engine-run servers) the server/auth ports. The external server's own
@@ -2343,7 +2354,8 @@ def gen_unit(u, sim, catalog):
         # (GCS) account
         acc = u.get("account") or srv.get("unit_account") or srv["account"]
         cfg.update({"use_local_comm_server": False,
-                    "auth_ip": srv["auth_ip"], "auth_port": srv["auth_port"],
+                    "auth_ip": srv["auth_ip"],
+                    "auth_port": port(sim, "auth.https", srv["auth_port"]),
                     "auth_verify_ssl": srv["auth_verify_ssl"],
                     "userName": acc["user"],
                     "accessCode": acc["code"]})
@@ -2356,7 +2368,8 @@ def gen_unit(u, sim, catalog):
                     "local_comm_server_ip": srv["ip"],
                     "local_comm_server_port":
                         u["link_proxy"]["port"]
-                        if u.get("link_proxy") else srv["port"]})
+                        if u.get("link_proxy")
+                        else port(sim, "server.wss", srv["port"])})
     if not u["fc"]:
         p = u["position"]
         cfg["location"] = {
@@ -2650,7 +2663,9 @@ def gen_server(sim):
                    "--sim '%s'%s --pretty\n"
                    % (pid_path(sim["name"], "server", "fake_server"),
                       os.path.join(ENGINE_DIR, "fake_fleet_server.py"),
-                      srv["port"], srv["control_port"], srv["seed"],
+                      port(sim, "server.wss", srv["port"]),
+                      port(sim, "server.ctrl", srv["control_port"]),
+                      srv["seed"],
                       cert_path(sim["name"]),
                       key_path(sim["name"]), sim["name"], extra), 0o755)
         return ["fake_server"]
@@ -2659,12 +2674,14 @@ def gen_server(sim):
     if srv["auth"]:
         acfg = load_config(os.path.join(AUTH_REPO, "server.config"))
         acfg.update({
-            "server_ip": "127.0.0.1", "server_port": srv["auth_port"],
+            "server_ip": "127.0.0.1",
+            "server_port": port(sim, "auth.https", srv["auth_port"]),
             "account_storage_type": "single",
             "single_account_user_name": srv["account"]["user"],
             "single_account_access_code": srv["account"]["code"],
             "s2s_ws_listening_ip": "127.0.0.1",
-            "s2s_ws_listening_port": str(srv["auth_s2s_port"]),
+            "s2s_ws_listening_port": str(
+                port(sim, "auth.s2s", srv["auth_s2s_port"])),
             "s2s_auth_enabled": False,
             "enable_SSL": True,
             "ssl_key_file": os.path.join(AUTH_REPO, "ssl_local/ssl_airgap/domain.key"),
@@ -2680,13 +2697,15 @@ def gen_server(sim):
 
     scfg = load_config(os.path.join(SERVER_REPO, "server.config"))
     scfg.update({
-        "server_ip": "127.0.0.1", "server_port": srv["port"],
+        "server_ip": "127.0.0.1",
+        "server_port": port(sim, "server.wss", srv["port"]),
         "public_host": "127.0.0.1",
         "local_server_enabled": not srv["auth"],
         "s2s_ws_target_ip": "127.0.0.1",
         # no authenticator -> no auth.s2s lease: 0 keeps the target a
         # valid URL that refuses, like the pre-allocator dead port did
-        "s2s_ws_target_port": str(srv["auth_s2s_port"] or 0),
+        "s2s_ws_target_port": str(
+            port(sim, "auth.s2s", srv["auth_s2s_port"]) or 0),
         "ssl_key_file": os.path.join(ssl_dir, "ssl_airgap/domain.key"),
         "ssl_cert_file": os.path.join(ssl_dir, "ssl_airgap/domain.crt"),
         "ca_cert_path": os.path.join(ssl_dir, "ssl_airgap/root.crt"),
@@ -2722,7 +2741,8 @@ def gen_server(sim):
         rcfg.update({
             "server_id": urelay.get("id") or "DE_UdpRelay_" + sim["name"],
             "server_ip": "127.0.0.1",
-            "server_port": urelay["port"],
+            "server_port": port(sim, UDP_RELAY_LEASE + ".wss",
+                                urelay["port"]),
             "enable_SSL": bool(urelay.get("ssl", True)),
             "ssl_key_file": os.path.join(
                 UDP_RELAY_REPO, "ssl_local/ssl_airgap/domain.key"),
@@ -2742,7 +2762,8 @@ def gen_server(sim):
         _node_script(sim, UDP_RELAY_REPO, "udp_relay", cfg)
         procs.append("udp_relay")
         scfg["udp_relay"] = [{
-            "host": "127.0.0.1", "port": urelay["port"],
+            "host": "127.0.0.1",
+            "port": port(sim, UDP_RELAY_LEASE + ".wss", urelay["port"]),
             "id": rcfg["server_id"], "ssl": bool(urelay.get("ssl", True)),
         }]
         scfg["s2s_shared_secret_file"] = secret_path
@@ -2778,7 +2799,7 @@ def gen_server(sim):
             "server_id": "DE_StorageSrv_" + sim["name"],
             "server_ip": "127.0.0.1",
             "public_host": "127.0.0.1",
-            "server_port": sto["port"],
+            "server_port": port(sim, STORAGE_LEASE, sto["port"]),
             "ssl_key_file": os.path.join(
                 STORAGE_REPO, "ssl_local/ssl_airgap/domain.key"),
             "ssl_cert_file": os.path.join(
@@ -2796,7 +2817,7 @@ def gen_server(sim):
         procs.append("storage")
         scfg["enable_storage_server"] = True
         scfg["storage_server_host"] = "127.0.0.1"
-        scfg["storage_server_port"] = sto["port"]
+        scfg["storage_server_port"] = port(sim, STORAGE_LEASE, sto["port"])
         scfg["s2s_shared_secret_file"] = secret_path
 
     cfg = os.path.join(sdir, "de_server.config")

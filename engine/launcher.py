@@ -378,25 +378,30 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         make_cert(name)
     for p in m["server_procs"]:
         ctl.start_proc("server", p)
-        if p == "de_auth" and not wait_port(srv["auth_port"], 30):
+        if p == "de_auth" and not wait_port(
+                simlib.port(m, "auth.https", srv["auth_port"]), 30):
             sys.exit(simlib.col_red(
                 "authenticator did not open its port - see "
                 f"{rdir}/server/logs/de_auth.log"))
         if p == "storage" and not wait_port(
-                srv["storage"]["port"], 30):
+                simlib.port(m, simlib.STORAGE_LEASE,
+                            srv["storage"]["port"]), 30):
             sys.exit(simlib.col_red(
                 "storage server did not open its port - see "
                 f"{rdir}/server/logs/storage.log"))
         if p == "udp_relay" and not wait_port(
-                srv["udp_relay"]["port"], 30):
+                simlib.port(m, simlib.UDP_RELAY_LEASE + ".wss",
+                            srv["udp_relay"]["port"]), 30):
             sys.exit(simlib.col_red(
                 "udp relay did not open its control port - see "
                 f"{rdir}/server/logs/udp_relay.log"))
-        if p in ("de_server", "fake_server") and not wait_port(srv["port"], 30):
+        if p in ("de_server", "fake_server") and not wait_port(
+                simlib.port(m, "server.wss", srv["port"]), 30):
             sys.exit(simlib.col_red(
                 f"{p} did not open {srv['port']} - "
                 f"see {rdir}/server/logs/{p}.log"))
-    if not wait_port(srv["control_port"], 15):
+    if not wait_port(
+            simlib.port(m, "server.ctrl", srv["control_port"]), 15):
         sys.exit(simlib.col_red(
             f"control port did not open - see {rdir}/server/logs/"))
 
