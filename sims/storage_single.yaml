@@ -1,0 +1,12 @@
+# Runbook: sims/storage_single.md
+#
+# One copter on the real droneengage_server with a real
+# droneengage_storage_server attached (SL-0079). The comm server's
+# storage link speaks shared-secret HMAC to the storage node; mission
+# save/load (system messages 9010/9011) go through the GCS bridge:
+#   ./sim ctl mission_save copter1 my_mission - '{"waypoints":[]}'
+#   ./sim ctl mission_load copter1
+version: 1
+server: {type: real, storage: true}
+units:
+  - {block: copter, name: copter1}

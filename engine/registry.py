@@ -192,6 +192,18 @@ VERBS = [
     V("server_up", "step",
       doc="relaunch the sim's server procs",
       eg="{t: 60, do: server_up}"),
+    V("mission_save", "step", req=["unit", "name"],
+      opt=["missionId", "data"],
+      doc="save a mission through the comm server's storage link "
+          "(server: {type: real, storage: true}; system message 9011)",
+      eg="{t: 10, do: mission_save, unit: c1, name: my_mission, "
+         "missionId: m1, data: {waypoints: []}}"),
+    V("mission_load", "step", req=["unit"],
+      opt=["missionId", "expect"],
+      doc="load a mission back from storage (9010); expect: a regex "
+          "some reply must match",
+      eg="{t: 15, do: mission_load, unit: c1, missionId: m1, "
+         "expect: my_mission}"),
     V("clock_offset", "step", req=["ms"],
       doc="shift the fake server's stamped fleet clock by ms",
       eg="{t: 5, do: clock_offset, ms: 3600000}"),

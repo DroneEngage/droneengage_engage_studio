@@ -1,0 +1,18 @@
+# storage/save_restart_load - SL-0079 acceptance: a mission saved to the
+# real storage server through the GCS bridge comes back from mission_load
+# after the comm server restarts (the data lives in the storage node's
+# own DB, not the comm server).
+version: 1
+name: save_restart_load
+realtime: true
+sim: {base: ../../sims/storage_single.yaml}
+timeline:
+  - {t: 0, do: wait_online, timeout: 240}
+  - {t: 10, do: mission_save, unit: copter1, name: test_mission,
+     missionId: sim_test_m1, data: {kind: de_operation, waypoints: [1, 2, 3]}}
+  - {t: 15, do: mission_load, unit: copter1, missionId: sim_test_m1,
+     expect: test_mission}
+  - {t: 20, do: restart, unit: server, proc: de_server}
+  - {t: 30, do: wait_online, timeout: 120}
+  - {t: 35, do: mission_load, unit: copter1, missionId: sim_test_m1,
+     expect: test_mission}

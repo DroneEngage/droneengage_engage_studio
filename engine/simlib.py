@@ -113,6 +113,9 @@ COMM_REPO = repo_dir("DE_COMM_DIR", "droneengage_communication")
 SERVER_REPO = repo_dir("DE_SERVER_DIR", "droneengage_server")
 AUTH_REPO = repo_dir("DE_AUTH_DIR", "droneengage_authenticator")
 UDP_RELAY_REPO = repo_dir("DE_UDP_RELAY_DIR", "droneengage_udp_proxy")
+# SL-0079: the storage server lives under servers/ in the DE_CODE tree
+STORAGE_REPO = repo_dir("DE_STORAGE_DIR",
+                        "servers/droneengage_storage_server")
 WEBCLIENT_REPO = repo_dir("DE_WEBCLIENT_DIR", "droneengage_webclient_react")
 # P5-14: Mavlink3DMap2 lives inside the DE_CODE tree; only needed for
 # render modes that launch the viewer
@@ -634,6 +637,9 @@ def _port_pins(sim):
             if ur.get("udp_port_range"):
                 pins[UDP_RELAY_LEASE + ".range"] = \
                     int(ur["udp_port_range"][0])
+        sto = srv.get("storage")
+        if sto and sto.get("port") is not None:
+            pins[STORAGE_LEASE] = sto["port"]
     if sim.get("render"):
         for role, key in (("stream", "stream_port"), ("mav", "mav_port"),
                           ("mav_ws", "mav_ws_port"), ("web", "web_port"),
@@ -704,6 +710,9 @@ def _hash_server(srv):
             ur["port"] = 0
         if ur.get("udp_port_range") is None:
             ur["udp_port_range"] = 0
+    sto = srv.get("storage")
+    if sto and sto.get("port") is None:
+        sto["port"] = 0
     return srv
 
 
@@ -886,7 +895,7 @@ def load_server(srv):
                       "unit_account", "seed", "clock_offset_ms", "noclock",
                       "auth_ip", "auth_port", "auth_verify_ssl",
                       "control_port", "gcs_party", "link_proxy",
-                      "udp_relay"}
+                      "udp_relay", "storage", "persist", "storage_port"}
     if bad:
         raise SimError(f"sim server: unknown keys {sorted(bad)}")
     t = srv.get("type", "real")
@@ -900,6 +909,13 @@ def load_server(srv):
     if srv.get("udp_relay") and t != "real":
         raise SimError("sim server: udp_relay needs type real - the "
                        "relay is spawned next to the comm server")
+    if (srv.get("storage") or srv.get("persist") or
+            srv.get("storage_port") is not None) and t != "real":
+        raise SimError("sim server: storage needs type real - the "
+                       "storage server is spawned next to the comm server")
+    if (srv.get("persist") or srv.get("storage_port") is not None) and \
+            not srv.get("storage"):
+        raise SimError("sim server: persist/storage_port need storage: true")
     if srv.get("link_proxy") and srv.get("auth"):
         raise SimError("sim server: link_proxy needs auth: false - the "
                        "authenticator hands de_comm the server address at "
@@ -986,7 +1002,7 @@ def load_server(srv):
         urelay.setdefault("port", None)
         urelay.setdefault("gcs_peer_policy", "open")
         urelay.setdefault("ssl", True)
-    return {
+    out = {
         "type": t, "ip": "127.0.0.1", "port": port,
         "control_port": (int(srv["control_port"])
                          if srv.get("control_port") is not None else None),
@@ -1002,6 +1018,16 @@ def load_server(srv):
         "link_proxy": bool(srv.get("link_proxy", False)),
         "udp_relay": urelay,
     }
+    if srv.get("storage"):
+        # SL-0079: a real storage node next to the comm server. persist:
+        # keeps the DB across `sim down`/`up` (restart tests); port is
+        # a yaml pin or the storage.wss lease.
+        out["storage"] = {
+            "persist": bool(srv.get("persist", False)),
+            "port": (int(srv["storage_port"])
+                     if srv.get("storage_port") is not None else None),
+        }
+    return out
 
 
 RENDER_MODES = ("viewer", "cameras", "physics", "full")
@@ -1594,6 +1620,9 @@ def _single_sim():
 # udp_relay.<node>.wss / .range (SL-0081). The single real server has one
 # implicit relay node, "relay"; no allocator yet, so rows are bind probes.
 UDP_RELAY_LEASE = "udp_relay.relay"
+# SL-0079: the storage node's wss port (one storage node per sim today;
+# the mesh doc's storage.<node>.wss naming lands with it)
+STORAGE_LEASE = "storage.wss"
 
 
 def _udp_relay_range(sim):
@@ -1640,6 +1669,9 @@ def used_ports(sim):
             rng = _udp_relay_range(sim)
             if rng:
                 ports.update(range(rng[0], rng[1] + 1))
+        sto = srv.get("storage")
+        if sto and _is_port(sto.get("port")):
+            ports.add(sto["port"])
     if sim.get("render"):
         ports.update(v for v in
                      (sim["render"]["stream_port"],
@@ -1706,6 +1738,9 @@ def port_rows(sim):
             if rng:
                 rows += [(f"{UDP_RELAY_LEASE}.range", p, "udp")
                          for p in range(rng[0], rng[1] + 1)]
+        sto = srv.get("storage")
+        if sto and _is_port(sto.get("port")):
+            rows.append((STORAGE_LEASE, sto["port"], "tcp"))
     if sim.get("render"):
         r = sim["render"]
         for name, key in (("render.stream", "stream_port"),
@@ -1845,6 +1880,8 @@ def lease_requests(sim):
             reqs.append(req(UDP_RELAY_LEASE + ".wss", "tcp"))
             reqs.append(req(UDP_RELAY_LEASE + ".range", "udp",
                             size=_udp_relay_size(sim)))
+        if srv.get("storage"):
+            reqs.append(req(STORAGE_LEASE, "tcp"))
     if sim.get("render"):
         reqs.append(req("render.stream", "tcp"))
         reqs.append(req("render.mav", "tcp"))
@@ -2023,6 +2060,8 @@ def _apply_ports(sim, ports, requests):
             lo = ports.get(UDP_RELAY_LEASE + ".range")
             ur["udp_port_range"] = \
                 [int(lo), int(lo) + size - 1] if lo is not None else None
+        if srv.get("storage"):
+            srv["storage"]["port"] = ports.get(STORAGE_LEASE)
     if sim.get("render"):
         r = sim["render"]
         for role, key in (("stream", "stream_port"), ("mav", "mav_port"),
@@ -2653,7 +2692,9 @@ def gen_server(sim):
         "ca_cert_path": os.path.join(ssl_dir, "ssl_airgap/root.crt"),
         "s2s_my_private_key": os.path.join(ssl_dir, "DE_ServerComm_private.pem"),
         "command_plugin": [],
-        "enable_storage_server": False,
+        # SL-0079: on only when server.storage requests a real storage
+        # node - the storage block below fills host/port + shared secret
+        "enable_storage_server": bool(srv.get("storage")),
         "allow_udpproxy_fixed_port": False,
         "ignoreLog": True,
         "log_directory": os.path.join(sdir, "logs") + "/",
@@ -2706,6 +2747,58 @@ def gen_server(sim):
         }]
         scfg["s2s_shared_secret_file"] = secret_path
 
+    sto = srv.get("storage")
+    if sto:
+        # SL-0079: a real droneengage_storage_server beside the comm
+        # server - generated config, per-run shared secret (>=16 chars,
+        # chmod 600), per-run DB under var/run/<sim>/server/ unless
+        # persist: keeps it across sim down/up. Starts before de_server
+        # so the comm server's storage link connects on the first try.
+        if not os.path.isfile(os.path.join(STORAGE_REPO, "src",
+                                           "server.js")):
+            raise SimError(f"{STORAGE_REPO}: storage server not found "
+                           "(set DE_STORAGE_DIR in sim.local.env)")
+        # reuse the relay's per-run secret when both attach (one s2s
+        # secret per comm server); a relative value is the repo config's
+        # default, not a per-run file - write our own under server/
+        secret_path = scfg.get("s2s_shared_secret_file")
+        if not secret_path or not os.path.isabs(secret_path):
+            secret_path = os.path.join(sdir, "storage_s2s_secret.key")
+        if not os.path.isfile(secret_path):
+            write_text(secret_path, secrets.token_hex(32) + "\n")
+            os.chmod(secret_path, 0o600)
+        if sto.get("persist"):
+            dbdir = os.path.join(VAR_DIR, "persist", sim["name"],
+                                 "storage")
+        else:
+            dbdir = sdir
+        os.makedirs(dbdir, exist_ok=True)
+        stcfg = load_config(os.path.join(STORAGE_REPO, "server.config"))
+        stcfg.update({
+            "server_id": "DE_StorageSrv_" + sim["name"],
+            "server_ip": "127.0.0.1",
+            "public_host": "127.0.0.1",
+            "server_port": sto["port"],
+            "ssl_key_file": os.path.join(
+                STORAGE_REPO, "ssl_local/ssl_airgap/domain.key"),
+            "ssl_cert_file": os.path.join(
+                STORAGE_REPO, "ssl_local/ssl_airgap/domain.crt"),
+            "s2s_cert_enabled": False,
+            "s2s_shared_secret_file": secret_path,
+            "database": {"path": os.path.join(dbdir, "storage.db"),
+                         "maxConnections": 10},
+            "log_directory": os.path.join(sdir, "logs") + "/",
+            "dashboard_enable": False,
+        })
+        cfg = os.path.join(sdir, "de_storage.config")
+        write_json(cfg, stcfg)
+        _node_script(sim, STORAGE_REPO, "storage", cfg)
+        procs.append("storage")
+        scfg["enable_storage_server"] = True
+        scfg["storage_server_host"] = "127.0.0.1"
+        scfg["storage_server_port"] = sto["port"]
+        scfg["s2s_shared_secret_file"] = secret_path
+
     cfg = os.path.join(sdir, "de_server.config")
     write_json(cfg, scfg)
     _node_script(sim, SERVER_REPO, "de_server", cfg)
@@ -2725,6 +2818,8 @@ def binaries_needed(sim, catalog):
             out.add(os.path.join(AUTH_REPO, "src", "server.js"))
         if sim["server"].get("udp_relay"):
             out.add(os.path.join(UDP_RELAY_REPO, "src", "server.js"))
+        if sim["server"].get("storage"):
+            out.add(os.path.join(STORAGE_REPO, "src", "server.js"))
     for u in sim["units"]:
         for m in u["modules"]:
             if m != "de_comm":

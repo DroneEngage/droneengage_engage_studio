@@ -382,6 +382,11 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
             sys.exit(simlib.col_red(
                 "authenticator did not open its port - see "
                 f"{rdir}/server/logs/de_auth.log"))
+        if p == "storage" and not wait_port(
+                srv["storage"]["port"], 30):
+            sys.exit(simlib.col_red(
+                "storage server did not open its port - see "
+                f"{rdir}/server/logs/storage.log"))
         if p == "udp_relay" and not wait_port(
                 srv["udp_relay"]["port"], 30):
             sys.exit(simlib.col_red(
