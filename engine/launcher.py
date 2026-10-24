@@ -14,6 +14,7 @@ pids in var/run/<sim>/pids/. Only pids whose command line points into this
 repo are ever signalled.
 """
 
+import json
 import os
 import shutil
 import signal
@@ -25,6 +26,65 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import simlib
 import ctl
+
+
+def _runner_rec_path(name):
+    """var/run/<sim>/runner.json - the scenario runner's ownership stamp
+    (SL-0066): the run writes {pid, token, scenario} when it starts and
+    re-reads it before any teardown action; `down` reaps the pid and
+    removes the file."""
+    return os.path.join(simlib.run_dir(name), "runner.json")
+
+
+def _runner_is_ours(pid):
+    """True when the live pid is this repo's runner process - the `sim`
+    script running `run`/`view`/`suite` or the run_scenario.py shim. The
+    runner's cmdline often carries no RUN_DIR/ENGINE_DIR path (it is
+    `./sim run ...`, not a launch script), so pid_is_ours misses it:
+    accept a cmdline already pointing under SIM_ROOT, else any argv
+    token that resolves - against the process's own cwd - to our sim or
+    run_scenario.py entry scripts."""
+    try:
+        raw = open(f"/proc/{pid}/cmdline", "rb").read()
+        cwd = os.path.realpath(f"/proc/{pid}/cwd")
+    except OSError:
+        return False
+    if simlib.SIM_ROOT in raw.replace(b"\0", b" ").decode(errors="replace"):
+        return True
+    entries = (os.path.realpath(os.path.join(simlib.SIM_ROOT, "sim")),
+               os.path.realpath(os.path.join(simlib.SIM_ROOT,
+                                             "run_scenario.py")))
+    for tok in raw.split(b"\0"):
+        t = tok.decode(errors="replace")
+        if not t or t.startswith("-"):
+            continue
+        p = t if os.path.isabs(t) else os.path.join(cwd, t)
+        if os.path.realpath(p) in entries:
+            return True
+    return False
+
+
+def orphaned_runners():
+    """SL-0066 - scenario_runner pids still alive although their fleet is
+    gone (the run dir holds a runner.json whose pid lives, while the
+    sim's own pidfiles are all dead). An orphan waits out its journal
+    waits, then fires teardown - op_abort included - into whatever fleet
+    is live then. `./sim down <name>` reaps them."""
+    out = []
+    for name in simlib.sim_names():
+        rp = _runner_rec_path(name)
+        if not os.path.isfile(rp):
+            continue
+        try:
+            rec = json.load(open(rp))
+        except (OSError, ValueError):
+            continue
+        rpid = rec.get("pid")
+        if (isinstance(rpid, int) and os.path.isdir(f"/proc/{rpid}")
+                and _runner_is_ours(rpid) and not simlib.read_pids(name)):
+            out.append({"sim": name, "pid": rpid,
+                        "scenario": rec.get("scenario")})
+    return out
 
 
 def _pids_dirs(name=None):
@@ -143,6 +203,35 @@ def down(name=None, quiet=False):
         if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
             os.kill(p, signal.SIGKILL)
     strays = [p for p in strays if p not in pids]
+    # SL-0066 - `sim down` also reaps the scenario runner each sim
+    # recorded in var/run/<sim>/runner.json. runner.json is not a pids/
+    # entry and its process is the engine (the `sim` script running
+    # `run`/`view`/`suite`), not a unit binary - pid_is_ours does not
+    # cover it, `_runner_is_ours` does. Without the reap the orphan
+    # waits out its journal waits and then fires teardown (op_abort,
+    # land/reset) into whatever fleet happens to be live then.
+    for d in dirs:
+        sdir = os.path.dirname(d)
+        if sdir == simlib.RUN_DIR:
+            continue                    # legacy flat var/run/pids
+        rp = _runner_rec_path(os.path.basename(sdir))
+        if not os.path.isfile(rp):
+            continue
+        try:
+            rec = json.load(open(rp))
+        except (OSError, ValueError):
+            rec = {}
+        try:
+            os.unlink(rp)
+        except OSError:
+            pass
+        rpid = rec.get("pid")
+        if (isinstance(rpid, int) and os.path.isdir(f"/proc/{rpid}")
+                and _runner_is_ours(rpid) and rpid not in strays):
+            if not quiet:
+                print(f"reaped scenario_runner pid {rpid} "
+                      f"(sim {os.path.basename(sdir)!r})", flush=True)
+            strays.append(rpid)
     for p in strays:
         if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
             _unstop(p)
@@ -317,6 +406,18 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         shutil.rmtree(rdir)
     os.makedirs(simlib.pids_dir(name), exist_ok=True)
     m = simlib.generate(sim, _label(sim_src))
+    # SL-0066 - stamp this fleet instance's generation into the manifest:
+    # a scenario runner records it at run start and re-checks it before
+    # teardown, so a runner orphaned by `sim down`/a takeover `up` cannot
+    # act on a fleet that is no longer the one it brought up.
+    m["generation"] = "%x-%x-%s" % (int(time.time() * 1000), os.getpid(),
+                                    os.urandom(4).hex())
+    simlib.write_json(simlib.manifest_path(name), m, indent=2)
+    # a stale runner stamp must not survive into the fresh fleet
+    try:
+        os.unlink(_runner_rec_path(name))
+    except OSError:
+        pass
     conn = (f"external server {srv['ip']}:{srv['port']}"
             + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
                if srv["auth"] else "")

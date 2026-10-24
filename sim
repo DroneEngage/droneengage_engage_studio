@@ -521,6 +521,18 @@ def main(argv):
                           f"{lo}-{hi}  udp {n_bound}/{len(rng)} bound")
         elif c == "status":
             import ctl
+            import launcher
+            # SL-0066 - surface orphaned scenario runners: a runner pid
+            # alive while its fleet is down can still fire teardown
+            # (op_abort/land) into whatever runs next; `sim down` reaps it
+            for o in launcher.orphaned_runners():
+                print(simlib.col_yellow(
+                    f"orphaned scenario_runner pid {o['pid']} "
+                    f"(sim {o['sim']!r}"
+                    + (f", scenario {o['scenario']}" if o.get("scenario")
+                       else "")
+                    + f") - `./sim down {o['sim']}` reaps it"),
+                    flush=True)
             # ctl parses `-s <sim>` only ahead of the command word -
             # hoist it so `./sim status -s X` works
             if len(a) >= 2 and a[0] in ("-s", "--sim"):

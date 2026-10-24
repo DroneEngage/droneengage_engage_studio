@@ -920,6 +920,30 @@ def _world_watcher_fires(w, ctx):
     return ok
 
 
+def _runner_rec_path(name):
+    """var/run/<sim>/runner.json - this run's ownership stamp (SL-0066)."""
+    return os.path.join(simlib.run_dir(name), "runner.json")
+
+
+def _still_owns_fleet(ctx):
+    """SL-0066: True only while this run still owns the fleet it ensured
+    - the on-disk manifest is the same fleet generation (launcher.up
+    stamps a fresh one) AND runner.json still holds this run's token (a
+    newer `sim run` reusing the warm fleet overwrites it; `sim down`
+    reaps the file and the fleet). An orphaned runner - kept alive past
+    `sim down` or a takeover `up`/`run` - must not fire remaining steps
+    or teardown (op_abort, land/reset) into a fleet that is no longer
+    its own: that is the +93 s mid-flight abort this guards against."""
+    name = ctx["manifest"]["name"]
+    try:
+        m = json.load(open(simlib.manifest_path(name)))
+        rec = json.load(open(_runner_rec_path(name)))
+    except (OSError, ValueError):
+        return False
+    return (m.get("generation") == ctx.get("run_generation")
+            and rec.get("token") == ctx.get("run_token"))
+
+
 def run_timeline(scn, ctx):
     """Scheduled t: steps + armed on: watchers until last_t + settle_s."""
     steps = scn["timeline"]
@@ -950,6 +974,14 @@ def run_timeline(scn, ctx):
     end = t0 + last_t + scn["settle_s"]
     pending = list(pos)
     while pending or time.time() < end:
+        if not _still_owns_fleet(ctx):
+            # SL-0066: an orphaned runner must not fire the remaining
+            # steps (or teardown later) into a fleet another run owns
+            print("  fleet ownership lost (sim down or a newer run owns "
+                  "the sim) - abandoning the timeline", flush=True)
+            ctx["orphaned"] = True
+            ok = False
+            break
         now = time.time() - t0
         while pending and pending[0]["t"] <= now:
             s = pending.pop(0)
@@ -967,7 +999,7 @@ def run_timeline(scn, ctx):
     return ok
 
 
-def _hold(m, world_stream=False, open_web=False):
+def _hold(m, ctx, world_stream=False, open_web=False):
     """--hold: park the run after the timeline with the world stream,
     truth recorder, operator bot and render procs still live - the
     interactive Mavlink3DMap session. Ctrl-C releases into the normal
@@ -1003,6 +1035,11 @@ def _hold(m, world_stream=False, open_web=False):
                   flush=True)
     try:
         while True:
+            if not _still_owns_fleet(ctx):
+                # SL-0066 - a held run whose fleet was downed parks on
+                # nothing; ending it lets the (guarded) teardown run
+                print("fleet ownership lost - ending hold", flush=True)
+                break
             time.sleep(0.5)
     except KeyboardInterrupt:
         print("hold released\n", flush=True)
@@ -1263,6 +1300,19 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
            "samples_file": os.path.join(out, "samples.jsonl"),
            "proc_events": [], "restore_events": [], "log_events": []}
     _CTX[0] = ctx
+    # SL-0066 - stamp this run's ownership before anything fleet-facing:
+    # the manifest's `generation` (launcher.up stamps a fresh one per
+    # fleet) marks WHICH fleet, runner.json's token marks WHICH run on
+    # it. _still_owns_fleet re-reads both before any remote action so a
+    # runner orphaned by `sim down` or a takeover `run` cannot fire
+    # teardown/op_abort into a fleet that is no longer its own.
+    ctx["run_generation"] = m.get("generation")
+    ctx["run_token"] = "%x-%x-%s" % (int(t0_wall * 1000), os.getpid(),
+                                   os.urandom(4).hex())
+    simlib.write_json(_runner_rec_path(m["name"]),
+                      {"pid": os.getpid(), "token": ctx["run_token"],
+                       "scenario": scn["name"],
+                       "started_ms": ctx["run_start_ms"]})
     # link-capable transports start clean: the fake server's links{} and
     # every unit's link_proxy survive sim reuse
     link_capable = m["server"]["type"] == "fake" or \
@@ -1348,7 +1398,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
             # detection row clock)
             ctx["hold_ms"] = int(time.time() * 1000)
             tele.until_ms = ctx["hold_ms"]
-            _hold(m, world_stream=ctx.get("world_stream") is not None,
+            _hold(m, ctx, world_stream=ctx.get("world_stream") is not None,
                   open_web=open_web)
     except Exception as e:
         # a runner bug must still reach assertions/teardown/stop(): the
@@ -1362,23 +1412,29 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
             ctx["adsb_feeder"].stop()
         if recorder is not None:
             recorder.stop()
-        # a fault's dur_s restore that never fired inside the timeline
-        # runs now instead - faults never leak into a reused fleet
-        for t in ctx["timers"]:
-            if t.is_alive() and not t.fired_once.is_set():
-                # an in-flight callback counts as is_alive() too - skip
-                # it or the restore would run twice, concurrently
-                t.cancel()
+        if _still_owns_fleet(ctx):
+            # a fault's dur_s restore that never fired inside the timeline
+            # runs now instead - faults never leak into a reused fleet
+            for t in ctx["timers"]:
+                if t.is_alive() and not t.fired_once.is_set():
+                    # an in-flight callback counts as is_alive() too - skip
+                    # it or the restore would run twice, concurrently
+                    t.cancel()
+                    try:
+                        t.function(*t.args, **t.kwargs)
+                    except Exception as e:
+                        print(f"  fault restore failed: {e}", flush=True)
+            if rec_t0 is not None:
                 try:
-                    t.function(*t.args, **t.kwargs)
+                    record_mod.disarm(m)
+                    record_mod.finalize(m, rec_t0, record)
                 except Exception as e:
-                    print(f"  fault restore failed: {e}", flush=True)
-        if rec_t0 is not None:
-            try:
-                record_mod.disarm(m)
-                record_mod.finalize(m, rec_t0, record)
-            except Exception as e:
-                print(f"  record finalize failed: {e}", flush=True)
+                    print(f"  record finalize failed: {e}", flush=True)
+        else:
+            # SL-0066 - an orphaned run's restores/restart timers and the
+            # record disarm would hit a fleet/server another run owns
+            print("  fleet ownership lost - skipping fault restores and "
+                  "record disarm", flush=True)
 
     # realtime gate: only when the scenario asked for it
     speedups = {}
@@ -1414,9 +1470,17 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
             "evidence", "FAIL", None,
             "every assertion SKIPped - the run proved nothing "
             "(set allow_all_skip: true to accept)"))
-    if link_capable:
+    # SL-0066 - one ownership check gates every remaining remote action:
+    # an orphaned runner must not clear link faults on, op_abort, or
+    # land/reset a fleet another run owns
+    owns = _still_owns_fleet(ctx)
+    if link_capable and owns:
         runner.run_ctl("link_clear", "all")
     td = "none" if keep else scn["teardown"]
+    if td in ("land", "reset") and not owns:
+        print("\n== teardown: skipped - this run no longer owns the "
+              "fleet ==", flush=True)
+        td = "none"
     if td in ("land", "reset"):
         print(f"\n== teardown: {td} ==  (Ctrl-C skips)", flush=True)
         # rc_override pumps still holding serial0 would starve land's
