@@ -10,6 +10,9 @@
     "s2s_udp_listening_ip"      : "0.0.0.0",
     "s2s_udp_listening_port"    : "60000",
     "s2s_udp_packet_size"       : "8192",
+    // false: module bus on leased UDP ports (default). A `bus: unix`
+    // unit rewrites this per unit + sets unix_socket_dir to the leased
+    // sockdir (SL-0086) - the engine owns both fields.
     "use_unix_socket"           : false,
 
     "auth_ip"                   : "127.0.0.1",

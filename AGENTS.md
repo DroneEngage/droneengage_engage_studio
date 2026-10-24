@@ -218,7 +218,11 @@ accepts it, otherwise `file:` in the cwd), `set`, `wire` (placeholders
 `dir_env`/`bin_env` keys to `sim.local.env.example`.
 
 **New fleet → a sim (no code).** `units:` entries take `block`, `name`,
-`count` (→ name1..nameN), `at`, `config`, `fc`. Use `extends: other.yaml`
+`count` (→ name1..nameN), `at`, `config`, `fc`, `bus` (`unix|udp`, or
+set `bus:` once at sim level - SL-0086: unix-bus units run the module
+bus on a per-unit AF_UNIX sockdir lease instead of s2s ports; only
+catalog modules flagged `unix: true` move over, `udp_proxy:` modules
+and stubs stay UDP). Use `extends: other.yaml`
 to reuse a fleet with a different `server:`. A one-twist variant is an
 overlay, not a new file: `sims/overlays/<name>.yaml` +
 `--with <name>` (see `sims/overlays/README.md`). A scenario takes the

@@ -1,0 +1,13 @@
+# Sim fleet for the unix-bus (SL-0086) scenarios: two copters on a fake
+# server with `bus: unix` - each unit's modules talk to its de_comm over
+# a per-unit AF_UNIX socket dir (a unit.<u>.sockdir path lease under
+# $XDG_RUNTIME_DIR/de_sim/s/) instead of leased s2s UDP ports. mix1 is
+# the mixed unit: de_mavlink rides the unix bus while stub_ai_box stays
+# on UDP behind an SL-0010 udp_proxy - both must come ready.
+version: 1
+bus: unix
+server: {type: fake}
+units:
+  - {block: copter, name: mix1, add_modules: [stub_ai_box],
+     udp_proxy: [stub_ai_box]}
+  - {block: copter, name: plain2}

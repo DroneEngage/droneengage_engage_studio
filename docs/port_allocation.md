@@ -232,7 +232,14 @@ all have `"use_unix_socket": true`). The sim turns it **off**
   de_mavlink config even comments "SHOULD BE FALSE when Multiple DE_COMM
   modules are running on the same board").
 
-**Recommendation: worth doing, and it pays off twice.**
+**Status: implemented (SL-0086, on top of GL-0057).** `bus: unix|udp`
+per sim or per unit (default `udp`); a unix-bus unit takes a
+`unit.<u>.sockdir` path lease under
+`$XDG_RUNTIME_DIR/de_sim/s/<8-char hash>/`, gets no per-module s2s
+leases, and `gen_unit` writes `use_unix_socket: true` +
+`unix_socket_dir` for de_comm and each catalog module flagged
+`unix: true`. `udp_proxy:` modules, the Python stubs and de_sound stay
+on UDP. The directory is removed when the lease is released.
 
 1. **Fewer ports.** Module s2s ports are the largest group of ports
    (one per module per unit), and they're the ones sitting in the

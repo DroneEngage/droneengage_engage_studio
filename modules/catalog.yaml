@@ -28,6 +28,10 @@
 #   ready_log_re  same, but matched against logs/<module>.log (stdout)
 #               instead of the de_comm journal;
 #               `sim up` waits for it
+#   unix        true -> the module joins a `bus: unix` unit's AF_UNIX
+#               socket dir (its de_common knows unix_socket_dir,
+#               GL-0057/de_common 10.14.0+); unflagged modules stay on
+#               the UDP bus and keep their s2s lease
 
 de_mavlink:
   repo: droneengage_mavlink
@@ -36,6 +40,7 @@ de_mavlink:
   template: de_mavlink.config.module.json
   start_delay: 5
   needs_fc: true
+  unix: true
   local: {arg: "-b", file: de_mavlink.local}
   set:
     tlog_enabled: false
@@ -59,6 +64,7 @@ de_camera:
   bin_env: DE_CAMERA_BIN
   template: de_camera.config.module.json
   start_delay: 3
+  unix: true
   local: {file: de_camera.config.local}
   set:
     media_folder: "./img"

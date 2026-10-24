@@ -516,11 +516,14 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         spec = _apply_overlay(spec, ov, applied)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
                            "slot_base", "units", "render", "speedup",
-                           "fcb_proxy"}
+                           "fcb_proxy", "bus"}
     if unknown:
         raise SimError(f"sim: unknown keys {sorted(unknown)}")
     if spec.get("version", 1) != 1:
         raise SimError("sim: unsupported version")
+    sim_bus = spec.get("bus", "udp")
+    if sim_bus not in ("udp", "unix"):
+        raise SimError(f"sim: bus must be 'udp' or 'unix', got {sim_bus!r}")
     name = spec.get("name") or \
         (os.path.splitext(os.path.basename(src))[0] if src else "sim")
     if applied and "name" not in spec:
@@ -558,6 +561,10 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         # still override with its own `fcb_proxy:` - not hashed itself,
         # the per-unit fc.fcb_proxy dict it produces is
         "fcb_proxy": bool(spec.get("fcb_proxy", False)),
+        # SL-0086: module bus transport per sim (unit `bus:` overrides) -
+        # "unix" puts unix-capable modules on per-unit AF_UNIX socket
+        # dirs instead of leased s2s UDP ports. Default "udp".
+        "bus": sim_bus,
         "units": [],
         "render": _render_spec(spec.get("render")),
     }
@@ -576,7 +583,7 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
             entry = {"block": entry}
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
                             "account", "add_modules", "role", "fcb_proxy",
-                            "faketime", "udp_proxy", "link_proxy"}
+                            "faketime", "udp_proxy", "link_proxy", "bus"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -647,7 +654,7 @@ def _apply_hints(sim):
     remembered = allocator().hints(sim["name"], SIM_ROOT)
     hints = {}
     for r in reqs:
-        v = r.get("pin", r.get("prefer"))
+        v = r.get("pin", r.get("prefer", r.get("path")))
         if v is None:
             v = remembered.get(r["name"])
         hints[r["name"]] = v
@@ -1156,6 +1163,22 @@ def read_parm_files(paths):
     return out
 
 
+def _unit_sockdir(sim_name, unit_name):
+    """The unix-bus unit's socket dir (SL-0086):
+    $XDG_RUNTIME_DIR/de_sim/s/<8-char hash of worktree+sim+unit>/ -
+    deliberately short: every socket inside must fit AF_UNIX sun_path
+    (108 bytes), which the worktree path under var/run/ would blow past.
+    Falls back to ~/.cache like the allocator's registry; the dir itself
+    is created by de_common at bind time and removed when the lease is
+    released (`sim down`)."""
+    xdg = os.environ.get("XDG_RUNTIME_DIR")
+    base = xdg if xdg else os.path.expanduser("~/.cache")
+    h = hashlib.sha256(
+        f"{os.path.realpath(SIM_ROOT)}|{sim_name}|{unit_name}"
+        .encode()).hexdigest()[:8]
+    return os.path.join(base, "de_sim", "s", h)
+
+
 def _expand_unit(sim, b, name, entry, at, catalog):
     if not NAME_RX.match(name):
         raise SimError(f"unit name {name!r}: letters, digits, _ only")
@@ -1250,6 +1273,27 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             raise SimError(f"unit {name}: udp_proxy {m!r} is not one of "
                            f"its modules ({u['modules']})")
         u["ports"]["udp_proxy_" + m] = None
+
+    # SL-0086: `bus: unix` puts the unit's module bus on a per-unit
+    # AF_UNIX socket dir (a `unit.<u>.sockdir` path lease) instead of
+    # per-module s2s UDP ports. Only catalog modules flagged `unix:
+    # true` move over - the Python stubs, de_sound, and `udp_proxy:`
+    # modules (SL-0010 faults the UDP path) stay on UDP and keep their
+    # leases. de_comm always keeps its UDP lease (the broker binds UDP
+    # regardless); it also gets the dir so its broker socket lands there.
+    bus = entry.get("bus") or sim.get("bus") or "udp"
+    if bus not in ("udp", "unix"):
+        raise SimError(f"unit {name}: bus must be 'udp' or 'unix', "
+                       f"got {bus!r}")
+    if bus == "unix":
+        u["bus"] = "unix"
+        u["sockdir"] = _unit_sockdir(sim["name"], name)
+        u["unix_modules"] = [m for m in u["modules"]
+                             if m != "de_comm"
+                             and catalog.get(m, {}).get("unix")
+                             and "udp_proxy_" + m not in u["ports"]]
+        for m in u["unix_modules"]:
+            del u["ports"][m]
 
     # position: explicit `at` (meters from home), block `location`, or
     # the default spacing by unit order
@@ -1628,7 +1672,9 @@ def used_ports(sim):
                 if _is_port(fc.get(key)):
                     ports.add(fc[key])
     for v in (sim.get("ports") or {}).values():
-        ports.add(int(v["port"] if isinstance(v, dict) else v))
+        p = v.get("port") if isinstance(v, dict) else v
+        if p is not None:
+            ports.add(int(p))
     return ports
 
 
@@ -1810,6 +1856,12 @@ def lease_requests(sim):
     for u in sim["units"]:
         prefix = f"unit.{u['name']}."
         reqs += [req(prefix + mod, "udp") for mod in u["ports"]]
+        if u.get("sockdir"):
+            # SL-0086: the unix-bus unit's socket dir as a path lease -
+            # no port picked; the allocator records the dir and removes
+            # it on release (`sim down`)
+            reqs.append({"name": prefix + "sockdir", "proto": "path",
+                         "kind": "path", "path": u["sockdir"]})
         if u.get("link_proxy"):
             reqs += [req(prefix + "link_proxy", "tcp"),
                      req(prefix + "link_proxy.ctrl", "tcp")]
@@ -1917,12 +1969,17 @@ def lease_commit(sim):
                                    pin=r.get("pin"), prefer=r.get("prefer"))
                 else:
                     tx.alloc(r["name"], proto=r["proto"], kind=r["kind"],
-                             pin=r.get("pin"), prefer=r.get("prefer"))
+                             pin=r.get("pin"), prefer=r.get("prefer"),
+                             path=r.get("path"))
             ports = tx.commit()
     except pam.AllocError as e:
         raise SimError(_lease_conflict_msg(sim["name"], e.conflicts))
     sim["ports"] = {}
     for r in reqs:
+        if r["kind"] == "path":
+            sim["ports"][r["name"]] = {"path": ports[r["name"]],
+                                       "proto": "path"}
+            continue
         sim["ports"][r["name"]] = {"port": ports[r["name"]],
                                    "proto": r["proto"]}
         for i in range(r.get("size") or 0):
@@ -1976,6 +2033,10 @@ def _apply_ports(sim, ports, requests):
         prefix = f"unit.{u['name']}."
         for mod in u["ports"]:
             u["ports"][mod] = ports.get(prefix + mod)
+        if u.get("sockdir") is not None:
+            # SL-0086: the leased (deterministic) socket dir - the value
+            # the path request carried in
+            u["sockdir"] = ports.get(prefix + "sockdir")
         if u.get("link_proxy"):
             u["link_proxy"]["port"] = ports.get(prefix + "link_proxy")
             u["link_proxy"]["ctrl"] = ports.get(prefix + "link_proxy.ctrl")
@@ -2225,13 +2286,18 @@ def gen_unit(u, sim, catalog):
     cfg = deep_merge(cfg, u["config"].get("de_comm"))
     cfg.update({
         "s2s_udp_listening_port": str(u["ports"]["de_comm"]),
-        "use_unix_socket": False,          # fixed /run|/tmp path, not per-unit
+        "use_unix_socket": u.get("sockdir") is not None,
         "unitID": u["unitID"],
         "de_plan_file": os.path.join(udir, "de_plan.json"),
         "de_package_file": os.path.join(udir, "de_package.json"),
         "de_run_file": os.path.join(udir, "de_run.json"),
         "de_journal_dir": journal_dir(u) + "/",
     })
+    if u.get("sockdir") is not None:
+        # SL-0086: the unit's own socket dir - the broker binds
+        # <sockdir>/de_comm_broker.sock instead of the machine-wide
+        # /run|/tmp/de_comm one
+        cfg["unix_socket_dir"] = u["sockdir"]
     if srv["auth"]:
         # full login: authenticator -> comm server address + temp key.
         # The unit's own account, else the sim's unit_account, else the
@@ -2357,15 +2423,23 @@ def gen_unit(u, sim, catalog):
         # of de_comm's - engine wiring, so block/unit overlays cannot
         # break it either way
         target = u["ports"].get("udp_proxy_" + m, u["ports"]["de_comm"])
+        unix_mod = m in (u.get("unix_modules") or ())
         mcfg.update({
             "s2s_udp_target_ip": "127.0.0.1",
             "s2s_udp_target_port": str(target),
             "s2s_udp_listening_ip": "127.0.0.1",
-            "s2s_udp_listening_port": str(u["ports"][m]),
-            "use_unix_socket": False,
+            # SL-0086: a unix-bus module leases no s2s port - "0" lets
+            # the module's UDP fallback (dir rejected / bind failure)
+            # take an ephemeral port instead of pretending a lease
+            "s2s_udp_listening_port": "0" if unix_mod
+                                      else str(u["ports"][m]),
+            "use_unix_socket": unix_mod,
         })
+        if unix_mod:
+            mcfg["unix_socket_dir"] = u["sockdir"]
         mcfg = deep_merge(mcfg, _fill(spec.get("wire") or {},
-                                      dict(ctx, port=u["ports"][m])))
+                                      dict(ctx,
+                                           port=u["ports"].get(m) or 0)))
         if "udp_proxy_" + m in u["ports"]:
             # a catalog `wire:` s2s_udp_target_port would win that merge -
             # the proxy keeps the last word

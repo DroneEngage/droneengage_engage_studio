@@ -1,0 +1,13 @@
+# launch/p4f08_unix_bus - SL-0086 acceptance: a `bus: unix` fleet comes
+# up on per-unit AF_UNIX socket dirs. What it proves: every module on
+# the mixed unit reaches ready - de_mavlink over the unix socket,
+# stub_ai_box over UDP through its udp_proxy - and each unit's de_comm
+# only sees its own module (no shared de_comm_broker.sock).
+version: 1
+name: p4f08_unix_bus
+realtime: true
+sim: {base: unix_bus_fleet.yaml}
+timeline:
+  - {t: 0, do: wait_online, timeout: 240}
+assert:
+  - journal_count: {unit: all, re: "nav adapter hello", equals: 1}

@@ -149,8 +149,19 @@ def _as_request(r):
         raise ValueError(f"bad request {r!r}: need a Request or a dict "
                          "with a 'name'")
     return Request(**{k: r[k] for k in
-                      ("name", "proto", "kind", "prefer", "pin", "size")
+                      ("name", "proto", "kind", "prefer", "pin", "size",
+                       "path")
                       if k in r})
+
+
+def _remove_lease_dirs(leases):
+    """rmtree the "path" of every path-kind lease - the per-unit
+    unix-socket dirs live under de_sim/s/ and belong to the lease alone."""
+    import shutil
+    for l in leases:
+        p = l.get("path")
+        if l.get("kind") == "path" and isinstance(p, str) and p:
+            shutil.rmtree(p, ignore_errors=True)
 
 
 def _conflict_msg(sim, conflicts):
@@ -182,18 +193,19 @@ class Request:
     """One queued request - a plain record, no behaviour."""
 
     def __init__(self, name, proto="tcp", kind="free",
-                 prefer=None, pin=None, size=None):
+                 prefer=None, pin=None, size=None, path=None):
         self.name = name            # dotted: <owner>.<id>.<role>
-        self.proto = proto          # tcp | udp | both
-        self.kind = kind            # free | block | prefer | pin
+        self.proto = proto          # tcp | udp | both | path
+        self.kind = kind            # free | block | prefer | pin | path
         self.prefer = prefer        # try this port/base first
         self.pin = pin              # exactly this port/base, or fail
         self.size = size            # block length, for kind "block"
+        self.path = path            # directory to lease, for kind "path"
 
     def __repr__(self):
         return (f"Request({self.name!r} proto={self.proto!r} "
                 f"kind={self.kind!r} prefer={self.prefer} "
-                f"pin={self.pin} size={self.size})")
+                f"pin={self.pin} size={self.size} path={self.path!r})")
 
 
 class Allocator:
@@ -417,12 +429,14 @@ class Allocator:
 
     def _sweep(self, reg):
         """Drop stale leases and expired foreign marks in place; returns
-        (reclaimed lease dicts, changed)."""
+        (reclaimed lease dicts, changed). A reclaimed "path" lease's
+        directory is removed - the sim that owned it is gone."""
         now = time.time()
         dead = [l for l in reg["leases"] if self._stale(l)]
         if dead:
             reg["leases"] = [l for l in reg["leases"]
                              if not self._stale(l)]
+            _remove_lease_dirs(dead)
         before_f = len(reg["foreign"])
         reg["foreign"] = {p: t for p, t in reg["foreign"].items()
                           if now - t < self.foreign_ttl}
@@ -603,7 +617,42 @@ class Allocator:
             for i in range(size):
                 take(f"{req.name}.p{i}", base + i, req.proto, "block", blk)
 
+        def eval_path(req):
+            """kind "path" - a directory lease (SL-0086, e.g. a unit's
+            unix-socket dir). No port is picked: the lease records the
+            caller's path so ./sim ports shows it and release()/the sweep
+            remove the directory. Two live leases cannot hold the same
+            path."""
+            if not isinstance(req.path, str) or not req.path:
+                conflict(req.name, None, "bad-request", None)
+                return
+            l = sticky(req.name)
+            if l is not None:
+                if l.get("kind") != "path" or l.get("path") != req.path:
+                    supersede(req.name, l)
+                    l = None
+            if l is not None:
+                result[req.name] = l["path"]
+                return
+            for o in held:
+                if o.get("path") == req.path:
+                    conflict(req.name, None, "leased",
+                             {"sim": o["sim"], "worktree": o["worktree"]})
+                    return
+            lease = {"port": None, "path": req.path, "proto": "path",
+                     "kind": "path", "block": None, "sim": sim,
+                     "worktree": worktree, "name": req.name,
+                     "state": "reserved", "holder": dict(holder),
+                     "bound_by": None,
+                     "created": now_iso, "touched": now_iso}
+            new_leases.append(lease)
+            held.append(lease)
+            result[req.name] = req.path
+
         for req in reqs:
+            if req.kind == "path" or req.proto == "path":
+                eval_path(req)
+                continue
             if req.proto not in PROTOS:
                 conflict(req.name, None, "bad-request", None)
                 continue
@@ -788,7 +837,7 @@ class Allocator:
                     self._stale(l)):
                 continue
             if l["name"] == name:
-                return l["port"]
+                return l["path"] if l.get("kind") == "path" else l["port"]
             if l.get("block") and pat.fullmatch(l["name"]):
                 return l["block"]["base"]
         return None
@@ -832,9 +881,12 @@ class Allocator:
             if changed:
                 self._write_registry(reg)
             if gone:
+                _remove_lease_dirs(gone)
                 last = self._read_last()
                 now = time.time()
                 for l in gone:
+                    if l.get("kind") == "path":
+                        continue
                     last[f"{w}|{sim}|{l['name']}"] = {
                         "port": l["port"], "t": now}
                     if l.get("block"):
@@ -908,17 +960,27 @@ class _Transaction:
             raise RuntimeError("transaction already committed")
 
     def alloc(self, name, proto="tcp", kind=None, prefer=None, pin=None,
-              size=None):
+              size=None, path=None):
         """Queue one port request. kind comes from the args: pin set ->
-        'pin', prefer set -> 'prefer', else 'free' ('block' via size)."""
+        'pin', prefer set -> 'prefer', else 'free' ('block' via size,
+        'path' via path)."""
         self._open()
         if pin is not None and prefer is not None:
             raise ValueError("prefer and pin are mutually exclusive")
         if kind is None:
-            kind = ("pin" if pin is not None else
+            kind = ("path" if path is not None else
+                    "pin" if pin is not None else
                     "prefer" if prefer is not None else "free")
         req = Request(name, proto=proto, kind=kind,
-                      prefer=prefer, pin=pin, size=size)
+                      prefer=prefer, pin=pin, size=size, path=path)
+        self.reqs.append(req)
+        return req
+
+    def alloc_path(self, name, path):
+        """Queue a directory lease (kind "path") - no port is picked;
+        release()/the sweep remove the directory."""
+        self._open()
+        req = Request(name, proto="path", kind="path", path=path)
         self.reqs.append(req)
         return req
 
@@ -991,14 +1053,16 @@ def main(argv):
     alloc = Allocator()
     if cmd == "gc":
         for l in alloc.gc():
-            print(f"reclaimed {l['sim']}:{l['name']} port {l['port']} "
+            print(f"reclaimed {l['sim']}:{l['name']} "
+                  f"{l.get('path') or 'port ' + str(l['port'])} "
                   f"({l['worktree']})")
         return 0
     if cmd == "leases":
         sim = argv[2] if len(argv) > 2 else None
         for l in alloc.leases(sim=sim):
             stale = "STALE" if l.get("stale") else ""
-            print(f"{l['port']:<6} {l['proto']:<5} {l['state']:<9} "
+            what = l.get("path") if l.get("kind") == "path" else l["port"]
+            print(f"{str(what):<40} {l['proto']:<5} {l['state']:<9} "
                   f"{stale:<6} {l['sim']:<20} {l['name']:<32} "
                   f"{l['worktree']}")
         return 0

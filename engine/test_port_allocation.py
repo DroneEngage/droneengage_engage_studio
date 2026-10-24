@@ -452,5 +452,63 @@ class T(unittest.TestCase):
         self.assertEqual(len(a.leases()), 3)
 
 
+class TestPathLeases(unittest.TestCase):
+    """SL-0086: kind "path" leases - a directory, not a port."""
+
+    def test_path_lease_commit_and_release(self):
+        a, wt = _mk()
+        d = os.path.join(tempfile.mkdtemp(prefix="pam_sock_"), "u1")
+        with a.transaction("s1", wt) as tx:
+            tx.alloc("unit.c1.de_comm", proto="udp")
+            tx.alloc_path("unit.c1.sockdir", d)
+            ports = tx.commit()
+        self.assertEqual(ports["unit.c1.sockdir"], d)
+        lease = [l for l in a.leases(sim="s1")
+                 if l["name"] == "unit.c1.sockdir"][0]
+        self.assertEqual(lease["path"], d)
+        self.assertIsNone(lease["port"])
+        os.makedirs(d)
+        open(os.path.join(d, "de_comm_broker.sock"), "w").close()
+        gone = a.release("s1", wt)
+        self.assertEqual(len(gone), 2)
+        self.assertFalse(os.path.exists(d))           # dir removed
+        self.assertEqual(a.leases(sim="s1"), [])
+
+    def test_path_lease_sticky(self):
+        a, wt = _mk()
+        d = tempfile.mkdtemp(prefix="pam_sock_")
+        for _ in range(2):
+            with a.transaction("s1", wt) as tx:
+                tx.alloc_path("unit.c1.sockdir", d)
+                ports = tx.commit()
+            self.assertEqual(ports["unit.c1.sockdir"], d)
+        self.assertEqual(len(a.leases(sim="s1")), 1)
+
+    def test_path_lease_conflict_same_dir(self):
+        a, wt = _mk()
+        d = tempfile.mkdtemp(prefix="pam_sock_")
+        with a.transaction("s1", wt) as tx:
+            tx.alloc_path("unit.c1.sockdir", d)
+            tx.commit()
+        conflicts = a.check("s2", wt,
+                            [{"name": "unit.c2.sockdir", "kind": "path",
+                              "proto": "path", "path": d}])
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]["reason"], "leased")
+
+    def test_path_lease_no_port_memory(self):
+        a, wt = _mk()
+        d = tempfile.mkdtemp(prefix="pam_sock_")
+        with a.transaction("s1", wt) as tx:
+            tx.alloc_path("unit.c1.sockdir", d)
+            tx.commit()
+        a.release("s1", wt)
+        # path leases leave no last_ports entry - there is no port to
+        # remember; the path is recomputed deterministically each run
+        last = json.load(open(a.last_path)) if os.path.exists(
+            a.last_path) else {}
+        self.assertFalse(any("sockdir" in k for k in last))
+
+
 if __name__ == "__main__":
     unittest.main()

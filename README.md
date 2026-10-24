@@ -172,6 +172,12 @@ DroneEngage module (sdr, gpio, ...) is a catalog entry, with no engine change.
 version: 1
 extends: copters3.yaml               # optional: reuse a fleet, change the server
 server: {type: real}                 # real (default) | fake | external ; auth: true
+bus: udp                             # udp (default) | unix - unix-bus units
+                                     # run the module bus on a per-unit AF_UNIX
+                                     # sockdir (unit.<u>.sockdir lease), no s2s
+                                     # ports; only unix-capable modules move
+                                     # (catalog `unix: true`), stubs/udp_proxy
+                                     # stay UDP. Per-unit `bus:` overrides.
 units:
   - {block: copter, name: copter, count: 3}       # copter1..copter3
   - {block: plane, name: plane1, at: {east_m: 60}}

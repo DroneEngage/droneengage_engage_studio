@@ -490,7 +490,8 @@ def main(argv):
             if names and names[0] == "gc":
                 freed = a_.gc()
                 for l in freed:
-                    print(f"  reclaimed {l['name']} port {l['port']}"
+                    print(f"  reclaimed {l['name']} "
+                          f"{l.get('path') or 'port ' + str(l['port'])}"
                           f" ({l['sim']} @ {l['worktree']})")
                 print(simlib.col_yellow(
                     f"{len(freed)} stale lease(s) reclaimed"))
@@ -509,7 +510,8 @@ def main(argv):
                     groups.setdefault((l["sim"], l["worktree"]),
                                       []).append(l)
                 for (sn, wt), rows in sorted(groups.items()):
-                    rows.sort(key=lambda l: (l["port"], l["name"]))
+                    rows.sort(key=lambda l: (l["port"] is None,
+                                             l["port"] or 0, l["name"]))
                     # collapse each block's members into one range row,
                     # named after the block (unit.<u>.sitl,
                     # udp_relay.relay.range, server.fake, ...)
@@ -529,7 +531,11 @@ def main(argv):
                     for l in rows:
                         state = l["state"] + \
                             (" (stale)" if l.get("stale") else "")
-                        print(f"  {l['name']:{w}s}  {l['port']:>6}  "
+                        # SL-0086: path leases (unit.*.sockdir) show the
+                        # leased directory instead of a port
+                        what = l.get("path") if l.get("kind") == "path" \
+                            else l["port"]
+                        print(f"  {l['name']:{w}s}  {str(what):>6}  "
                               f"{l['proto']:3s} {state}")
                     for bn in sorted(blocks):
                         l = blocks[bn]
