@@ -71,6 +71,16 @@ Then check the machine:
                                       # each MISS with a fix line; exit 1 on gaps
 ./sim doctor sims/quadcopter.yaml     # same, scoped to what that sim needs
 ./sim doctor --json                   # machine-readable [{item,status,detail,fix}]
+./sim doctor --esp32                  # also require + probe the optional ESP32 HIL gear
+```
+
+Optional ESP32 HIL firmwares (`tools/hil/<name>/`, e.g. `esp32_fake_fc` - a
+fake ArduCopter that proves a phone's USB-OTG FCB link):
+
+```bash
+./sim esp32 list                      # firmwares under tools/hil/
+./sim esp32 upload                    # build + flash esp32_fake_fc + run its host check
+./sim esp32 check --port /dev/ttyUSB0 # only the host check against the flashed board
 ```
 
 The machine also needs:

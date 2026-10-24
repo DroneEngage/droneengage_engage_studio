@@ -10,8 +10,10 @@ With no sim file the whole default path is checked. With a sim file
 only what that sim needs is required - the rest still prints as
 OPTIONAL, so `./sim doctor sims/quadcopter.yaml` does not fail on the
 camera repo it never uses. Mavlink3DMap is always OPTIONAL (the sims
-run without it; render modes degrade, never block). Exit 1 on any
-MISSING.
+run without it; render modes degrade, never block). The ESP32 HIL rows
+(./sim esp32) are OPTIONAL too unless --esp32 is given, which makes them
+required and probes the attached board with esptool (resets it). Exit 1
+on any MISSING.
 """
 
 import importlib
@@ -107,9 +109,10 @@ def _server_repo_check(d, label, repo, required):
                 f"cd {repo} && npm install", required)
 
 
-def gather(sim=None):
+def gather(sim=None, esp32=False):
     """All check rows for this machine (+ `sim`'s extra needs when
-    given). sim is a resolved simlib.load_sim() dict or None."""
+    given). sim is a resolved simlib.load_sim() dict or None. esp32
+    makes the ESP32 HIL rows required and probes the board."""
     d = Doctor()
     catalog = simlib.load_catalog()
 
@@ -371,6 +374,11 @@ def gather(sim=None):
                    "check out Mavlink3DMap + npm install, set "
                    "MAVLINK3DMAP_DIR in sim.local.env")
 
+    # ESP32 HIL firmwares (./sim esp32): optional gear - required and
+    # probed only with --esp32
+    import esp32 as _esp32
+    _esp32.doctor_rows(d, required=esp32, probe=esp32)
+
     # ports: the sim's own set, else the default server pair
     if sim:
         held = simlib.ports_held(simlib.used_ports(sim))
@@ -404,11 +412,13 @@ def _load_target(path):
 def main(argv):
     a = list(argv)
     json_out = "--json" in a
-    a = [x for x in a if x != "--json"]
+    esp32 = "--esp32" in a
+    a = [x for x in a if x not in ("--json", "--esp32")]
     files = [x for x in a if not x.startswith("-")]
     bad = [x for x in a if x.startswith("-")]
     if bad or len(files) > 1:
-        sys.exit("usage: ./sim doctor [sim.yaml|test.yaml] [--json]"
+        sys.exit("usage: ./sim doctor [sim.yaml|test.yaml] [--json] "
+                 "[--esp32]"
                  + (f" - unknown {' '.join(bad)}" if bad else ""))
     sim, load_err = None, None
     if files:
@@ -419,7 +429,7 @@ def main(argv):
             # report it as a row (keeps --json parseable), then check
             # the machine itself
             load_err = str(e)
-    d = gather(sim)
+    d = gather(sim, esp32=esp32)
     if load_err:
         d.missing(files[0], load_err, "see the message - ./sim validate "
                   f"{files[0]} shows the same problem")

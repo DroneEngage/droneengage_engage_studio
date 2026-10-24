@@ -16,7 +16,16 @@ What it does:
 - Minimal param list (4 params) and an empty mission so GCS loaders finish.
 - On-board LED (GPIO2) toggles on every received MAVLink packet.
 
-## Build + flash (headless, Arduino 1.8.x builder + esp32 core 3.0.x)
+## Build + flash
+
+From the repo root (`./sim doctor --esp32` checks the toolchain + board
+first):
+
+```bash
+./sim esp32 upload          # build + flash + check_fake_fc.py, one command
+```
+
+By hand (headless, Arduino 1.8.x builder + esp32 core 3.0.x):
 
 ```bash
 IDE=~/arduino-1.8.19        # extracted arduino-1.8.19-linux64.tar.xz
