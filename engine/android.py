@@ -153,18 +153,27 @@ def wait_module_down(u, mod, timeout_s=8):
 
 
 def _tar_pull(u, mod, unit_dir):
-    """Snapshot the module's device files into <unit_dir>/<mod>/mirror."""
+    """Snapshot the module's device files into <unit_dir>/<mod>/device/;
+    a remote de_comm's journal also lands in <unit_dir>/journal/ where
+    every engine journal reader looks for it."""
     dest = os.path.join(unit_dir, mod, "device")
     os.makedirs(dest, exist_ok=True)
-    # journal + logs + state files written by the module
     r = _adb(u, "exec-out", "run-as", APP_PKG,
              "tar", "-cf", "-", "-C", DEVICE_FILES, mod,
              timeout=60)
-    if r.returncode == 0 and r.stdout:
-        out = subprocess.run(["tar", "-xf", "-", "-C", dest],
-                             input=r.stdout, capture_output=True)
-        return out.returncode == 0
-    return False
+    if not (r.returncode == 0 and r.stdout):
+        return False
+    out = subprocess.run(["tar", "-xf", "-", "-C", dest],
+                         input=r.stdout, capture_output=True)
+    if mod == "de_comm":
+        # device files/de_comm/journal/*.log -> unit_dir/journal/*.log
+        r2 = _adb(u, "exec-out", "run-as", APP_PKG,
+                  "tar", "-cf", "-", "-C", f"{DEVICE_FILES}/de_comm",
+                  "journal", timeout=60)
+        if r2.returncode == 0 and r2.stdout:
+            subprocess.run(["tar", "-xf", "-", "-C", unit_dir],
+                           input=r2.stdout, capture_output=True)
+    return out.returncode == 0
 
 
 def mirror_loop(u, unit_dir, interval_s=2.0):

@@ -380,6 +380,13 @@ def gather(sim=None, esp32=False):
     import esp32 as _esp32
     _esp32.doctor_rows(d, required=esp32, probe=esp32)
 
+    # Android units (SL-0095): required+probed when the loaded sim
+    # actually declares an android: unit, else optional
+    import android as _android
+    needs_android = bool(sim and
+                         any(u.get("android") for u in sim["units"]))
+    _android.doctor_rows(d, required=needs_android, probe=needs_android)
+
     # ports: the sim's own set, else the default server pair
     if sim:
         held = simlib.ports_held(simlib.used_ports(sim))

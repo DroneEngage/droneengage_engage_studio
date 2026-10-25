@@ -173,6 +173,15 @@ def down(name=None, quiet=False):
         dirs = kept
     for d in dirs:
         _journal_restore(os.path.dirname(d))
+        # SL-0095: tell the phone's module services to STOP
+        sname = os.path.basename(os.path.dirname(d))
+        m0 = simlib.load_manifest(sname, required=False)
+        if m0:
+            import android as _android
+            for u in m0.get("units", []):
+                for mod in (u.get("android") or {}).get(
+                        "remote_modules") or []:
+                    _android.stop_module(u, mod)
     if not dirs and not strays:
         if not quiet and not foreign_kept:
             print("nothing running" if name is None
@@ -405,6 +414,19 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
     if fresh and os.path.isdir(rdir):
         shutil.rmtree(rdir)
     os.makedirs(simlib.pids_dir(name), exist_ok=True)
+    # SL-0095: android units need the device probed (ip + clock offset)
+    # before configs are generated - the values land in their configs
+    for u in sim["units"]:
+        if u.get("android"):
+            import android as _android
+            if not _android.adb_ok(u):
+                sys.exit(simlib.col_red(
+                    f"android device {_android.serial_of(u) or '<unset>'} "
+                    "not reachable - check adb / ANDROID_SERIAL"))
+            u["android"]["device_ip"] = _android.device_ip(u)
+            u["android"]["clock_offset_ms"] = \
+                _android.measure_clock_offset_ms(u)
+
     m = simlib.generate(sim, _label(sim_src))
     # SL-0066 - stamp this fleet instance's generation into the manifest:
     # a scenario runner records it at run start and re-checks it before
@@ -517,6 +539,17 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         for p in simlib.procs_of(u):
             ctl.start_proc(u["name"], p)
 
+    # SL-0095: per android unit a detached mirror proc pulls device
+    # journals + logcat into the unit dir for the engine readers
+    for u in m["units"]:
+        if u.get("android"):
+            import android as _android
+            mp = _android.spawn_mirror(u, simlib.run_dir(name))
+            pf = os.path.join(simlib.pids_dir(name),
+                              f"{u['name']}.android_mirror.pid")
+            with open(pf, "w") as fh:
+                fh.write(str(mp.pid))
+
     print(simlib.col_dim("waiting for every unit to come online ..."),
           flush=True)
     try:
@@ -573,7 +606,16 @@ def ensure(sim_src, timeout=180, world_stream=False, exclusive=True):
         need = {f"server.{p}" for p in m["server_procs"]}
         need |= {f"render.{p}" for p in m.get("render_procs", [])}
         for u in m["units"]:
-            need |= {f"{u['name']}.{p}" for p in simlib.procs_of(u)}
+            remote = set((u.get("android") or {}).get("remote_modules")
+                         or [])
+            for p in simlib.procs_of(u):
+                if p in remote:
+                    # lives on the phone - no local pidfile; probe adb
+                    import android as _android
+                    if _android.module_alive(u, p):
+                        alive.add(f"{u['name']}.{p}")
+                else:
+                    need.add(f"{u['name']}.{p}")
         if need <= alive:
             if exclusive:
                 # a test owns the machine on the reuse path too

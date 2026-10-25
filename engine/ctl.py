@@ -761,6 +761,16 @@ def owner_dir(owner):
 
 
 def kill_proc(owner, proc):
+    u = _android_unit(owner)
+    if u and proc in u["android"]["remote_modules"]:
+        import android as _android
+        _android.stop_module(u, proc)
+        _android.wait_module_down(u, proc)
+        pf = simlib.pid_path(owner_sim(owner), owner, proc)
+        if os.path.isfile(pf):
+            os.unlink(pf)
+        print(f"{owner}.{proc}: stopped on device")
+        return True
     pf = simlib.pid_path(owner_sim(owner), owner, proc)
     if not os.path.isfile(pf):
         print(f"{owner}.{proc}: no pidfile")
@@ -1039,7 +1049,30 @@ def clock_step(u, offset_s):
     return True
 
 
+def _android_unit(owner):
+    """The manifest unit dict when <owner> is a unit with android
+    remote modules (SL-0095), else None."""
+    m = simlib.load_manifest(owner_sim(owner), required=False)
+    if not m:
+        return None
+    u = next((x for x in m.get("units", []) if x["name"] == owner), None)
+    if u and (u.get("android") or {}).get("remote_modules"):
+        return u
+    return None
+
+
 def start_proc(owner, proc):
+    u = _android_unit(owner)
+    if u and proc in u["android"]["remote_modules"]:
+        # runs on the phone inside the Andruav app: push the generated
+        # config into de_override/<mod>/ then start the module service
+        import android as _android
+        _android.push_module_config(
+            u, proc, os.path.join(owner_dir(owner), proc))
+        _android.start_module(u, proc)
+        print(f"{simlib.col_green(f'{owner}.{proc}')}: "
+              f"started on device {_android.serial_of(u) or 'default'}")
+        return
     d = owner_dir(owner)
     script = os.path.join(d, f"launch.{proc}.sh")
     if not os.path.isfile(script):
