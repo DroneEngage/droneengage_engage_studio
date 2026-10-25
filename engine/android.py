@@ -138,6 +138,10 @@ def push_module_config(u, mod, module_dir):
     The app overlays de_override/<mod>/* onto the module workDir at START;
     file names there must match the asset names (*.config.module.json).
     """
+    # OEM battery killers reap the FGS mid-run - a dead de_comm leaves the
+    # unit 'static' to the fleet (AN-0037 p2_gate divergence root cause)
+    _adb(u, "shell", "dumpsys", "deviceidle", "whitelist",
+         "+ardupilot.andruav")
     cfg = os.path.join(module_dir, f"{mod}.config.json")
     local = os.path.join(module_dir, f"{mod}.local")
     dest = f"{OVERRIDE_DIR}/{mod}"
