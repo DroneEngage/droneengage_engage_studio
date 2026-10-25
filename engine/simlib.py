@@ -2282,8 +2282,11 @@ def gen_unit(u, sim, catalog):
                 listen_ip = "0.0.0.0"
             elif "de_comm" in remote and u["android"].get("device_ip"):
                 # de_comm is on the phone - a host-side module of the
-                # same unit must dial the phone
+                # same unit must dial the phone, and must bind a real
+                # interface or its packets carry src=127.0.0.1 and the
+                # replies loop back on the phone itself
                 target_ip = u["android"]["device_ip"]
+                listen_ip = "0.0.0.0"
         mcfg.update({
             "s2s_udp_target_ip": target_ip,
             "s2s_udp_target_port": str(target),

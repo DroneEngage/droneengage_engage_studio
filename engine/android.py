@@ -40,8 +40,29 @@ def serial_of(u):
     return spec.get("serial") or simlib.setting("ANDROID_SERIAL")
 
 
-def host_ip():
-    return simlib.setting("ANDROID_HOST_IP")
+def host_ip(u=None):
+    """The host address the phone can reach. ANDROID_HOST_IP wins; else
+    probe the phone's own LAN IP and take the host address on its subnet
+    (USB-tether rndis hands out a different /24 address each time)."""
+    ip = simlib.setting("ANDROID_HOST_IP")
+    if ip:
+        return ip
+    if u is None:
+        return None
+    dev = device_ip(u)
+    if not dev:
+        return None
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr", "show"],
+                             capture_output=True, text=True).stdout
+    except OSError:
+        return None
+    net = dev.rsplit(".", 1)[0] + "."
+    for line in out.splitlines():
+        for tok in line.split():
+            if "/" in tok and tok.split("/")[0].startswith(net):
+                return tok.split("/")[0]
+    return None
 
 
 def remote_modules(u):
@@ -74,16 +95,24 @@ def app_installed(u):
 
 
 def device_ip(u):
-    """The phone's LAN IPv4 (wlan0 first, else any non-loopback)."""
+    """The phone's LAN IPv4. ANDROID_DEVICE_IP wins; else prefer the
+    interface on the same subnet as the host IP (rndis/wlan), then any
+    non-loopback - cellular rmnet IPs are unreachable for s2s."""
+    env_ip = simlib.setting("ANDROID_DEVICE_IP")
+    if env_ip:
+        return env_ip
     r = _adb(u, "shell", "ip", "-f", "inet", "addr")
     if r.returncode != 0:
         return None
-    for line in r.stdout.splitlines():
-        line = line.strip()
-        if line.startswith("inet ") and "127.0.0.1" not in line:
-            ip = line.split()[1].split("/")[0]
-            return ip
-    return None
+    ips = [ln.split()[1].split("/")[0] for ln in r.stdout.splitlines()
+           if ln.strip().startswith("inet ") and "127.0.0.1" not in ln]
+    hip = simlib.setting("ANDROID_HOST_IP")
+    if hip:
+        net = hip.rsplit(".", 1)[0] + "."
+        for ip in ips:
+            if ip.startswith(net):
+                return ip
+    return ips[0] if ips else None
 
 
 def measure_clock_offset_ms(u, samples=5):
