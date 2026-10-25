@@ -1453,6 +1453,14 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         px = entry.get("fcb_proxy")
         if px is None:
             px = bool(sim.get("fcb_proxy"))
+        # SL-0095: a phone-side de_mavlink always dials through the
+        # proxy - SITL's serial TCP listener is single-client and keeps
+        # the killed module's socket ESTABLISHED, so a restarted remote
+        # module can never re-dial SITL directly; the proxy is a stable
+        # host-side hop it can reconnect to freely
+        if not px and "de_mavlink" in (
+                (entry.get("android") or {}).get("remote_modules") or []):
+            px = True
         if px or link_kind in ("pty", "host_serial", "bt_spp", "udp") \
                 or (link_kind == "tcp" and fc_client == "external"):
             # a serial/udp link only fronts the proxy - it cannot
@@ -2411,7 +2419,10 @@ def gen_unit(u, sim, catalog):
                    u["name"], px["port"], px["ctrl"], fc["fcb_port"],
                    pdir, u["slot"],
                    " --bind 0.0.0.0"
-                   if u.get("fc_client") == "external" else ""))
+                   if u.get("fc_client") == "external"
+                   or "de_mavlink" in ((u.get("android") or {})
+                                       .get("remote_modules") or [])
+                   else ""))
 
         # ---- fcb serial link (SL-0102 pty, SL-0104 host_serial) ----
         # `fcb_link: {kind: pty}` gives de_mavlink a real serial device:

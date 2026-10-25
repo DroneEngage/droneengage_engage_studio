@@ -1,0 +1,7 @@
+description: |
+  Quad copter whose DE modules (de_comm, de_mavlink) run inside the
+  Andruav app on an adb-connected Android phone (SL-0095). SITL and the
+  server stack stay on the dev host; the phone's modules dial the host
+  over the LAN. Which modules are remote is the per-unit `android:`
+  spec - this block is otherwise a plain copter.
+extends: copter

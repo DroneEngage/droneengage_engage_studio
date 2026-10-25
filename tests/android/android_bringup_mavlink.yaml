@@ -1,0 +1,25 @@
+# Split variant of android_bringup: only de_mavlink runs on the phone,
+# de_comm stays a host-side process. Proves the remote module reaches
+# the host's fcb port and dials the host's de_comm over the LAN (its
+# s2s_udp_target_ip is ANDROID_HOST_IP), remote restart routes through
+# adb, and its logcat log is mirrored. Needs a real adb device.
+version: 1
+name: android_bringup_mavlink
+tier: smoke
+transport: real
+realtime: true
+fleet:
+  - {id: phone1, cls: android_copter,
+     android: {remote_modules: [de_mavlink]}}
+  - {id: c2, cls: copter}
+timeline:
+  - {t: 8, fault: restart, unit: phone1, proc: de_mavlink}
+  # hello journals once per de_comm process - restart the host-side
+  # de_comm so a fresh one lands after the run's marks
+  - {t: 12, fault: restart, unit: phone1, proc: de_comm}
+  - {t: 20, do: wait_journal, unit: phone1, re: "nav adapter hello",
+     timeout: 240}
+assert:
+  - journal_count: {unit: phone1, re: "nav adapter hello", at_least: 1}
+  - module_log_count: {unit: phone1, module: de_mavlink,
+                       re: "Mavlink Connected", at_least: 1}

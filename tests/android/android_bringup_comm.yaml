@@ -1,0 +1,29 @@
+# Split variant of android_bringup: only de_comm runs on the phone —
+# it dials the host's comm server over the LAN and listens 0.0.0.0 so
+# the unit's host-side de_mavlink can reach it (s2s_udp_target_ip is
+# the probed phone IP). Proves the remote-de_comm split direction, the
+# journal mirror + clock-offset path, and remote restart routing.
+# Needs a real adb device.
+version: 1
+name: android_bringup_comm
+tier: smoke
+transport: real
+realtime: true
+fleet:
+  - {id: phone1, cls: android_copter,
+     android: {remote_modules: [de_comm]}}
+  - {id: c2, cls: copter}
+timeline:
+  - {t: 8, fault: restart, unit: phone1, proc: de_comm}
+  # hello fires on module registration - restart the local de_mavlink
+  # too so it re-registers with the restarted remote de_comm post-mark
+  - {t: 12, fault: restart, unit: phone1, proc: de_mavlink}
+  - {t: 20, do: wait_journal, unit: phone1, re: "nav adapter hello",
+     timeout: 240}
+assert:
+  - journal_count: {unit: phone1, re: "nav adapter hello", at_least: 1}
+  - journal_count: {unit: phone1, re: "CLOCK", at_least: 1}
+  # local de_mavlink's own launch log - connected through the phone's
+  # de_comm bus
+  - module_log_count: {unit: phone1, module: de_mavlink,
+                       re: "Mavlink Connected", at_least: 1}

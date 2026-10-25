@@ -1,0 +1,39 @@
+# One android_copter — its de_comm + de_mavlink run inside the Andruav
+# app on an adb-connected phone — plus one plain local copter, on the
+# real server. Proves the phone unit comes online through its remote
+# de_comm, MAVLink flows through the phone's de_mavlink over the LAN
+# fcb link, remote restart works (ctl kill/start route to the device
+# services), and the phone journal/logcat are mirrored into var/run so
+# journal asserts (incl. cross-clock time_delta) work. Needs a real
+# adb device reachable over the network: ./sim doctor checks it.
+version: 1
+name: android_bringup
+tier: smoke
+transport: real
+realtime: true
+fleet:
+  - {id: phone1, cls: android_copter,
+     android: {remote_modules: [de_comm, de_mavlink]}}
+  - {id: c2, cls: copter}
+timeline:
+  # hello/CLOCK journal lines only fire at (re)connect - restart the
+  # remote module services so fresh ones land after the run's marks,
+  # and restart c2's de_comm at the same second so the two units'
+  # hellos align for the cross-device clock-delta assert
+  - {t: 8, fault: restart, unit: phone1, proc: de_mavlink}
+  - {t: 12, fault: restart, unit: phone1, proc: de_comm}
+  - {t: 12, fault: restart, unit: c2, proc: de_comm}
+  - {t: 20, do: wait_journal, unit: phone1, re: "nav adapter hello",
+     timeout: 240}
+assert:
+  - journal_count: {unit: phone1, re: "nav adapter hello", at_least: 1}
+  - journal_count: {unit: phone1, re: "CLOCK", at_least: 1}
+  # phone modules' stdout rides logcat into logs/<mod>.log
+  - module_log_count: {unit: phone1, module: de_comm,
+                       re: "STARTING DroneEngage", at_least: 1}
+  - module_log_count: {unit: phone1, module: de_mavlink,
+                       re: "Mavlink Connected", at_least: 1}
+  # hellos fired within a second of each other on device + host; the
+  # measured offset keeps the device-stamped line on the host's clock
+  - journal_time_delta: {u1: phone1, re1: "nav adapter hello",
+                         u2: c2, re2: "nav adapter hello", max_s: 60}

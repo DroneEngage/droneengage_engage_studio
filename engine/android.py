@@ -204,22 +204,33 @@ def mirror_loop(u, unit_dir, interval_s=2.0):
 
     log_procs = {}
     log_files = {}
-    for mod in remote_modules(u):
+
+    def _spawn_logcat(mod, history):
+        """adb logcat follower for one module tag. `history` replays the
+        whole tag buffer (first spawn - catches the startup banner);
+        respawns use -T 1 so old lines don't duplicate."""
         log_path = os.path.join(unit_dir, "logs", f"{mod}.log")
         os.makedirs(os.path.dirname(log_path), exist_ok=True)
-        lf = open(log_path, "ab", buffering=0)
+        lf = log_files.get(mod) or open(log_path, "ab", buffering=0)
+        log_files[mod] = lf
         cmd = ["adb"]
         serial = serial_of(u)
         if serial:
             cmd += ["-s", serial]
-        cmd += ["logcat", "-s", mod, "-T", "1"]
+        cmd += ["logcat", "-s", mod] if history \
+            else ["logcat", "-s", mod, "-T", "1"]
         log_procs[mod] = subprocess.Popen(cmd, stdout=lf,
                                           stderr=subprocess.DEVNULL)
-        log_files[mod] = lf
+
+    for mod in remote_modules(u):
+        _spawn_logcat(mod, history=True)
 
     try:
         while True:
             for mod in remote_modules(u):
+                p = log_procs.get(mod)
+                if p is None or p.poll() is not None:
+                    _spawn_logcat(mod, history=False)
                 try:
                     _tar_pull(u, mod, unit_dir)
                 except Exception:
