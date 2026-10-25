@@ -1,0 +1,288 @@
+"""adb-connected Android phone as a sim unit (SL-0095 / megaplan A9).
+
+A unit entry gains ``android: {serial, remote_modules}`` — the listed DE
+modules run on the phone inside the Andruav app (per-module services
+:de_comm / :de_mavlink from AN-0034); SITL and the server stack stay on
+the dev host exactly as today (docs/HIL.md scope rule).
+
+Covers: device probe, clock-offset measurement, config push to the app's
+de_override dir, service START/STOP, a mirror proc that pulls the module
+journals and logcat into the unit's local dir so every engine reader
+works unchanged, and ./sim doctor rows.
+"""
+
+import os
+import subprocess
+import time
+
+import simlib
+
+APP_PKG = "ardupilot.andruav"
+OVERRIDE_DIR = f"/sdcard/Android/data/{APP_PKG}/files/de_override"
+DEVICE_FILES = "files"  # under run-as, the app's private files dir
+
+# service component + process suffix per remote module
+MODULE_SERVICE = {
+    "de_comm": "ap.andruav.denative.DeCommService",
+    "de_mavlink": "ap.andruav.denative.DeMavlinkService",
+}
+MODULE_PROC = {
+    "de_comm": f"{APP_PKG}:de_comm",
+    "de_mavlink": f"{APP_PKG}:de_mavlink",
+}
+ACTION_PREFIX = "ap.andruav.denative"
+
+
+def serial_of(u):
+    """Unit's device serial — spec key, else ANDROID_SERIAL setting."""
+    spec = u.get("android") or {}
+    return spec.get("serial") or simlib.setting("ANDROID_SERIAL")
+
+
+def host_ip():
+    return simlib.setting("ANDROID_HOST_IP")
+
+
+def remote_modules(u):
+    spec = u.get("android") or {}
+    return list(spec.get("remote_modules") or [])
+
+
+def is_remote(u, proc):
+    return proc in remote_modules(u)
+
+
+def _adb(u, *args, timeout=30):
+    cmd = ["adb"]
+    serial = serial_of(u)
+    if serial:
+        cmd += ["-s", serial]
+    cmd += list(args)
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+
+
+def adb_ok(u):
+    r = _adb(u, "get-state")
+    return r.returncode == 0 and r.stdout.strip() == "device"
+
+
+def app_installed(u):
+    r = _adb(u, "shell", "pm", "path", APP_PKG)
+    return r.returncode == 0 and APP_PKG in r.stdout
+
+
+def device_ip(u):
+    """The phone's LAN IPv4 (wlan0 first, else any non-loopback)."""
+    r = _adb(u, "shell", "ip", "-f", "inet", "addr")
+    if r.returncode != 0:
+        return None
+    for line in r.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("inet ") and "127.0.0.1" not in line:
+            ip = line.split()[1].split("/")[0]
+            return ip
+    return None
+
+
+def measure_clock_offset_ms(u, samples=5):
+    """device_unix_ms - host_unix_ms, min-RTT sample (HIL.md Q4)."""
+    best = None
+    for _ in range(samples):
+        t0 = time.time_ns()
+        r = _adb(u, "shell", "date", "+%s%N", timeout=10)
+        t1 = time.time_ns()
+        if r.returncode != 0 or not r.stdout.strip().isdigit():
+            continue
+        dev_ms = int(r.stdout.strip()) // 1_000_000
+        host_ms = (t0 + t1) // 2_000_000  # midpoint, ms
+        rtt = t1 - t0
+        if best is None or rtt < best[1]:
+            best = (dev_ms - host_ms, rtt)
+    return best[0] if best else 0
+
+
+def push_module_config(u, mod, module_dir):
+    """Push the generated config set into de_override/<mod>/ on the phone.
+
+    The app overlays de_override/<mod>/* onto the module workDir at START;
+    file names there must match the asset names (*.config.module.json).
+    """
+    cfg = os.path.join(module_dir, f"{mod}.config.json")
+    local = os.path.join(module_dir, f"{mod}.local")
+    dest = f"{OVERRIDE_DIR}/{mod}"
+    r = _adb(u, "shell", "mkdir", "-p", dest)
+    if r.returncode != 0:
+        raise RuntimeError(f"adb mkdir {dest} failed: {r.stderr.strip()}")
+    if os.path.exists(cfg):
+        r = _adb(u, "push", cfg, f"{dest}/{mod}.config.module.json")
+        if r.returncode != 0:
+            raise RuntimeError(f"adb push {mod} config failed: {r.stderr.strip()}")
+    if os.path.exists(local):
+        r = _adb(u, "push", local, f"{dest}/{mod}.local")
+        if r.returncode != 0:
+            raise RuntimeError(f"adb push {mod} local failed: {r.stderr.strip()}")
+
+
+def start_module(u, mod):
+    r = _adb(u, "shell", "am", "start-foreground-service", "-n",
+             f"{APP_PKG}/{MODULE_SERVICE[mod]}", "-a", f"{ACTION_PREFIX}.START")
+    if r.returncode != 0:
+        raise RuntimeError(f"am START {mod} failed: {r.stderr.strip() or r.stdout.strip()}")
+
+
+def stop_module(u, mod):
+    _adb(u, "shell", "am", "startservice", "-n",
+         f"{APP_PKG}/{MODULE_SERVICE[mod]}", "-a", f"{ACTION_PREFIX}.STOP")
+
+
+def module_alive(u, mod):
+    r = _adb(u, "shell", "pidof", MODULE_PROC[mod])
+    return r.returncode == 0 and r.stdout.strip().isdigit()
+
+
+def wait_module_down(u, mod, timeout_s=8):
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        if not module_alive(u, mod):
+            return True
+        time.sleep(0.5)
+    return False
+
+
+# ---------------------------------------------------------------- mirror
+
+
+def _tar_pull(u, mod, unit_dir):
+    """Snapshot the module's device files into <unit_dir>/<mod>/mirror."""
+    dest = os.path.join(unit_dir, mod, "device")
+    os.makedirs(dest, exist_ok=True)
+    # journal + logs + state files written by the module
+    r = _adb(u, "exec-out", "run-as", APP_PKG,
+             "tar", "-cf", "-", "-C", DEVICE_FILES, mod,
+             timeout=60)
+    if r.returncode == 0 and r.stdout:
+        out = subprocess.run(["tar", "-xf", "-", "-C", dest],
+                             input=r.stdout, capture_output=True)
+        return out.returncode == 0
+    return False
+
+
+def mirror_loop(u, unit_dir, interval_s=2.0):
+    """`python3 engine/android.py mirror <sim> <unit>` body — runs forever.
+
+    Polls each remote module's device files (journals) and streams its
+    logcat tag into logs/<mod>.log so the local readers stay unchanged.
+    """
+    sim_name = u["sim"]
+    del sim_name  # the run dir is already resolved by the caller
+
+    log_procs = {}
+    log_files = {}
+    for mod in remote_modules(u):
+        log_path = os.path.join(unit_dir, "logs", f"{mod}.log")
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        lf = open(log_path, "ab", buffering=0)
+        cmd = ["adb"]
+        serial = serial_of(u)
+        if serial:
+            cmd += ["-s", serial]
+        cmd += ["logcat", "-s", mod, "-T", "1"]
+        log_procs[mod] = subprocess.Popen(cmd, stdout=lf,
+                                          stderr=subprocess.DEVNULL)
+        log_files[mod] = lf
+
+    try:
+        while True:
+            for mod in remote_modules(u):
+                try:
+                    _tar_pull(u, mod, unit_dir)
+                except Exception:
+                    pass
+            time.sleep(interval_s)
+    finally:
+        for p in log_procs.values():
+            try:
+                p.kill()
+            except Exception:
+                pass
+        for lf in log_files.values():
+            try:
+                lf.close()
+            except Exception:
+                pass
+
+
+def spawn_mirror(u, run_dir):
+    """Detach `engine/android.py mirror` for this unit; returns the Popen."""
+    engine_dir = os.path.dirname(os.path.abspath(__file__))
+    unit_dir = simlib.unit_dir(u)
+    log_path = os.path.join(unit_dir, "logs", "android_mirror.log")
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    lf = open(log_path, "ab")
+    # embed RUN_DIR in argv so pid_is_ours / stray sweep recognise it
+    return subprocess.Popen(
+        ["python3", os.path.join(engine_dir, "android.py"), "mirror",
+         u["sim"], u["name"], run_dir],
+        stdout=lf, stderr=subprocess.STDOUT, start_new_session=True)
+
+
+# ---------------------------------------------------------------- doctor
+
+
+def doctor_rows(d, required=False, probe=False):
+    """./sim doctor rows for Android units (mirrors esp32.doctor_rows)."""
+    adb = simlib.setting("ANDROID_SERIAL")
+    host = host_ip()
+    adb_bin = shutil_which("adb")
+    if not adb_bin:
+        (d.missing if required else d.optional)(
+            "adb", "adb not on PATH",
+            "install Android platform-tools")
+        return
+    d.ok("adb", adb_bin)
+    d.check("ANDROID_HOST_IP", bool(host), host or "",
+            "set ANDROID_HOST_IP in sim.local.env to the dev host LAN IP",
+            required=required)
+    if not adb:
+        (d.missing if required else d.optional)(
+            "ANDROID_SERIAL", "not set",
+            "set ANDROID_SERIAL in sim.local.env")
+        return
+    r = subprocess.run(["adb", "-s", adb, "get-state"],
+                       capture_output=True, text=True, timeout=10)
+    if not (r.returncode == 0 and r.stdout.strip() == "device"):
+        (d.missing if required else d.optional)(
+            f"device {adb}", "not connected",
+            "adb connect / check cable + usb debugging")
+        return
+    d.ok(f"device {adb}", "connected")
+    if probe:
+        r = subprocess.run(["adb", "-s", adb, "shell", "pm", "path", APP_PKG],
+                           capture_output=True, text=True, timeout=10)
+        d.check("andruav app", APP_PKG in r.stdout,
+                "installed", "install the debug APK on the device",
+                required=required)
+
+
+def shutil_which(cmd):
+    for p in os.environ.get("PATH", "").split(os.pathsep):
+        c = os.path.join(p, cmd)
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return c
+    return None
+
+
+def main(argv):
+    if len(argv) >= 4 and argv[0] == "mirror":
+        _, sim_name, unit_name, run_dir = argv[:4]
+        m = simlib.load_manifest(sim_name)
+        u = next(x for x in m["units"] if x["name"] == unit_name)
+        mirror_loop(u, simlib.unit_dir(u))
+        return 0
+    print(__doc__)
+    return 2
+
+
+if __name__ == "__main__":
+    import sys
+    sys.exit(main(sys.argv[1:]))

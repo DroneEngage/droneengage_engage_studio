@@ -600,7 +600,7 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
                             "account", "add_modules", "role", "fcb_proxy",
                             "fcb_link", "fc_client", "faketime",
-                            "udp_proxy", "link_proxy"}
+                            "udp_proxy", "link_proxy", "android"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -1140,6 +1140,9 @@ def _expand_unit(sim, b, name, entry, at, catalog):
          "config": copy.deepcopy(b["config"]),
          "parm_files": list(b["parm_files"]),
          "location": None, "role": entry.get("role"),
+         # SL-0095: modules listed in android.remote_modules run on an
+         # adb-connected phone (engine/android.py), not as local procs
+         "android": None,
          # SL-0014: launch de_comm under libfaketime so `ctl clock_step`
          # can skew its clock (FAKETIME_TIMESTAMP_FILE)
          "faketime": bool(entry.get("faketime"))}
@@ -1475,6 +1478,20 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             f"unit {u['name']}: `faketime: true` needs libfaketime - "
             "apt install libfaketime, or set SIM_FAKETIME_LIB in "
             "sim.local.env")
+    spec = entry.get("android")
+    if spec is not None:
+        if not isinstance(spec, dict):
+            raise SimError(f"unit {name}: android must be a mapping "
+                           "({serial, remote_modules})")
+        remote = list(spec.get("remote_modules") or [])
+        unknown = [m for m in remote if m not in u["modules"]]
+        if unknown:
+            raise SimError(f"unit {name}: android.remote_modules "
+                           f"{unknown} not in the unit's modules "
+                           f"({u['modules']})")
+        u["android"] = {"serial": spec.get("serial"),
+                        "remote_modules": remote,
+                        "device_ip": None, "clock_offset_ms": 0}
     return u
 
 
@@ -2065,6 +2082,13 @@ def gen_unit(u, sim, catalog):
             os.remove(p)
     srv = sim["server"]
 
+    if u.get("android") and not u["android"].get("device_ip"):
+        # filled in by launcher.up before generate(); probing here too so
+        # `./sim show` / direct gen on a connected device stays correct
+        import android as _android
+        if _android.adb_ok(u):
+            u["android"]["device_ip"] = _android.device_ip(u)
+
     # ---- de_comm ----
     cfg = load_config(os.path.join(TEMPLATES_DIR, "de_comm.json"))
     cfg = deep_merge(cfg, u["config"].get("de_comm"))
@@ -2097,6 +2121,17 @@ def gen_unit(u, sim, catalog):
                     "local_comm_server_port":
                         u["link_proxy"]["port"]
                         if u.get("link_proxy") else srv["port"]})
+    if u.get("android") and "de_comm" in u["android"]["remote_modules"]:
+        # SL-0095: de_comm runs on the phone - it dials the host's
+        # servers over the LAN, and listens on the phone for any
+        # host-side modules of the same unit
+        import android as _android
+        hip = _android.host_ip()
+        if hip:
+            if srv["auth"]:
+                cfg["auth_ip"] = hip
+            else:
+                cfg["local_comm_server_ip"] = hip
     if not u["fc"]:
         p = u["position"]
         cfg["location"] = {
@@ -2193,6 +2228,14 @@ def gen_unit(u, sim, catalog):
             ctx["fcb_connection_uri"] = {"ip": "127.0.0.1",
                                          "port": ctx["fcb_connect_port"],
                                          "type": "tcp"}
+        # SL-0095: a phone-side de_mavlink dials the host's fcb port over
+        # the LAN (SITL already binds INADDR_ANY - HIL.md Q1)
+        if u.get("android") and "de_mavlink" in u["android"]["remote_modules"]:
+            import android as _android
+            if _android.host_ip():
+                ctx["fcb_connection_uri"] = {
+                    "ip": _android.host_ip(),
+                    "port": ctx["fcb_connect_port"], "type": "tcp"}
     for m in u["modules"]:
         if m == "de_comm":
             continue
@@ -2216,10 +2259,23 @@ def gen_unit(u, sim, catalog):
         # of de_comm's - engine wiring, so block/unit overlays cannot
         # break it either way
         target = u["ports"].get("udp_proxy_" + m, u["ports"]["de_comm"])
+        target_ip = "127.0.0.1"
+        listen_ip = "127.0.0.1"
+        if u.get("android"):
+            import android as _android
+            remote = u["android"]["remote_modules"]
+            if m in remote:
+                # phone-side module -> host-side de_comm over the LAN
+                target_ip = _android.host_ip() or target_ip
+                listen_ip = "0.0.0.0"
+            elif "de_comm" in remote and u["android"].get("device_ip"):
+                # de_comm is on the phone - a host-side module of the
+                # same unit must dial the phone
+                target_ip = u["android"]["device_ip"]
         mcfg.update({
-            "s2s_udp_target_ip": "127.0.0.1",
+            "s2s_udp_target_ip": target_ip,
             "s2s_udp_target_port": str(target),
-            "s2s_udp_listening_ip": "127.0.0.1",
+            "s2s_udp_listening_ip": listen_ip,
             "s2s_udp_listening_port": str(u["ports"][m]),
             "use_unix_socket": False,
         })
@@ -2480,10 +2536,17 @@ def gen_server(sim):
         return ["fake_server"]
 
     ssl_dir = os.path.join(SERVER_REPO, "ssl_local")
+    # SL-0095: phone-side units dial the host over the LAN - the spawned
+    # servers must bind all interfaces and advertise the host IP
+    import android as _android
+    has_remote = any(u.get("android") for u in sim["units"])
+    host_ip = _android.host_ip() if has_remote else None
+
     if srv["auth"]:
         acfg = load_config(os.path.join(AUTH_REPO, "server.config"))
         acfg.update({
-            "server_ip": "127.0.0.1", "server_port": srv["auth_port"],
+            "server_ip": "0.0.0.0" if has_remote else "127.0.0.1",
+            "server_port": srv["auth_port"],
             "account_storage_type": "single",
             "single_account_user_name": srv["account"]["user"],
             "single_account_access_code": srv["account"]["code"],
@@ -2504,8 +2567,9 @@ def gen_server(sim):
 
     scfg = load_config(os.path.join(SERVER_REPO, "server.config"))
     scfg.update({
-        "server_ip": "127.0.0.1", "server_port": srv["port"],
-        "public_host": "127.0.0.1",
+        "server_ip": "0.0.0.0" if has_remote else "127.0.0.1",
+        "server_port": srv["port"],
+        "public_host": host_ip or "127.0.0.1",
         "local_server_enabled": not srv["auth"],
         "s2s_ws_target_ip": "127.0.0.1",
         "s2s_ws_target_port": str(srv["auth_s2s_port"]),
@@ -2579,7 +2643,10 @@ def gen_server(sim):
 
 
 def binaries_needed(sim, catalog):
-    out = {resolve_bin("de_comm")}
+    out = set()
+    if any("de_comm" not in ((u.get("android") or {}).get("remote_modules")
+                             or []) for u in sim["units"]):
+        out.add(resolve_bin("de_comm"))
     if sim["server"]["type"] == "real":
         out.add(os.path.join(SERVER_REPO, "src", "server.js"))
         if sim["server"]["auth"]:
@@ -2587,8 +2654,9 @@ def binaries_needed(sim, catalog):
         if sim["server"].get("udp_relay"):
             out.add(os.path.join(UDP_RELAY_REPO, "src", "server.js"))
     for u in sim["units"]:
+        remote = set((u.get("android") or {}).get("remote_modules") or [])
         for m in u["modules"]:
-            if m != "de_comm":
+            if m != "de_comm" and m not in remote:
                 out.add(resolve_bin(m, catalog[m]))
         if u["fc"]:
             out.add(os.path.join(ARDUPILOT_DIR, "build", "sitl", "bin",
@@ -2951,6 +3019,16 @@ def _merge_by_time(per_file):
     return [k[3] for k in keyed]
 
 
+def _journal_shift(u, lines):
+    """SL-0095: a phone-side de_comm stamps journal lines with the device
+    clock - subtract the offset measured at `up` so cross-unit timing
+    asserts stay honest (HIL.md Q4)."""
+    off = int((u.get("android") or {}).get("clock_offset_ms") or 0)
+    if not off:
+        return lines
+    return [(ln[0] - off,) + ln[1:] for ln in lines]
+
+
 def journal_lines(u, since=None):
     """[(unix_ms, engine, mission, seq, kind, msg, file)] in event-time
     order across every journal file of the unit."""
@@ -2960,7 +3038,7 @@ def journal_lines(u, since=None):
         with open(f, errors="replace") as fh:
             fh.seek(off)
             per_file.append([_parse_journal_line(ln, f) for ln in fh])
-    return _merge_by_time(per_file)
+    return _journal_shift(u, _merge_by_time(per_file))
 
 
 def journal_read_new(u, offsets):
@@ -2984,7 +3062,7 @@ def journal_read_new(u, offsets):
         text = data[:end].decode(errors="replace")
         per_file.append([_parse_journal_line(ln, f)
                          for ln in text.splitlines()])
-    return _merge_by_time(per_file)
+    return _journal_shift(u, _merge_by_time(per_file))
 
 
 def line_hit(ln, rx):
