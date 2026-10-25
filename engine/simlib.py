@@ -2265,8 +2265,12 @@ def gen_unit(u, sim, catalog):
             import android as _android
             remote = u["android"]["remote_modules"]
             if m in remote:
-                # phone-side module -> host-side de_comm over the LAN
-                target_ip = _android.host_ip() or target_ip
+                if "de_comm" in remote:
+                    # same phone - s2s stays on the device loopback
+                    target_ip = "127.0.0.1"
+                else:
+                    # phone-side module -> host-side de_comm over LAN
+                    target_ip = _android.host_ip() or target_ip
                 listen_ip = "0.0.0.0"
             elif "de_comm" in remote and u["android"].get("device_ip"):
                 # de_comm is on the phone - a host-side module of the

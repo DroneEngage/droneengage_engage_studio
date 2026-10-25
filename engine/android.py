@@ -12,6 +12,7 @@ works unchanged, and ./sim doctor rows.
 """
 
 import os
+import re
 import subprocess
 import time
 
@@ -52,13 +53,14 @@ def is_remote(u, proc):
     return proc in remote_modules(u)
 
 
-def _adb(u, *args, timeout=30):
+def _adb(u, *args, timeout=30, binary=False):
     cmd = ["adb"]
     serial = serial_of(u)
     if serial:
         cmd += ["-s", serial]
     cmd += list(args)
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    return subprocess.run(cmd, capture_output=True,
+                          text=not binary, timeout=timeout)
 
 
 def adb_ok(u):
@@ -114,7 +116,22 @@ def push_module_config(u, mod, module_dir):
     if r.returncode != 0:
         raise RuntimeError(f"adb mkdir {dest} failed: {r.stderr.strip()}")
     if os.path.exists(cfg):
-        r = _adb(u, "push", cfg, f"{dest}/{mod}.config.module.json")
+        # host-absolute state paths mean nothing on the phone - the
+        # module workdir is files/<mod>/, so make them relative
+        import json as _json
+        cfg_obj = _json.loads(re.sub(r"//[^\n]*", "", open(cfg).read()))
+        for k in ("de_journal_dir", "de_plan_file", "de_package_file",
+                  "de_run_file"):
+            if k in cfg_obj:
+                cfg_obj[k] = os.path.basename(cfg_obj[k])
+        if "de_journal_dir" in cfg_obj:
+            cfg_obj["de_journal_dir"] = "journal/"
+        import tempfile
+        fd, tmp = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w") as fh:
+            _json.dump(cfg_obj, fh, indent=1)
+        r = _adb(u, "push", tmp, f"{dest}/{mod}.config.module.json")
+        os.unlink(tmp)
         if r.returncode != 0:
             raise RuntimeError(f"adb push {mod} config failed: {r.stderr.strip()}")
     if os.path.exists(local):
@@ -160,7 +177,7 @@ def _tar_pull(u, mod, unit_dir):
     os.makedirs(dest, exist_ok=True)
     r = _adb(u, "exec-out", "run-as", APP_PKG,
              "tar", "-cf", "-", "-C", DEVICE_FILES, mod,
-             timeout=60)
+             timeout=60, binary=True)
     if not (r.returncode == 0 and r.stdout):
         return False
     out = subprocess.run(["tar", "-xf", "-", "-C", dest],
@@ -169,7 +186,7 @@ def _tar_pull(u, mod, unit_dir):
         # device files/de_comm/journal/*.log -> unit_dir/journal/*.log
         r2 = _adb(u, "exec-out", "run-as", APP_PKG,
                   "tar", "-cf", "-", "-C", f"{DEVICE_FILES}/de_comm",
-                  "journal", timeout=60)
+                  "journal", timeout=60, binary=True)
         if r2.returncode == 0 and r2.stdout:
             subprocess.run(["tar", "-xf", "-", "-C", unit_dir],
                            input=r2.stdout, capture_output=True)
