@@ -616,22 +616,25 @@ async def serve(port, cert, key):
     import websockets
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert, key)
-    async with websockets.serve(handler, "127.0.0.1", port, ssl=ctx,
+    async with websockets.serve(handler, BIND, port, ssl=ctx,
                                 compression=None, ping_interval=None):
         # same 64 KiB readline cap as gcs_bridge: `send` lines carry
         # whole packages, give them real headroom
-        ctl = await asyncio.start_server(control_reader, "127.0.0.1",
+        ctl = await asyncio.start_server(control_reader, BIND,
                                          port + 1, limit=16 << 20)
-        print(f"[server] wss on 127.0.0.1:{port}, control on {port + 1}, "
+        print(f"[server] wss on {BIND}:{port}, control on {port + 1}, "
               f"seed={SEED}", flush=True)
         async with ctl:
             await asyncio.Future()          # run forever
 
 
 def main():
-    global PRETTY, SEED, PORT, CLOCK_OFFSET_MS, NOCLOCK, SIM_NAME
+    global PRETTY, SEED, PORT, CLOCK_OFFSET_MS, NOCLOCK, SIM_NAME, BIND
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=fleet_lib.SERVER_PORT)
+    ap.add_argument("--bind", default="127.0.0.1",
+                    help="wss+control bind address - 0.0.0.0 when a sim "
+                         "unit runs off-host (SL-0095 android)")
     ap.add_argument("--sim", default=None,
                     help="sim name - its var/run/<name>/sim.json is the unit list")
     ap.add_argument("--cert", default=None)
@@ -645,6 +648,7 @@ def main():
     ap.add_argument("--pretty", action="store_true")
     args = ap.parse_args()
     PRETTY, SEED, PORT = args.pretty, args.seed, args.port
+    BIND = args.bind
     SIM_NAME = args.sim
     CLOCK_OFFSET_MS = args.clock_offset
     NOCLOCK = {p for p in args.noclock.split(",") if p}

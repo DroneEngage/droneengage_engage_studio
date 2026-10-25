@@ -1500,6 +1500,19 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         u["android"] = {"serial": spec.get("serial"),
                         "remote_modules": remote,
                         "device_ip": None, "clock_offset_ms": 0}
+    # AN-0037 test hook: SIM_ANDROID_MODULES="de_comm[,...]" forces the
+    # fleet's FIRST unit to run those modules on the adb device - lets
+    # the unmodified suite files exercise a phone-side de_comm
+    env_mods = os.environ.get("SIM_ANDROID_MODULES")
+    if env_mods and u["android"] is None \
+            and u["slot"] == sim["slot_base"]:
+        remote = [m.strip() for m in env_mods.split(",") if m.strip()]
+        unknown = [m for m in remote if m not in u["modules"]]
+        if unknown:
+            raise SimError(f"unit {name}: SIM_ANDROID_MODULES {unknown} "
+                           f"not in the unit's modules ({u['modules']})")
+        u["android"] = {"serial": None, "remote_modules": remote,
+                        "device_ip": None, "clock_offset_ms": 0}
     return u
 
 
@@ -2544,6 +2557,9 @@ def gen_server(sim):
             extra += " --clock-offset %d" % srv["clock_offset_ms"]
         if srv["noclock"]:
             extra += " --noclock " + ",".join(srv["noclock"])
+        # SL-0095: remote android units dial the host over the LAN
+        if any(u.get("android") for u in sim["units"]):
+            extra += " --bind 0.0.0.0"
         write_text(os.path.join(sdir, "launch.fake_server.sh"),
                    "#!/bin/bash\necho $$ > '%s'\nexec python3 -u '%s' --port %d "
                    "--seed %d --cert '%s' --key '%s' --sim '%s'%s --pretty\n"
