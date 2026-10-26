@@ -393,7 +393,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         if not port_busy(port, host, timeout=5):
             sys.exit(simlib.col_red(
                 f"cannot reach the external server at {host}:{port} - "
-                "start your servers (servers/sh_start_servers.sh) or "
+                "start your servers (./sim up de_servers) or "
                 "fix the sim's server: block"))
     else:
         busy = [p for p in ([srv["port"], srv["control_port"]]

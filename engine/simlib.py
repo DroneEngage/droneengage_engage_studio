@@ -117,6 +117,7 @@ COMM_REPO = repo_dir("DE_COMM_DIR", "droneengage_communication")
 SERVER_REPO = repo_dir("DE_SERVER_DIR", "droneengage_server")
 AUTH_REPO = repo_dir("DE_AUTH_DIR", "droneengage_authenticator")
 UDP_RELAY_REPO = repo_dir("DE_UDP_RELAY_DIR", "droneengage_udp_proxy")
+STORAGE_REPO = repo_dir("DE_STORAGE_DIR", "droneengage_storage_server")
 WEBCLIENT_REPO = repo_dir("DE_WEBCLIENT_DIR", "droneengage_webclient_react")
 # P5-14: Mavlink3DMap2 lives inside the DE_CODE tree; only needed for
 # render modes that launch the viewer

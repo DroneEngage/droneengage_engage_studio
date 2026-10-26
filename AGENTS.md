@@ -273,7 +273,11 @@ and make `ctl.ctrl` refuse it for that server type.
   hits several live sims is ambiguous: `find_unit` raises and ctl
   requires `-s <sim>` rather than guessing.
 - `server: {type: external}` spawns no server - the sim's units and GCS
-  bridge join a server stack the user runs. Its `account` (or
+  bridge join a server stack the user runs (`./sim up de_servers`
+  starts it: the four servers from their repos' own configs, tracked
+  under var/servers/ - infrastructure, not a sim, so `down`/`run`/
+  `clean` never sweep it; only `./sim down de_servers` stops it). Its
+  `account` (or
   `SIM_AUTH_USER`/`SIM_AUTH_CODE` in `sim.local.env`, or `./sim --user`/
   `--password`/`--auth-server` on the command line - they win over both)
   must exist on that authenticator; with `account_storage_type: db`

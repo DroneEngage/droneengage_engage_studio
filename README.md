@@ -217,8 +217,13 @@ Server types:
 | `{type: fake}` | `engine/fake_fleet_server.py` | seeded per-link loss / delay / cut plus the SL-0007 link model: per-direction loss, Gilbert-Elliot bursts (drop or in-order stall), bandwidth cap, jitter, named profiles |
 | `{type: external, host, port}` | nothing - your own running server stack | personal sims on your real servers |
 
-`external` is for sims that join a server stack you run yourself (e.g.
-`servers/sh_start_servers.sh`): no server processes are spawned, every
+`external` is for sims that join a server stack you run yourself (start
+it with `./sim up de_servers` - the headless
+`servers/sh_start_servers.sh`: auth, comm, storage and udp_proxy run
+from their repos' own `server.config(.local)` on the real ports; it is
+infrastructure, not a sim, so `down`/`run`/`clean` never touch it and
+only `./sim down de_servers` stops it): no server processes are
+spawned, every
 unit's de_comm connects to `host:port` - directly when `auth: false`, or
 through your authenticator when `auth: true, auth_host, auth_port` are
 set. Two logins, both on the **same team** or the GCS won't see the
