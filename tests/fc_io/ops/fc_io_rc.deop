@@ -1,0 +1,34 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "fc_io_rc",
+    "comment": "MV-0020 rc_switch: the fc_io.rc_7 events are declared so operator/rc override edges republish and latch; the single manual mission never activates (same shape as snd_fire).",
+    "roles": {
+        "node": {
+            "count": 1,
+            "vehicle": "copter",
+            "requires": [
+                "fc_io"
+            ]
+        }
+    },
+    "events": {
+        "fc_io.rc_7.went_on": {},
+        "fc_io.rc_7.went_off": {},
+        "fc_io.idle_tick": {}
+    },
+    "missions": {
+        "node": {
+            "idle": {
+                "trigger": "manual",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "tick",
+                        "emit": "fc_io.idle_tick"
+                    }
+                ]
+            }
+        }
+    }
+}

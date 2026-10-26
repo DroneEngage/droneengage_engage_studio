@@ -1,0 +1,33 @@
+# fc_io/rc_switch - MV-0020 acceptance: an RC override drives
+# RC_CHANNELS chan7_raw above the configured 1700 us threshold; the
+# provider's debounced input path emits fc_io.rc_7.went_on with
+# src:"input". Releasing the override drops the channel back and
+# went_off latches.
+version: 1
+name: fc_io_rc_switch
+transport: fake
+operation: ops/fc_io_rc.deop
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: uav1, cls: copter_fc_io}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: start, timeout: 300}
+  # drive chan7 to 1800 (> 1700 threshold) -> debounced went_on
+  - {t: 30, fault: rc_override, unit: uav1, chan: 7, pwm: 1800, dur_s: 20}
+  - {t: 35, do: wait_journal, unit: uav1,
+     re: "EVENT_IN event fc_io\\.rc_7\\.went_on latched", timeout: 60}
+  - {t: 60, do: wait_journal, unit: uav1,
+     re: "EVENT_IN event fc_io\\.rc_7\\.went_off latched", timeout: 60}
+  - {t: 70, do: stop}
+assert:
+  - journal_count: {unit: uav1,
+                    re: "EVENT_IN event fc_io\\.rc_7\\.went_on latched",
+                    equals: 1}
+  - journal_count: {unit: uav1,
+                    re: "EVENT_IN event fc_io\\.rc_7\\.went_off latched",
+                    at_least: 1}
+teardown: none

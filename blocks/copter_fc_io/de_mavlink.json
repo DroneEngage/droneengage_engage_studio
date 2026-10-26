@@ -1,0 +1,7 @@
+{
+    // B9: fc_io named resources (MV-0020) - relay_0 out, rc_7 in
+    "fc_io_pins": [
+        { "kind": "relay", "index": 0, "pulse_ms": 500 },
+        { "kind": "rc", "index": 7, "threshold": 1700, "debounce_ms": 50 }
+    ]
+}

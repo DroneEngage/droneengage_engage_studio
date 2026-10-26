@@ -1,0 +1,41 @@
+# fc_io/relay_pulse - MV-0020 acceptance: a mission `do` step invokes
+# the per-resource action fc_io.relay_0 {on:true, pulse_ms:500}; the
+# provider's single write choke point asserts MAV_CMD_DO_SET_RELAY(0,on)
+# and restores after 500 ms - went_on then went_off latch on the
+# supervisor.
+version: 1
+name: fc_io_relay_pulse
+transport: fake
+operation: ops/fc_io_pulse.deop
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: uav1, cls: copter_fc_io}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: uav1,
+     re: "S: pulse do fc_io\\.relay_0", timeout: 120}
+  - {t: 35, do: wait_journal, unit: uav1,
+     re: "EVENT_IN event fc_io\\.relay_0\\.went_on latched", timeout: 60}
+  - {t: 40, do: wait_journal, unit: uav1,
+     re: "EVENT_IN event fc_io\\.relay_0\\.went_off latched", timeout: 60}
+  - {t: 50, do: wait_journal, unit: uav1,
+     re: "S: pulse emit fc_io\\.probe_done", timeout: 60}
+  - {t: 60, do: stop}
+assert:
+  - journal_count: {unit: uav1, re: "S: pulse activated", equals: 1}
+  - journal_count: {unit: uav1,
+                    re: "ACTION_RESULT .* ok \\(fc_io\\.relay_0\\)",
+                    at_least: 1}
+  - journal_count: {unit: uav1,
+                    re: "EVENT_IN event fc_io\\.relay_0\\.went_on latched",
+                    equals: 1}
+  - journal_count: {unit: uav1,
+                    re: "EVENT_IN event fc_io\\.relay_0\\.went_off latched",
+                    equals: 1}
+  - journal_count: {unit: uav1, re: "S: pulse emit fc_io\\.probe_done",
+                    equals: 1}
+teardown: none

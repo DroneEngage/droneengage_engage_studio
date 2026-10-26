@@ -1,0 +1,5 @@
+description: |
+  Copter with the fc_io surface (B9 / MV-0020): de_mavlink advertises
+  ns "fc_io" with relay_0 (MAV_CMD_DO_SET_RELAY 0) and rc_7 (RC_CHANNELS
+  chan7_raw >= 1700 us, debounced) as resources.
+extends: copter

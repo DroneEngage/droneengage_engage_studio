@@ -1,0 +1,43 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "fc_io_pulse",
+    "comment": "MV-0020 relay_pulse: one do step fc_io.relay_0 {on:true, pulse_ms:500} invokes the per-resource action; the provider asserts DO_SET_RELAY then restores it - went_on then went_off with src invoke/pulse.",
+    "roles": {
+        "node": {
+            "count": 1,
+            "vehicle": "copter",
+            "requires": [
+                "fc_io"
+            ]
+        }
+    },
+    "events": {
+        "fc_io.relay_0.went_on": {},
+        "fc_io.relay_0.went_off": {},
+        "fc_io.probe_done": {}
+    },
+    "missions": {
+        "node": {
+            "pulse": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "p",
+                        "do": "fc_io.relay_0",
+                        "with": {
+                            "on": true,
+                            "pulse_ms": 500
+                        },
+                        "timeout": 10
+                    },
+                    {
+                        "id": "done",
+                        "emit": "fc_io.probe_done"
+                    }
+                ]
+            }
+        }
+    }
+}

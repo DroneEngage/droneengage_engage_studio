@@ -1,0 +1,174 @@
+{
+ "_note": "MV-0020: the sim unit\u2019s serialized capability view (the 1089 m_Capabilities object a UNIT_CAPABILITIES report carries), generated offline from fcioBuildAdvert() for the blocks/copter_fc_io pin set (de_mavlink.json: relay_0 + rc_7). Same role as gpio.unit.caps.json: compile_op.js --caps resolves do fc_io.* against it and the ctx sidecars feed verify_wrap.js.",
+ "caps": {
+  "fc_io": {
+   "ch": "c1",
+   "module": "uav1-de_mavlink",
+   "ver": "7.5.1.0",
+   "advert": {
+    "actions": {
+     "pulse": {
+      "desc": "assert a relay, wait length_ms, restore",
+      "params": {
+       "length_ms": {
+        "max": 4000,
+        "min": 1,
+        "type": "int"
+       },
+       "pin": {
+        "desc": "resource key (relay_0, servo_9, rc_7, or a configured name)",
+        "type": "string"
+       }
+      }
+     },
+     "relay_0": {
+      "claim": "action",
+      "desc": "switch 'relay_0' on/off, or pulse it",
+      "params": {
+       "on": {
+        "desc": "logical level (active_low aware)",
+        "type": "bool"
+       },
+       "pulse_ms": {
+        "desc": "pulse instead: assert, wait, restore",
+        "max": 4000,
+        "min": 1,
+        "optional": true,
+        "type": "int"
+       }
+      },
+      "timeout_s": 5
+     },
+     "write": {
+      "desc": "set a relay (value 0/1) or a servo (value = width 0..1024)",
+      "params": {
+       "pin": {
+        "desc": "resource key (relay_0, servo_9, rc_7, or a configured name)",
+        "type": "string"
+       },
+       "value": {
+        "max": 1024,
+        "min": 0,
+        "type": "int"
+       }
+      }
+     }
+    },
+    "desc": "events: fc_io.<key>.went_on|went_off|changed {v,src}; commands: fc_io.<key>.on|off|toggle|pulse{ms}|set{v}",
+    "event_patterns": {
+     "*.changed": {
+      "kind": "fact",
+      "payload": {
+       "src": {
+        "desc": "the change cause",
+        "type": "string"
+       },
+       "v": {
+        "desc": "level for relay/rc, width for servo",
+        "type": "int"
+       }
+      },
+      "res": [
+       "pwm"
+      ]
+     },
+     "*.off": {
+      "kind": "command",
+      "res": [
+       "out",
+       "pwm"
+      ]
+     },
+     "*.on": {
+      "kind": "command",
+      "res": [
+       "out",
+       "pwm"
+      ]
+     },
+     "*.pulse": {
+      "kind": "command",
+      "payload": {
+       "ms": {
+        "desc": "assert, wait, restore",
+        "max": 4000,
+        "min": 1,
+        "optional": true,
+        "type": "int"
+       }
+      },
+      "res": [
+       "out"
+      ]
+     },
+     "*.set": {
+      "kind": "command",
+      "payload": {
+       "v": {
+        "desc": "servo width, mapped onto min_us..max_us",
+        "max": 1024,
+        "min": 0,
+        "type": "int"
+       }
+      },
+      "res": [
+       "pwm"
+      ]
+     },
+     "*.toggle": {
+      "kind": "command",
+      "res": [
+       "out"
+      ]
+     },
+     "*.went_off": {
+      "kind": "fact",
+      "payload": {
+       "src": {
+        "desc": "the change cause",
+        "type": "string"
+       },
+       "v": {
+        "desc": "level for relay/rc, width for servo",
+        "type": "int"
+       }
+      }
+     },
+     "*.went_on": {
+      "kind": "fact",
+      "payload": {
+       "src": {
+        "desc": "the change cause",
+        "type": "string"
+       },
+       "v": {
+        "desc": "level for relay/rc, width for servo",
+        "type": "int"
+       }
+      }
+     }
+    },
+    "module": "droneengage_mavlink",
+    "ns": "fc_io",
+    "resources": {
+     "rc_7": "in",
+     "relay_0": "out"
+    },
+    "schema": "de.cap/1",
+    "state": {
+     "rc_7": {
+      "desc": "level",
+      "type": "int"
+     },
+     "relay_0": {
+      "desc": "level",
+      "type": "int"
+     }
+    },
+    "ver": "7.5.1.0"
+   }
+  }
+ },
+ "state": {},
+ "t": 0
+}
