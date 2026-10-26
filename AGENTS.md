@@ -276,7 +276,10 @@ and make `ctl.ctrl` refuse it for that server type.
   bridge join a server stack the user runs (`./sim up de_servers`
   starts it: the four servers from their repos' own configs, tracked
   under var/servers/ - infrastructure, not a sim, so `down`/`run`/
-  `clean` never sweep it; only `./sim down de_servers` stops it). Its
+  `clean` never sweep it; only `./sim down de_servers` stops it).
+  `./sim up de_webclient` is the same kind of devstack for the
+  webclient's `npm start` dev server (var/webclient/, `--open-web`
+  opens SIM_WEBCLIENT_URL). Its
   `account` (or
   `SIM_AUTH_USER`/`SIM_AUTH_CODE` in `sim.local.env`, or `./sim --user`/
   `--password`/`--auth-server` on the command line - they win over both)
