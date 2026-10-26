@@ -449,8 +449,10 @@ One versioned file rehearses a whole operation on the desk - fleet,
 operation, operator policy, scripted timeline, faults, assertions:
 
 ```
-./sim run tests/faults/link_cut.yaml                    # one scenario
-./sim run tests/faults/link_cut.yaml --seed 7           # a seed run
+./sim run tests/faults/link_cut.yaml                    # one scenario - the
+                                                        # file's `seed:` applies
+./sim run tests/faults/link_cut.yaml --seed 7           # a seed run (overrides
+                                                        # the file's `seed:`)
 ./sim suite tests/faults --seeds 1,2                    # suite x seeds
 ./sim view scenarios/demos/world_canopy_viewer.yaml     # sim + Mavlink3DMap
                                                         # viewer, held till Ctrl-C

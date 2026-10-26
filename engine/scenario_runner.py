@@ -1558,7 +1558,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
     return 0 if ok and n_fail == 0 else 1
 
 
-def run(t_file, keep=False, hold=False, seed=1, record=None,
+def run(t_file, keep=False, hold=False, seed=None, record=None,
         open_web=False):
     """`./sim run` dispatcher: scenarios -> the de.scenario/1 engine (a
     bare sims/*.yaml file has no steps - it is just ensured up, additive
@@ -1607,7 +1607,9 @@ def run_suite(suite_dir, seeds, keep=False):
     for f in files:
         for s in seeds:
             p = os.path.join(suite_dir, f)
-            print(f"\n######## {f} seed={s} ########", flush=True)
+            # SL-0071: s=None -> the file's own `seed:` applies
+            tag = s if s is not None else "file"
+            print(f"\n######## {f} seed={tag} ########", flush=True)
             rc = run_scenario(p, seed=s, keep=keep)
             runs.append({"file": f, "seed": s, "exit": rc})
     ok = all(r["exit"] == 0 for r in runs)
@@ -1622,7 +1624,8 @@ def main(argv):
     keep = "--keep" in argv
     hold = "--hold" in argv
     argv = [a for a in argv if a not in ("--keep", "--hold")]
-    seeds = [1]
+    # SL-0071: None lets the file's `seed:` apply; --seed/--seeds override
+    seeds = [None]
     suite = None
     t_file = None
     i = 0

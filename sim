@@ -49,7 +49,8 @@ blocks. DroneEngage is the flagship integration (not the owner).
                                    opens the webclient link once the sim
                                    is up (with --hold/--view or a bare
                                    sims file - a plain run tears it down
-                                   again).
+                                   again). Seed: the file's `seed:`
+                                   applies; --seed N overrides it.
                                    --module <name>=<abs path> (repeatable)
                                    swaps a catalog module / de_comm binary
                                    for this run only: same fleet spec ->
@@ -548,7 +549,8 @@ def main(argv):
         elif c in ("run", "try"):
             import scenario_runner
             a, mods = _module_overrides(a)
-            seed = 1
+            # SL-0071: None lets the file's `seed:` apply; --seed overrides
+            seed = None
             if "--seed" in a:
                 i = a.index("--seed")
                 if i + 1 >= len(a):

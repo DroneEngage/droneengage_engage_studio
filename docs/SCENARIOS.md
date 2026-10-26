@@ -25,8 +25,9 @@ Commands:
 ```bash
 ./sim new my_scenario                       # scaffold scenarios/my_scenario.yaml
 ./sim validate scenarios/my_scenario.yaml   # schema + refs, starts nothing
-./sim run scenarios/my_scenario.yaml        # run it (owns the machine)
-./sim run <file> --seed 7                   # seeded rerun
+./sim run scenarios/my_scenario.yaml        # run it (owns the machine);
+                                            # the file's `seed:` applies
+./sim run <file> --seed 7                   # seeded rerun (overrides `seed:`)
 ./sim expand <file> [--seed N]              # print the chaos: schedule, run nothing
 ./sim view <file>                           # run + hold with the 3D viewer
 ./sim suite tests/faults --seeds 1,2        # a directory x seeds
@@ -42,7 +43,8 @@ Commands:
 # proves. REQUIRED - the first line must be a '#' comment.
 version: 1
 name: my_scenario              # required; [A-Za-z0-9_-] - becomes the run dir
-seed: 42                       # optional; derives ports + fault/world RNG
+seed: 42                       # optional (default 1); derives ports +
+                               # fault/world RNG; `sim run --seed N` overrides
 realtime: false                # true gates timing asserts (SKIP unless SITL ~1x)
                                # AND pins SITL speed-up 1
 speedup: 3                     # SITL --speedup for this run; default 3.

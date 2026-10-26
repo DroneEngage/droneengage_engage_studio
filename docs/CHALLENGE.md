@@ -28,15 +28,15 @@ cp scenarios/challenges/sar_challenge.yaml \
 #   verify:  {cli: ../../../../tools/verify_wrap.js}
 # drop your .deploy.json (+ .pkg.json files) next to scenario.yaml and
 # point `operation:` at it — then:
-./sim run --seed 11 \
-    scenarios/challenges/entries/<your-handle>/scenario.yaml
+./sim run scenarios/challenges/entries/<your-handle>/scenario.yaml
 # copy the RESULT summary.json into your entry dir
 python3 tools/verify_challenge.py \
     scenarios/challenges/entries/<your-handle>
 ```
 
-> `./sim run` takes the seed from `--seed` (default 1) — the file's
-> `seed: 11` marks the contract; the flag is what applies it.
+> `./sim run` takes the seed from the file's `seed:` — the contract's
+> `seed: 11` applies on its own; `--seed N` overrides it when you want
+> a different draw.
 
 A submission directory is `scenario.yaml` + your op files +
 `summary.json`. The verifier checks the scenario is the official one
