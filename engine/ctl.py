@@ -1157,12 +1157,18 @@ def wait_ready(units, timeout, marks=None):
                  if u.get("fc") and "de_comm" in
                  ((u.get("android") or {}).get("remote_modules") or [])}
     if fcb_units:
-        since_ms = int((t0 - 15) * 1000)  # slack vs clock-offset estimate
         t2 = time.time()
         while fcb_units and time.time() - t2 < min(timeout, 90):
             for uname, u in list(fcb_units.items()):
+                # A hello counts only if de_comm journaled it during THIS
+                # process's lifetime - a reused (still alive) de_comm keeps
+                # its registration, so its older hello is already proof.
+                import android as _android
+                proc_ms = _android.module_started_ms(u, "de_comm")
+                if proc_ms is None:
+                    continue
                 if [ln for ln in simlib.journal_match(u, r"nav adapter hello")
-                        if ln[0] >= since_ms]:
+                        if ln[0] >= proc_ms - 5000]:
                     print(simlib.col_green(
                         f"{uname}: remote fcb registered "
                         f"({time.time() - t0:.0f}s)"))

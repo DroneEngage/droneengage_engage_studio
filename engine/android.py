@@ -199,6 +199,17 @@ def wait_module_down(u, mod, timeout_s=8):
     return False
 
 
+def module_started_ms(u, mod):
+    """Device-side epoch ms when the module process started, or None if
+    the process is not running. /proc/<pid> keeps the creation time, so
+    `stat -c %Y` is the process start on the device clock."""
+    r = _adb(u, "shell", "stat", "-c", "%Y",
+             "/proc/$(pidof " + MODULE_PROC[mod] + ")", timeout=10)
+    if r.returncode != 0 or not r.stdout.strip().isdigit():
+        return None
+    return int(r.stdout.strip()) * 1000
+
+
 # ---------------------------------------------------------------- mirror
 
 
