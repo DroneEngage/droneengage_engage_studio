@@ -2649,7 +2649,7 @@ def gen_server(sim):
             "s2s_cert_enabled": False,
             "s2s_shared_secret_file": secret_path,
             "udp_bind_ip": "0.0.0.0",
-            "public_host": "127.0.0.1",
+            "public_host": host_ip or "127.0.0.1",
             "udp_port_range": [int(lo[0]), int(lo[1])],
             "gcs_peer_policy": urelay["gcs_peer_policy"],
             "state_file": os.path.join(sdir, "udp_relay_state.json"),
