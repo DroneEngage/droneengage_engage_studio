@@ -1147,6 +1147,33 @@ def wait_ready(units, timeout, marks=None):
         print(simlib.col_red(f"TIMEOUT: not ready after {timeout}s: "
               + ", ".join(f"{n}.{m}" for n, m in sorted(pending))))
         return False
+    # AN-0058: a phone-side de_comm can satisfy the module ready_res while
+    # its FCB registration (de_mavlink -> 'nav adapter hello') is still in
+    # flight - the unit then classes static and the first deploy fails
+    # 'vehicle type not known yet'. The mirror can also pull a STALE hello
+    # from the device's persistent journal, so gate on a line timestamped
+    # after this wait began (device clock is already shifted to host time).
+    fcb_units = {u["name"]: u for u in units
+                 if u.get("fc") and "de_comm" in
+                 ((u.get("android") or {}).get("remote_modules") or [])}
+    if fcb_units:
+        since_ms = int((t0 - 15) * 1000)  # slack vs clock-offset estimate
+        t2 = time.time()
+        while fcb_units and time.time() - t2 < min(timeout, 90):
+            for uname, u in list(fcb_units.items()):
+                if [ln for ln in simlib.journal_match(u, r"nav adapter hello")
+                        if ln[0] >= since_ms]:
+                    print(simlib.col_green(
+                        f"{uname}: remote fcb registered "
+                        f"({time.time() - t0:.0f}s)"))
+                    del fcb_units[uname]
+            if fcb_units:
+                time.sleep(1)
+        if fcb_units:
+            print(simlib.col_red(
+                "TIMEOUT: remote de_comm units with no fresh FCB "
+                "registration: " + ", ".join(sorted(fcb_units))))
+            return False
     return True
 
 
