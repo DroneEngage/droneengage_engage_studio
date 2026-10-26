@@ -1,0 +1,23 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "test_echo",
+    "comment": "B2c (AN-0061): invoke the andruav_phone 'test_echo.echo' action through the supervisor's `do` step - the app's Java deDatabus capability host (DeAndroidModuleService / TestEchoProvider, debug builds) answers ok with the text echoed back.",
+
+    "roles": {
+        "actor": { "count": 1, "vehicle": "copter", "requires": ["test_echo"] }
+    },
+
+    "missions": {
+        "actor": {
+            "act": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "echo", "do": "test_echo.echo",
+                      "with": { "text": "hi" }, "timeout": 10 }
+                ]
+            }
+        }
+    }
+}

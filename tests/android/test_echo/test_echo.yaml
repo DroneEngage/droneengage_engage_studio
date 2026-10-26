@@ -1,0 +1,64 @@
+# android/test_echo/test_echo - B2c (AN-0061) on-device verification:
+# the app's Java deDatabus capability host (DeAndroidModuleService,
+# module 'andruav_phone', debug APK) registers on the phone-side
+# de_comm of a remote-modules unit, advertises ns test_echo
+# {echo {text:string}} (de.cap/1), and answers the supervisor's
+# `do test_echo.echo {text:'hi'}` invoke with ok + the echoed text.
+#
+# MANUAL PREREQUISITE the runner cannot do for you: the service is an
+# app component, not a sim-managed module - start it once pointing at
+# the unit's de_comm s2s port (default slot_base 10 -> 62100; adjust
+# for --slot-base):
+#
+#   adb -s $ANDROID_SERIAL shell am start-foreground-service \
+#     -a ap.andruav_ap.action.DE_MODULE_START \
+#     -n ardupilot.andruav/ap.andruav_ap.services.DeAndroidModuleService \
+#     --ei s2s_port 62100
+#
+# The module resends its ID every second until de_comm answers, so
+# starting the service before or after `sim up` both register. Logcat
+# then shows 'andruav_phone on 127.0.0.1:<port>' (DeAndroidModuleSvc)
+# and a de_comm handleModuleRegistration for andruav_phone; a
+# GCS 1089 {r:true} probe
+# (./sim ctl -s <sim> opmsg copter1 '{"r":true}' --mt 1089) lists ns
+# test_echo with the advert once registered.
+#
+# Evidence note: the supervisor journals 'ACTION ... -> invoke on
+# andruav_phone' and 'ACTION_RESULT <id> ok (test_echo.echo)'. The
+# invoke's returned data ({text:'hi'}) rides the 6544 result into the
+# supervisor's in-memory m_action_results store but is NOT journaled
+# by de_comm (the ACTION_RESULT journal format prints ok/err + label
+# only), so the asserts below cover ok completion of the invoke, not
+# the payload text.
+version: 1
+name: android_test_echo
+tier: smoke
+transport: real
+realtime: true
+operation: ops/test_echo.deop
+verify: {cli: ../../../tools/verify_wrap.js}
+fleet:
+  - {id: copter1, cls: android_copter,
+     android: {remote_modules: [de_comm, de_mavlink]}}
+timeline:
+  # stop+clear first, per convention: the device supervisor keeps a
+  # package's run state across de_comm restarts (a run killed mid-flight
+  # restores RUNNING with no op bookkeeping an `abort` can match), and a
+  # stale RUNNING run gates PREPARE with 'stop the current run first'
+  - {t: 0, do: stop}
+  - {t: 2, do: clear}
+  - {t: 5, do: deploy}
+  - {t: 10, do: start}
+  - {t: 15, do: wait_journal, unit: copter1, re: "S: act echo ok",
+     timeout: 60}
+  - {t: 25, do: opabort}
+assert:
+  - journal_count: {unit: copter1,
+                    re: "ACTION .* test_echo\\.echo -> invoke on andruav_phone",
+                    equals: 1}
+  - journal_count: {unit: copter1,
+                    re: "ACTION_RESULT .* ok \\(test_echo\\.echo\\)",
+                    equals: 1}
+  - journal_count: {unit: copter1, re: "S: act echo ok", equals: 1}
+  - journal_count: {unit: copter1, re: "failed:", equals: 0}
+teardown: none

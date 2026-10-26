@@ -1,0 +1,34 @@
+{
+  "_note": "B2c ctx: role 'actor' binds copter1, the unit whose de_comm runs inside the Andruav app on the Android device - registries.copter1 is the serialized 1089 caps view the live unit reports once the Java module 'andruav_phone' (DeAndroidModuleService, debug build) has registered and pushed its de.cap/1 advert. compile_op.js --caps resolves 'do test_echo.echo' against this advert; verify_wrap.js checks do-params against the same view. The advert mirrors TestEchoProvider.ADVERT (deDatabus/src/de/databus/caps/TestEchoProvider.java).",
+  "binding": {
+    "actor": [
+      "copter1"
+    ]
+  },
+  "registries": {
+    "copter1": {
+      "caps": {
+        "test_echo": {
+          "advert": {
+            "schema": "de.cap/1",
+            "ns": "test_echo",
+            "module": "andruav_phone",
+            "ver": "1.0.0",
+            "actions": {
+              "echo": {
+                "params": {
+                  "text": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "ch": "1d378d20e8715c30",
+          "module": "andruav_phone",
+          "ver": "1.0.0"
+        }
+      }
+    }
+  }
+}
