@@ -609,13 +609,12 @@ def ensure(sim_src, timeout=180, world_stream=False, exclusive=True):
             remote = set((u.get("android") or {}).get("remote_modules")
                          or [])
             for p in simlib.procs_of(u):
+                need.add(f"{u['name']}.{p}")
                 if p in remote:
                     # lives on the phone - no local pidfile; probe adb
                     import android as _android
                     if _android.module_alive(u, p):
                         alive.add(f"{u['name']}.{p}")
-                else:
-                    need.add(f"{u['name']}.{p}")
         if need <= alive:
             if exclusive:
                 # a test owns the machine on the reuse path too
