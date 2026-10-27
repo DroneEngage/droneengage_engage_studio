@@ -5,7 +5,9 @@ library, run on every push.
   - engine/*.py + run_scenario.py + ci/*.py compile clean
   - every sims/tests/scenarios yaml parses and - for de.scenario/1
     files - loads through engine/scenario.py (schema + fleet expansion)
-  - every packages/*.json parses
+  - every json parses - the shared demo/example ops in packages/
+    plus the test-only fixtures under tests/**/*.json and the
+    scenario jsons under scenarios/**/*.json (the SL-0059 split)
   - every scenario carries the one-paragraph "what it proves" header
 
 Exit 1 on the first class of problems with every offender printed.

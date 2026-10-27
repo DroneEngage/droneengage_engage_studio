@@ -3,7 +3,9 @@
 #   check_library.py  engine/*.py compile, every scenario/sim yaml
 #                     parses, de.scenario/1 files load through
 #                     engine/scenario.py (schema + fleet expansion),
-#                     every packages/*.json parses
+#                     every json parses - shared ops in packages/
+#                     plus test fixtures under tests/ and scenario
+#                     jsons under scenarios/ (the SL-0059 split)
 #   library counts    fails loudly if a library folder is empty so a
 #                     bad checkout can never look green
 #   verb registry     check_verbs.py: every do:/fault:/assert: name
