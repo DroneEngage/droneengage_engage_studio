@@ -1,0 +1,44 @@
+# cpu/cpu_distributed_warning - SL-0067 / GL-0041: the distributed unit
+# CPU watch end to end. de_gpio runs on a fake board (DE_BOARD_ID +
+# DE_PROC_STAT_PATH through the unit `env:` map, file fed by
+# fake_proc_stat) while de_comm keeps the real unit board.
+#
+#   t=5   cpu_load 95 on de_gpio  -> its board crosses 90% ->
+#        unit BECAME_SUPER_BUSY -> one "Unit CPU super busy" warning
+#   t=20  cpu_load 5              -> board drops under 70% ->
+#        one "Unit CPU free" warning
+#   assert: exactly one busy then one free warning in de_comm's log, and
+#        the GCS-side 1008 MI=3 summary lists BOTH boards in CP.b
+version: 1
+name: cpu_distributed_warning
+transport: real
+settle_s: 10
+fleet:
+  - id: node
+    cls: static_gpio
+    config:
+      de_comm: {cpu_monitor: {sustain_s: 3, report_s: 1, summary_s: 5}}
+      de_gpio: {cpu_monitor: {sustain_s: 3, report_s: 1}}
+    env:
+      de_gpio:
+        DE_BOARD_ID: fakeboard
+        DE_PROC_STAT_PATH: "{unit_dir}/fake_proc/stat"
+timeline:
+  - {t: 2,  do: write_file, unit: node, module: de_gpio,
+     path: cpu_load.json, json: {load: 5}}
+  - {t: 5,  do: write_file, unit: node, module: de_gpio,
+     path: cpu_load.json, json: {load: 95}}
+  - {t: 8,  do: wait_log, unit: node, module: de_comm,
+     re: "Unit CPU super busy", timeout: 30}
+  - {t: 20, do: write_file, unit: node, module: de_gpio,
+     path: cpu_load.json, json: {load: 5}}
+  - {t: 23, do: wait_log, unit: node, module: de_comm,
+     re: "Unit CPU free", timeout: 30}
+  - {t: 35, do: wait, seconds: 5}
+assert:
+  - module_log_count: {unit: node, module: de_comm,
+                       re: "sendUnitCpuWarning.*super busy", equals: 1}
+  - module_log_count: {unit: node, module: de_comm,
+                       re: "sendUnitCpuWarning.*Unit CPU free", equals: 1}
+  - gcs_msg: {mt: 1008, secs: 25,
+              re: "(?=.*\"MI\":3)(?=.*\"id\":\"node\")(?=.*\"id\":\"fakeboard\")"}

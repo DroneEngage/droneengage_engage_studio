@@ -430,6 +430,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `fcb_stats` | `unit`, `direction` (`both`\|`c2s`\|`s2c`), `min_bytes` (1), `min_frames` | the unit's fcb proxy counters read live off its ctrl port — did the wire carry MAVLink (SL-0104 host_serial evidence; `bytes` counts always, `frames` while corruption rules are armed) |
 | `bt_no_squatters` | `unit` | no foreign (non-sim, non-root) process holds an RFCOMM socket — a squatter on a `bt_spp` unit's channel accepts the client's dial instead of our bridge (kdeconnectd's SPP listener is the known thief; SL-0105) |
 | `adsb_vehicle` | `icao` (hex/dec), `tid` (world entity), `at_least` (1), `max_m` (50), `log`/`unit` | the GCS bridge (or `log:`/unit proc stdout) saw ≥ `at_least` `ADSB_VEHICLE` frames with this ICAO, each within `max_m` of the entity's truth position at frame time |
+| `gcs_msg` | `mt`, `re`, `secs` (20) | the GCS session receives a message of type `mt` within `secs` whose `ms` body matches `re` (applied to the compact-dumped ms object - use `(?=...)` lookaheads for unordered fields) |
 | `link_offline` | `unit`, `at_least`, `min_s` | monitor saw it drop |
 | `no_unexpected_restart` | `proc` (+`unit`, `tol_s`) | every pid change in `samples.jsonl` sits inside a `fault:` kill/restart/module_kill/server_down window (or a `do:` reset/server_up/land) |
 | `rss_growth` | `proc` (+`unit`), `max_mb_per_h`, `warmup_s` | least-squares RSS slope after warm-up |

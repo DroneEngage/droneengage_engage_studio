@@ -601,7 +601,7 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
                             "account", "add_modules", "role", "fcb_proxy",
                             "fcb_link", "fc_client", "faketime",
-                            "udp_proxy", "link_proxy", "android"}
+                            "udp_proxy", "link_proxy", "android", "env"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -1146,7 +1146,12 @@ def _expand_unit(sim, b, name, entry, at, catalog):
          "android": None,
          # SL-0014: launch de_comm under libfaketime so `ctl clock_step`
          # can skew its clock (FAKETIME_TIMESTAMP_FILE)
-         "faketime": bool(entry.get("faketime"))}
+         "faketime": bool(entry.get("faketime")),
+         # SL-0067: per-module launch env - {module: {VAR: value}};
+         # DE_BOARD_ID defaults to the unit name and may be overridden
+         # here. A DE_PROC_STAT_PATH entry also spawns a fake_proc_<m>
+         # writer proc (stubs/fake_proc_stat.py) before the module.
+         "env": dict(entry.get("env") or {})}
     # P5-07: a unit may add modules on top of its block (scenario fleet
     # entries carry `modules:` for the P5-08 stubs). Unknown modules fail
     # here with the catalog list, before ports are allocated.
@@ -1164,6 +1169,13 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             raise SimError(f"unit {name}: config for {mod!r} but block "
                            f"{b['name']} does not run it")
         u["config"][mod] = deep_merge(u["config"].get(mod, {}), over)
+    for mod, e in u["env"].items():
+        if mod not in u["modules"]:
+            raise SimError(f"unit {name}: env for {mod!r} but block "
+                           f"{b['name']} does not run it")
+        if not isinstance(e, dict):
+            raise SimError(f"unit {name}: env[{mod!r}] must be a "
+                           "{VAR: value} mapping")
     # P5-15 D7: rendered-camera units get a stable per-sim index; the
     # de_yolo_ai catalog wire turns it into the source/AI card labels
     # (cam_labels - DE-SRC-k/DE-AI-k or the machine's named-VC labels)
@@ -2039,6 +2051,8 @@ def procs_of(u):
     for m in u["modules"]:
         if "udp_proxy_" + m in u["ports"]:
             out.append("udp_proxy_" + m)    # SL-0010: proxy before its module
+        if "DE_PROC_STAT_PATH" in ((u.get("env") or {}).get(m) or {}):
+            out.append(f"fake_proc_{m}")    # SL-0067: writer before its reader
         out.append(m)
     return out
 
@@ -2076,6 +2090,18 @@ def _fill(v, ctx):
             return ctx[m.group(1)]
         return v.format(**ctx) if "{" in v else v
     return v
+
+
+def _module_env(u, m):
+    """Merged launch env for module m of unit u: DE_BOARD_ID defaults to
+    the unit name; the unit's `env: {<module>: {VAR: value}}` map
+    overrides or adds vars (SL-0067). Values resolve the {unit} and
+    {unit_dir} placeholders."""
+    merged = {"DE_BOARD_ID": u["name"]}
+    for k, v in (u.get("env") or {}).get(m, {}).items():
+        merged[str(k)] = str(v).replace("{unit}", u["name"]) \
+                               .replace("{unit_dir}", unit_dir(u))
+    return sorted(merged.items())
 
 
 def _launch_script(u, proc, cwd, cmd, delay=0, env=()):
@@ -2187,7 +2213,7 @@ def gen_unit(u, sim, catalog):
     # DE_BOARD_ID names the unit as its own board - without it every
     # module reports the host /etc/machine-id, and the GCS CPU summary /
     # per-board views show a 32-char hash instead of "cam1".
-    env = [("DE_BOOT_ID_FILE", boot_id), ("DE_BOARD_ID", u["name"])]
+    env = [("DE_BOOT_ID_FILE", boot_id)] + _module_env(u, "de_comm")
     if u.get("faketime"):
         # SL-0014: run de_comm under libfaketime. FAKETIME_TIMESTAMP_FILE
         # holds a signed relative offset ("+3600") that ctl clock_step
@@ -2274,6 +2300,22 @@ def gen_unit(u, sim, catalog):
                 "DE_PRECLAND_SCENES",
                 os.path.join(module_dir(spec), "tools", "sim_scenes")))
         mdir = os.path.join(udir, m)
+        os.makedirs(mdir, exist_ok=True)
+        menv = (u.get("env") or {}).get(m) or {}
+        if "DE_PROC_STAT_PATH" in menv:
+            # SL-0067: a live fake /proc/stat for this module - the
+            # writer rewrites it every tick from the load percent in
+            # <mdir>/cpu_load.json (a scenario write_file flips it)
+            stat_path = str(menv["DE_PROC_STAT_PATH"]) \
+                .replace("{unit}", u["name"]) \
+                .replace("{unit_dir}", udir)
+            os.makedirs(os.path.dirname(stat_path), exist_ok=True)
+            _launch_script(
+                u, f"fake_proc_{m}", udir,
+                f"'{sys.executable}' "
+                f"'{os.path.join(SIM_ROOT, 'stubs', 'fake_proc_stat.py')}'"
+                f" --out '{stat_path}'"
+                f" --ctl '{os.path.join(mdir, 'cpu_load.json')}'")
         mcfg = load_config(module_template(spec))
         mcfg = deep_merge(mcfg, spec.get("set"))
         mcfg = deep_merge(mcfg, u["config"].get(m))
@@ -2369,7 +2411,7 @@ def gen_unit(u, sim, catalog):
             cmd = (f"bash -c \"until [ -e '{ctx['fcb_serial_path']}' ]; "
                    f"do sleep 1; done; exec {cmd}\"")
         _launch_script(u, m, mdir, cmd, spec.get("start_delay", 0),
-                       env=(("DE_BOARD_ID", u["name"]),))
+                       env=tuple(_module_env(u, m)))
 
     # ---- SITL ----
     if u["fc"]:

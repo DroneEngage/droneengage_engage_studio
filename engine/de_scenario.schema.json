@@ -135,7 +135,9 @@
             "properties": {"user": {"type": "string"},
                            "code": {"type": ["string", "integer"]}}},
           "faketime": {"type": "boolean",
-            "description": "SL-0014: launch de_comm under libfaketime so a clock_step fault can skew its clock at runtime"}
+            "description": "SL-0014: launch de_comm under libfaketime so a clock_step fault can skew its clock at runtime"},
+          "env": {"type": "object",
+            "description": "SL-0067: per-module launch env {module: {VAR: value}}; DE_BOARD_ID defaults to the unit name; a DE_PROC_STAT_PATH entry spawns a fake_proc_<module> writer fed by <unit>/<module>/cpu_load.json"}
         }
       }
     },

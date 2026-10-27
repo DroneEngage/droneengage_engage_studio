@@ -600,6 +600,12 @@ VERBS = [
           "ADSB_VEHICLE frames with this ICAO each within max_m of "
           "truth",
       eg="{adsb_vehicle: {icao: 'a1b2c3', at_least: 1}}"),
+    V("gcs_msg", "check", req=["mt", "re"],
+      opt=["secs"],
+      doc="the GCS session receives an mt whose ms body matches re "
+          "(compact-dumped ms; use (?=...) lookaheads) within secs "
+          "(SL-0067)",
+      eg="{gcs_msg: {mt: 1008, re: '\"MI\":3', secs: 20}}"),
     V("obs_frames", "check", req=["unit"],
       opt=["min_frames", "cls", "trk_stable", "attrs"],
       doc="the stub's 6546 obs frames: cls multiset per frame, stable "

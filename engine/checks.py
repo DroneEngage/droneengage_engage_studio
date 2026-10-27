@@ -2670,8 +2670,30 @@ def _adsb_vehicle(name, a, ctx):
               "; ".join(bits))
 
 
+def _gcs_msg(name, a, ctx):
+    """gcs_msg {mt, re, secs (20)}: the GCS session receives a message of
+    type mt within secs whose ms body matches re. The regex applies to
+    the compact-dumped ms object - use (?=...) lookaheads for unordered
+    fields. SL-0067: receipt-side evidence for payload fields the
+    bridge's pretty-printed log drops (e.g. a 1008 summary's CP.b)."""
+    try:
+        mt = int(a["mt"])
+        rx = re.compile(str(a["re"]))
+    except (KeyError, re.error, TypeError, ValueError) as e:
+        return _r(name, "FAIL", None, f"bad gcs_msg args: {e}")
+    secs = float(a.get("secs", 20))
+    for m in ctl.gcs_collect(None, {mt}, secs):
+        if rx.search(json.dumps(m.get("ms") or {},
+                                separators=(",", ":"))):
+            return _r(name, "PASS", None,
+                      f"mt {mt} matched /{a['re']}/")
+    return _r(name, "FAIL", None,
+              f"no mt {mt} ms matching /{a['re']}/ within {secs:g}s")
+
+
 DISPATCH = {
     "journal_count": _journal_count,
+    "gcs_msg": _gcs_msg,
     "module_log_count": _module_log_count,
     "no_journal": _no_journal,
     "journal_order": _journal_order,

@@ -598,6 +598,8 @@ def _fleet_units(scn, home):
             u["fc_client"] = ent["fc_client"]  # SL-0104 (validated in simlib)
         if ent.get("android") is not None:
             u["android"] = ent["android"]    # SL-0095 (validated in simlib)
+        if ent.get("env") is not None:
+            u["env"] = ent["env"]            # SL-0067 (validated in simlib)
         cfg = dict(ent.get("config") or {})
         # SITL tlogs feed distance_to / no_sep_violation / the realtime
         # speed-up check - enable on units that run de_mavlink
