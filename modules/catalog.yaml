@@ -109,8 +109,8 @@ de_precland:
   wire:
     test_source: {images_root: "{precland_scenes}",
                   scene_file: "precland_scene.json", fps: 10}
-    camera: {calibration_file: "{precland_scenes}/camera.yaml",
-             width: 640, height: 480}
+    camera: {calibration_file: "{precland_scenes}/camera_registry.json",
+             cam_id: "cam0", width: 640, height: 480}
     # the multi-tag layout the repo ships at its root - wired absolute
     # like de_yolo_ai's model_path (the module cwd is run/<unit>/)
     target: {layout_json: "{module_dir}/landing-target.json"}

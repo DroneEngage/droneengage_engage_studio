@@ -19,7 +19,7 @@ PRECLAND_STATUS_DISABLED = 0
 PRECLAND_STATUS_SEARCHING = 1
 PRECLAND_STATUS_LOCKED = 2
 PRECLAND_STATUS_DEGRADED = 3   # detecting, but gated (RMSE/stale)
-PRECLAND_STATUS_ERROR = 4      # no camera / no camera.yaml / bad layout
+PRECLAND_STATUS_ERROR = 4      # no camera / no camera_registry.json / bad layout
 
 PRECLAND_REASON_NOMINAL = 0
 PRECLAND_REASON_NO_TARGET = 1

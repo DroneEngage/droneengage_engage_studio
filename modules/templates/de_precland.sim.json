@@ -29,7 +29,8 @@
         "width"                             : 640,
         "height"                            : 480,
         "fps"                               : 30,
-        "calibration_file"                  : "camera.yaml"   // wired to tools/sim_scenes/camera.yaml
+        "cam_id"                            : "cam0",
+        "calibration_file"                  : "camera_registry.json"   // wired to tools/sim_scenes/camera_registry.json
     },
 
     "target": {
