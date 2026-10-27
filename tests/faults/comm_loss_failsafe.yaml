@@ -1,0 +1,40 @@
+# faults/comm_loss_failsafe - C4g/F6 (AN-0074): de_mavlink's config-gated
+# comm-loss flight failsafe fires on a Linux unit with no app process and
+# no GCS command in the loop. c1 runs de_mavlink with
+# failsafe_on_comm_lost + mode rtl; its FC sits in GUIDED. link_cut drops
+# c1's session on the fake server: de_comm's socket status flips to
+# SOCKET_STATUS_ERROR and the Module_ID broadcast tells every local
+# module - de_mavlink then sends MAV_CMD_DO_SET_MODE(RTL) to the FC
+# itself. c2 keeps its link and its mode - the failsafe is per-unit.
+version: 1
+name: f_comm_loss_failsafe
+transport: fake
+settle_s: 45
+fleet:
+  - id: c1
+    cls: copter
+    config:
+      de_mavlink:
+        failsafe_on_comm_lost: true
+        failsafe_on_comm_lost_mode: rtl
+  - {id: c2, cls: copter}
+timeline:
+  - {t: 3, do: mode, unit: c1, mode: GUIDED}
+  - {t: 3, do: mode, unit: c2, mode: GUIDED}
+  - {t: 8, fault: link_cut, unit: c1, dur_s: 25}
+  - {t: 10, do: wait_log, unit: c1, module: de_mavlink,
+     re: "comm-loss failsafe", timeout: 30}
+assert:
+  # the FC on the link-dead unit went to the configured failsafe mode;
+  # the mode change must have come from de_mavlink (nothing else is told
+  # to move it - the assert pair on c2 proves it was the cut, not luck)
+  - fc_mode: {unit: c1, mode: RTL}
+  - fc_mode: {unit: c2, mode: GUIDED}
+  - module_log_count: {unit: c1, module: de_mavlink,
+      re: "comm-loss failsafe: .*setting FC mode 'rtl'", at_least: 1}
+  - link_offline: {unit: c1, at_least: 1, min_s: 5}
+  - link_offline: {unit: c2, eq: 0}
+  - proc_alive: {unit: c1, proc: de_mavlink}
+  - proc_alive: {unit: c1, proc: de_comm}
+  # the cut clears at ~t=33s: the unit re-registers well within a minute
+  - recovers_after_fault: {within_s: 60}
