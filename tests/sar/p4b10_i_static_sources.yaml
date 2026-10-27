@@ -9,7 +9,7 @@
 #        independent phone sources; camm1 (cls static + stub_ai_box) is
 #        a static PERSON source. k_sources_within counts sources within
 #        ONE target class (B4-01): a camera is never a phone source -
-#        its 1078 boxes carry class "person", which W5 rejects against
+#        its boxes carry class "person", which W5 rejects against
 #        the phone target - so the spec's "mast SDR + camera" k:2 pair is
 #        realised as two SDR masts, and the camera mast stands on
 #        person_1 (the 4 m nadir mast's footprint is only a few metres)

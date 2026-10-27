@@ -1,0 +1,147 @@
+# sar/thermal_sar_k2 - MP-0218 acceptance: a HOTSPOT SAR target is
+# confirmed by k:2 DISTINCT units on the consolidated perception stack.
+#
+# Op:      Tasks/mission_planner/ops/thermal_sar.deop (compiled on
+#          demand by opbuild; thermal_sar.ctx.json binds
+#          thermal_mast_a->therm1, thermal_mast_b->therm2,
+#          responder->resp1). Each mast is its own role: its 'seen' gate
+#          is {event: detect.detected, from: <its role>}, so a mast's
+#          'thermal.sighting' report fires only on ITS OWN detection -
+#          never on a peer's. The sighting is emitted with trk nulled:
+#          an untracked detection, which still fuses by distance
+#          (MP-0216's track-keyed fusion merges only same-(src,trk)),
+#          so the two sightings join ONE 'hotspot' cluster whose
+#          k_sources_within k:2 sees two distinct source parties.
+# World:   worlds/sar_thermal.yaml - casualty_1 (temp_c 36) reads
+#          hotspot against ~11 C dusk ambient midway between the two
+#          masts; debris_1 (temp_c -8) is a coldspot only therm1 boxes.
+# Fleet:   therm1/therm2 static masts (stub_ai_box camera_kind:thermal,
+#          enabled:false until the 'see' perceive step) + resp1 copter.
+#
+# Proves per spec:
+#   - the wire carries the de_ir_camera vocabulary only: every sent obs
+#     frame's cls is [hotspot] (the perceive step drops the coldspot at
+#     the emit seam); obs entries keep trk/cam_id (SL-0034 contract)
+#   - each unit emits exactly ONE thermal.sighting (FACT_OUT equals 1)
+#     and each sighting lands on the bus from its own unit (BUS_IN src)
+#   - the hotspot target confirms by k_sources_within ONLY once the
+#     second unit's sighting arrives: journal_order WM_NEW (candidate)
+#     then WM_STATE confirmed; WM_UPDATE n=2 members
+#   - the fused target is on the casualty (distance_to), no person or
+#     coldspot target ever forms
+#   - the confirmation dispatches the responder (transit to target.pos)
+#     and rescue.dispatched serves the hotspot -> OP_END
+#
+# Negative control: tests/sar/thermal_sar_k1_ctrl.yaml - therm2 out of
+# range reports nothing; one source stays candidate forever.
+version: 1
+name: thermal_sar_k2
+speedup: 1                   # the world truth tick is wall-clock
+seed: 7
+transport: fake
+world: ../../worlds/sar_thermal.yaml
+operation: ../../../Tasks/mission_planner/ops/thermal_sar.deop
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+fleet:
+  - {id: therm1, cls: static, role: thermal_mast_a, modules: [stub_ai_box],
+     base: [-35.363262, 149.165237, 584, 0],
+     config: {stub_ai_box: {camera_kind: thermal, enabled: false}}}
+  - {id: therm2, cls: static, role: thermal_mast_b, modules: [stub_ai_box],
+     base: [-35.363262, 149.165325, 584, 0],
+     config: {stub_ai_box: {camera_kind: thermal, enabled: false}}}
+  - {id: resp1, cls: copter, params: {BATT_CAPACITY: 50000}, role: responder,
+     at: {north_m: -60, east_m: -40}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "resp1"}
+  # the masts confirm the casualty ~45 s into the run; start late enough
+  # that the responder's AUTO upload lands after SITL EKF settles
+  - {t: 60, do: start, timeout: 300}
+  - {t: 62, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 65, do: wait_journal, unit: "therm1,therm2", re: "S: .* activated",
+     timeout: 120}
+  # the 'see' step configures each mast for the thermal vocabulary
+  - {t: 68, do: wait_journal, unit: "therm1,therm2",
+     re: "S: watch_. perceive see configure id=", timeout: 120}
+  # each mast reports its own sighting; the cluster confirms at k:2
+  - {t: 72, do: wait_journal, unit: "all", re: "WM_NEW .* cls=hotspot",
+     timeout: 240}
+  - {t: 76, do: wait_journal, unit: "all",
+     re: "WM_STATE .* confirmed by k_sources_within", timeout: 120}
+  # the confirmed target dispatches the responder; rescue.dispatched
+  # (dwell gate at run+75 s) ends the op
+  - {t: 85, do: wait_journal, unit: "resp1",
+     re: "emit rescue\\.dispatched", timeout: 240}
+  - {t: 90, do: wait_journal, unit: "all", re: "OP_END rescue\\.dispatched",
+     timeout: 240}
+  # let the RTL reach the fc_mode the final_state asserts read
+  - {t: 95, do: wait, seconds: 90}
+assert:
+  # --- the perceive step ran on both masts, thermal vocabulary --------
+  - journal_count: {unit: "therm1,therm2",
+                    re: "S: watch_. perceive see configure id=",
+                    equals: 1}
+  - module_log_count: {unit: "therm1,therm2", module: stub_ai_box,
+                       re: "perceive configure \\(invoke\\): classes=\\['hotspot'\\] min_conf=0\\.4 detecting=True",
+                       at_least: 1}
+  # --- each unit's OWN detection latched (distinct sources) -----------
+  - journal_count: {unit: "all",
+                    re: "EVENT_IN event detect\\.detected latched \\(from therm1\\) cls=hotspot",
+                    at_least: 1}
+  - journal_count: {unit: "all",
+                    re: "EVENT_IN event detect\\.detected latched \\(from therm2\\) cls=hotspot",
+                    at_least: 1}
+  # --- exactly one sighting per unit, from its own party --------------
+  - journal_count: {unit: "therm1",
+                    re: "FACT_OUT .* n=thermal\\.sighting", equals: 1}
+  - journal_count: {unit: "therm2",
+                    re: "FACT_OUT .* n=thermal\\.sighting", equals: 1}
+  - journal_count: {unit: "all",
+                    re: "FACT_NEW thermal\\.sighting src=therm1",
+                    at_least: 1}
+  - journal_count: {unit: "all",
+                    re: "FACT_NEW thermal\\.sighting src=therm2",
+                    at_least: 1}
+  # --- one fused target; candidate first, confirmed at the 2nd src ----
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=hotspot", equals: 1}
+  - journal_order: {unit: "all",
+                    first: "WM_NEW .* cls=hotspot",
+                    then: "WM_STATE .* confirmed by k_sources_within"}
+  - journal_count: {unit: "all",
+                    re: "WM_STATE .* confirmed by k_sources_within",
+                    equals: 1}
+  - journal_count: {unit: "all", re: "WM_UPDATE .* n=2", at_least: 1}
+  # --- the wire vocabulary is thermal; no entity-cls target forms -----
+  - no_journal: {unit: "all", re: "WM_NEW .* cls=(coldspot|person)"}
+  - obs_frames: {unit: therm1, min_frames: 10, cls: [hotspot],
+                 trk_stable: true, attrs: {temp_c: {min: 30, max: 41}}}
+  - obs_frames: {unit: therm2, min_frames: 10, cls: [hotspot],
+                 trk_stable: true, attrs: {temp_c: {min: 30, max: 41}}}
+  # --- the fused target is on the casualty ---------------------------
+  - distance_to: {unit: "all", re: "WM_NEW .* cls=hotspot",
+                  truth: casualty_1, detected_cls: hotspot, max_m: 10}
+  # --- confirmation -> dispatch -> served -> OP_END -------------------
+  - journal_count: {unit: "resp1", re: "emit rescue\\.dispatched",
+                    equals: 1}
+  - journal_count: {unit: "all", re: "WM_STATE .* served by serves",
+                    equals: 1}
+  - journal_count: {unit: "all", re: "OP_END rescue\\.dispatched",
+                    equals: 1}
+  # --- the lane drain restores the unit perceive default once --------
+  - journal_count: {unit: "therm1,therm2",
+                    re: "S: watch_. perceive restore", at_least: 1}
+  # --- static discipline ----------------------------------------------
+  - journal_count: {unit: "therm1,therm2", re: "ALLOC|CLAIM|TAKEOVER",
+                    equals: 0}
+  - journal_count: {unit: "therm1,therm2", re: "NavMode", equals: 0}
+  - no_fc_command_to_static: {unit: therm1}
+  - no_fc_command_to_static: {unit: therm2}
+  # the responder RTLs on op end (may have landed+disarmed by assert time)
+  - journal_count: {unit: "resp1", re: "OP_END rescue\\.dispatched -> rtl",
+                    at_least: 1}
+teardown: land

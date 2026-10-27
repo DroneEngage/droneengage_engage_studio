@@ -21,7 +21,7 @@ the multi-SITL harness. Results are recorded in
 Inputs:
 
 - world: `worlds/sar_forest.yaml` (person_1 at X, phone_1 at X + 30 m N;
-  the camera model only boxes `detect_cls: [person]` — a 1078 box has no
+  the camera model only boxes `detect_cls: [person]` — a legacy box has no
   class, so a visible phone would become a second person target);
 - ops: `Tasks/mission_planner/ops/sar_forest*.deop`, compiled into
   `packages/sar_forest*.{deploy,pkg}.json` with

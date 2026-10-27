@@ -1,6 +1,6 @@
 # sar/p4b10_k_class_filter - TASK-B4-01 acceptance K: the reference SAR
 # op over a world that also contains a CAR decoy and a camera-visible
-# phone - every 1078 box now carries class_id/class_name, so a non-person
+# phone - every wire box now carries class_id/class_name, so a non-person
 # detection can no longer fuse into the declared person target (the
 # pre-B4-01 W5 fail-open).
 #

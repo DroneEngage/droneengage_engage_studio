@@ -1,0 +1,43 @@
+# sar_thermal - the MP-0218 thermal SAR world (de.world/1).
+#
+# One casualty (temp_c 36) reads hotspot against the ~11 C dusk ambient;
+# a cold debris piece (temp_c -8) reads coldspot. Two static thermal
+# masts stand ~8 m apart with the casualty midway: on the 8 m nadir
+# mount's ~9.7 x 7.3 m footprint both see it, while the debris sits
+# ~3 m north of therm1 - inside therm1's 3.65 m half-height, ~11 m
+# from therm2, so only therm1 ever boxes it.
+#
+# Deterministic: p_detect 1.0, no pixel noise, no clutter. therm1's
+# frame reports {coldspot, hotspot}, therm2's reports {hotspot} - the
+# perceive step (classes [hotspot]) drops the coldspot at the emit seam,
+# so the wire only ever carries the hotspot vocabulary entry.
+version: 1
+origin: [-35.363262, 149.165237]
+entities:
+  - {id: casualty_1, cls: person, pos: [-35.363262, 149.165281],
+     temp_c: 36.0, size_m: 0.5}
+  - {id: debris_1, cls: person, pos: [-35.363235, 149.165237],
+     temp_c: -8.0, size_m: 0.5}
+environment:
+  sun_elev_deg: -10               # ambient ESTIMATE: ~11 C
+  visibility_m: 600
+  precip: none
+clutter: {cls: person, rate_per_km2_min: 0, lifetime_s: 20}
+sensors:
+  camera:
+    kind: rgb                      # the world default; the test units
+    p_detect_thermal: 1.0          # override with camera_kind: thermal
+    hfov_deg: 62.2
+    vfov_deg: 48.8
+    mount_pitch_deg: -90
+    mount_yaw_deg: 0
+    mount_roll_deg: 0
+    mount_height_m: 8
+    img_w: 1280
+    img_h: 720
+    p_detect_nadir: 1.0
+    p_detect_edge: 1.0
+    max_range_m: 120
+    pos_noise_px: 0                # deterministic projection evidence
+    fps_boxes: 2
+    size_m: {person: 0.5, car: 2.0}

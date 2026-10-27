@@ -3,7 +3,7 @@
 # Same ground truth as sar_forest.yaml PLUS car_1, a static car decoy
 # ~120 m south of person_1 on the same lawnmower lane corridor (inside
 # the op's search area), and no
-# detect_cls filter on the camera. Since B4-01 every 1078 box carries
+# detect_cls filter on the camera. Since B4-01 every box carries
 # class_id/class_name, so:
 #   - a car box projects with class "car" and is dropped by W5 - it can
 #     never fuse into the declared person target (the pre-B4-01 fail-open

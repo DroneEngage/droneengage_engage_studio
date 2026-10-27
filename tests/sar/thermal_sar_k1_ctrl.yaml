@@ -1,0 +1,85 @@
+# sar/thermal_sar_k1_ctrl - MP-0218 negative control for
+# thermal_sar_k2: with only ONE thermal unit seeing the casualty the
+# hotspot target must NEVER confirm.
+#
+# Same op and world as thermal_sar_k2, but therm2's mast stands ~300 m
+# east of the casualty - outside its 8 m nadir footprint and the
+# camera's 120 m modelled range - so it reports nothing. therm2's
+# 'seen' gate is {event, from: thermal_mast_b}: it cannot release on
+# therm1's detections, so no thermal.sighting ever carries src=therm2.
+# therm1's single sighting books a 'hotspot' cluster with one source
+# party -> k_sources_within k:2 keeps it candidate: no WM_STATE
+# confirmed, no dispatch, no OP_END. The run stops on the timeline.
+#
+# Proves: k:2 needs a second DISTINCT unit - one unit's report (or one
+# unit's repeated reports: the watch lane emits once by design) can
+# never satisfy it.
+version: 1
+name: thermal_sar_k1_ctrl
+speedup: 1
+seed: 7
+transport: fake
+world: ../../worlds/sar_thermal.yaml
+operation: ../../../Tasks/mission_planner/ops/thermal_sar.deop
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 120
+fleet:
+  - {id: therm1, cls: static, role: thermal_mast_a, modules: [stub_ai_box],
+     base: [-35.363262, 149.165237, 584, 0],
+     config: {stub_ai_box: {camera_kind: thermal, enabled: false}}}
+  # ~300 m east of the casualty: sees nothing, reports nothing
+  - {id: therm2, cls: static, role: thermal_mast_b, modules: [stub_ai_box],
+     base: [-35.363262, 149.168537, 584, 0],
+     config: {stub_ai_box: {camera_kind: thermal, enabled: false}}}
+  - {id: resp1, cls: copter, params: {BATT_CAPACITY: 50000}, role: responder,
+     at: {north_m: -60, east_m: -40}}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: mode, unit: "all", mode: GUIDED}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: arm, unit: "resp1"}
+  - {t: 25, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: "all", re: "RUN run .* started",
+     timeout: 120}
+  - {t: 33, do: wait_journal, unit: "therm1,therm2", re: "S: .* activated",
+     timeout: 120}
+  - {t: 38, do: wait_journal, unit: "therm1,therm2",
+     re: "S: watch_. perceive see configure id=", timeout: 120}
+  # therm1's sighting books the candidate target...
+  - {t: 42, do: wait_journal, unit: "all", re: "WM_NEW .* cls=hotspot",
+     timeout: 240}
+  # ...then hold the window open long enough for a (wrongly) possible
+  # confirmation to have fired - the asserts read the whole run
+  - {t: 60, do: wait, seconds: 90}
+  - {t: 95, do: stop}
+assert:
+  # --- therm1 saw and reported; therm2 never detected, never reported -
+  - journal_count: {unit: "all",
+                    re: "EVENT_IN event detect\\.detected latched \\(from therm1\\) cls=hotspot",
+                    at_least: 1}
+  - journal_count: {unit: "all",
+                    re: "EVENT_IN event detect\\.detected latched \\(from therm2\\)",
+                    equals: 0}
+  - journal_count: {unit: "therm1",
+                    re: "FACT_OUT .* n=thermal\\.sighting", equals: 1}
+  - journal_count: {unit: "therm2",
+                    re: "FACT_OUT .* n=thermal\\.sighting", equals: 0}
+  - journal_count: {unit: "therm2",
+                    re: "FACT_OUT .* n=detect\\.detected", equals: 0}
+  - journal_count: {unit: "all",
+                    re: "BUS_IN .* n=thermal\\.sighting .* src=therm2",
+                    equals: 0}
+  # --- one candidate target forms - and STAYS candidate ---------------
+  - journal_count: {unit: "all", re: "WM_NEW .* cls=hotspot", equals: 1}
+  - no_journal: {unit: "all", re: "WM_STATE .* confirmed"}
+  - no_journal: {unit: "all", re: "WM_UPDATE .* n=2"}
+  # --- nothing downstream fires: no dispatch, no serve, no op end -----
+  - journal_count: {unit: "resp1", re: "emit rescue\\.dispatched",
+                    equals: 0}
+  - no_journal: {unit: "all", re: "WM_STATE .* served"}
+  - no_journal: {unit: "all", re: "OP_END"}
+  - no_journal: {unit: "all", re: "WM_NEW .* cls=(coldspot|person)"}
+  - obs_frames: {unit: therm1, min_frames: 10, cls: [hotspot],
+                 trk_stable: true, attrs: {temp_c: {min: 30, max: 41}}}
+teardown: land
