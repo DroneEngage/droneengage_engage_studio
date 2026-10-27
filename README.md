@@ -266,6 +266,15 @@ loss (`loss`, `loss_tx`, `loss_rx`, loss-knob profiles like
 `uplink_dead`) and the clock faults stay fake-only: a raw TLS relay
 cannot see inside the stream.
 
+The same bridge also watches a stack that has no sim manifest - e.g. the
+external `de_servers` a developer runs for the Android app or a board:
+`./sim watch --auth-ip <h> --auth-port <p> --account <u> --code <c>` logs
+in through the authenticator as a GCS party and prints party join/leave/id
+events live. `--no-auth --server-ip <h> --server-port <p>` connects
+straight to an auth-off comm server, `--party` names the party and
+`--ctl-port` keeps the list/listen/req control protocol available. The
+account needs GCS permission (unit accounts are refused by `/w/wl`).
+
 ### Running several sims in parallel
 
 **Default posture: interactive work is additive, tests are exclusive.**

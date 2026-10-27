@@ -42,6 +42,13 @@ blocks. DroneEngage is the flagship integration (not the owner).
                                    = ./sim ctl status (live sims only;
                                      `all` also lists downed ones;
                                      --open-web xdg-opens the sim's link)
+  ./sim watch --auth-ip H --auth-port P --account U --code C
+                                   party watch on any reachable stack (no sim
+                                   manifest - e.g. the external de_servers);
+                                   prints join/leave/id events. --no-auth +
+                                   --server-ip/--server-port for auth-off
+                                   servers; --party NAME; --ctl-port P keeps
+                                   the list/listen/req control port too
   ./sim studio <sim.yaml> [--world <w>] [--record <file>] [--down]
                                    the human session in one command: the
                                    sim up (reuse if warm), the webclient
@@ -594,6 +601,16 @@ def main(argv):
             import ctl
             try:
                 ctl.main(a)
+            except KeyboardInterrupt:
+                return 130
+        elif c == "watch":
+            # DE-0025: party watch on ANY reachable server stack - no sim
+            # manifest needed (e.g. the external `./sim up de_servers`).
+            # Flags go straight to engine/gcs_bridge.py watch mode.
+            import gcs_bridge
+            import asyncio
+            try:
+                asyncio.run(gcs_bridge.main(a))
             except KeyboardInterrupt:
                 return 130
         elif c in ("run", "try"):

@@ -55,6 +55,8 @@ ADSB_MSGID = 246            # MAVLINK_MSG_ID_ADSB_VEHICLE
 
 ws_conn = None              # current websocket (None while reconnecting)
 seen = {}                   # party -> last rx time
+seen_name = {}              # party -> last UD heard on a 1004 id frame
+WATCH = False               # watch mode: print party join/leave/id events
 listeners = []              # [(set(mt), asyncio.Queue)]
 last_id_req = 0.0
 _mav = None                 # lazy pymavlink parser for binary frames
@@ -195,7 +197,16 @@ async def session(srv):
                         continue
                     sd = msg.get("sd")
                     if sd and sd != PARTY:
+                        if sd not in seen and WATCH:
+                            print(f"{time.strftime('%H:%M:%S')} [watch] + "
+                                  f"{sd}", flush=True)
                         seen[sd] = time.time()
+                        if WATCH and msg.get("mt") == 1004:
+                            ud = (msg.get("ms") or {}).get("UD") or ""
+                            if ud != seen_name.get(sd):
+                                seen_name[sd] = ud
+                                print(f"{time.strftime('%H:%M:%S')} [watch]   "
+                                      f"{sd} UD={ud}", flush=True)
                     mt = msg.get("mt")
                     if mt not in (9005, 9007, 1004):
                         ffs.pretty_rx(mt, msg.get("ms", {}), sd, msg.get("tg", ""))
@@ -298,18 +309,101 @@ async def control(reader, writer):
         writer.close()
 
 
-async def main():
-    global PARTY
-    srv = simlib.load_manifest(sys.argv[1] if len(sys.argv) > 1 else None)["server"]
+async def _watch_reaper():
+    """Watch mode: ask units for their ids so quiet-but-up parties stay
+    listed, and announce a party as left once it goes silent for SEEN_S."""
+    while True:
+        await asyncio.sleep(5)
+        if ws_conn is None:
+            continue
+        try:
+            await request_ids()
+        except Exception:
+            pass
+        now = time.time()
+        for p, t in list(seen.items()):
+            if now - t > SEEN_S:
+                del seen[p]
+                print(f"{time.strftime('%H:%M:%S')} [watch] - {p} "
+                      f"{seen_name.pop(p, '')}".rstrip(), flush=True)
+
+
+def _parse_args(argv):
+    import argparse
+    p = argparse.ArgumentParser(
+        prog="gcs_bridge",
+        description="GCS session on a DroneEngage comm server. Manifest mode "
+                    "is started by `sim up`; any connection flag switches to "
+                    "watch mode for a stack with no sim manifest (e.g. the "
+                    "external servers of `./sim up de_servers`) and prints "
+                    "party join/leave/id events to stdout.")
+    p.add_argument("sim", nargs="?",
+                   help="sim name (manifest mode, as used by sim up/ctl)")
+    p.add_argument("--watch", action="store_true",
+                   help="manifest mode too: also print join/leave/id events")
+    p.add_argument("--server-ip", help="comm server host (default 127.0.0.1)")
+    p.add_argument("--server-port", type=int,
+                   help="comm server wss port (default 9966)")
+    p.add_argument("--auth-ip",
+                   help="authenticator host for the GCS login")
+    p.add_argument("--auth-port", type=int,
+                   help="authenticator https port (default 19408)")
+    p.add_argument("--account", "--user", dest="user",
+                   help="account name - needs GCS permission")
+    p.add_argument("--code", "--password", dest="code",
+                   help="account access code")
+    p.add_argument("--party", help="party id to join as (default GCS_WATCH)")
+    p.add_argument("--no-auth", action="store_true",
+                   help="skip the authenticator - connect straight to "
+                        "--server-ip/--server-port (local_server mode)")
+    p.add_argument("--ctl-port", type=int, default=0,
+                   help="control port for the list/listen/req protocol; "
+                        "0 disables it (default in watch mode)")
+    return p.parse_args(argv)
+
+
+async def main(argv=None):
+    global PARTY, WATCH
+    a = _parse_args(sys.argv[1:] if argv is None else argv)
+    if (a.server_ip or a.server_port or a.auth_ip or a.auth_port or a.user
+            or a.code or a.no_auth):
+        # external stack: no manifest - build the server dict from flags
+        WATCH = True
+        srv = {
+            "type": "external",
+            "ip": a.server_ip or "127.0.0.1",
+            "port": a.server_port or 9966,
+            "auth": not a.no_auth,
+            "auth_ip": a.auth_ip or a.server_ip or "127.0.0.1",
+            "auth_port": a.auth_port or 19408,
+            "account": {"user": a.user or "", "code": a.code or ""},
+            "gcs_party": a.party or "GCS_WATCH",
+            "control_port": a.ctl_port,
+        }
+        # A bad account fails the first login - surface the server's refusal
+        # (e.g. e=6 "not a GCS account") instead of hiding it in the retry loop.
+        if srv["auth"]:
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, login, srv)
+            except Exception as e:
+                sys.exit(f"gcs_bridge: login failed: {e}")
+    else:
+        WATCH = bool(a.watch)
+        srv = simlib.load_manifest(a.sim)["server"]
     PARTY = srv.get("gcs_party") or simlib.GCS_PARTY
-    # control lines carry whole packages (`send <1085>`) - the default
-    # 64 KiB stream limit resets the conn on a big plan
-    ctl = await asyncio.start_server(control, "127.0.0.1",
-                                     srv["control_port"], limit=16 << 20)
-    print(f"[bridge] control on 127.0.0.1:{srv['control_port']} "
-          f"(server {srv['port']}, auth={srv['auth']})", flush=True)
-    async with ctl:
-        await asyncio.gather(session(srv), ctl.serve_forever())
+    tasks = [session(srv)]
+    if srv.get("control_port"):
+        # control lines carry whole packages (`send <1085>`) - the default
+        # 64 KiB stream limit resets the conn on a big plan
+        ctl = await asyncio.start_server(control, "127.0.0.1",
+                                         srv["control_port"], limit=16 << 20)
+        print(f"[bridge] control on 127.0.0.1:{srv['control_port']} "
+              f"(server {srv['port']}, auth={srv['auth']})", flush=True)
+        tasks.append(ctl.serve_forever())
+    if WATCH:
+        tasks.append(_watch_reaper())
+    await asyncio.gather(*tasks)
 
 
 if __name__ == "__main__":
