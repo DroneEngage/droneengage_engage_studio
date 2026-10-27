@@ -115,3 +115,9 @@ Env knobs: `TRACKER_BIN`, `RUN_DIR`, `VDEV_SRC`, `VDEV_OUT`, `BUS_PORT`,
   official `onnxruntime-linux-aarch64-<ver>.tgz` release tarball.
 - The `de_snd` vendored python `de_common` is stale for this client —
   use `de_databus_py/` here (it carries the 6544/6545/6546 constants).
+
+## Bluetooth FC link
+The Pi's Bluetooth can be tested against SITL with
+[`../hil/bt_spp_relay`](../hil/bt_spp_relay/README.md): run the relay on the
+SITL host, `rfcomm connect /dev/rfcomm0 <HOST_MAC> 22` on the Pi, and point
+de_mavlink's `fcb_connection_uri` at `/dev/rfcomm0` (serial).

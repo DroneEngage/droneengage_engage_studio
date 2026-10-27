@@ -74,6 +74,10 @@ Then check the machine:
 ./sim doctor --esp32                  # also require + probe the optional ESP32 HIL gear
 ```
 
+Bluetooth FC link testing: `tools/hil/bt_spp_relay/` makes this host a
+Bluetooth telemetry radio wired to SITL, for the Andruav phone or an RPi
+(`/usr/bin/python3 -I tools/hil/bt_spp_relay/bt_spp_relay.py 6000`; see its README).
+
 Optional ESP32 HIL firmwares (`tools/hil/<name>/`, e.g. `esp32_fake_fc` - a
 fake ArduCopter that proves a phone's USB-OTG FCB link):
 
