@@ -23,8 +23,17 @@ blocks. DroneEngage is the flagship integration (not the owner).
                                    NOT a sim: `down`/`run`/`clean` never
                                    touch it, `./sim down de_servers`
                                    is the only stop
-  ./sim servers [--json]           that stack's procs and ports
+  ./sim up de_webclient [--open-web]
+                                   start the webclient dev server -
+                                   `npm start` in DE_WEBCLIENT_DIR
+                                   (react-scripts, https on
+                                   SIM_WEBCLIENT_URL, :3000 default).
+                                   Same not-a-sim rules: only
+                                   `./sim down de_webclient` stops it;
+                                   --open-web xdg-opens its URL
+  ./sim servers [--json]           both stacks' procs and ports
   ./sim logs de_servers [proc]     tail a stack server's log
+  ./sim logs de_webclient          tail the webclient dev-server log
   ./sim sims                       generated sims and live process counts
   ./sim ports [name|--all]         live sims' declared ports vs what's bound
                                    right now (--all: every generated sim;
@@ -466,6 +475,14 @@ def main(argv):
                     sys.exit("de_servers has no webclient link")
                 import devstack
                 return devstack.up(fresh="--fresh" in a)
+            if files[0] == "de_webclient":
+                # the webclient dev server, not a sim - same devstack
+                import devstack
+                devstack.up("de_webclient", fresh="--fresh" in a)
+                if "--open-web" in a:
+                    import ctl
+                    ctl.xdg_open(simlib.WEBCLIENT_URL)
+                return
             launcher.up(files[0], fresh="--fresh" in a,
                         open_web="--open-web" in a)
         elif c == "down":
@@ -475,9 +492,9 @@ def main(argv):
             if bad:
                 sys.exit("usage: ./sim down [name|--all]"
                          + f" - unknown {' '.join(bad)}")
-            if names and names[0] == "de_servers":
+            if names and names[0] in ("de_servers", "de_webclient"):
                 import devstack
-                return devstack.down()
+                return devstack.down(names[0])
             launcher.down(None if not names or "--all" in a else names[0])
         elif c == "sims":
             json_out = "--json" in a
@@ -550,8 +567,12 @@ def main(argv):
             import launcher
             n = len(devstack.pids())
             if n:
-                print(f"de_servers: {n}/{len(devstack.PROCS)} procs up"
-                      " - ./sim servers", flush=True)
+                print(f"de_servers: {n}/{len(devstack.STACKS['de_servers'])}"
+                      " procs up - ./sim servers", flush=True)
+            if devstack.pids("de_webclient"):
+                print("de_webclient: up - "
+                      + simlib.col_cyan(simlib.WEBCLIENT_URL)
+                      + " - ./sim logs de_webclient", flush=True)
             # SL-0066 - surface orphaned scenario runners: a runner pid
             # alive while its fleet is down can still fire teardown
             # (op_abort/land) into whatever runs next; `sim down` reaps it
@@ -816,9 +837,10 @@ def main(argv):
             if a and a[0] in ("-s", "--sim"):
                 sim_name, a = a[1], a[2:]
             owner = a[0]
-            if owner == "de_servers":
+            if owner in ("de_servers", "de_webclient"):
                 import devstack
-                return devstack.logs(a[1] if len(a) > 1 else None)
+                return devstack.logs(owner,
+                                     a[1] if len(a) > 1 else None)
             if owner == "server":
                 d = os.path.join(
                     simlib.server_dir(sim_name or simlib._single_sim()),

@@ -222,7 +222,10 @@ it with `./sim up de_servers` - the headless
 `servers/sh_start_servers.sh`: auth, comm, storage and udp_proxy run
 from their repos' own `server.config(.local)` on the real ports; it is
 infrastructure, not a sim, so `down`/`run`/`clean` never touch it and
-only `./sim down de_servers` stops it): no server processes are
+only `./sim down de_servers` stops it). `./sim up de_webclient`
+starts the webclient dev server the same way (`npm start` in
+`DE_WEBCLIENT_DIR`, https on `SIM_WEBCLIENT_URL` - :3000 default;
+`--open-web` opens it): no server processes are
 spawned, every
 unit's de_comm connects to `host:port` - directly when `auth: false`, or
 through your authenticator when `auth: true, auth_host, auth_port` are
