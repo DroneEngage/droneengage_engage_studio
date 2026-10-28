@@ -667,7 +667,7 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
     spec = _substitute_params(spec, param_values)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
                            "slot_base", "units", "render", "speedup",
-                           "fcb_proxy", "fcb_link"}
+                           "fcb_proxy", "fcb_link", "example"}
     if unknown:
         raise SimError(f"sim: unknown keys {sorted(unknown)}")
     if spec.get("version", 1) != 1:
