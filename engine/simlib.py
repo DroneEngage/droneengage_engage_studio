@@ -387,10 +387,11 @@ _PARAM_OVERRIDES = {}
 def set_param_overrides(overrides):
     """Install {param name: str value} for this process. Called by the
     sim CLI before load_sim; {} clears. Values are strings here - type
-    coercion (int/float) and choices validation happen in _resolve_params
-    against the sim's own `params:` declarations. The CLI also mirrors
-    them into the SIM_SET env var so suite subprocesses inherit them
-    (the same env-propagation channel --with/--slot-base use)."""
+    coercion (int/float/bool) and choices validation happen in
+    _resolve_params against the sim's own `params:` declarations. The
+    CLI also mirrors them into the SIM_PARAMS env var so suite
+    subprocesses inherit them (the same env-propagation channel
+    --with/--slot-base use)."""
     global _PARAM_OVERRIDES
     _PARAM_OVERRIDES = dict(overrides or {})
 
@@ -400,11 +401,11 @@ def param_overrides():
 
 
 def _effective_param_overrides():
-    """The --set overrides in force: the SIM_SET env var (inherited by
+    """The --set overrides in force: the SIM_PARAMS env var (inherited by
     suite subprocesses) below the in-process set_param_overrides() (a
     direct ./sim call sets both to the same values)."""
     overrides = {}
-    env_set = os.environ.get("SIM_SET")
+    env_set = os.environ.get("SIM_PARAMS")
     if env_set:
         try:
             d = json.loads(env_set)
@@ -419,13 +420,19 @@ def _effective_param_overrides():
 _PARAM_REF = re.compile(r"\$\{(\w+)\}")
 
 
+_PARAM_TYPES = ("str", "int", "float", "bool")
+
+_PARAM_BOOL = {"true": True, "1": True, "yes": True,
+               "false": False, "0": False, "no": False}
+
+
 def _resolve_params(decl, src):
     """Build {name: value} from the sim's `params:` declarations plus the
     --set overrides (set_param_overrides). Each declaration needs a
-    `default`; `type` (int|float|str, default str) coerces the override,
-    `choices` (a list) validates it. A --set name not in the declarations
-    is a clear error listing the available params; --set on a sim with no
-    params: block at all is an error too."""
+    `default` and a one-line `help`; `type` (str|int|float|bool, default
+    str) coerces the override, `choices` (a list) validates it. A --set
+    name not in the declarations is a clear error listing the available
+    params; --set on a sim with no params: block at all is an error too."""
     if decl is None:
         decl = {}
     if not isinstance(decl, dict):
@@ -435,6 +442,12 @@ def _resolve_params(decl, src):
     for name, p in decl.items():
         if not isinstance(p, dict) or "default" not in p:
             raise SimError(f"sim param {name!r}: needs a 'default'")
+        if "help" not in p:
+            raise SimError(f"sim param {name!r}: needs a 'help' line")
+        ptype = p.get("type", "str")
+        if ptype not in _PARAM_TYPES:
+            raise SimError(f"sim param {name!r}: bad type {ptype!r} "
+                           f"(one of {', '.join(_PARAM_TYPES)})")
         values[name] = p["default"]
     for name, raw in _effective_param_overrides().items():
         if name not in decl:
@@ -453,6 +466,11 @@ def _resolve_params(decl, src):
                 val = float(raw)
             except (ValueError, TypeError):
                 raise SimError(f"--set {name}={raw!r}: not a valid float")
+        elif ptype == "bool":
+            val = _PARAM_BOOL.get(str(raw).lower())
+            if val is None:
+                raise SimError(f"--set {name}={raw!r}: not a bool "
+                               "(true/false/1/0/yes/no)")
         else:
             val = raw
         choices = p.get("choices")
@@ -467,19 +485,25 @@ def _substitute_params(obj, values):
     """Recursively replace ${name} in string values with the resolved
     param value. A whole-string ${name} becomes the native type (an int
     for an int param); a ${name} embedded in a larger string is str()-ed.
-    Only ${name} patterns matching a declared param are substituted -
-    anything else is left untouched."""
+    A ${name} that matches no declared param is a clear error."""
     if isinstance(obj, dict):
         return {k: _substitute_params(v, values) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_substitute_params(v, values) for v in obj]
     if isinstance(obj, str):
         m = _PARAM_REF.fullmatch(obj)
-        if m and m.group(1) in values:
-            return values[m.group(1)]
-        return _PARAM_REF.sub(
-            lambda mm: str(values[mm.group(1)])
-            if mm.group(1) in values else mm.group(0), obj)
+        if m:
+            name = m.group(1)
+            if name not in values:
+                raise SimError(f"unknown param ${{{name}}}")
+            return values[name]
+
+        def _sub(mm):
+            name = mm.group(1)
+            if name not in values:
+                raise SimError(f"unknown param ${{{name}}}")
+            return str(values[name])
+        return _PARAM_REF.sub(_sub, obj)
     return obj
 
 

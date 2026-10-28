@@ -52,13 +52,13 @@ def _sim_spec(params=None, server_port_ref="${server_port}"):
 class SimParamsTest(unittest.TestCase):
     def setUp(self):
         # --set overrides are a process-global (like --module); isolate
-        # every test and clear the SIM_SET env channel too
+        # every test and clear the SIM_PARAMS env channel too
         simlib.set_param_overrides({})
-        os.environ.pop("SIM_SET", None)
+        os.environ.pop("SIM_PARAMS", None)
 
     def tearDown(self):
         simlib.set_param_overrides({})
-        os.environ.pop("SIM_SET", None)
+        os.environ.pop("SIM_PARAMS", None)
 
     def test_substitution_from_yaml_file(self):
         """a tmp sim yaml with params + ${server_port} substitutes the
@@ -96,7 +96,8 @@ class SimParamsTest(unittest.TestCase):
         """--set overrides the param default and flows into the server."""
         simlib.set_param_overrides({"server_port": "63000"})
         sim = simlib.load_sim(_sim_spec(params={
-            "server_port": {"default": 62900, "type": "int"}}))
+            "server_port": {"default": 62900, "type": "int",
+                            "help": "port"}}))
         self.assertEqual(sim["server"]["port"], 63000)
         self.assertEqual(sim["param_values"]["server_port"], 63000)
 
@@ -104,13 +105,15 @@ class SimParamsTest(unittest.TestCase):
         """an int param resolves to a real int, not a string, both from
         the default and from a --set override."""
         sim = simlib.load_sim(_sim_spec(params={
-            "server_port": {"default": 62900, "type": "int"}}))
+            "server_port": {"default": 62900, "type": "int",
+                            "help": "port"}}))
         self.assertIsInstance(sim["param_values"]["server_port"], int)
         self.assertEqual(sim["param_values"]["server_port"], 62900)
         # override coerced to int too
         simlib.set_param_overrides({"server_port": "63100"})
         sim = simlib.load_sim(_sim_spec(params={
-            "server_port": {"default": 62900, "type": "int"}}))
+            "server_port": {"default": 62900, "type": "int",
+                            "help": "port"}}))
         self.assertIsInstance(sim["param_values"]["server_port"], int)
         self.assertEqual(sim["param_values"]["server_port"], 63100)
 
@@ -118,8 +121,9 @@ class SimParamsTest(unittest.TestCase):
         """a float param coerces a --set string to float."""
         simlib.set_param_overrides({"rate": "1.5"})
         sim = simlib.load_sim(_sim_spec(
-            params={"rate": {"default": 1.0, "type": "float"},
-                    "server_port": {"default": 62900, "type": "int"}},
+            params={"rate": {"default": 1.0, "type": "float", "help": "x"},
+                    "server_port": {"default": 62900, "type": "int",
+                            "help": "port"}},
             server_port_ref=62900))
         self.assertIsInstance(sim["param_values"]["rate"], float)
         self.assertEqual(sim["param_values"]["rate"], 1.5)
@@ -129,24 +133,27 @@ class SimParamsTest(unittest.TestCase):
         simlib.set_param_overrides({"server_port": "notanint"})
         with self.assertRaises(simlib.SimError):
             simlib.load_sim(_sim_spec(params={
-                "server_port": {"default": 62900, "type": "int"}}))
+                "server_port": {"default": 62900, "type": "int",
+                            "help": "port"}}))
 
     def test_choices_validation(self):
         """a --set value outside the param's choices is an error."""
         simlib.set_param_overrides({"net": "wifi"})
         with self.assertRaises(simlib.SimError):
             simlib.load_sim(_sim_spec(
-                params={"net": {"default": "auto",
+                params={"net": {"default": "auto", "help": "net",
                                 "choices": ["auto", "adb_reverse", "lan"]},
-                        "server_port": {"default": 62900, "type": "int"}},
+                        "server_port": {"default": 62900, "type": "int",
+                            "help": "port"}},
                 server_port_ref=62900))
 
     def test_choices_default_passes(self):
         """the default is accepted even when choices are set."""
         sim = simlib.load_sim(_sim_spec(
-            params={"net": {"default": "auto",
+            params={"net": {"default": "auto", "help": "net",
                             "choices": ["auto", "adb_reverse", "lan"]},
-                    "server_port": {"default": 62900, "type": "int"}},
+                    "server_port": {"default": 62900, "type": "int",
+                            "help": "port"}},
             server_port_ref=62900))
         self.assertEqual(sim["param_values"]["net"], "auto")
 
@@ -156,7 +163,8 @@ class SimParamsTest(unittest.TestCase):
         simlib.set_param_overrides({"nope": "1"})
         with self.assertRaises(simlib.SimError) as cm:
             simlib.load_sim(_sim_spec(params={
-                "server_port": {"default": 62900, "type": "int"}}))
+                "server_port": {"default": 62900, "type": "int",
+                            "help": "port"}}))
         self.assertIn("server_port", str(cm.exception))
 
     def test_no_params_block_with_set_is_error(self):
@@ -169,7 +177,7 @@ class SimParamsTest(unittest.TestCase):
         """a ${name} embedded in a larger string is str()-substituted."""
         sim = simlib.load_sim({
             "version": 1, "name": "embed_test", "slot_base": 10,
-            "params": {"serial": {"default": "emulator-5554"}},
+            "params": {"serial": {"default": "emulator-5554", "help": "adb serial"}},
             "server": {"type": "fake", "port": 62900},
             "units": [{"block": "comm_only", "name": "u1",
                        "config": {"de_comm": {"sv_unit_description":
@@ -177,16 +185,72 @@ class SimParamsTest(unittest.TestCase):
         desc = sim["units"][0]["config"]["de_comm"]["sv_unit_description"]
         self.assertEqual(desc, "dev-emulator-5554")
 
-    def test_unset_ref_left_alone(self):
-        """a ${name} that is not a declared param is left untouched."""
-        sim = simlib.load_sim({
-            "version": 1, "name": "unset_test", "slot_base": 10,
-            "server": {"type": "fake", "port": 62900},
-            "units": [{"block": "comm_only", "name": "u1",
-                       "config": {"de_comm": {"sv_unit_description":
-                                               "keep-${unknown}"}}}]})
-        desc = sim["units"][0]["config"]["de_comm"]["sv_unit_description"]
-        self.assertEqual(desc, "keep-${unknown}")
+    def test_unknown_ref_is_error(self):
+        """a ${name} that matches no declared param is a clear error."""
+        with self.assertRaises(simlib.SimError) as cm:
+            simlib.load_sim({
+                "version": 1, "name": "unset_test", "slot_base": 10,
+                "server": {"type": "fake", "port": 62900},
+                "units": [{"block": "comm_only", "name": "u1",
+                           "config": {"de_comm": {"sv_unit_description":
+                                                   "keep-${unknown}"}}}]})
+        self.assertIn("unknown param ${unknown}", str(cm.exception))
+
+    def test_env_channel_override(self):
+        """the SIM_PARAMS env var is the subprocess inheritance channel:
+        overrides set there apply like --set."""
+        os.environ["SIM_PARAMS"] = '{"server_port": "63200"}'
+        sim = simlib.load_sim(_sim_spec(params={
+            "server_port": {"default": 62900, "type": "int",
+                            "help": "comm server port"}}))
+        self.assertEqual(sim["server"]["port"], 63200)
+
+    def test_bool_coercion(self):
+        """a bool param coerces --set strings (true/false/1/0/yes/no,
+        case-insensitive); anything else is a clear error."""
+        decl = {"realtime": {"default": False, "type": "bool",
+                             "help": "run wall-clock"}}
+        for raw, want in (("true", True), ("YES", True), ("1", True),
+                          ("false", False), ("0", False), ("No", False)):
+            simlib.set_param_overrides({"realtime": raw})
+            sim = simlib.load_sim(_sim_spec(
+                params={**decl,
+                        "server_port": {"default": 62900, "type": "int",
+                                        "help": "port"}},
+                server_port_ref=62900))
+            self.assertIs(sim["param_values"]["realtime"], want, raw)
+        simlib.set_param_overrides({"realtime": "maybe"})
+        with self.assertRaises(simlib.SimError):
+            simlib.load_sim(_sim_spec(
+                params={**decl,
+                        "server_port": {"default": 62900, "type": "int",
+                                        "help": "port"}},
+                server_port_ref=62900))
+
+    def test_missing_help_is_error(self):
+        """a param without a one-line help: is a clear error naming it."""
+        with self.assertRaises(simlib.SimError) as cm:
+            simlib.load_sim(_sim_spec(params={
+                "server_port": {"default": 62900, "type": "int"}}))
+        self.assertIn("server_port", str(cm.exception))
+
+    def test_bad_type_is_error(self):
+        """a type outside str|int|float|bool names the param."""
+        with self.assertRaises(simlib.SimError) as cm:
+            simlib.load_sim(_sim_spec(params={
+                "server_port": {"default": 62900, "type": "port",
+                                "help": "x"}}))
+        self.assertIn("server_port", str(cm.exception))
+
+    def test_param_changes_hash(self):
+        """different resolved values -> different sim hash (an `up`
+        regenerates instead of reusing the warm sim)."""
+        params = {"server_port": {"default": 62900, "type": "int",
+                                  "help": "port"}}
+        sim1 = simlib.load_sim(_sim_spec(params=params))
+        simlib.set_param_overrides({"server_port": "63100"})
+        sim2 = simlib.load_sim(_sim_spec(params=params))
+        self.assertNotEqual(sim1["hash"], sim2["hash"])
 
 
 if __name__ == "__main__":

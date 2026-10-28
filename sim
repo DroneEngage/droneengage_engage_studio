@@ -446,10 +446,10 @@ def main(argv):
             if flags.get("set"):
                 # SL-0116: --set name=value overrides for the sim yaml's
                 # params: block. Installed in-process for this command
-                # and mirrored to SIM_SET so suite subprocesses inherit
-                # them (same env channel --with/--slot-base use).
+                # and mirrored to SIM_PARAMS so suite subprocesses
+                # inherit them (same env channel --with/--slot-base use).
                 simlib.set_param_overrides(flags["set"])
-                os.environ["SIM_SET"] = json.dumps(flags["set"])
+                os.environ["SIM_PARAMS"] = json.dumps(flags["set"])
             auth = {k: v for k, v in flags.items()
                     if k in ("user", "password", "auth_server")}
             if auth and c in ("suite", "validate"):

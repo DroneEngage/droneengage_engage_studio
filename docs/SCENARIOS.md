@@ -89,6 +89,41 @@ sim: ../../sims/copters3.yaml              # or a path relative to the file
 sim file (file order wins). An explicit `home:`/`render:` still
 overrides; `fleet:`/`transport:` together with `sim:` is an error.
 
+### Sim `params:` — a sim file's own knobs (SL-0116)
+
+A `sims/*.yaml` file may declare a top-level `params:` block; each entry
+is a knob the user can override from the command line:
+
+```yaml
+params:
+  serial:      {default: emulator-5554, help: "adb serial (`adb devices`)"}
+  net:         {default: auto, choices: [auto, adb_reverse, lan],
+                help: "how the phone reaches this host"}
+  server_port: {default: 62900, type: int, help: "comm server port"}
+  realtime:    {default: false, type: bool, help: "run wall-clock"}
+server: {type: real, auth: true, port: "${server_port}"}
+units:
+  - {block: android_copter, name: emu,
+     android: {serial: "${serial}", net: "${net}"}}
+```
+
+Every param needs a `default` and a one-line `help`; `type` is
+`str|int|float|bool` (default `str`), `choices` an optional list. After
+overlays are applied, `${name}` references anywhere in the spec are
+substituted — a whole-string `"${name}"` keeps the param's native type,
+one embedded in a longer string becomes text; a `${name}` with no
+declaration is an error. `./sim show` prints the resolved values as a
+`params: k=v ...` line (a `params` object under `--json`).
+
+`--set name=value` (repeatable, on show/up/run/try/view/studio and
+inherited by suite subprocesses through `SIM_PARAMS`) overrides a
+default: the value is coerced to the param's `type` (bool accepts
+`true/false/1/0/yes/no`) and checked against `choices`. `--set` of an
+undeclared name — or on a sim with no `params:` block — is an error.
+Because substitution happens before the fleet resolves, a different
+`--set` yields different ports/config and a different sim hash, so
+`./sim up` regenerates instead of reusing the warm sim.
+
 Unknown top-level keys are rejected — the file is validated against
 `engine/de_scenario.schema.json` before anything starts.
 
