@@ -215,9 +215,10 @@ def col_dim(s):    return col("2", s)      # progress noise
 
 
 def print_usage(doc):
-    """A module __doc__ printed as CLI help, colorized on a tty: the
+    """A module __doc__ or generated help text (sim_commands.command_help,
+    sim_help.render_help) printed as CLI help, colorized on a tty: the
     command in green, its <params>/[flags] in yellow, the description in
-    white. Shared by `sim` and `ctl` so both help screens look alike."""
+    white. Shared by `sim` and `ctl` so all help screens look alike."""
     if not sys.stdout.isatty():
         print(doc)
         return
@@ -225,6 +226,13 @@ def print_usage(doc):
         "\033[32m", "\033[33m", "\033[37m", "\033[0m"
     param_rx = re.compile(r"<[^>]*>|\[[^\]]*\]|\.\.\.")
     for line in doc.splitlines():
+        # a "usage: <cmd>" line (command_help) keeps the label white and
+        # colors the command like a usage row
+        mu = re.match(r"^(usage:\s+)(.*)$", line)
+        if mu:
+            cmd = param_rx.sub(yellow + r"\g<0>" + green, mu.group(2))
+            print(white + mu.group(1) + reset + green + cmd + reset)
+            continue
         # a usage row is "  <cmd><2+ spaces><description>"; a command
         # filling the column has no description on its own line. Anything
         # else (headers, wrapped descriptions, blanks) prints plain white

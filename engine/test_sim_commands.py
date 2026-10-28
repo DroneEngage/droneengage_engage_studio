@@ -15,6 +15,7 @@ Covers:
     name, ambiguous name (all against a tmp SIM_ROOT).
 """
 
+import io
 import os
 import re
 import subprocess
@@ -38,6 +39,24 @@ import sim_commands  # noqa: E402
 import simlib  # noqa: E402
 
 SIM = os.path.join(simlib.SIM_ROOT, "sim")
+
+
+class _Tty(io.StringIO):
+    """StringIO that claims to be a terminal - print_usage colorizes
+    only when sys.stdout.isatty() is true."""
+    def isatty(self):
+        return True
+
+
+def _print_usage_captured(doc, tty):
+    buf = _Tty() if tty else io.StringIO()
+    old = sys.stdout
+    sys.stdout = buf
+    try:
+        simlib.print_usage(doc)
+    finally:
+        sys.stdout = old
+    return buf.getvalue()
 
 
 def _dispatched_commands():
@@ -68,6 +87,17 @@ class RegistryTest(unittest.TestCase):
         text = sim_commands.command_help("up")
         self.assertIn("--fresh", text)
         self.assertIn("--open-web", text)
+
+    def test_command_help_colored_on_tty(self):
+        # SL-0125: command help is printed through simlib.print_usage -
+        # green commands, yellow <params>/[flags], plain when not a tty.
+        doc = sim_commands.command_help("up")
+        out = _print_usage_captured(doc, tty=True)
+        self.assertIn("\x1b[32m./sim up \x1b[33m<sim.yaml>", out)
+        self.assertIn("\x1b[33m[--fresh]", out)
+        self.assertIn("\x1b[32m  --fresh", out)
+        self.assertEqual(_print_usage_captured(doc, tty=False),
+                         doc + "\n")
 
     def test_allowed_flags_up_includes_shared(self):
         flags = sim_commands.allowed_flags("up")

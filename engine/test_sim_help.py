@@ -11,6 +11,7 @@ subprocess check on the ./sim entry):
   - `./sim up <sim> --help` exits 0 and creates no var/run/<name> dir.
 """
 
+import io
 import os
 import subprocess
 import sys
@@ -31,6 +32,24 @@ import sim_help  # noqa: E402
 import simlib  # noqa: E402
 
 SIM_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class _Tty(io.StringIO):
+    """StringIO that claims to be a terminal - print_usage colorizes
+    only when sys.stdout.isatty() is true."""
+    def isatty(self):
+        return True
+
+
+def _print_usage_captured(doc, tty):
+    buf = _Tty() if tty else io.StringIO()
+    old = sys.stdout
+    sys.stdout = buf
+    try:
+        simlib.print_usage(doc)
+    finally:
+        sys.stdout = old
+    return buf.getvalue()
 
 SIM_YAML = """version: 1
 description: |
@@ -111,6 +130,21 @@ class TestRenderHelp(unittest.TestCase):
             path = self._write(tmp, "helptest", SIM_YAML)
             out = sim_help.render_help(path, "run")
         self.assertIn("./sim run helptest", out)
+
+    def test_render_help_colored_on_tty(self):
+        # SL-0125: per-sim help is printed through simlib.print_usage -
+        # the Usage/Example command lines and param/flag rows get the
+        # ./sim colours; not a tty -> the plain text, unchanged.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write(tmp, "helptest", SIM_YAML)
+            doc = sim_help.render_help(path, "up")
+        out = _print_usage_captured(doc, tty=True)
+        self.assertIn("\x1b[32m  ./sim up helptest \x1b[33m"
+                      "[--set NAME=VALUE ...]", out)
+        self.assertIn("\x1b[32m  serial", out)
+        self.assertIn("\x1b[32m  --fresh", out)
+        self.assertEqual(_print_usage_captured(doc, tty=False),
+                         doc + "\n")
 
     def test_wants_sim_help(self):
         self.assertTrue(sim_help.wants_sim_help(
