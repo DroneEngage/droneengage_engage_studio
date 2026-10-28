@@ -1,195 +1,8 @@
 #!/usr/bin/env python3
-"""DroneEngageStudio - sim: simulation and ground-truth testing from reusable
-blocks. DroneEngage is the flagship integration (not the owner).
-
-  ./sim blocks                     list blocks (reusable unit types)
-  ./sim block <name>               show a block resolved through `extends`
-  ./sim show <sim.yaml>            units, modules and ports a sim expands to
-  ./sim up <sim.yaml> [--fresh] [--open-web]
-                                   start a sim (restarts the same-named one;
-                                   refuses ports of a live sim - sims run in
-                                   parallel; unit names may repeat on
-                                   per-sim servers but stay unique on a
-                                   shared external stack or rendered
-                                   cameras; --open-web xdg-opens the
-                                   webclient link)
-  ./sim down [name|--all]          stop one sim, or every sim
-  ./sim up de_servers              start YOUR server stack (auth, comm,
-                                   storage, udp_proxy) from the repos'
-                                   own server.config(.local) on the real
-                                   ports - the headless
-                                   servers/sh_start_servers.sh; what
-                                   server:{type: external} sims join.
-                                   NOT a sim: `down`/`run`/`clean` never
-                                   touch it, `./sim down de_servers`
-                                   is the only stop
-  ./sim up de_webclient [--open-web]
-                                   start the webclient dev server -
-                                   `npm start` in DE_WEBCLIENT_DIR
-                                   (react-scripts, https on
-                                   SIM_WEBCLIENT_URL, :3000 default).
-                                   Same not-a-sim rules: only
-                                   `./sim down de_webclient` stops it;
-                                   --open-web xdg-opens its URL
-  ./sim servers [--json]           both stacks' procs and ports
-  ./sim logs de_servers [proc]     tail a stack server's log
-  ./sim logs de_webclient          tail the webclient dev-server log
-  ./sim sims                       generated sims and live process counts
-  ./sim ports [name|--all]         live sims' declared ports vs what's bound
-                                   right now (--all: every generated sim;
-                                   udp_relay shows its whole udp range n/N)
-  ./sim status [-s <sim>] [live|all] [--open-web]
-                                   = ./sim ctl status (live sims only;
-                                     `all` also lists downed ones;
-                                     --open-web xdg-opens the sim's link)
-  ./sim watch --auth-ip H --auth-port P --account U --code C
-                                   party watch on any reachable stack (no sim
-                                   manifest - e.g. the external de_servers);
-                                   prints join/leave/id events. --no-auth +
-                                   --server-ip/--server-port for auth-off
-                                   servers; --party NAME; --ctl-port P keeps
-                                   the list/listen/req control port too
-  ./sim studio <sim.yaml> [--world <w>] [--record <file>] [--down]
-                                   the human session in one command: the
-                                   sim up (reuse if warm), the webclient
-                                   planning mode opened in the browser,
-                                   the de.worldstream/1 feed +
-                                   Mavlink3DMap viewer when available
-                                   (studio still runs without it), the
-                                   session recorded through the record
-                                   seam; Ctrl-C finalizes the recording
-                                   and leaves the sim up unless --down
-  ./sim ctl [-s <sim>] <cmd> ...   operator console (./sim ctl for help)
-  ./sim run <file.yaml> [--seed N] [--keep] [--hold|--view] [--open-web]
-                       [--module <name>=<path>] ...
-                                   run a test/scenario - owns the machine:
-                                   downs every other sim (the CI posture;
-                                   --shared / SIM_SHARED=1 keeps it
-                                   additive on a shared box). --keep skips
-                                   the teardown, --hold parks after the
-                                   timeline (world stream + Mavlink3DMap
-                                   viewer live; the sim's webclient deep
-                                   links print) until Ctrl-C. Interactive
-                                   work is additive by default: a bare
-                                   sims/*.yaml just comes up
-                                   (hash-reused, like up). --open-web
-                                   opens the webclient link once the sim
-                                   is up (with --hold/--view or a bare
-                                   sims file - a plain run tears it down
-                                   again). Seed: the file's `seed:`
-                                   applies; --seed N overrides it.
-                                   --module <name>=<abs path> (repeatable)
-                                   swaps a catalog module / de_comm binary
-                                   for this run only: same fleet spec ->
-                                   just that proc restarts on the warm sim
-  ./sim try <file.yaml> [--module ...]   = run --keep: the build->try loop.
-                                   Rebuilt de_mavlink? Point --module at the
-                                   new bin and the scenario runs against it
-                                   on the warm sim (no SITL warm-up)
-  ./sim suite [dir ...] [--seeds 1,2,3] [--keep] [--tier smoke]
-                                   run every yaml under dir(s) once per seed
-                                   (default dir: tests) - the nightly run:
-                                   owns the machine serially, unless
-                                   --shared. verdicts + junit in
-                                   var/results/nightly/; --tier smoke runs
-                                   only the marked fast first-pass set
-  ./sim view <scenario.yaml> [--open-web]
-                                   one command for sim + Mavlink3DMap viewer:
-                                   = run --hold (the scenario needs
-                                   render: {mode: viewer}); same shared/
-                                   exclusive rules as run
-  ./sim record <sim|live-sim> -o <file.yaml>
-                                   capture a live webclient session through
-                                   the real server's command_plugin seam and
-                                   write it as a de.scenario/1 scenario (+
-                                   .md runbook stub); --record <file> on
-                                   run/view records the window around a
-                                   scenario run or its --hold
-  ./sim list [scenarios|tests|sims]        catalog: files + one-line
-                                   descriptions (default: scenarios+tests)
-  ./sim new <name> [--sensor]     scaffold scenarios/<name>.yaml from
-                                   templates/scenario.yaml; --sensor
-                                   also writes blocks/<name>/ a
-                                   world-driven sensor stub + contract
-                                   (docs/SENSORS.md)
-  ./sim validate <file.yaml>       schema + referenced-file check, starts
-                                   nothing
-  ./sim verbs [--json]            the de.scenario/1 verb registry: every
-                                   do: step, do: probe, fault: kind and
-                                   assert: check with its args, a
-                                   one-line doc and an example
-  ./sim doctor [sim.yaml] [--json] [--esp32]
-                                   machine-readiness check: one
-                                   OK/MISSING/OPTIONAL line per item with a
-                                   fix line; a sim file scopes what is
-                                   required to what that sim needs;
-                                   --esp32 makes the ESP32 HIL rows
-                                   required and probes the board
-  ./sim esp32 <list|build|upload|check> [fw] [--port DEV] [--baud N]
-              [--no-check]         the tools/hil/ ESP32 firmwares
-                                   (default esp32_fake_fc, a fake
-                                   ArduCopter for a phone's USB-OTG FCB
-                                   link): upload = build + flash + run
-                                   the firmware's check_*.py
-  ./sim expand <file.yaml> [--seed N]
-                                   print the chaos: schedule a run would
-                                   execute (concrete fault steps inlined;
-                                   same seed, same schedule), run nothing
-  ./sim logs [-s <sim>] <unit|server> [proc]  tail a process log
-  ./sim clean [--days N] [--all] [--dry-run]  prune var/run/ and var/results/
-                                   (never a live sim; default keeps 7 days)
-  ./sim -v | --version             print the sim repo version (git
-                                   describe; short SHA + -dirty without
-                                   tags)
-
-Login overrides for show/up/run/view/studio (win over the sim yaml and
-sim.local.env SIM_*_AUTH_*):
-  --user <name> --password <code>    the one account every unit and the
-                                     GCS bridge log in with (overrides
-                                     per-unit account: too)
-  --auth-server <host[:port]>        the authenticator (external server
-                                     with auth: true only)
-
-Global flags for show/up/run/view/suite/validate/studio:
-  --shared                         run/view/suite stay additive next to
-                                   live sims instead of downing them
-                                   (= SIM_SHARED=1)
-  --force                          take over a sim another live session
-                                   still owns: up/run down it instead of
-                                   refusing, `down` stops it (every
-                                   command takes it; = SIM_FORCE=1)
-  --slot-base <N|any>              the slot every port derives from (wins
-                                   over the sim yaml's slot_base: and
-                                   SIM_SLOT_BASE); `any` picks the lowest
-                                   base whose ports no live sim or other
-                                   process holds - a shifted pick changes
-                                   the sim hash, so `run` does a fresh up
-                                   instead of reusing (pin a number when
-                                   iterating)
-  --with <a[,b...]>                sims/overlays/<name>.yaml twists applied
-                                   on top of the sim (server swap, extra
-                                   units, config/fc pushes); each applied
-                                   name appends to the sim name and the
-                                   hash changes, so a variant never reuses
-                                   another variant's warm sim
-  --set <name=value>               override a sim yaml `params:` entry
-                                   (repeatable). The value is coerced to the
-                                   param's type (int/float/str) and checked
-                                   against its choices; ${name} references
-                                   in the yaml are substituted before the
-                                   sim resolves, so a different --set
-                                   changes ports/config and the sim hash.
-                                   An unknown name is a clear error; --set
-                                   on a sim with no params: block errors too
-
-Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
-(automated cases) and scenarios/ (human-run demos + examples).
-docs/SCENARIOS.md is the authoring reference. See README.md.
-
-Machine output: show, sims, status (and ./sim ctl status), list,
-validate, expand, doctor and verbs take --json (docs/MACHINE_API.md).
-A run's last line is `RESULT <dir>/summary.json` - the run's full
-report.
+"""DroneEngageStudio - sim: simulation and ground-truth testing from
+reusable blocks. The full help text lives in engine/sim_commands.py
+(the central command registry); run `./sim help` for the overview or
+`./sim help <command>` for a command's usage and flags.
 """
 
 import glob
@@ -211,13 +24,14 @@ sys.pycache_prefix = os.environ.setdefault(
         os.path.dirname(os.path.abspath(__file__)), "var"), "pycache"))
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "engine"))
+import sim_commands
 import simlib
 
 
 def _print_usage():
-    """__doc__, colorized on a tty - shared with ctl.py via
-    simlib.print_usage."""
-    simlib.print_usage(__doc__)
+    """The overview from the command registry, colorized on a tty - shared
+    with ctl.py via simlib.print_usage."""
+    simlib.print_usage(sim_commands.overview())
 
 
 def _bad_flags(a, known):
@@ -257,6 +71,34 @@ def _sim_one_liner(path):
         if first:
             return first
     return _one_liner(path)
+
+
+def _resolve_sim_path(arg):
+    """A sim file path or a bare sims/<name> stem -> an absolute path to
+    its sims/<name>.yaml. Raises SystemExit (with a hint) if not found."""
+    if os.sep in arg or arg.endswith((".yaml", ".yml")):
+        p = os.path.abspath(arg)
+    else:
+        p = os.path.join(simlib.SIM_ROOT, "sims", arg + ".yaml")
+    if not os.path.isfile(p):
+        sys.exit(f"no sim {arg!r}: {p} not found (try `./sim list sims`)")
+    return p
+
+
+def _print_sim_help(arg):
+    """`./sim help <sim>`: print a sim's description and a one-line fleet
+    summary (server type + unit count). The description is the substance
+    of SL-0120; this is the minimal per-sim help surface that exposes
+    it (the fuller `./sim up <sim> --help` usage/params is SL-0117)."""
+    path = _resolve_sim_path(arg)
+    sim = simlib.load_sim(path)
+    desc = (sim.get("description") or "").strip()
+    if not desc:
+        desc = _one_liner(path) or "(no description)"
+    print(f"{sim['name']}  ({len(sim['units'])} unit(s), "
+          f"server {sim['server']['type']})")
+    print()
+    print(desc)
 
 
 def _validate_file(f):
@@ -406,8 +248,21 @@ def _version():
 
 
 def main(argv):
-    if not argv or argv[0] in ("-h", "--help", "help"):
+    if not argv or argv[0] in ("-h", "--help"):
         _print_usage()
+        return 0
+    if argv[0] == "help":
+        # `./sim help` alone = top-level usage; `./sim help <command>` =
+        # that command's help (SL-0115); `./sim help <sim>` = per-sim
+        # description (SL-0120). The fuller `./sim up <sim> --help`
+        # usage/params surface is SL-0117.
+        if len(argv) == 1:
+            _print_usage()
+            return 0
+        if argv[1] in sim_commands.COMMANDS:
+            print(sim_commands.command_help(argv[1]))
+            return 0
+        _print_sim_help(argv[1])
         return 0
     if argv[0] in ("-v", "--version", "version"):
         print(f"sim {_version()}")
@@ -419,6 +274,12 @@ def main(argv):
         # command, so strip it before per-command flag parsing.
         a = [x for x in a if x != "--force"]
         os.environ["SIM_FORCE"] = "1"
+    # `./sim <command> help|--help|-h` (help as the FIRST argument) ->
+    # that command's help (SL-0115). When the first arg is a sim name,
+    # per-sim help is SL-0117.
+    if a and a[0] in ("help", "--help", "-h") and c in sim_commands.COMMANDS:
+        print(sim_commands.command_help(c))
+        return 0
     try:
         if c in ("show", "up", "run", "try", "view", "suite",
                  "validate", "record", "studio"):
@@ -471,14 +332,15 @@ def main(argv):
         elif c == "show":
             json_out = "--json" in a
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--json",))
-            if bad or len(files) != 1:
-                sys.exit("usage: ./sim show <sim.yaml> [--json]"
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
-            sim = simlib.load_sim(files[0])
+            bad = _bad_flags(a, sim_commands.allowed_flags("show"))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim show help")
+            if len(files) != 1:
+                sys.exit("usage: ./sim show <sim.yaml> [--json]")
+            sim = simlib.load_sim(simlib.resolve_sim_arg(files[0]))
             if json_out:
                 srv = sim["server"]
-                print(json.dumps({
+                out = {
                     "file": files[0], "name": sim["name"],
                     "server": {k: srv[k] for k in
                                ("type", "auth", "port", "control_port",
@@ -492,9 +354,16 @@ def main(argv):
                                "account": (u.get("account") or {})
                                .get("user"),
                                "position": u["position"]}
-                              for u in sim["units"]]}, indent=1))
+                              for u in sim["units"]]}
+                if sim["param_values"]:
+                    out["params"] = sim["param_values"]
+                print(json.dumps(out, indent=1))
                 return
             srv = sim["server"]
+            if sim["param_values"]:
+                # SL-0116: the resolved params: values (defaults + --set)
+                print("params: " + " ".join(
+                    f"{k}={v}" for k, v in sim["param_values"].items()))
             print(f"server {srv['type']}{' +auth' if srv['auth'] else ''}: "
                   f"wss {srv['port']} control {srv['control_port']}"
                   + (f" auth {srv['auth_port']}" if srv["auth"] else "")
@@ -515,11 +384,12 @@ def main(argv):
         elif c == "up":
             import launcher
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--fresh", "--open-web"))
-            if bad or len(files) != 1:
+            bad = _bad_flags(a, sim_commands.allowed_flags("up"))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim up help")
+            if len(files) != 1:
                 sys.exit("usage: ./sim up <sim.yaml> [--fresh] "
-                         "[--open-web]"
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+                         "[--open-web]")
             if files[0] == "de_servers":
                 # the dev server stack, not a sim - see engine/devstack
                 if "--open-web" in a:
@@ -534,25 +404,24 @@ def main(argv):
                     import ctl
                     ctl.xdg_open(simlib.WEBCLIENT_URL)
                 return
-            launcher.up(files[0], fresh="--fresh" in a,
+            launcher.up(simlib.resolve_sim_arg(files[0]),
+                        fresh="--fresh" in a,
                         open_web="--open-web" in a)
         elif c == "down":
             import launcher
             names = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--all",))
+            bad = _bad_flags(a, sim_commands.allowed_flags("down"))
             if bad:
-                sys.exit("usage: ./sim down [name|--all]"
-                         + f" - unknown {' '.join(bad)}")
+                sys.exit(f"unknown {' '.join(bad)} - ./sim down help")
             if names and names[0] in ("de_servers", "de_webclient"):
                 import devstack
                 return devstack.down(names[0])
             launcher.down(None if not names or "--all" in a else names[0])
         elif c == "sims":
             json_out = "--json" in a
-            bad = _bad_flags(a, ("--json",))
+            bad = _bad_flags(a, sim_commands.allowed_flags("sims"))
             if bad:
-                sys.exit("usage: ./sim sims [--json]"
-                         + f" - unknown {' '.join(bad)}")
+                sys.exit(f"unknown {' '.join(bad)} - ./sim sims help")
             names = simlib.sim_names()
             if json_out:
                 print(json.dumps({"sims": [
@@ -580,10 +449,11 @@ def main(argv):
             # right now. `sim down` frees them all - this is the lease
             # visibility the udp_relay checks ask for.
             names = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--all",))
-            if bad or len(names) > 1:
-                sys.exit("usage: ./sim ports [name|--all]"
-                         + f" - unknown {' '.join(bad)}")
+            bad = _bad_flags(a, sim_commands.allowed_flags("ports"))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim ports help")
+            if len(names) > 1:
+                sys.exit("usage: ./sim ports [name|--all]")
             scope = names or [n for n in simlib.sim_names()
                               if "--all" in a or simlib.read_pids(n)]
             if not scope:
@@ -676,13 +546,15 @@ def main(argv):
                 record = a[i + 1]
                 del a[i:i + 2]
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--keep", "--hold", "--view",
-                                 "--open-web"))
-            if bad or len(files) != 1:
+            bad = _bad_flags(a, sim_commands.allowed_flags(c))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim {c} help")
+            if len(files) != 1:
                 sys.exit(f"usage: ./sim {c} <file.yaml> [--seed N] "
                          "[--keep] [--hold|--view] [--record <file>] "
-                         "[--open-web] [--module <name>=<path>] ..."
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+                         "[--open-web] [--module <name>=<path>] ...")
+            files[0] = simlib.resolve_sim_arg(files[0],
+                                              ("sims", "tests"))
             # `try` is the iteration form of `run`: it always keeps the
             # sim (no teardown) so the next try lands on a warm fleet
             keep = "--keep" in a or c == "try"
@@ -715,11 +587,9 @@ def main(argv):
                 del a[i:i + 2]
             keep = "--keep" in a
             dirs = [x for x in a if not x.startswith("-")] or ["tests"]
-            bad = _bad_flags(a, ("--keep",))
+            bad = _bad_flags(a, sim_commands.allowed_flags("suite"))
             if bad:
-                sys.exit("usage: ./sim suite [dir ...] [--seeds 1,2,3] "
-                         "[--keep] [--tier smoke|regression]"
-                         + f" - unknown {' '.join(bad)}")
+                sys.exit(f"unknown {' '.join(bad)} - ./sim suite help")
             cmd = [sys.executable,
                    os.path.join(simlib.SIM_ROOT, "ci", "run_suite.py"),
                    "--roots"] + dirs + ["--seeds", seeds] \
@@ -729,12 +599,13 @@ def main(argv):
         elif c == "list":
             json_out = "--json" in a
             roots = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--json",))
-            if bad or any(r not in ("scenarios", "tests", "sims")
-                          for r in roots):
+            bad = _bad_flags(a, sim_commands.allowed_flags("list"))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim list help")
+            if any(r not in ("scenarios", "tests", "sims")
+                   for r in roots):
                 sys.exit("usage: ./sim list [--json] "
-                         "[scenarios|tests|sims] ..."
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+                         "[scenarios|tests|sims] ...")
             if json_out:
                 print(json.dumps({"roots": [
                     {"root": root,
@@ -763,15 +634,16 @@ def main(argv):
         elif c == "new":
             sensor = "--sensor" in a
             names = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--sensor",))
+            bad = _bad_flags(a, sim_commands.allowed_flags("new"))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim new help")
             ok_name = len(names) == 1 and \
                 re.fullmatch(r"[\w-]+(/[\w-]+)*", names[0])
-            if bad or not ok_name:
+            if not ok_name:
                 sys.exit("usage: ./sim new <name> [--sensor] - word chars"
                          " (a/b nests under scenarios/; --sensor also"
                          " scaffolds blocks/<name>/ a world-driven"
-                         " sensor stub)"
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+                         " sensor stub)")
             if sensor and "/" in names[0]:
                 sys.exit("--sensor names a new block dir - no '/'")
             dst = os.path.join(simlib.SIM_ROOT, "scenarios",
@@ -798,10 +670,13 @@ def main(argv):
         elif c == "validate":
             json_out = "--json" in a
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--json",))
-            if bad or len(files) != 1:
-                sys.exit("usage: ./sim validate <file.yaml> [--json]"
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+            bad = _bad_flags(a, sim_commands.allowed_flags("validate"))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim validate help")
+            if len(files) != 1:
+                sys.exit("usage: ./sim validate <file.yaml> [--json]")
+            files[0] = simlib.resolve_sim_arg(files[0],
+                                              ("sims", "tests"))
             problems = _validate_file(files[0])
             if json_out:
                 print(json.dumps({"file": files[0],
@@ -823,11 +698,12 @@ def main(argv):
                 seed = int(a[i + 1])
                 del a[i:i + 2]
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--json",))
-            if bad or len(files) != 1:
+            bad = _bad_flags(a, sim_commands.allowed_flags("expand"))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim expand help")
+            if len(files) != 1:
                 sys.exit("usage: ./sim expand <file.yaml> [--seed N] "
-                         "[--json]"
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+                         "[--json]")
             scn = scenario_mod.load_scenario(files[0], seed=seed,
                                              probe_ports=False)
             if not scn.get("expanded"):
@@ -850,6 +726,25 @@ def main(argv):
                 sys.stdout.write(scenario_mod.expanded_text(scn))
         elif c == "record":
             import record as record_mod
+            # SL-0115: resolve a bare sim/test name to its file up front
+            # (the target is the first positional that isn't the -o
+            # value). A name that resolves to nothing stays as-is -
+            # record._resolve prefers live-sim manifests anyway.
+            skip, tgt = False, None
+            for i, x in enumerate(a):
+                if skip:
+                    skip = False
+                elif x == "-o":
+                    skip = True
+                elif not x.startswith("-"):
+                    tgt = i
+                    break
+            if tgt is not None:
+                try:
+                    a[tgt] = simlib.resolve_sim_arg(a[tgt],
+                                                    ("sims", "tests"))
+                except simlib.SimError:
+                    pass
             record_mod.main(a)
         elif c == "studio":
             import launcher
@@ -871,12 +766,14 @@ def main(argv):
                     rest.append(a[i])
                     i += 1
             files = [x for x in rest if not x.startswith("-")]
-            bad = _bad_flags(rest, ("--down",))
-            if bad or len(files) != 1:
+            bad = _bad_flags(rest, sim_commands.allowed_flags("studio"))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim studio help")
+            if len(files) != 1:
                 sys.exit("usage: ./sim studio <sim.yaml> [--world <w>] "
-                         "[--record <file>] [--down]"
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
-            launcher.studio(files[0], world=world, record_out=record,
+                         "[--record <file>] [--down]")
+            launcher.studio(simlib.resolve_sim_arg(files[0]),
+                            world=world, record_out=record,
                             teardown="--down" in rest)
         elif c == "view":
             import scenario_runner
@@ -888,11 +785,14 @@ def main(argv):
                 record = a[i + 1]
                 del a[i:i + 2]
             files = [x for x in a if not x.startswith("-")]
-            bad = _bad_flags(a, ("--open-web",))
-            if bad or len(files) != 1:
+            bad = _bad_flags(a, sim_commands.allowed_flags("view"))
+            if bad:
+                sys.exit(f"unknown {' '.join(bad)} - ./sim view help")
+            if len(files) != 1:
                 sys.exit("usage: ./sim view <scenario.yaml> "
-                         "[--record <file>] [--open-web]"
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+                         "[--record <file>] [--open-web]")
+            files[0] = simlib.resolve_sim_arg(files[0],
+                                              ("sims", "tests"))
             return scenario_runner.run(files[0], hold=True,
                                        record=record,
                                        open_web="--open-web" in a)
@@ -927,10 +827,9 @@ def main(argv):
             return esp32.main(a)
         elif c == "verbs":
             import registry
-            bad = _bad_flags(a, ("--json",))
+            bad = _bad_flags(a, sim_commands.allowed_flags("verbs"))
             if bad:
-                sys.exit("usage: ./sim verbs [--json]"
-                         + (f" - unknown {' '.join(bad)}" if bad else ""))
+                sys.exit(f"unknown {' '.join(bad)} - ./sim verbs help")
             if "--json" in a:
                 print(json.dumps({"verbs": [
                     {"name": v["name"], "kind": v["kind"],

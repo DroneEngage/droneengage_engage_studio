@@ -804,6 +804,35 @@ def sim_hash(sim, overrides):
         sort_keys=True).encode()).hexdigest()[:16]
 
 
+def resolve_sim_arg(arg, kinds=("sims",)):
+    """Resolve a sim/test argument to a file path. An existing path is
+    returned unchanged (so sims/copters3.yaml and tests/a/b.yaml work as
+    written). A bare name (no '/', no .yaml) resolves to sims/<name>.yaml,
+    and when `kinds` includes "tests" also tests/**/<name>.yaml (recursive
+    - a test may nest under an area subdir). One match -> the path; none
+    -> SimError pointing at `./sim list sims`; several -> SimError listing
+    them. A path with '/' or .yaml that does not exist is returned as-is
+    so the downstream loader reports the file-not-found."""
+    if os.path.exists(arg):
+        return arg
+    if "/" in arg or arg.endswith(".yaml"):
+        return arg
+    matches = []
+    if "sims" in kinds:
+        p = os.path.join(SIM_ROOT, "sims", arg + ".yaml")
+        if os.path.isfile(p):
+            matches.append(p)
+    if "tests" in kinds:
+        matches.extend(sorted(glob.glob(os.path.join(
+            SIM_ROOT, "tests", "**", arg + ".yaml"), recursive=True)))
+    if len(matches) == 1:
+        return matches[0]
+    if not matches:
+        raise SimError(f"no sim or test named {arg!r} - ./sim list sims")
+    rel = [os.path.relpath(m, SIM_ROOT) for m in matches]
+    raise SimError(f"ambiguous name {arg!r} - {', '.join(rel)}")
+
+
 def _load_sim_free_slot(spec, base_dir, exclusive=False):
     """SIM_SLOT_BASE_OVERRIDE=any: resolve the sim once per candidate
     base, lowest first; the first whose whole port set is free wins.
