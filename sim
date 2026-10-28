@@ -172,6 +172,15 @@ Global flags for show/up/run/view/suite/validate/studio:
                                    name appends to the sim name and the
                                    hash changes, so a variant never reuses
                                    another variant's warm sim
+  --set <name=value>               override a sim yaml `params:` entry
+                                   (repeatable). The value is coerced to the
+                                   param's type (int/float/str) and checked
+                                   against its choices; ${name} references
+                                   in the yaml are substituted before the
+                                   sim resolves, so a different --set
+                                   changes ports/config and the sim hash.
+                                   An unknown name is a clear error; --set
+                                   on a sim with no params: block errors too
 
 Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/
 (automated cases) and scenarios/ (human-run demos + examples).
@@ -231,6 +240,23 @@ def _one_liner(path):
     except OSError:
         pass
     return ""
+
+
+def _sim_one_liner(path):
+    """First line of a sim's `description:` key when present, else the
+    header-comment one-liner (`_one_liner`). `./sim list sims` shows this
+    so each fleet explains itself; sims without a description fall back
+    to the 'what it proves' comment line."""
+    try:
+        spec = simlib.load_yaml(path) or {}
+    except Exception:
+        spec = {}
+    desc = spec.get("description")
+    if desc and desc.strip():
+        first = desc.strip().splitlines()[0].strip()
+        if first:
+            return first
+    return _one_liner(path)
 
 
 def _validate_file(f):
@@ -333,8 +359,11 @@ def _cli_flags(argv):
     the command line. --user/--password/--auth-server are the sim's login
     overrides (show/up/run/view only); --shared keeps run/view/suite
     additive next to live sims (the SIM_SHARED=1 semantics) and
-    --slot-base overrides the slot every port derives from."""
-    rest, kw, i = [], {}, 0
+    --slot-base overrides the slot every port derives from. --set
+    name=value (repeatable) overrides the sim yaml's `params:` block
+    (SL-0116): type/choices are validated against the declarations in
+    load_sim, and ${name} references are substituted before resolution."""
+    rest, kw, sets, i = [], {}, {}, 0
     while i < len(argv):
         a = argv[i]
         if a in ("--user", "--password", "--auth-server", "--slot-base",
@@ -343,12 +372,20 @@ def _cli_flags(argv):
                 sys.exit(f"{a} needs a value")
             kw[a[2:].replace("-", "_")] = argv[i + 1]
             i += 2
+        elif a == "--set":
+            if i + 1 >= len(argv) or "=" not in argv[i + 1]:
+                sys.exit("--set needs name=value")
+            name, _, val = argv[i + 1].partition("=")
+            sets[name] = val
+            i += 2
         elif a == "--shared":
             kw["shared"] = True
             i += 1
         else:
             rest.append(a)
             i += 1
+    if sets:
+        kw["set"] = sets
     return rest, kw
 
 
@@ -406,6 +443,13 @@ def main(argv):
                 # sims/overlays/<name>.yaml applied on top of the sim
                 # (env propagates to the suite's per-test subprocesses)
                 os.environ["SIM_WITH"] = str(flags["with"])
+            if flags.get("set"):
+                # SL-0116: --set name=value overrides for the sim yaml's
+                # params: block. Installed in-process for this command
+                # and mirrored to SIM_SET so suite subprocesses inherit
+                # them (same env channel --with/--slot-base use).
+                simlib.set_param_overrides(flags["set"])
+                os.environ["SIM_SET"] = json.dumps(flags["set"])
             auth = {k: v for k, v in flags.items()
                     if k in ("user", "password", "auth_server")}
             if auth and c in ("suite", "validate"):
@@ -696,7 +740,9 @@ def main(argv):
                     {"root": root,
                      "files": [
                          {"file": os.path.relpath(f, simlib.SIM_ROOT),
-                          "description": _one_liner(f)[:80]}
+                          "description":
+                              (_sim_one_liner(f) if root == "sims"
+                               else _one_liner(f))[:80]}
                          for f in sorted(glob.glob(
                              os.path.join(simlib.SIM_ROOT, root,
                                           "**", "*.yaml"),
@@ -711,7 +757,8 @@ def main(argv):
                     print(f"{root}/  ({len(files)} files)")
                     for f in files:
                         rel = os.path.relpath(f, simlib.SIM_ROOT)
-                        one = _one_liner(f)
+                        one = _sim_one_liner(f) if root == "sims" \
+                            else _one_liner(f)
                         print(f"  {rel:52s} {one[:80]}")
         elif c == "new":
             sensor = "--sensor" in a

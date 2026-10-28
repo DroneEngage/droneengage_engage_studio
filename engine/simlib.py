@@ -376,6 +376,113 @@ def module_overrides():
     return _MODULE_BINS
 
 
+# SL-0116: --set name=value (./sim show|up|run|view|suite|validate|studio):
+# per-run overrides for the sim yaml's `params:` block. They feed the
+# resolved param values (defaults + overrides) that ${name} substitution
+# spreads into the spec before block/sim resolution - so a different
+# --set changes the server port / unit config and thus the sim hash.
+_PARAM_OVERRIDES = {}
+
+
+def set_param_overrides(overrides):
+    """Install {param name: str value} for this process. Called by the
+    sim CLI before load_sim; {} clears. Values are strings here - type
+    coercion (int/float) and choices validation happen in _resolve_params
+    against the sim's own `params:` declarations. The CLI also mirrors
+    them into the SIM_SET env var so suite subprocesses inherit them
+    (the same env-propagation channel --with/--slot-base use)."""
+    global _PARAM_OVERRIDES
+    _PARAM_OVERRIDES = dict(overrides or {})
+
+
+def param_overrides():
+    return _PARAM_OVERRIDES
+
+
+def _effective_param_overrides():
+    """The --set overrides in force: the SIM_SET env var (inherited by
+    suite subprocesses) below the in-process set_param_overrides() (a
+    direct ./sim call sets both to the same values)."""
+    overrides = {}
+    env_set = os.environ.get("SIM_SET")
+    if env_set:
+        try:
+            d = json.loads(env_set)
+            if isinstance(d, dict):
+                overrides.update({str(k): str(v) for k, v in d.items()})
+        except (ValueError, TypeError):
+            pass
+    overrides.update(_PARAM_OVERRIDES)
+    return overrides
+
+
+_PARAM_REF = re.compile(r"\$\{(\w+)\}")
+
+
+def _resolve_params(decl, src):
+    """Build {name: value} from the sim's `params:` declarations plus the
+    --set overrides (set_param_overrides). Each declaration needs a
+    `default`; `type` (int|float|str, default str) coerces the override,
+    `choices` (a list) validates it. A --set name not in the declarations
+    is a clear error listing the available params; --set on a sim with no
+    params: block at all is an error too."""
+    if decl is None:
+        decl = {}
+    if not isinstance(decl, dict):
+        raise SimError(f"sim params: must be a mapping, got "
+                       f"{type(decl).__name__}")
+    values = {}
+    for name, p in decl.items():
+        if not isinstance(p, dict) or "default" not in p:
+            raise SimError(f"sim param {name!r}: needs a 'default'")
+        values[name] = p["default"]
+    for name, raw in _effective_param_overrides().items():
+        if name not in decl:
+            avail = ", ".join(sorted(decl)) if decl else "(none)"
+            raise SimError(f"--set {name!r}: not a param of this sim "
+                           f"(params: {avail})")
+        p = decl[name]
+        ptype = p.get("type", "str")
+        if ptype == "int":
+            try:
+                val = int(raw)
+            except (ValueError, TypeError):
+                raise SimError(f"--set {name}={raw!r}: not a valid int")
+        elif ptype == "float":
+            try:
+                val = float(raw)
+            except (ValueError, TypeError):
+                raise SimError(f"--set {name}={raw!r}: not a valid float")
+        else:
+            val = raw
+        choices = p.get("choices")
+        if choices is not None and val not in choices:
+            raise SimError(f"--set {name}={raw!r}: not in choices "
+                           f"{list(choices)}")
+        values[name] = val
+    return values
+
+
+def _substitute_params(obj, values):
+    """Recursively replace ${name} in string values with the resolved
+    param value. A whole-string ${name} becomes the native type (an int
+    for an int param); a ${name} embedded in a larger string is str()-ed.
+    Only ${name} patterns matching a declared param are substituted -
+    anything else is left untouched."""
+    if isinstance(obj, dict):
+        return {k: _substitute_params(v, values) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_substitute_params(v, values) for v in obj]
+    if isinstance(obj, str):
+        m = _PARAM_REF.fullmatch(obj)
+        if m and m.group(1) in values:
+            return values[m.group(1)]
+        return _PARAM_REF.sub(
+            lambda mm: str(values[mm.group(1)])
+            if mm.group(1) in values else mm.group(0), obj)
+    return obj
+
+
 def resolve_bin(name, spec=None):
     """The binary a proc would launch with NOW: --module override, else
     the bin_env setting / catalog default (de_comm is built in, not in
@@ -526,6 +633,14 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
     applied = []
     for ov in _spec_overlays(spec, overlays):
         spec = _apply_overlay(spec, ov, applied)
+    # SL-0116: params: declarations + --set overrides + ${name}
+    # substitution, before block/sim resolution so substituted values
+    # flow into the server port, unit config, etc. Popped off the spec
+    # so it never reaches the unknown-keys check; the resolved values
+    # are stored on the sim dict (params + param_values).
+    params_decl = spec.pop("params", None)
+    param_values = _resolve_params(params_decl, src)
+    spec = _substitute_params(spec, param_values)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
                            "slot_base", "units", "render", "speedup",
                            "fcb_proxy", "fcb_link"}
@@ -584,6 +699,11 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         "fcb_link": spec.get("fcb_link"),
         "units": [],
         "render": _render_spec(spec.get("render"), slot_base),
+        # SL-0116: the params: declarations and their resolved values
+        # (defaults + --set overrides) - the declarations are kept for
+        # `./sim show`/introspection, the values are what ${name} spread
+        "params": params_decl or {},
+        "param_values": param_values,
     }
     if sim["speedup"] < 1:
         raise SimError("sim: speedup must be >= 1")
