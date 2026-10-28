@@ -103,6 +103,13 @@ class CliHelpTest(unittest.TestCase):
         self.assertIn("unknown --bogus - ./sim up help",
                       p.stderr + p.stdout)
 
+    def test_missing_positional_points_at_help(self):
+        # SL-0124: a missing <file> argument exits non-zero with the
+        # registry usage line plus the ./sim <cmd> help pointer.
+        p = self._run("show")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("./sim show help", p.stderr + p.stdout)
+
 
 class ResolveSimArgTest(unittest.TestCase):
     def _tmp_root(self):

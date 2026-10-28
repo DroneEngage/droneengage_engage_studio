@@ -426,13 +426,46 @@ _PARAM_BOOL = {"true": True, "1": True, "yes": True,
                "false": False, "0": False, "no": False}
 
 
+def _coerce_param(name, raw, p, what):
+    """Run one param value through its declaration: `type`
+    (str|int|float|bool, default str) coerces it, `choices` validates it.
+    `what` labels the error ('default' / '--set name=')."""
+    ptype = p.get("type", "str")
+    if ptype == "int":
+        try:
+            val = int(raw)
+        except (ValueError, TypeError):
+            raise SimError(f"sim param {name}: {what} {raw!r} is not a "
+                           "valid int")
+    elif ptype == "float":
+        try:
+            val = float(raw)
+        except (ValueError, TypeError):
+            raise SimError(f"sim param {name}: {what} {raw!r} is not a "
+                           "valid float")
+    elif ptype == "bool":
+        val = raw if isinstance(raw, bool) \
+            else _PARAM_BOOL.get(str(raw).lower())
+        if val is None:
+            raise SimError(f"sim param {name}: {what} {raw!r} is not a "
+                           "bool (true/false/1/0/yes/no)")
+    else:
+        val = raw
+    choices = p.get("choices")
+    if choices is not None and val not in choices:
+        raise SimError(f"sim param {name}: {what} {raw!r} not in choices "
+                       f"{list(choices)}")
+    return val
+
+
 def _resolve_params(decl, src):
     """Build {name: value} from the sim's `params:` declarations plus the
     --set overrides (set_param_overrides). Each declaration needs a
     `default` and a one-line `help`; `type` (str|int|float|bool, default
-    str) coerces the override, `choices` (a list) validates it. A --set
-    name not in the declarations is a clear error listing the available
-    params; --set on a sim with no params: block at all is an error too."""
+    str) coerces both the default and the override, `choices` (a list)
+    validates them. A --set name not in the declarations is a clear error
+    listing the available params; --set on a sim with no params: block at
+    all is an error too."""
     if decl is None:
         decl = {}
     if not isinstance(decl, dict):
@@ -448,36 +481,14 @@ def _resolve_params(decl, src):
         if ptype not in _PARAM_TYPES:
             raise SimError(f"sim param {name!r}: bad type {ptype!r} "
                            f"(one of {', '.join(_PARAM_TYPES)})")
-        values[name] = p["default"]
+        values[name] = _coerce_param(name, p["default"], p, "default")
     for name, raw in _effective_param_overrides().items():
         if name not in decl:
             avail = ", ".join(sorted(decl)) if decl else "(none)"
             raise SimError(f"--set {name!r}: not a param of this sim "
                            f"(params: {avail})")
-        p = decl[name]
-        ptype = p.get("type", "str")
-        if ptype == "int":
-            try:
-                val = int(raw)
-            except (ValueError, TypeError):
-                raise SimError(f"--set {name}={raw!r}: not a valid int")
-        elif ptype == "float":
-            try:
-                val = float(raw)
-            except (ValueError, TypeError):
-                raise SimError(f"--set {name}={raw!r}: not a valid float")
-        elif ptype == "bool":
-            val = _PARAM_BOOL.get(str(raw).lower())
-            if val is None:
-                raise SimError(f"--set {name}={raw!r}: not a bool "
-                               "(true/false/1/0/yes/no)")
-        else:
-            val = raw
-        choices = p.get("choices")
-        if choices is not None and val not in choices:
-            raise SimError(f"--set {name}={raw!r}: not in choices "
-                           f"{list(choices)}")
-        values[name] = val
+        values[name] = _coerce_param(name, raw, decl[name],
+                                     f"--set {name}=")
     return values
 
 

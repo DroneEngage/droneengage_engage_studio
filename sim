@@ -35,6 +35,13 @@ def _print_usage():
     simlib.print_usage(sim_commands.overview())
 
 
+def _usage_exit(c, hint=""):
+    """usage error -> the command registry's first usage line plus the
+    ./sim <cmd> help pointer (SL-0124); extra hints keep riding along."""
+    sys.exit(sim_commands.COMMANDS[c]["usage"][0] +
+             f" - ./sim {c} help" + hint)
+
+
 def _bad_flags(a, known):
     """--flags in `a` that are not in `known` (the auth overrides were
     already stripped). Typos like --view should fail, not be ignored."""
@@ -324,7 +331,7 @@ def main(argv):
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim show help")
             if len(files) != 1:
-                sys.exit("usage: ./sim show <sim.yaml> [--json]")
+                _usage_exit("show")
             sim = simlib.load_sim(simlib.resolve_sim_arg(files[0]))
             if json_out:
                 srv = sim["server"]
@@ -376,8 +383,7 @@ def main(argv):
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim up help")
             if len(files) != 1:
-                sys.exit("usage: ./sim up <sim.yaml> [--fresh] "
-                         "[--open-web]")
+                _usage_exit("up")
             if files[0] == "de_servers":
                 # the dev server stack, not a sim - see engine/devstack
                 if "--open-web" in a:
@@ -441,7 +447,7 @@ def main(argv):
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim ports help")
             if len(names) > 1:
-                sys.exit("usage: ./sim ports [name|--all]")
+                _usage_exit("ports")
             scope = names or [n for n in simlib.sim_names()
                               if "--all" in a or simlib.read_pids(n)]
             if not scope:
@@ -538,9 +544,7 @@ def main(argv):
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim {c} help")
             if len(files) != 1:
-                sys.exit(f"usage: ./sim {c} <file.yaml> [--seed N] "
-                         "[--keep] [--hold|--view] [--record <file>] "
-                         "[--open-web] [--module <name>=<path>] ...")
+                _usage_exit(c)
             files[0] = simlib.resolve_sim_arg(files[0],
                                               ("sims", "tests"))
             # `try` is the iteration form of `run`: it always keeps the
@@ -592,8 +596,7 @@ def main(argv):
                 sys.exit(f"unknown {' '.join(bad)} - ./sim list help")
             if any(r not in ("scenarios", "tests", "sims")
                    for r in roots):
-                sys.exit("usage: ./sim list [--json] "
-                         "[scenarios|tests|sims] ...")
+                _usage_exit("list")
             if json_out:
                 print(json.dumps({"roots": [
                     {"root": root,
@@ -628,10 +631,10 @@ def main(argv):
             ok_name = len(names) == 1 and \
                 re.fullmatch(r"[\w-]+(/[\w-]+)*", names[0])
             if not ok_name:
-                sys.exit("usage: ./sim new <name> [--sensor] - word chars"
-                         " (a/b nests under scenarios/; --sensor also"
-                         " scaffolds blocks/<name>/ a world-driven"
-                         " sensor stub)")
+                _usage_exit("new", " - word chars"
+                            " (a/b nests under scenarios/; --sensor also"
+                            " scaffolds blocks/<name>/ a world-driven"
+                            " sensor stub)")
             if sensor and "/" in names[0]:
                 sys.exit("--sensor names a new block dir - no '/'")
             dst = os.path.join(simlib.SIM_ROOT, "scenarios",
@@ -662,7 +665,7 @@ def main(argv):
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim validate help")
             if len(files) != 1:
-                sys.exit("usage: ./sim validate <file.yaml> [--json]")
+                _usage_exit("validate")
             files[0] = simlib.resolve_sim_arg(files[0],
                                               ("sims", "tests"))
             problems = _validate_file(files[0])
@@ -690,8 +693,7 @@ def main(argv):
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim expand help")
             if len(files) != 1:
-                sys.exit("usage: ./sim expand <file.yaml> [--seed N] "
-                         "[--json]")
+                _usage_exit("expand")
             scn = scenario_mod.load_scenario(files[0], seed=seed,
                                              probe_ports=False)
             if not scn.get("expanded"):
@@ -758,8 +760,7 @@ def main(argv):
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim studio help")
             if len(files) != 1:
-                sys.exit("usage: ./sim studio <sim.yaml> [--world <w>] "
-                         "[--record <file>] [--down]")
+                _usage_exit("studio")
             launcher.studio(simlib.resolve_sim_arg(files[0]),
                             world=world, record_out=record,
                             teardown="--down" in rest)
@@ -777,8 +778,7 @@ def main(argv):
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim view help")
             if len(files) != 1:
-                sys.exit("usage: ./sim view <scenario.yaml> "
-                         "[--record <file>] [--open-web]")
+                _usage_exit("view")
             files[0] = simlib.resolve_sim_arg(files[0],
                                               ("sims", "tests"))
             return scenario_runner.run(files[0], hold=True,

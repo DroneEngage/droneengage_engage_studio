@@ -242,6 +242,39 @@ class SimParamsTest(unittest.TestCase):
                                 "help": "x"}}))
         self.assertIn("server_port", str(cm.exception))
 
+    def test_bad_int_default_is_error(self):
+        """SL-0124: a non-int default for an int param is a clear error
+        naming the param and the bad default."""
+        with self.assertRaises(simlib.SimError) as cm:
+            simlib.load_sim(_sim_spec(params={
+                "server_port": {"default": "abc", "type": "int",
+                                "help": "port"}},
+                server_port_ref=62900))
+        self.assertIn("server_port", str(cm.exception))
+        self.assertIn("abc", str(cm.exception))
+
+    def test_default_outside_choices_is_error(self):
+        """SL-0124: a default outside the param's choices is rejected."""
+        with self.assertRaises(simlib.SimError) as cm:
+            simlib.load_sim(_sim_spec(params={
+                "net": {"default": "nope",
+                        "choices": ["auto", "lan"], "help": "net"}},
+                server_port_ref=62900))
+        self.assertIn("net", str(cm.exception))
+        self.assertIn("choices", str(cm.exception))
+
+    def test_typed_yaml_defaults_unchanged(self):
+        """SL-0124: a yaml int default stays an int, a yaml bool stays a
+        bool - only coercion-incompatible defaults fail."""
+        sim = simlib.load_sim(_sim_spec(params={
+            "server_port": {"default": 63000, "type": "int",
+                            "help": "port"},
+            "verbose": {"default": True, "type": "bool",
+                        "help": "flag"}},
+            server_port_ref=62900))
+        self.assertIs(sim["param_values"]["server_port"], 63000)
+        self.assertIs(sim["param_values"]["verbose"], True)
+
     def test_param_changes_hash(self):
         """different resolved values -> different sim hash (an `up`
         regenerates instead of reusing the warm sim)."""
