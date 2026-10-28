@@ -95,7 +95,8 @@ class RegistryTest(unittest.TestCase):
         out = _print_usage_captured(doc, tty=True)
         self.assertIn("\x1b[32m./sim up \x1b[33m<sim.yaml>", out)
         self.assertIn("\x1b[33m[--fresh]", out)
-        self.assertIn("\x1b[32m  --fresh", out)
+        # flag rows are parameters: yellow, not command green
+        self.assertIn("\x1b[33m  --fresh", out)
         self.assertEqual(_print_usage_captured(doc, tty=False),
                          doc + "\n")
 

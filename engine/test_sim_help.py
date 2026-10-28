@@ -141,8 +141,9 @@ class TestRenderHelp(unittest.TestCase):
         out = _print_usage_captured(doc, tty=True)
         self.assertIn("\x1b[32m  ./sim up helptest \x1b[33m"
                       "[--set NAME=VALUE ...]", out)
-        self.assertIn("\x1b[32m  serial", out)
-        self.assertIn("\x1b[32m  --fresh", out)
+        # flag and params: rows are parameters: yellow, not command green
+        self.assertIn("\x1b[33m  serial", out)
+        self.assertIn("\x1b[33m  --fresh", out)
         self.assertEqual(_print_usage_captured(doc, tty=False),
                          doc + "\n")
 

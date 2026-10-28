@@ -224,7 +224,7 @@ def print_usage(doc):
         return
     green, yellow, white, reset = \
         "\033[32m", "\033[33m", "\033[37m", "\033[0m"
-    param_rx = re.compile(r"<[^>]*>|\[[^\]]*\]|\.\.\.")
+    param_rx = re.compile(r"<[^>]*>|\[[^\]]*\]|\.\.\.|--\S+")
     for line in doc.splitlines():
         # a "usage: <cmd>" line (command_help) keeps the label white and
         # colors the command like a usage row
@@ -241,6 +241,14 @@ def print_usage(doc):
             print(white + line + reset if line.strip() else line)
             continue
         cmd, pad, desc = m.group(1), m.group(2), m.group(3)
+        # flag rows (--x under flags:/shared flags:/Common flags:) and
+        # params: rows ("  name  default: ...") are parameters - yellow
+        # like <params>/[flags] in a usage line, not command green
+        if cmd.lstrip().startswith("-") \
+                or (desc or "").startswith("default:"):
+            print(yellow + cmd + reset
+                  + (pad + white + desc + reset if desc else ""))
+            continue
         cmd = param_rx.sub(yellow + r"\g<0>" + green, cmd)
         print(green + cmd + reset
               + (pad + white + desc + reset if desc else ""))
