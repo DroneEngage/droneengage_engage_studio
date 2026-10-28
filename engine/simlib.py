@@ -1692,8 +1692,17 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         if mode == "app" and set(remote) != {"de_comm", "de_mavlink"}:
             raise SimError(f"unit {name}: android mode: app needs "
                            "remote_modules [de_comm, de_mavlink]")
+        # SL-0118: `net` picks how the device reaches the host - auto
+        # (emulator serials adb-reverse, everything else LAN probing),
+        # adb_reverse (a USB device with no network reaches host TCP
+        # ports as 127.0.0.1), lan (host_ip() LAN probing always).
+        net = spec.get("net") or "auto"
+        if net not in ("auto", "adb_reverse", "lan"):
+            raise SimError(f"unit {name}: android.net must be 'auto', "
+                           f"'adb_reverse' or 'lan' (got {net!r})")
         u["android"] = {"serial": spec.get("serial"),
                         "remote_modules": remote, "mode": mode,
+                        "net": net,
                         "device_ip": None, "clock_offset_ms": 0}
     # AN-0037 test hook: SIM_ANDROID_MODULES="de_comm[,...]" forces the
     # fleet's FIRST unit to run those modules on the adb device - lets
@@ -1707,7 +1716,7 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             raise SimError(f"unit {name}: SIM_ANDROID_MODULES {unknown} "
                            f"not in the unit's modules ({u['modules']})")
         u["android"] = {"serial": None, "remote_modules": remote,
-                        "mode": "sim",
+                        "mode": "sim", "net": "auto",
                         "device_ip": None, "clock_offset_ms": 0}
     return u
 

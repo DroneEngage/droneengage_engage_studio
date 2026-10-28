@@ -182,7 +182,7 @@ def down(name=None, quiet=False):
                 for mod in (u.get("android") or {}).get(
                         "remote_modules") or []:
                     _android.stop_module(u, mod)
-                if u.get("android") and _android.is_emulator(u):
+                if u.get("android") and _android.uses_adb_reverse(u):
                     # SL-0112: drop this sim's adb reverse rules
                     _android.clear_reverse(u)
     if not dirs and not strays:
@@ -429,11 +429,12 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
             u["android"]["device_ip"] = _android.device_ip(u)
             u["android"]["clock_offset_ms"] = \
                 _android.measure_clock_offset_ms(u)
-            if _android.is_emulator(u):
-                # SL-0112: an emulator cannot reach the host's LAN IP -
-                # it reaches host ports through `adb reverse` as
-                # 127.0.0.1, so every host_ip() (de_comm auth_ip, fcb
-                # uri, comm server public_host) must resolve to it
+            if _android.uses_adb_reverse(u):
+                # SL-0112/SL-0118: an emulator - or a USB phone with no
+                # network (net: adb_reverse) - cannot reach the host's
+                # LAN IP; it reaches host ports through `adb reverse`
+                # as 127.0.0.1, so every host_ip() (de_comm auth_ip,
+                # fcb uri, comm server public_host) must resolve to it
                 os.environ["ANDROID_HOST_IP"] = "127.0.0.1"
             if _android.android_mode(u) == "app":
                 _android.clean_sim_overrides(u)
@@ -451,12 +452,13 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         os.unlink(_runner_rec_path(name))
     except OSError:
         pass
-    # SL-0112: emulator units reach host TCP ports through adb reverse -
-    # forward this sim's comm/auth/fcb ports now that generate() has
-    # made them final, before any proc starts dialing them
+    # SL-0112/SL-0118: adb-reverse units (emulator, or net: adb_reverse
+    # USB phones) reach host TCP ports through adb reverse - forward
+    # this sim's comm/auth/fcb ports now that generate() has made them
+    # final, before any proc starts dialing them
     import android as _android
     for u in m["units"]:
-        if u.get("android") and _android.is_emulator(u):
+        if u.get("android") and _android.uses_adb_reverse(u):
             rports = [srv["port"]]
             if srv["auth"]:
                 rports.append(srv["auth_port"])
@@ -468,7 +470,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                 rports.append((fc.get("fcb_proxy") or {}).get("port")
                               or fc["fcb_port"])
             _android.reverse_ports(u, rports)
-            print(f"emulator {_android.serial_of(u)}: adb reverse tcp "
+            print(f"{_android.serial_of(u)}: adb reverse tcp "
                   + " ".join(str(p) for p in rports))
     conn = (f"external server {srv['ip']}:{srv['port']}"
             + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"

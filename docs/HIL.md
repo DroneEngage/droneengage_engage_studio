@@ -464,12 +464,33 @@ units:
   services as usual. `mode: app` requires `remote_modules` to be
   exactly `[de_comm, de_mavlink]`.
 
+### `net:` — how the device reaches the host (SL-0118)
+
+`android: {net: auto|adb_reverse|lan}` picks the transport per unit:
+
+- **`auto`** (default) — emulator serials (`emulator-*`) use
+  `adb reverse`; anything else uses `host_ip()` LAN probing. A real
+  phone on Wi-Fi/LAN behaves exactly as before.
+- **`adb_reverse`** — always 127.0.0.1 + `adb reverse`, for **any**
+  serial. The case: a **real phone on USB with Wi-Fi and mobile data
+  OFF** — it has no LAN address at all, but `adb reverse` runs over
+  the USB cable, so the phone still reaches host TCP ports as
+  `127.0.0.1`.
+- **`lan`** — always `host_ip()` LAN probing, even for an emulator.
+
+`uses_adb_reverse(u)` in engine/android.py decides; `sim up` forces
+`ANDROID_HOST_IP=127.0.0.1` and arms the reverse forwards only for
+such units, so a LAN phone in the same fleet is untouched (note:
+`ANDROID_HOST_IP` is process-wide — do not mix `adb_reverse` and LAN
+android units in one sim).
+
 ### Emulator networking — `adb reverse`
 
 An emulator has no route to the dev host's LAN IP; `adb reverse
 tcp:P tcp:P` makes the device's `127.0.0.1:P` reach the host's `P`
-over the USB/debug channel. When a unit's adb serial starts with
-`emulator-`, `sim up`:
+over the USB/debug channel. When a unit resolves to `adb reverse`
+(`net: auto` and an `emulator-*` serial, or `net: adb_reverse`),
+`sim up`:
 
 1. forces `ANDROID_HOST_IP=127.0.0.1` **before** config generation —
    so `host_ip()` resolves to 127.0.0.1 everywhere (de_comm's
@@ -484,9 +505,27 @@ over the USB/debug channel. When a unit's adb serial starts with
 
 **TCP only.** `adb reverse` carries TCP, never UDP: the comm server's
 UDP proxy range (40000–40999) and any WebRTC video path do not reach
-the emulator. The phone-side modules' s2s UDP is unaffected — it is
-device-loopback between the app's own processes. This is a known
-limitation, not a bug.
+the emulator (or a `net: adb_reverse` USB phone). The phone-side
+modules' s2s UDP is unaffected — it is device-loopback between the
+app's own processes. This is a known limitation, not a bug.
+
+**USB phone without network** — plug the phone in by USB, turn Wi-Fi
+and mobile data off, and use `net: adb_reverse` on its unit:
+
+```yaml
+units:
+  - {block: android_copter, name: phone, count: 1,
+     android: {serial: <phone serial>, net: adb_reverse,
+               remote_modules: [de_comm, de_mavlink]}}
+```
+
+Same wiring as the emulator (127.0.0.1 + `adb reverse`, TCP-only —
+no comm-server UDP proxy, no WebRTC video over the cable). The
+alternative when UDP matters is **USB tethering + `net: lan`**: the
+rndis interface gives the phone a real LAN path (carries UDP too),
+but the tether subnet can change per plug-in, so it needs the
+`host_ip()` probing (or a hand-set `ANDROID_DEVICE_IP` /
+`ANDROID_HOST_IP`) rather than a pinned address.
 
 `sims/andruav_emulator.yaml` (+ its runbook `sims/andruav_emulator.md`)
 is the ready-made sim: one emulator `mode: app` unit on a pinned real

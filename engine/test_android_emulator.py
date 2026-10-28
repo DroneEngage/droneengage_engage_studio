@@ -13,7 +13,10 @@ Covers (no device needed - android._adb is monkeypatched):
   - ctl.start_proc in mode app does NOT push_module_config (the app
     owns its configuration) but still start_module's; mode sim pushes;
   - ANDROID_HOST_IP=127.0.0.1 + an android unit -> the generated comm
-    server config's public_host is 127.0.0.1.
+    server config's public_host is 127.0.0.1;
+  - SL-0118 `android: {net}` - auto|adb_reverse|lan: uses_adb_reverse
+    for every serial x net combination, 'auto' default, bad net ->
+    SimError.
 """
 
 import json
@@ -101,6 +104,53 @@ class EmulatorHelpersTest(unittest.TestCase):
         with mock.patch.object(android, "_adb", fake_adb):
             android.clear_reverse({"android": {}})
         self.assertEqual(calls, [("reverse", "--remove-all")])
+
+
+class AdbReverseNetTest(unittest.TestCase):
+    """SL-0118: `android: {net}` - auto|adb_reverse|lan picks how the
+    device reaches the host."""
+
+    def _u(self, serial, net=None):
+        u = {"android": {"serial": serial}}
+        if net is not None:
+            u["android"]["net"] = net
+        return u
+
+    def test_uses_adb_reverse_matrix(self):
+        # emulator serials adb-reverse in auto; anything else LANs -
+        # explicit net: beats the serial either way
+        cases = [
+            ("emulator-5554", None, True),      # auto + emulator
+            ("emulator-5554", "auto", True),
+            ("emulator-5554", "adb_reverse", True),
+            ("emulator-5554", "lan", False),
+            ("66d0200f", None, False),          # auto + real phone
+            ("66d0200f", "auto", False),
+            ("66d0200f", "adb_reverse", True),  # USB phone, no network
+            ("66d0200f", "lan", False),
+        ]
+        for serial, net, want in cases:
+            with self.subTest(serial=serial, net=net):
+                self.assertIs(
+                    android.uses_adb_reverse(self._u(serial, net)), want)
+
+    def test_net_defaults_to_auto(self):
+        sim = simlib.load_sim(_emu_spec())
+        self.assertEqual(sim["units"][0]["android"]["net"], "auto")
+
+    def test_net_values_accepted(self):
+        for net in ("auto", "adb_reverse", "lan"):
+            spec = _emu_spec()
+            spec["units"][0]["android"]["net"] = net
+            sim = simlib.load_sim(spec)
+            self.assertEqual(sim["units"][0]["android"]["net"], net)
+
+    def test_bad_net_rejected(self):
+        spec = _emu_spec()
+        spec["units"][0]["android"]["net"] = "wifi"
+        with self.assertRaises(simlib.SimError) as cm:
+            simlib.load_sim(spec)
+        self.assertIn("net", str(cm.exception))
 
 
 class AndroidModeTest(unittest.TestCase):

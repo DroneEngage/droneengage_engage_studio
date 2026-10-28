@@ -53,6 +53,20 @@ def android_mode(u):
     return (u.get("android") or {}).get("mode") or "sim"
 
 
+def uses_adb_reverse(u):
+    """Does this unit reach the host over `adb reverse` (127.0.0.1)
+    instead of LAN probing? net: adb_reverse always; net: lan never;
+    net: auto (default) -> emulator serials only. A USB phone with
+    Wi-Fi and mobile data off is the adb_reverse case - reverse runs
+    over the USB cable, so host ports still resolve as 127.0.0.1."""
+    net = (u.get("android") or {}).get("net") or "auto"
+    if net == "adb_reverse":
+        return True
+    if net == "lan":
+        return False
+    return is_emulator(u)
+
+
 def host_ip(u=None):
     """The host address the phone can reach. ANDROID_HOST_IP wins; else
     probe the phone's own LAN IP and take the host address on its subnet
