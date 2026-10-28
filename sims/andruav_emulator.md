@@ -15,7 +15,11 @@ Ports are **pinned**, so the app preset never goes stale:
 `server_port` 62900 → auth 62910, comm wss 62900, control 62901;
 emu1 fcbpx 8160 (the app's FCB dial goes to the fcb proxy, which
 fronts SITL's fcb port 8060). `--set serial=<other>` /
-`--set server_port=<n>` override the defaults.
+`--set server_port=<n>` override the defaults; the auth port is
+always `server_port + 10` (62910 by default).
+
+`./sim up andruav_emulator --help` prints this sim's description,
+parameters, flags and examples without starting anything.
 
 ## One-time app preset (on the emulator)
 
@@ -68,6 +72,24 @@ adb -s emulator-5554 reverse --list   # tcp:62900 tcp:62910 tcp:8160
 
 `adb shell ls /sdcard/Android/data/ardupilot.andruav/files/` should
 show **no** `de_override` dir.
+
+## Real phone over USB, no network
+
+A USB-attached phone with Wi-Fi and mobile data off works the same way
+as the emulator - the phone reaches the host over `adb reverse` only:
+
+```bash
+./sim up andruav_emulator --set serial=<adb serial> --set net=adb_reverse
+```
+
+Use the same one-time app preset (host `127.0.0.1`, ports pinned). The
+`net` parameter picks the transport: `auto` chooses `adb_reverse` for
+emulator serials and `lan` for anything else - pin `adb_reverse`
+explicitly for a networkless phone, `lan` for a phone on the LAN.
+
+adb reverse is **TCP-only**: the comm server's UDP range (40000+,
+telemetry relay and WebRTC video) cannot reach the device on this
+path - the GCS-side UDP story stays emulator/LAN only.
 
 ## Troubleshooting
 

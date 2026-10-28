@@ -14,12 +14,17 @@ description: |
 version: 1
 params:
   serial:      {default: emulator-5554,
-                help: "adb serial of the emulator (`adb devices`)"}
+                help: "adb serial of the device (`adb devices`)"}
+  net:         {default: auto, choices: [auto, adb_reverse, lan],
+                help: "auto: emulator->adb_reverse, phone->lan; adb_reverse also works for a USB phone with no network"}
   server_port: {default: 62900, type: int,
                 help: "comm server port - pinned, the app preset points at it"}
+example:
+  - ./sim up andruav_emulator
+  - ./sim up andruav_emulator --set serial=66d0200f --set net=adb_reverse
 server: {type: real, auth: true, port: "${server_port}",
          account: {user: sim@sim.droneengage.com, code: sim1234}}
 units:
   - {block: android_copter, name: emu, count: 1,
-     android: {serial: "${serial}",
+     android: {serial: "${serial}", net: "${net}",
                remote_modules: [de_comm, de_mavlink], mode: app}}
