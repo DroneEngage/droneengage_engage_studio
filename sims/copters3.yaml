@@ -2,6 +2,10 @@
 #
 # Three quad copters on the real droneengage_server (local mode, no
 # authenticator). The default fleet for mission / supervisor tests.
+description: |
+  Three quad copters (copter1..copter3, 20 m apart) on the spawned real
+  droneengage_server in local mode (no authenticator). The default
+  fleet for mission / supervisor tests.
 version: 1
 units:
   - {block: copter, name: copter, count: 3}     # copter1..copter3, 20 m apart

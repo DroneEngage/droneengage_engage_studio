@@ -2,6 +2,10 @@
 #
 # Two quad copters on the real droneengage_server (local mode, no
 # authenticator) - for scenarios that only need a pair.
+description: |
+  Two quad copters (copter1..copter2, 20 m apart) on the spawned real
+  droneengage_server in local mode (no authenticator). For scenarios
+  that only need a pair.
 version: 1
 units:
   - {block: copter, name: copter, count: 2}     # copter1..copter2, 20 m apart

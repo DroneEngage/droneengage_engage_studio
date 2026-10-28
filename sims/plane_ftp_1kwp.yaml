@@ -8,6 +8,11 @@
 # Read buttons show live progress. BRD_SD_MISSION=32 raises SITL mission
 # storage past the ~655-item 16 kB default (same as tests/capacity).
 # slot_base 95 keeps ports disjoint from the developer's own stacks.
+description: |
+  FTP mission-read demo: one ArduPlane SITL + de_comm + de_mavlink on a
+  spawned real server (no authenticator), slot_base 95. Push a
+  1001-waypoint mission and watch the MAVLink FTP read progress in the
+  WebClient.
 version: 1
 slot_base: 95
 server:

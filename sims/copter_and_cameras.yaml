@@ -2,6 +2,11 @@
 #
 # Camera fleet: a camera copter and a fixed camera post (needs the
 # de_camera binary + a V4L2 device; see blocks/copter_camera).
+description: |
+  Camera fleet: a camera copter (camcopter, copter + de_camera) and a
+  fixed camera post (tower1, de_comm + de_camera, no FC) on the spawned
+  real server. Needs the de_camera binary + a V4L2 device per camera
+  unit (see blocks/copter_camera).
 version: 1
 units:
   - {block: copter_camera, name: camcopter}

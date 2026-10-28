@@ -1,6 +1,11 @@
 # Runbook: sims/mixed_vehicles.md
 #
 # One of each vehicle type plus a ground node.
+description: |
+  One of each vehicle type plus a ground node on the spawned real
+  server: copter1 (quad), plane1 (fixed-wing), rover1 and ground1
+  (de_comm only). For fleet-mix scenarios and the mixed-vehicle
+  bring-up regression.
 version: 1
 units:
   - {block: copter, name: copter1}

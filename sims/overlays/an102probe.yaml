@@ -1,0 +1,4 @@
+# AN-0102 probe: real server on a port that does not clash with the
+# developer copters3 (:62008) or the failsafe test (:62018).
+version: 1
+server: {type: real, port: 62108}
