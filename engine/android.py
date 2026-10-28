@@ -40,6 +40,19 @@ def serial_of(u):
     return spec.get("serial") or simlib.setting("ANDROID_SERIAL")
 
 
+def is_emulator(u):
+    """True for an Android emulator adb serial (emulator-5554 etc.)."""
+    s = serial_of(u) or ""
+    return s.startswith("emulator-")
+
+
+def android_mode(u):
+    """Unit's android mode: 'sim' (default - the sim pushes configs and
+    starts the module services) or 'app' (the app owns configuration;
+    its own NativeUnitController starts the modules)."""
+    return (u.get("android") or {}).get("mode") or "sim"
+
+
 def host_ip(u=None):
     """The host address the phone can reach. ANDROID_HOST_IP wins; else
     probe the phone's own LAN IP and take the host address on its subnet
@@ -196,6 +209,57 @@ def wait_module_down(u, mod, timeout_s=8):
         if not module_alive(u, mod):
             return True
         time.sleep(0.5)
+    return False
+
+
+def reverse_ports(u, ports):
+    """adb reverse tcp:P tcp:P for each port - the device then reaches
+    that host port as its own 127.0.0.1:P (emulator networking; TCP
+    only, UDP never crosses adb reverse)."""
+    for p in ports:
+        r = _adb(u, "reverse", f"tcp:{int(p)}", f"tcp:{int(p)}")
+        if r.returncode != 0:
+            raise RuntimeError(
+                f"adb reverse tcp:{p} failed: "
+                f"{r.stderr.strip() or r.stdout.strip()}")
+
+
+def clear_reverse(u):
+    """Drop every `adb reverse` rule on the device (sim teardown)."""
+    _adb(u, "reverse", "--remove-all")
+
+
+def clean_sim_overrides(u):
+    """Remove what a previous `mode: sim` run left on the device: the
+    pushed de_override/ config tree and the sim-written de_comm.local in
+    the app's private files. `mode: app` leaves the app's own settings
+    alone, so stale sim files must not survive into it (run-as only
+    works on a debuggable build - its failure is ignored)."""
+    removed = []
+    r = _adb(u, "shell", "rm", "-rf", OVERRIDE_DIR)
+    if r.returncode == 0:
+        removed.append(OVERRIDE_DIR)
+    r = _adb(u, "shell", "run-as", APP_PKG, "rm", "-f",
+             f"{DEVICE_FILES}/de_comm/de_comm.local")
+    if r.returncode == 0:
+        removed.append(f"{DEVICE_FILES}/de_comm/de_comm.local")
+    print(f"{serial_of(u) or 'device'}: removed sim overrides "
+          + (", ".join(removed) if removed else "(none found)"))
+
+
+def launch_app(u, timeout_s=40):
+    """`mode: app` startup - launch the app so its own
+    NativeUnitController starts the remote module services from the
+    app's preset, then wait until every remote module process is
+    alive."""
+    _adb(u, "shell", "monkey", "-p", APP_PKG,
+         "-c", "android.intent.category.LAUNCHER", "1")
+    remote = remote_modules(u)
+    t0 = time.time()
+    while time.time() - t0 < timeout_s:
+        if remote and all(module_alive(u, m) for m in remote):
+            return True
+        time.sleep(1)
     return False
 
 

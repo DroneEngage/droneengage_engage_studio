@@ -1065,10 +1065,13 @@ def start_proc(owner, proc):
     u = _android_unit(owner)
     if u and proc in u["android"]["remote_modules"]:
         # runs on the phone inside the Andruav app: push the generated
-        # config into de_override/<mod>/ then start the module service
+        # config into de_override/<mod>/ then start the module service.
+        # mode: app (SL-0112) - the app owns configuration; the sim
+        # pushes nothing but ctl start/stop still routes to the service.
         import android as _android
-        _android.push_module_config(
-            u, proc, os.path.join(owner_dir(owner), proc))
+        if _android.android_mode(u) != "app":
+            _android.push_module_config(
+                u, proc, os.path.join(owner_dir(owner), proc))
         _android.start_module(u, proc)
         print(f"{simlib.col_green(f'{owner}.{proc}')}: "
               f"started on device {_android.serial_of(u) or 'default'}")

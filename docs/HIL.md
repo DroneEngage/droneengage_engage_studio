@@ -437,3 +437,58 @@ holders — then kill the culprit. The `bt_no_squatters` assertion
 (see `tests/fcb_link/bt_spp_andruav.yaml`) makes a run FAIL with the
 thief's name instead of a bare zero-bytes miss, and the scenario
 runner prints the same warning at bring-up.
+
+## Android `mode:` — sim vs app, and the emulator (SL-0112)
+
+An `android:` unit spec takes a `mode` key:
+
+```yaml
+units:
+  - {block: android_copter, name: emu, count: 1,
+     android: {serial: emulator-5554,
+               remote_modules: [de_comm, de_mavlink], mode: app}}
+```
+
+- **`mode: sim`** (default) — today's behaviour, unchanged: the sim
+  pushes generated configs into the app's `de_override/` dir and a
+  `de_comm.local` into its private files, then STARTs each module
+  service by intent.
+- **`mode: app`** — the app owns its module configuration (its own
+  settings: auth server, login, FCB link, unit name) and its
+  NativeUnitController starts `de_comm`/`de_mavlink` itself. The sim
+  pushes nothing, removes any `de_override`/sim-written
+  `de_comm.local` a previous `mode: sim` run left on the device
+  (`clean_sim_overrides`), and on `up` launches the app's launcher
+  activity instead of sending START intents (waits up to 40 s for the
+  module processes). `ctl` kill/start still route to the module
+  services as usual. `mode: app` requires `remote_modules` to be
+  exactly `[de_comm, de_mavlink]`.
+
+### Emulator networking — `adb reverse`
+
+An emulator has no route to the dev host's LAN IP; `adb reverse
+tcp:P tcp:P` makes the device's `127.0.0.1:P` reach the host's `P`
+over the USB/debug channel. When a unit's adb serial starts with
+`emulator-`, `sim up`:
+
+1. forces `ANDROID_HOST_IP=127.0.0.1` **before** config generation —
+   so `host_ip()` resolves to 127.0.0.1 everywhere (de_comm's
+   `auth_ip`, de_mavlink's `fcb_connection_uri`, the comm server's
+   `public_host`, the generated `server_ip` binds);
+2. after generation, forwards the sim's comm-server port, the auth
+   port (when `server: {auth: true}`) and the unit's fcb connect port
+   (the fcb proxy port — the phone-side de_mavlink always goes through
+   the proxy) with `adb reverse`;
+3. on `sim down`, removes all reverse rules
+   (`adb reverse --remove-all`).
+
+**TCP only.** `adb reverse` carries TCP, never UDP: the comm server's
+UDP proxy range (40000–40999) and any WebRTC video path do not reach
+the emulator. The phone-side modules' s2s UDP is unaffected — it is
+device-loopback between the app's own processes. This is a known
+limitation, not a bug.
+
+`sims/andruav_emulator.yaml` (+ its runbook `sims/andruav_emulator.md`)
+is the ready-made sim: one emulator `mode: app` unit on a pinned real
+server instance (wss 62900 / auth 62910), with the one-time app preset
+table.

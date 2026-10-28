@@ -182,6 +182,9 @@ def down(name=None, quiet=False):
                 for mod in (u.get("android") or {}).get(
                         "remote_modules") or []:
                     _android.stop_module(u, mod)
+                if u.get("android") and _android.is_emulator(u):
+                    # SL-0112: drop this sim's adb reverse rules
+                    _android.clear_reverse(u)
     if not dirs and not strays:
         if not quiet and not foreign_kept:
             print("nothing running" if name is None
@@ -426,6 +429,14 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
             u["android"]["device_ip"] = _android.device_ip(u)
             u["android"]["clock_offset_ms"] = \
                 _android.measure_clock_offset_ms(u)
+            if _android.is_emulator(u):
+                # SL-0112: an emulator cannot reach the host's LAN IP -
+                # it reaches host ports through `adb reverse` as
+                # 127.0.0.1, so every host_ip() (de_comm auth_ip, fcb
+                # uri, comm server public_host) must resolve to it
+                os.environ["ANDROID_HOST_IP"] = "127.0.0.1"
+            if _android.android_mode(u) == "app":
+                _android.clean_sim_overrides(u)
 
     m = simlib.generate(sim, _label(sim_src))
     # SL-0066 - stamp this fleet instance's generation into the manifest:
@@ -440,6 +451,25 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         os.unlink(_runner_rec_path(name))
     except OSError:
         pass
+    # SL-0112: emulator units reach host TCP ports through adb reverse -
+    # forward this sim's comm/auth/fcb ports now that generate() has
+    # made them final, before any proc starts dialing them
+    import android as _android
+    for u in m["units"]:
+        if u.get("android") and _android.is_emulator(u):
+            rports = [srv["port"]]
+            if srv["auth"]:
+                rports.append(srv["auth_port"])
+            fc = u.get("fc") or {}
+            if fc:
+                # the same target simlib's ctx["fcb_connect_port"] uses:
+                # the fcb proxy port when one fronts the unit, else the
+                # SITL fcb port
+                rports.append((fc.get("fcb_proxy") or {}).get("port")
+                              or fc["fcb_port"])
+            _android.reverse_ports(u, rports)
+            print(f"emulator {_android.serial_of(u)}: adb reverse tcp "
+                  + " ".join(str(p) for p in rports))
     conn = (f"external server {srv['ip']}:{srv['port']}"
             + (f" via auth {srv['auth_ip']}:{srv['auth_port']}"
                if srv["auth"] else "")
@@ -536,8 +566,24 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
     for u in m["units"]:
         simlib.save_boot_mark(u)
     for u in m["units"]:
+        remote = set((u.get("android") or {}).get("remote_modules")
+                     or [])
+        app_mode = u.get("android") \
+            and _android.android_mode(u) == "app"
         for p in simlib.procs_of(u):
+            if app_mode and p in remote:
+                continue        # mode: app - the app starts its modules
             ctl.start_proc(u["name"], p)
+        if app_mode:
+            # SL-0112: launch the app; its NativeUnitController starts
+            # de_comm/de_mavlink from the app's own preset
+            if not _android.launch_app(u):
+                sys.exit(simlib.col_red(
+                    f"{u['name']}: app's de_comm/de_mavlink did not "
+                    "come up in 40s - check the app is preset per "
+                    "sims/andruav_emulator.md (Mission Server host "
+                    "127.0.0.1, 'Native unit' enabled) and that a "
+                    "previous sim's de_override was cleaned"))
 
     # SL-0095: per android unit a detached mirror proc pulls device
     # journals + logcat into the unit dir for the engine readers

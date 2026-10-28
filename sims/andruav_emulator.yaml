@@ -1,0 +1,25 @@
+# Runbook: sims/andruav_emulator.md
+#
+# The Andruav app on the Android EMULATOR (adb serial emulator-5554)
+# as a native unit (mode: app - the app owns module configuration and
+# starts de_comm/de_mavlink itself), on this sim's own pinned real
+# server instance (wss 62900, auth 62910). The emulator reaches the
+# host through `adb reverse` as 127.0.0.1. Preset the app ONCE by hand
+# first - see the runbook.
+description: |
+  One android_copter whose de_comm + de_mavlink run inside the Andruav
+  app on the Android emulator (android mode: app), on its own pinned
+  real server + authenticator (wss 62900 / auth 62910) - the emulator
+  reaches the host through `adb reverse` as 127.0.0.1.
+version: 1
+params:
+  serial:      {default: emulator-5554,
+                help: "adb serial of the emulator (`adb devices`)"}
+  server_port: {default: 62900, type: int,
+                help: "comm server port - pinned, the app preset points at it"}
+server: {type: real, auth: true, port: "${server_port}",
+         account: {user: sim@sim.droneengage.com, code: sim1234}}
+units:
+  - {block: android_copter, name: emu, count: 1,
+     android: {serial: "${serial}",
+               remote_modules: [de_comm, de_mavlink], mode: app}}

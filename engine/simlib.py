@@ -1676,15 +1676,24 @@ def _expand_unit(sim, b, name, entry, at, catalog):
     if spec is not None:
         if not isinstance(spec, dict):
             raise SimError(f"unit {name}: android must be a mapping "
-                           "({serial, remote_modules})")
+                           "({serial, remote_modules, mode})")
         remote = list(spec.get("remote_modules") or [])
         unknown = [m for m in remote if m not in u["modules"]]
         if unknown:
             raise SimError(f"unit {name}: android.remote_modules "
                            f"{unknown} not in the unit's modules "
                            f"({u['modules']})")
+        # SL-0112: `mode: app` - the app owns module configuration and
+        # starts de_comm/de_mavlink itself; the sim pushes nothing.
+        mode = spec.get("mode") or "sim"
+        if mode not in ("sim", "app"):
+            raise SimError(f"unit {name}: android.mode must be 'sim' "
+                           f"or 'app' (got {mode!r})")
+        if mode == "app" and set(remote) != {"de_comm", "de_mavlink"}:
+            raise SimError(f"unit {name}: android mode: app needs "
+                           "remote_modules [de_comm, de_mavlink]")
         u["android"] = {"serial": spec.get("serial"),
-                        "remote_modules": remote,
+                        "remote_modules": remote, "mode": mode,
                         "device_ip": None, "clock_offset_ms": 0}
     # AN-0037 test hook: SIM_ANDROID_MODULES="de_comm[,...]" forces the
     # fleet's FIRST unit to run those modules on the adb device - lets
@@ -1698,6 +1707,7 @@ def _expand_unit(sim, b, name, entry, at, catalog):
             raise SimError(f"unit {name}: SIM_ANDROID_MODULES {unknown} "
                            f"not in the unit's modules ({u['modules']})")
         u["android"] = {"serial": None, "remote_modules": remote,
+                        "mode": "sim",
                         "device_ip": None, "clock_offset_ms": 0}
     return u
 
