@@ -317,7 +317,10 @@ def main(argv):
                 b = simlib.load_block(name)
                 fc = b["fc"]["vehicle"] if b["fc"] else "no fc"
                 parent = f" (extends {b['chain'][-2]})" if len(b["chain"]) > 1 else ""
-                print(f"{name:18s} [{fc}] {' + '.join(b['modules'])}{parent}")
+                print(simlib.col_green(f"{name:18s}")
+                      + simlib.col_yellow(f" [{fc}]")
+                      + f" {' + '.join(b['modules'])}"
+                      + simlib.col_dim(parent))
                 if b["description"]:
                     print(f"{'':18s} {b['description'].splitlines()[0]}")
         elif c == "block":
