@@ -21,12 +21,27 @@ INTRO = (
     "blocks. DroneEngage is the flagship integration (not the owner)."
 )
 
-# Trailing notes that close the overview (from the original docstring).
+# Trailing notes that close the overview - the three-axis model
+# (SL-0135): what you compose, why you run it, where it runs.
 LAYOUT_NOTE = (
-    "Layout: blocks/ (unit types) -> sims/ (fleets of blocks) -> tests/\n"
-    "(automated cases) and scenarios/ (human-run demos + examples).\n"
+    "Model - compose: blocks -> sims (+worlds/, packages/, stacks); "
+    "execute: tests/ (machine-checked), scenarios/ (human-run);\n"
+    "substrate: host SITL, ./sim up <stack>, tools/rpi, tools/hil.\n"
     "docs/SCENARIOS.md is the authoring reference. See README.md."
 )
+
+# Intent groups for the overview (SL-0135): every COMMANDS entry has a
+# "group" naming one of these; overview() prints a section header per
+# group in this order.
+GROUPS = [
+    ("DISCOVER", "see what exists - blocks, sims, stacks, ports"),
+    ("COMPOSE", "author and check sims and scenarios"),
+    ("LIVE", "bring sims and dev stacks up, watch and drive them"),
+    ("EXECUTE", "run tests and suites"),
+    ("CAPTURE", "record a live session into a scenario"),
+    ("HARDWARE", "boards and rigs (tools/hil)"),
+    ("HOUSE", "housekeeping"),
+]
 
 MACHINE_NOTE = (
     "Machine output: show, sims, status (and ./sim ctl status), list,\n"
@@ -61,6 +76,7 @@ SHARED_FLAGS = {
 #          takes_sim}
 COMMANDS = {
     "blocks": {
+        "group": "DISCOVER",
         "summary": "list blocks (reusable unit types)",
         "usage": ["./sim blocks"],
         "description": "List every block under blocks/ with its flight "
@@ -72,6 +88,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "block": {
+        "group": "DISCOVER",
         "summary": "show a block resolved through `extends`",
         "usage": ["./sim block <name>"],
         "description": "Resolve a block with its `extends:` chain and print "
@@ -83,6 +100,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "show": {
+        "group": "COMPOSE",
         "summary": "units, modules and ports a sim expands to",
         "usage": ["./sim show <sim.yaml> [--json]"],
         "description": "Resolve a sim file into concrete units, modules and "
@@ -97,17 +115,18 @@ COMMANDS = {
         "takes_sim": True,
     },
     "up": {
+        "group": "LIVE",
         "summary": "start a sim (restarts the same-named one)",
-        "usage": ["./sim up <sim.yaml> [--fresh] [--open-web]"],
+        "usage": ["./sim up <sim.yaml|de_servers|de_webclient> [--fresh] "
+                  "[--open-web]"],
         "description": "Start a sim. Restarts the same-named sim; refuses "
                        "ports of a live sim - sims run in parallel; unit "
                        "names may repeat on per-sim servers but stay unique "
                        "on a shared external stack or rendered cameras. "
-                       "--open-web xdg-opens the webclient link. `up "
-                       "de_servers` starts the dev server stack; `up "
-                       "de_webclient` starts the webclient dev server - "
-                       "neither is a sim (only `./sim down <stack>` stops "
-                       "it).",
+                       "--open-web xdg-opens the webclient link. "
+                       "de_servers and de_webclient are the developer's "
+                       "real servers/webclient, not sims (only `./sim "
+                       "down <stack>` stops them).",
         "flags": {
             "--fresh": "fresh bring-up (tear down any same-named sim first)",
             "--open-web": "xdg-open the webclient link once the sim is up",
@@ -118,6 +137,7 @@ COMMANDS = {
         "takes_sim": True,
     },
     "down": {
+        "group": "LIVE",
         "summary": "stop one sim, or every sim",
         "usage": ["./sim down [name|--all]"],
         "description": "Stop one sim by name, or every sim with --all. "
@@ -132,6 +152,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "sims": {
+        "group": "DISCOVER",
         "summary": "generated sims and live process counts",
         "usage": ["./sim sims [--json]"],
         "description": "List every generated sim with its unit count, "
@@ -144,6 +165,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "servers": {
+        "group": "DISCOVER",
         "summary": "both stacks' procs and ports",
         "usage": ["./sim servers [--json]"],
         "description": "Show the dev server stack (de_servers) and webclient "
@@ -156,6 +178,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "ports": {
+        "group": "DISCOVER",
         "summary": "live sims' declared ports vs what's bound right now",
         "usage": ["./sim ports [name|--all]"],
         "description": "Show which of a sim's declared ports are actually "
@@ -169,6 +192,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "status": {
+        "group": "LIVE",
         "summary": "= ./sim ctl status (live sims only)",
         "usage": ["./sim status [-s <sim>] [live|all] [--open-web]"],
         "description": "Live sims only; `all` also lists downed ones. "
@@ -182,6 +206,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "ctl": {
+        "group": "LIVE",
         "summary": "operator console (./sim ctl for help)",
         "usage": ["./sim ctl [-s <sim>] <cmd> ..."],
         "description": "The operator console: live procs, units online, "
@@ -195,6 +220,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "watch": {
+        "group": "LIVE",
         "summary": "party watch on any reachable stack",
         "usage": ["./sim watch --auth-ip H --auth-port P --account U "
                   "--code C"],
@@ -211,6 +237,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "run": {
+        "group": "EXECUTE",
         "summary": "run a test/scenario - owns the machine",
         "usage": ["./sim run <file.yaml> [--seed N] [--keep] [--hold|--view] "
                  "[--record <file>] [--open-web] [--module <name>=<path>] ..."],
@@ -246,6 +273,7 @@ COMMANDS = {
         "takes_sim": True,
     },
     "try": {
+        "group": "EXECUTE",
         "summary": "= run --keep: the build->try loop",
         "usage": ["./sim try <file.yaml> [--module <name>=<path>] ..."],
         "description": "The iteration form of run: it always keeps the sim "
@@ -270,6 +298,7 @@ COMMANDS = {
         "takes_sim": True,
     },
     "suite": {
+        "group": "EXECUTE",
         "summary": "run every yaml under dir(s) once per seed",
         "usage": ["./sim suite [dir ...] [--seeds 1,2,3] [--keep] "
                  "[--tier smoke]"],
@@ -288,11 +317,13 @@ COMMANDS = {
         "takes_sim": False,
     },
     "list": {
+        "group": "DISCOVER",
         "summary": "catalog: files + one-line descriptions",
-        "usage": ["./sim list [--json] [scenarios|tests|sims] ..."],
+        "usage": ["./sim list [--json] [scenarios|tests|sims|stacks] ..."],
         "description": "List scenario/test/sim files with their one-line "
                        "header-comment descriptions (default: "
-                       "scenarios+tests).",
+                       "scenarios+tests); stacks lists the dev stacks "
+                       "(de_servers, de_webclient) and their procs.",
         "flags": {
             "--json": "machine-readable json",
         },
@@ -301,6 +332,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "new": {
+        "group": "COMPOSE",
         "summary": "scaffold scenarios/<name>.yaml from the template",
         "usage": ["./sim new <name> [--sensor]"],
         "description": "Scaffold scenarios/<name>.yaml from "
@@ -316,6 +348,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "validate": {
+        "group": "COMPOSE",
         "summary": "schema + referenced-file check, starts nothing",
         "usage": ["./sim validate <file.yaml> [--json]"],
         "description": "Validate a scenario/sim yaml against the schema and "
@@ -329,6 +362,7 @@ COMMANDS = {
         "takes_sim": True,
     },
     "expand": {
+        "group": "COMPOSE",
         "summary": "print the chaos: schedule a run would execute",
         "usage": ["./sim expand <file.yaml> [--seed N] [--json]"],
         "description": "Print the concrete chaos: schedule a run would "
@@ -344,6 +378,7 @@ COMMANDS = {
         "takes_sim": True,
     },
     "record": {
+        "group": "CAPTURE",
         "summary": "capture a live webclient session as a scenario",
         "usage": ["./sim record <sim|live-sim> -o <file.yaml>"],
         "description": "Capture a live webclient session through the real "
@@ -360,6 +395,7 @@ COMMANDS = {
         "takes_sim": True,
     },
     "studio": {
+        "group": "LIVE",
         "summary": "the human session in one command",
         "usage": ["./sim studio <sim.yaml> [--world <w>] [--record <file>] "
                  "[--down]"],
@@ -381,6 +417,7 @@ COMMANDS = {
         "takes_sim": True,
     },
     "view": {
+        "group": "LIVE",
         "summary": "sim + Mavlink3DMap viewer (= run --hold)",
         "usage": ["./sim view <scenario.yaml> [--record <file>] "
                  "[--open-web]"],
@@ -397,6 +434,7 @@ COMMANDS = {
         "takes_sim": True,
     },
     "logs": {
+        "group": "LIVE",
         "summary": "tail a process log",
         "usage": ["./sim logs [-s <sim>] <unit|server> [proc]"],
         "description": "Tail a process log. The owner is a unit name, "
@@ -410,6 +448,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "doctor": {
+        "group": "DISCOVER",
         "summary": "machine-readiness check",
         "usage": ["./sim doctor [sim.yaml] [--json] [--esp32]"],
         "description": "Machine-readiness check: one OK/MISSING/OPTIONAL line "
@@ -425,6 +464,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "esp32": {
+        "group": "HARDWARE",
         "summary": "the tools/hil/ ESP32 firmwares",
         "usage": ["./sim esp32 <list|build|upload|check> [fw] [--port DEV] "
                  "[--baud N] [--no-check]"],
@@ -443,6 +483,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "verbs": {
+        "group": "DISCOVER",
         "summary": "the de.scenario/1 verb registry",
         "usage": ["./sim verbs [--json]"],
         "description": "The de.scenario/1 verb registry: every do: step, "
@@ -456,6 +497,7 @@ COMMANDS = {
         "takes_sim": False,
     },
     "clean": {
+        "group": "HOUSE",
         "summary": "prune var/run/ and var/results/",
         "usage": ["./sim clean [--days N] [--all] [--dry-run]"],
         "description": "Prune var/run/ and var/results/ (never a live sim; "
@@ -474,17 +516,23 @@ COMMANDS = {
 
 
 def overview():
-    """Top-level help: the intro paragraph, one line per command, then
-    the shared-flags section and the trailing layout/machine notes. This
-    is what `./sim`, `./sim help`, `./sim -h` and `./sim --help` print."""
+    """Top-level help: the intro paragraph, the commands under their
+    intent-group headers (SL-0135), then the shared-flags section and
+    the trailing layout/machine notes. This is what `./sim`,
+    `./sim help`, `./sim -h` and `./sim --help` print."""
     lines = [INTRO, ""]
-    for name, cmd in COMMANDS.items():
-        usage = cmd["usage"][0]
-        summary = cmd["summary"]
-        # pad the usage column so summaries align (like the old docstring)
-        pad = " " * max(2, 36 - len(usage))
-        lines.append(f"  {usage}{pad}{summary}")
-    lines.append("")
+    for group, blurb in GROUPS:
+        lines.append(f"{group} - {blurb}")
+        for name, cmd in COMMANDS.items():
+            if cmd["group"] != group:
+                continue
+            usage = cmd["usage"][0]
+            summary = cmd["summary"]
+            # pad the usage column so summaries align (like the old
+            # docstring)
+            pad = " " * max(2, 36 - len(usage))
+            lines.append(f"  {usage}{pad}{summary}")
+        lines.append("")
     lines.append("Shared flags (show/up/run/try/view/suite/validate/"
                  "record/studio):")
     for flag, help_text in SHARED_FLAGS.items():

@@ -594,25 +594,38 @@ def main(argv):
             bad = _bad_flags(a, sim_commands.allowed_flags("list"))
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim list help")
-            if any(r not in ("scenarios", "tests", "sims")
+            if any(r not in ("scenarios", "tests", "sims", "stacks")
                    for r in roots):
                 _usage_exit("list")
+            # SL-0135: "stacks" is a scope of its own (the devstack
+            # dev servers, not yaml files); a bare `list` still
+            # defaults to scenarios+tests
+            file_roots = [r for r in roots if r != "stacks"]
+            if not roots:
+                file_roots = ["scenarios", "tests"]
             if json_out:
-                print(json.dumps({"roots": [
-                    {"root": root,
-                     "files": [
-                         {"file": os.path.relpath(f, simlib.SIM_ROOT),
-                          "description":
-                              (_sim_one_liner(f) if root == "sims"
-                               else _one_liner(f))[:80]}
-                         for f in sorted(glob.glob(
-                             os.path.join(simlib.SIM_ROOT, root,
-                                          "**", "*.yaml"),
-                             recursive=True))]}
-                    for root in roots or ["scenarios", "tests"]]},
-                                 indent=1))
+                out = {}
+                if file_roots:
+                    out["roots"] = [
+                        {"root": root,
+                         "files": [
+                             {"file": os.path.relpath(f, simlib.SIM_ROOT),
+                              "description":
+                                  (_sim_one_liner(f) if root == "sims"
+                                   else _one_liner(f))[:80]}
+                             for f in sorted(glob.glob(
+                                 os.path.join(simlib.SIM_ROOT, root,
+                                              "**", "*.yaml"),
+                                 recursive=True))]}
+                        for root in file_roots]
+                if "stacks" in roots:
+                    import devstack
+                    out["stacks"] = {
+                        name: [p[0] for p in procs]
+                        for name, procs in devstack.STACKS.items()}
+                print(json.dumps(out, indent=1))
             else:
-                for root in roots or ["scenarios", "tests"]:
+                for root in file_roots:
                     d = os.path.join(simlib.SIM_ROOT, root)
                     files = sorted(glob.glob(
                         os.path.join(d, "**", "*.yaml"), recursive=True))
@@ -622,6 +635,13 @@ def main(argv):
                         one = _sim_one_liner(f) if root == "sims" \
                             else _one_liner(f)
                         print(f"  {rel:52s} {one[:80]}")
+                if "stacks" in roots:
+                    import devstack
+                    w = max(len(n) for n in devstack.STACKS)
+                    print(f"stacks/  ({len(devstack.STACKS)} stacks)")
+                    for name, procs in devstack.STACKS.items():
+                        print(f"  {name:{w}s}  "
+                              + " ".join(p[0] for p in procs))
         elif c == "new":
             sensor = "--sensor" in a
             names = [x for x in a if not x.startswith("-")]

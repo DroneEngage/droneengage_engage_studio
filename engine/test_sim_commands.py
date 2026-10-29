@@ -93,7 +93,8 @@ class RegistryTest(unittest.TestCase):
         # green commands, yellow <params>/[flags], plain when not a tty.
         doc = sim_commands.command_help("up")
         out = _print_usage_captured(doc, tty=True)
-        self.assertIn("\x1b[32m./sim up \x1b[33m<sim.yaml>", out)
+        self.assertIn("\x1b[32m./sim up \x1b[33m"
+                      "<sim.yaml|de_servers|de_webclient>", out)
         self.assertIn("\x1b[33m[--fresh]", out)
         # flag rows are parameters: yellow, not command green
         self.assertIn("\x1b[33m  --fresh", out)
@@ -106,6 +107,27 @@ class RegistryTest(unittest.TestCase):
                   "--auth-server", "--slot-base", "--with", "--shared",
                   "--force"):
             self.assertIn(f, flags)
+
+    def test_every_command_has_a_group(self):
+        # SL-0135: the overview prints the commands under intent-group
+        # headers - an entry without a "group", or one naming a group
+        # not in GROUPS, fails here
+        groups = {g for g, _ in sim_commands.GROUPS}
+        for name, cmd in sim_commands.COMMANDS.items():
+            self.assertIn(cmd.get("group"), groups,
+                          f"{name} has no group in GROUPS")
+
+    def test_overview_groups_each_command_once(self):
+        # SL-0135: every GROUPS header is printed and every command's
+        # usage line appears exactly once (under its group)
+        text = sim_commands.overview()
+        for group, _ in sim_commands.GROUPS:
+            self.assertIn(f"{group} - ", text,
+                          f"overview() is missing the {group} header")
+        for name, cmd in sim_commands.COMMANDS.items():
+            self.assertEqual(text.count(cmd["usage"][0]), 1,
+                             f"{name}'s usage line is not printed "
+                             "exactly once")
 
 
 class CliHelpTest(unittest.TestCase):

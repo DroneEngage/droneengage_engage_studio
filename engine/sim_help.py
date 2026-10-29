@@ -81,7 +81,8 @@ def _usage_line(verb, name, has_params):
     usage = (cmd.get("usage") or [f"./sim {verb} <sim>"])[0]
     # swap the registry's placeholder for this sim's name and add the
     # --set slot when the sim declares params
-    line = (usage.replace("<sim.yaml>", name)
+    line = (usage.replace("<sim.yaml|de_servers|de_webclient>", name)
+                 .replace("<sim.yaml>", name)
                  .replace("<file.yaml>", name)
                  .replace("<file>", name)
                  .replace("<sim>", name))
