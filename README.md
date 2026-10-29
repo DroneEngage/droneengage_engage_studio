@@ -1,6 +1,6 @@
 # DroneEngageStudio
 
-(repo directory `droneengage_simulation_land`)
+(repo directory `droneengage_studio`)
 
 DroneEngageStudio is a vehicle-stack-agnostic simulation and ground-truth
 testing studio. DroneEngage is its flagship integration - the first and
@@ -29,9 +29,45 @@ packages/   operations   - hand-written ops demos/examples deploy
 templates/  scaffold     - the file ./sim new copies
 docs/       authoring    - SCENARIOS.md: the de.scenario/1 reference;
                          SENSORS.md: the world-driven sensor contract
-                         (./sim new --sensor <name>)
+                         (./sim new --sensor <name>);
+                         MAP.md: the one-page model map
 wiki/       user docs    - USER_GUIDE.md: the plain-English guide
 ```
+
+## The model
+
+Everything in this repo answers one of three questions:
+
+- **COMPOSE** - *what exists*: `modules/catalog.yaml` -> `blocks/<unit>`
+  -> `sims/<fleet>`, fed by `worlds/` (ground truth), `packages/`
+  (operations) and the dev stacks.
+- **EXECUTE** - *why you run it*: `tests/` (machine-checked) vs
+  `scenarios/demos|examples|challenges` (human-run) - every file a
+  de.scenario/1 run file, selectable by `tasks:` and `tier:`.
+- **SUBSTRATE** - *where it runs*: host SITL (default), `./sim up
+  <stack>` (de_servers / de_webclient), `tools/rpi` and `tools/hil`
+  hardware, android phones.
+
+`./sim help` groups its commands the same way. The one-page map with
+the noun diagram and glossary is [docs/MAP.md](docs/MAP.md).
+
+### I want to...
+
+| I want to... | command |
+|---|---|
+| run one copter | `./sim up quadcopter` (or `./sim studio quadcopter`) |
+| run the real servers | `./sim up de_servers` |
+| run the webclient dev server | `./sim up de_webclient` |
+| run copters on their own sim server | `./sim studio copters3` |
+| join my own running stack | `./sim up de_servers`, then a sim with `server: {type: external}` (e.g. `sims/plane.yaml`) |
+| run the smoke tests | `./sim suite --tier smoke` |
+| run the tests for a task | `./sim suite --task SL-0099` |
+| run one test | `./sim run tests/smoke_copters.yaml` |
+| rebuild + retry one module | `./sim try <test> --module de_mavlink=<path>` |
+| use ESP32 hardware | `./sim esp32 list` (see `docs/HIL.md`) |
+| use Pi hardware | see `tools/rpi/README.md` |
+| use an android phone | `blocks/android_copter` (see `docs/HIL.md`) |
+| record a session | `./sim record <sim> -o <file.yaml>` |
 
 ## Quickstart (Docker)
 

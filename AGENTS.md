@@ -1,4 +1,4 @@
-# AGENTS.md — droneengage_simulation_land
+# AGENTS.md — droneengage_studio
 
 Headless, multi-vehicle DroneEngage simulation built from **reusable
 blocks**. A block describes one unit type (SITL or not, which DE modules,
@@ -49,6 +49,10 @@ is now the only simulation/testing location.
     scenarios/**/*.yaml       HUMAN-run scenarios: demos/, examples/, user files
                               - each yaml pairs with a <name>.md runbook
                               (same convention as sims/)
+    docs/MAP.md               the one-page model map: the compose/execute/
+                              substrate axes, the noun diagram, the
+                              folder table and the sim vs sims/ vs run
+                              file glossary
     docs/SCENARIOS.md         the de.scenario/1 authoring reference (LLM-friendly)
     docs/MACHINE_API.md       --json output shapes + the run's RESULT/summary.json
                               contract (agents: read this before scraping text)
