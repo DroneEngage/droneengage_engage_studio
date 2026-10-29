@@ -1,0 +1,32 @@
+# phone_caps/pc_phone_screen - SL-0099 D4: pulse the phone.screen
+# output resource and gate on its went_off fact.
+#
+# mode: app (see pc_sound_say.yaml for the full rationale + the
+# one-time device preset table - same prerequisites here).
+version: 1
+name: pc_phone_screen
+tier: smoke
+realtime: true
+sim: {base: phone_stack.yaml}
+operation: ops/pc_screen.deop
+verify: {cli: ../../../tools/verify_wrap.js}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 2, do: clear}
+  - {t: 5, do: deploy}
+  - {t: 10, do: start}
+  - {t: 15, do: wait_journal, unit: phone1,
+     re: "S: walk gate g released by phone\\.screen\\.went_off",
+     timeout: 90}
+  - {t: 20, do: stop}
+assert:
+  - journal_count: {unit: phone1,
+      re: "EVENT_IN event phone\\.screen\\.went_on latched", at_least: 1}
+  - journal_count: {unit: phone1,
+      re: "EVENT_IN event phone\\.screen\\.went_off latched", at_least: 1}
+  - journal_count: {unit: phone1,
+      re: "S: walk gate g released by phone\\.screen\\.went_off", equals: 1}
+  - journal_count: {unit: phone1,
+      re: "S: walk emit phone\\.probe_done", equals: 1}
+  - journal_count: {unit: phone1, re: "failed:", equals: 0}
+teardown: none

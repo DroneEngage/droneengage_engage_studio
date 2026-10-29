@@ -1,0 +1,65 @@
+{
+  "_note": "SL-0099 ctx: role 'node' binds phone1 (the Andruav app's own unit-name preset). registries.phone1 is the serialized 1089 caps view the app's Java deDatabus host reports: ns sound by module andruav_android (SoundProvider), ns phone by module andruav_phone (PhoneProvider). compile_op resolves 'do sound.say' and verify_wrap checks its params against this advert.",
+  "binding": { "node": ["phone1"] },
+  "registries": {
+    "phone1": {
+      "caps": {
+        "sound": {
+          "ch": "c1",
+          "module": "andruav_android",
+          "ver": "1.0.0",
+          "advert": {
+            "schema": "de.cap/1",
+            "ns": "sound",
+            "module": "andruav_android",
+            "ver": "1.0.0",
+            "desc": "events: sound.<clip>.play|stop (commands), sound.<clip>.started|finished (facts)",
+            "actions": {
+              "say": {
+                "desc": "Speak a text (device TTS)",
+                "params": {
+                  "text": {"type": "string", "desc": "text to speak"},
+                  "lang": {"type": "enum", "values": ["en"], "optional": true},
+                  "language": {"type": "enum", "values": ["en"], "optional": true},
+                  "pitch": {"type": "int", "min": 0, "max": 99, "optional": true},
+                  "volume": {"type": "int", "min": 0, "max": 100, "optional": true}
+                }
+              },
+              "play": {"desc": "Play a sound from the clip library",
+                       "params": {"file": {"type": "enum", "values": []}}},
+              "stop": {"desc": "Stop the sound playing now and drop queued ones"}
+            },
+            "state": {"playing": {"type": "bool"}},
+            "resources": {},
+            "event_patterns": {
+              "*.play": {"kind": "command"},
+              "*.stop": {"kind": "command"},
+              "*.started": {"kind": "fact"},
+              "*.finished": {"kind": "fact"}
+            }
+          }
+        },
+        "phone": {
+          "ch": "c2",
+          "module": "andruav_phone",
+          "ver": "1.0.0",
+          "advert": {
+            "schema": "de.cap/1",
+            "ns": "phone",
+            "module": "andruav_phone",
+            "ver": "1.0.0",
+            "state": {"battery": {"type": "int", "unit": "%"}},
+            "events": {
+              "battery_low": {"payload": {"v": {"type": "int"}}},
+              "overheat": {"payload": {"temp_c": {"type": "number"}}},
+              "net_lost": {},
+              "net_back": {}
+            }
+          }
+        }
+      },
+      "state": {},
+      "t": 0
+    }
+  }
+}

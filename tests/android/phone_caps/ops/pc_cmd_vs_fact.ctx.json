@@ -1,0 +1,57 @@
+{
+  "_note": "SL-0099 ctx: phone ns advert incl. the output resources (screen/torch/vibrate), per-resource actions and the event_patterns the emit/gate steps resolve against.",
+  "binding": { "node": ["phone1"] },
+  "registries": {
+    "phone1": {
+      "caps": {
+        "phone": {
+          "ch": "c1",
+          "module": "andruav_phone",
+          "ver": "1.0.0",
+          "advert": {
+            "schema": "de.cap/1",
+            "ns": "phone",
+            "module": "andruav_phone",
+            "ver": "1.0.0",
+            "desc": "commands: phone.<key>.on|off|toggle|pulse {ms? 1..4000}; facts: phone.<key>.went_on|went_off {v,src}; facts: battery_low {v}, overheat {temp_c}, net_lost, net_back",
+            "state": {
+              "battery": {"type": "int", "unit": "%"},
+              "charging": {"type": "bool"},
+              "screen": {"type": "int"},
+              "torch": {"type": "int"},
+              "vibrate": {"type": "int"}
+            },
+            "events": {
+              "battery_low": {"payload": {"v": {"type": "int"}}},
+              "overheat": {"payload": {"temp_c": {"type": "number"}}},
+              "net_lost": {},
+              "net_back": {}
+            },
+            "actions": {
+              "screen": {"claim": "action", "timeout_s": 5,
+                         "params": {"on": {"type": "bool"},
+                                    "pulse_ms": {"type": "int", "min": 1, "max": 4000, "optional": true}}},
+              "torch": {"claim": "action", "timeout_s": 5,
+                        "params": {"on": {"type": "bool"},
+                                   "pulse_ms": {"type": "int", "min": 1, "max": 4000, "optional": true}}},
+              "vibrate": {"claim": "action", "timeout_s": 5,
+                          "params": {"on": {"type": "bool"},
+                                     "pulse_ms": {"type": "int", "min": 1, "max": 4000, "optional": true}}}
+            },
+            "resources": {"screen": "out", "torch": "out", "vibrate": "out"},
+            "event_patterns": {
+              "*.on": {"kind": "command"},
+              "*.off": {"kind": "command"},
+              "*.toggle": {"kind": "command"},
+              "*.pulse": {"kind": "command"},
+              "*.went_on": {"kind": "fact"},
+              "*.went_off": {"kind": "fact"}
+            }
+          }
+        }
+      },
+      "state": {},
+      "t": 0
+    }
+  }
+}

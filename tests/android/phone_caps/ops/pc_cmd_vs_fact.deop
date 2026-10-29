@@ -1,0 +1,28 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pc_cmd_vs_fact",
+    "comment": "SL-0099 (playbook 4.6): emit a command event on a resource the phone does not have (phone.ghost.on). The command is delivered but produces no fact - the gate on phone.screen.went_on must TIME OUT - the delivered command produces no fact and the gate waits on phone.screen.went_on, an advertised fact that never arrives. Command events never release a fact wait.",
+    "roles": {
+        "node": { "count": 1, "vehicle": "copter", "requires": ["phone"] }
+    },
+    "events": {
+        "phone.ghost.on":       {},
+        "phone.screen.went_on": {},
+        "phone.probe_done":     {}
+    },
+    "missions": {
+        "node": {
+            "walk": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "e1", "emit": "phone.ghost.on" },
+                    { "id": "g1", "gate": { "event": "phone.screen.went_on" },
+                      "timeout": 5, "on_timeout": "continue" },
+                    { "id": "e2", "emit": "phone.probe_done" }
+                ]
+            }
+        }
+    }
+}

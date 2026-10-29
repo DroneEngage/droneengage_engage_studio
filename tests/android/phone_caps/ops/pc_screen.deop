@@ -1,0 +1,30 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pc_screen",
+    "comment": "SL-0099: emit the phone.screen.pulse command event - the app's PhoneProvider strobes the screen and emits phone.screen.went_on then went_off {v,src}; the walk gates on went_off.",
+    "roles": {
+        "node": { "count": 1, "vehicle": "copter", "requires": ["phone"] }
+    },
+    "events": {
+        "phone.screen.pulse":    { "payload": { "ms": "number" } },
+        "phone.screen.went_on":  {},
+        "phone.screen.went_off": {},
+        "phone.probe_done":      {}
+    },
+    "missions": {
+        "node": {
+            "walk": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "p", "emit": "phone.screen.pulse",
+                      "payload": { "ms": 2000 } },
+                    { "id": "g", "gate": { "event": "phone.screen.went_off" },
+                      "timeout": 15, "on_timeout": "end" },
+                    { "id": "e", "emit": "phone.probe_done" }
+                ]
+            }
+        }
+    }
+}

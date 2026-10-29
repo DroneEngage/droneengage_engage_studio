@@ -1,0 +1,44 @@
+# phone_stack - shared sim spec for the phone_caps scenarios (SL-0099).
+#
+# mode: app - the app's own NativeUnitController starts de_comm +
+# de_mavlink AND DeAndroidModuleService (the Java capability host,
+# module andruav_phone). The service is exported=false so it can only
+# come up inside the app - the sim cannot push this part of the stack
+# in mode: sim, and andruav_phone dials s2s 60000 (the app-side
+# default the stock asset config also uses).
+#
+# Server pinned wss 62008 / auth 62018 (= port + 10) matching the
+# app's preset. Two transports for how the phone reaches the host,
+# picked by --set net= (or `net:` in the android: spec):
+#
+#   lan          (default) the phone dials the host LAN IP directly
+#                (carries TCP and UDP; the fcb proxy binds 0.0.0.0 at
+#                <host>:8160 = slot_base 40). Preset the app's Mission
+#                Server / FCB host to the host LAN IP.
+#   adb_reverse  a USB phone with Wi-Fi/mobile data OFF reaches host
+#                TCP ports as 127.0.0.1 over `adb reverse`
+#                (62008/62018/8160 are armed by sim up; TCP only - no
+#                comm-server UDP proxy). Preset hosts to 127.0.0.1.
+#
+# One-time device preset (same table as sims/andruav_emulator.md):
+# Native unit ON, unit name phone1, Mission Server <host>:62018,
+# login sim@sim.droneengage.com/sim1234, Andruav cloud OFF, SSL verify
+# OFF, FCB TCP <host>:8160, and the native stack marked wanted once
+# (shared_prefs/de_native_stack.xml wanted=true, or press Connect).
+version: 1
+name: phone_stack
+params:
+  serial: {default: "",
+           help: "adb serial of the device (empty = ANDROID_SERIAL)"}
+  net:    {default: lan, choices: [auto, adb_reverse, lan],
+           help: "how the phone reaches the host - lan: phone on Wi-Fi dials the host LAN IP; adb_reverse: USB-only phone reaches host TCP as 127.0.0.1"}
+example:
+  - ./sim run tests/android/phone_caps/pc_sound_say.yaml
+  - ./sim run tests/android/phone_caps/pc_sound_say.yaml --set net=adb_reverse
+slot_base: 40
+server: {type: real, auth: true, port: 62008,
+         account: {user: sim@sim.droneengage.com, code: sim1234}}
+units:
+  - {block: android_copter, name: phone1,
+     android: {serial: "${serial}", net: "${net}",
+               remote_modules: [de_comm, de_mavlink], mode: app}}

@@ -1,0 +1,36 @@
+# phone_caps/pc_cmd_vs_fact - SL-0099 D4, playbook 4.6 rule: a wait
+# that must TIME OUT, proving command events never release fact waits.
+# phone.ghost is not a resource the phone has - the command is
+# delivered (latched as an event) but no went_on fact can come back.
+#
+# mode: app (see pc_sound_say.yaml - same prerequisites).
+version: 1
+name: pc_cmd_vs_fact
+tier: smoke
+realtime: true
+sim: {base: phone_stack.yaml}
+operation: ops/pc_cmd_vs_fact.deop
+verify: {cli: ../../../tools/verify_wrap.js}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 2, do: clear}
+  - {t: 5, do: deploy}
+  - {t: 10, do: start}
+  - {t: 15, do: wait_journal, unit: phone1,
+     re: "S: walk gate g1 timed out -> continue", timeout: 60}
+  - {t: 20, do: stop}
+assert:
+  - journal_count: {unit: phone1,
+      re: "S: walk emit phone\\.ghost\\.on", at_least: 1}
+  # the command event was delivered and latched by the supervisor...
+  - journal_count: {unit: phone1,
+      re: "EVENT_IN event phone\\.ghost\\.on latched", at_least: 1}
+  # ...but the matching fact never arrives: the gate times out
+  - journal_count: {unit: phone1,
+      re: "EVENT_IN event phone\\.screen\\.went_on", equals: 0}
+  - journal_count: {unit: phone1,
+      re: "S: walk gate g1 timed out -> continue", equals: 1}
+  - journal_count: {unit: phone1,
+      re: "S: walk emit phone\\.probe_done", equals: 1}
+  - journal_count: {unit: phone1, re: "failed:", equals: 0}
+teardown: none

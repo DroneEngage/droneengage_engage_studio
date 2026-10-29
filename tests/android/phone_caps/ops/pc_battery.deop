@@ -1,0 +1,24 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pc_battery",
+    "comment": "SL-0099: the phone.battery_low fact (fired by the app's PhoneHealthTracker when BatteryManager reports <= 20%, e.g. after `adb shell dumpsys battery set level 15`) triggers the batt mission, which emits the phone.battery_low_seen report.",
+    "roles": {
+        "node": { "count": 1, "vehicle": "copter", "requires": ["phone"] }
+    },
+    "events": {
+        "phone.battery_low":      {},
+        "phone.battery_low_seen": {}
+    },
+    "missions": {
+        "node": {
+            "batt": {
+                "trigger": { "event": "phone.battery_low" },
+                "end": "hold",
+                "steps": [
+                    { "id": "r", "emit": "phone.battery_low_seen" }
+                ]
+            }
+        }
+    }
+}

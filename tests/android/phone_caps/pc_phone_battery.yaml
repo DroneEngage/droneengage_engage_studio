@@ -1,0 +1,39 @@
+# phone_caps/pc_phone_battery - SL-0099 D4: the phone.battery_low edge
+# fact triggers the batt mission, which emits the battery_low_seen
+# report.
+#
+# mode: app (see pc_sound_say.yaml - same prerequisites).
+#
+# BATTERY DRIVER: the sim DSL has no adb step, so the level is set from
+# the host while the run waits (the app's PhoneHealthTracker re-reads
+# the sticky battery intent, so `dumpsys battery` values apply):
+#   adb -s $ANDROID_SERIAL shell dumpsys battery set level 15
+# The fact fires on the first sample below 20% - set the level AFTER
+# the op is armed (the `start` step) and inside the wait window, then
+# `dumpsys battery reset` after the run.
+version: 1
+name: pc_phone_battery
+tier: smoke
+realtime: true
+sim: {base: phone_stack.yaml}
+operation: ops/pc_battery.deop
+verify: {cli: ../../../tools/verify_wrap.js}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 2, do: clear}
+  - {t: 5, do: deploy}
+  - {t: 10, do: start}
+  # 120 s window: while this wait runs, `dumpsys battery set level 15`
+  # fires the edge fact into the armed batt trigger
+  - {t: 15, do: wait_journal, unit: phone1,
+     re: "S: batt emit phone\\.battery_low_seen", timeout: 120}
+  - {t: 20, do: stop}
+assert:
+  - journal_count: {unit: phone1,
+      re: "EVENT_IN event phone\\.battery_low latched", at_least: 1}
+  - journal_count: {unit: phone1,
+      re: "S: batt activated", equals: 1}
+  - journal_count: {unit: phone1,
+      re: "S: batt emit phone\\.battery_low_seen", equals: 1}
+  - journal_count: {unit: phone1, re: "failed:", equals: 0}
+teardown: none

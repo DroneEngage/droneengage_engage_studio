@@ -1,0 +1,42 @@
+# phone_caps/pc_sound_say - SL-0099 D4: invoke sound.say on the app's
+# capability host and gate on the fact it emits back.
+#
+# mode: app - the app's own NativeUnitController starts de_comm +
+# de_mavlink AND DeAndroidModuleService (the Java capability host,
+# module andruav_phone / ns sound as andruav_android). The service is
+# exported=false so it can only come up inside the app - which is why
+# the sim cannot push this part of the stack in mode: sim. s2s stays
+# on the phone's loopback at 60000 (the app-side default).
+#
+# PREREQUISITES (one-time device preset, same table as
+# sims/andruav_emulator.md): unit name phone1, Mission Server
+# 127.0.0.1:62018, login sim@sim.droneengage.com/sim1234, cloud OFF,
+# SSL verify OFF, FCB TCP 127.0.0.1:8160, native stack wanted ON.
+version: 1
+name: pc_sound_say
+tier: smoke
+realtime: true
+sim: {base: phone_stack.yaml}
+operation: ops/pc_sound_say.deop
+verify: {cli: ../../../tools/verify_wrap.js}
+timeline:
+  - {t: 0, do: stop}
+  - {t: 2, do: clear}
+  - {t: 5, do: deploy}
+  - {t: 10, do: start}
+  - {t: 15, do: wait_journal, unit: phone1,
+     re: "S: walk gate g released by sound\\.say\\.finished", timeout: 90}
+  - {t: 20, do: stop}
+assert:
+  - journal_count: {unit: phone1,
+      re: "ACTION .* sound\\.say -> invoke", at_least: 1}
+  - journal_count: {unit: phone1,
+      re: "ACTION_RESULT .* ok \\(sound\\.say\\)", equals: 1}
+  - journal_count: {unit: phone1,
+      re: "EVENT_IN event sound\\.say\\.finished latched", at_least: 1}
+  - journal_count: {unit: phone1,
+      re: "S: walk gate g released by sound\\.say\\.finished", equals: 1}
+  - journal_count: {unit: phone1,
+      re: "S: walk emit phone\\.probe_done", equals: 1}
+  - journal_count: {unit: phone1, re: "failed:", equals: 0}
+teardown: none

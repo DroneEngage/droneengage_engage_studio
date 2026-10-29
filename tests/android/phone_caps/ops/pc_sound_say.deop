@@ -1,0 +1,28 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "pc_sound_say",
+    "comment": "SL-0099: do sound.say {text} -> andruav_android answers ok and emits sound.say.started|finished {src,reason}; the walk gates on finished then emits the probe marker.",
+    "roles": {
+        "node": { "count": 1, "vehicle": "copter", "requires": ["sound"] }
+    },
+    "events": {
+        "sound.say.finished": {},
+        "phone.probe_done":   {}
+    },
+    "missions": {
+        "node": {
+            "walk": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    { "id": "say", "do": "sound.say",
+                      "with": { "text": "phone caps check" }, "timeout": 15 },
+                    { "id": "g", "gate": { "event": "sound.say.finished" },
+                      "timeout": 20, "on_timeout": "end" },
+                    { "id": "e", "emit": "phone.probe_done" }
+                ]
+            }
+        }
+    }
+}
