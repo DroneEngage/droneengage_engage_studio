@@ -17,6 +17,9 @@
       "description": "requested SITL --speedup for this run. Default 3; realtime: true pins 1 (and may not combine with speedup > 1). Pin 1 on wall-clock-bound fleets: render-farm/real cameras, world-driven stubs against moving SITL, closed module<->FC loops"},
     "tier": {"type": "string", "enum": ["smoke", "regression"],
       "description": "suite selection tier; absent = regression. `sim suite --tier smoke` runs only the marked fast first-pass set"},
+    "tasks": {"type": "array",
+      "items": {"type": "string", "pattern": "^[A-Z]{2,4}-[0-9]{4}$"},
+      "description": "TeamEngage ids this run file proves (e.g. [SL-0099]) - selectable via `./sim list --task` and `./sim suite --task`"},
     "allow_all_skip": {"type": "boolean", "default": false,
       "description": "accept a run whose every assertion SKIPped (otherwise it fails: it proved nothing)"},
     "sim": {

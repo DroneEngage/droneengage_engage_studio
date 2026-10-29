@@ -3,6 +3,7 @@
 # keep it to the "why", not the mechanics.
 version: 1
 name: @NAME@
+tasks: []                     # TeamEngage ids this file proves (list/suite --task)
 # seed: 42                      # fixed seed = reproducible fault/world rolls
 transport: fake               # fake: seeded link faults, no real server
                               # real: route through the real comm server

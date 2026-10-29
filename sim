@@ -577,6 +577,13 @@ def main(argv):
                     sys.exit("--tier needs a value")
                 tier = a[i + 1]
                 del a[i:i + 2]
+            task = None
+            if "--task" in a:
+                i = a.index("--task")
+                if i + 1 >= len(a):
+                    sys.exit("--task needs a value")
+                task = a[i + 1]
+                del a[i:i + 2]
             keep = "--keep" in a
             dirs = [x for x in a if not x.startswith("-")] or ["tests"]
             bad = _bad_flags(a, sim_commands.allowed_flags("suite"))
@@ -586,10 +593,26 @@ def main(argv):
                    os.path.join(simlib.SIM_ROOT, "ci", "run_suite.py"),
                    "--roots"] + dirs + ["--seeds", seeds] \
                   + (["--keep"] if keep else []) \
-                  + (["--tier", tier] if tier else [])
+                  + (["--tier", tier] if tier else []) \
+                  + (["--task", task] if task else [])
             return subprocess.call(cmd, cwd=simlib.SIM_ROOT)
         elif c == "list":
             json_out = "--json" in a
+            # SL-0137: --task/--kind/--tier filters (AND) combine with
+            # the roots scopes; their values are pulled out here so a
+            # value is never mistaken for a root name
+            filt, rest = {}, []
+            i = 0
+            while i < len(a):
+                if a[i] in ("--task", "--kind", "--tier"):
+                    if i + 1 >= len(a):
+                        sys.exit(f"{a[i]} needs a value")
+                    filt[a[i][2:]] = a[i + 1]
+                    i += 2
+                else:
+                    rest.append(a[i])
+                    i += 1
+            a = rest
             roots = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("list"))
             if bad:
@@ -603,6 +626,31 @@ def main(argv):
             file_roots = [r for r in roots if r != "stacks"]
             if not roots:
                 file_roots = ["scenarios", "tests"]
+
+            def _list_files(root):
+                # (path, kind, tasks) per yaml under the root, with the
+                # SL-0137 filters applied; the spec is loaded only when
+                # a filter or the --json rows need it
+                d = os.path.join(simlib.SIM_ROOT, root)
+                rows = []
+                for f in sorted(glob.glob(
+                        os.path.join(d, "**", "*.yaml"), recursive=True)):
+                    kind = simlib.kind_of(f)
+                    spec = {}
+                    if filt or json_out:
+                        spec = simlib.load_yaml(f) or {}
+                    tasks = spec.get("tasks")
+                    tasks = tasks if isinstance(tasks, list) else []
+                    tier = spec.get("tier", "regression")
+                    if filt.get("kind") and kind != filt["kind"]:
+                        continue
+                    if filt.get("tier") and tier != filt["tier"]:
+                        continue
+                    if filt.get("task") and filt["task"] not in tasks:
+                        continue
+                    rows.append((f, kind, tasks))
+                return rows
+
             if json_out:
                 out = {}
                 if file_roots:
@@ -610,13 +658,11 @@ def main(argv):
                         {"root": root,
                          "files": [
                              {"file": os.path.relpath(f, simlib.SIM_ROOT),
+                              "kind": kind, "tasks": tasks,
                               "description":
                                   (_sim_one_liner(f) if root == "sims"
                                    else _one_liner(f))[:80]}
-                             for f in sorted(glob.glob(
-                                 os.path.join(simlib.SIM_ROOT, root,
-                                              "**", "*.yaml"),
-                                 recursive=True))]}
+                             for f, kind, tasks in _list_files(root)]}
                         for root in file_roots]
                 if "stacks" in roots:
                     import devstack
@@ -626,11 +672,9 @@ def main(argv):
                 print(json.dumps(out, indent=1))
             else:
                 for root in file_roots:
-                    d = os.path.join(simlib.SIM_ROOT, root)
-                    files = sorted(glob.glob(
-                        os.path.join(d, "**", "*.yaml"), recursive=True))
-                    print(f"{root}/  ({len(files)} files)")
-                    for f in files:
+                    rows = _list_files(root)
+                    print(f"{root}/  ({len(rows)} files)")
+                    for f, kind, tasks in rows:
                         rel = os.path.relpath(f, simlib.SIM_ROOT)
                         one = _sim_one_liner(f) if root == "sims" \
                             else _one_liner(f)

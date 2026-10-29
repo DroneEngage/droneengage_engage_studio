@@ -301,16 +301,19 @@ COMMANDS = {
         "group": "EXECUTE",
         "summary": "run every yaml under dir(s) once per seed",
         "usage": ["./sim suite [dir ...] [--seeds 1,2,3] [--keep] "
-                 "[--tier smoke]"],
+                 "[--tier smoke] [--task <id>]"],
         "description": "Run every yaml under dir(s) once per seed (default "
                        "dir: tests) - the nightly run: owns the machine "
                        "serially, unless --shared. Verdicts + junit in "
                        "var/results/nightly/; --tier smoke runs only the "
-                       "marked fast first-pass set.",
+                       "marked fast first-pass set; --task selects only "
+                       "files tagged `tasks: [<id>]`.",
         "flags": {
             "--seeds": "comma-separated seed list (default 1,2,3)",
             "--keep": "skip teardowns (leave sims up)",
             "--tier": "run only the marked tier (smoke|regression)",
+            "--task": "run only files tagged `tasks: [<id>]` (e.g. "
+                      "SL-0099)",
         },
         "shared_flags": True,
         "examples": ["./sim suite", "./sim suite --seeds 1,2,3 --tier smoke"],
@@ -323,12 +326,20 @@ COMMANDS = {
         "description": "List scenario/test/sim files with their one-line "
                        "header-comment descriptions (default: "
                        "scenarios+tests); stacks lists the dev stacks "
-                       "(de_servers, de_webclient) and their procs.",
+                       "(de_servers, de_webclient) and their procs. "
+                       "--task/--kind/--tier filter with AND (kind is "
+                       "inferred from the path: test|demo|example|"
+                       "challenge).",
         "flags": {
-            "--json": "machine-readable json",
+            "--json": "machine-readable json (rows carry kind + tasks)",
+            "--task": "only files tagged `tasks: [<id>]` (e.g. SL-0099)",
+            "--kind": "only files of a kind "
+                      "(test|demo|example|challenge)",
+            "--tier": "only files marked `tier: <name>`",
         },
         "shared_flags": False,
-        "examples": ["./sim list", "./sim list tests", "./sim list sims"],
+        "examples": ["./sim list", "./sim list tests", "./sim list sims",
+                     "./sim list --task SL-0099"],
         "takes_sim": False,
     },
     "new": {

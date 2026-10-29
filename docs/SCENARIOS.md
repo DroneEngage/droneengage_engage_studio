@@ -32,8 +32,11 @@ Commands:
 ./sim view <file>                           # run + hold with the 3D viewer
 ./sim suite tests/faults --seeds 1,2        # a directory x seeds
 ./sim suite --tier smoke                    # the marked fast first-pass set only
+./sim suite --task SL-0099                  # only files whose `tasks:` carry the id
 ./sim suite tests/soak                      # soak suites are opt-in (excluded by default)
 ./sim list                                  # catalog everything runnable
+./sim list --task SL-0099 --kind test       # filters AND together (kind is
+                                            # inferred from the path, never stored)
 ```
 
 ## File shape
@@ -55,6 +58,8 @@ speedup: 3                     # SITL --speedup for this run; default 3.
 tier: smoke                    # optional; suite selection only
                                # (`sim suite --tier smoke`), absent =
                                # regression
+tasks: [SL-0099]               # optional; TeamEngage ids this file proves -
+                               # `sim list --task <id>` / `sim suite --task <id>`
 transport: fake                # fake | real | {type: real, link_proxy: true}
                                # (link faults need fake, or real+link_proxy;
                                # clock faults always need fake)

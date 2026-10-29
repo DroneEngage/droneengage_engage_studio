@@ -56,12 +56,13 @@ RESULTS = simlib.RESULTS_DIR
 _OPT_IN_DIRS = ("soak", "experimental")
 
 
-def yaml_files(roots, tier=None):
+def yaml_files(roots, tier=None, task=None):
     """Every *.yaml under each root - except opt-in dirs: a */soak/ dir
     holds wall-clock runs (tests/soak is 30 min at speed-up 1) and a
     */experimental/ dir holds tests excluded from release gating; both
     run only via an explicit --roots <path>/<name>. `tier` keeps only
-    files whose `tier:` key matches (absent = regression)."""
+    files whose `tier:` key matches (absent = regression); `task` keeps
+    only files whose `tasks:` list carries the TeamEngage id (SL-0137)."""
     out = []
     for r in roots:
         d = os.path.join(ROOT, r)
@@ -78,6 +79,11 @@ def yaml_files(roots, tier=None):
         out = [f for f in out
                if (simlib.load_yaml(f) or {}).get("tier", "regression")
                == tier]
+    if task:
+        def _tasks(f):
+            t = (simlib.load_yaml(f) or {}).get("tasks")
+            return t if isinstance(t, list) else []
+        out = [f for f in out if task in _tasks(f)]
     return out
 
 
@@ -152,6 +158,9 @@ def main():
                     choices=["smoke", "regression"],
                     help="only files marked `tier: <name>` (absent = "
                          "regression; smoke = the fast first-pass set)")
+    ap.add_argument("--task", default=None,
+                    help="only files whose `tasks:` list carries this "
+                         "TeamEngage id (e.g. SL-0099)")
     ap.add_argument("--speedup", type=float, default=None,
                     help="SITL --speedup for every unpinned scenario "
                          "(default 3; realtime:/speedup:-pinned files "
@@ -160,7 +169,7 @@ def main():
     if a.speedup:
         os.environ["SIM_SPEEDUP"] = f"{a.speedup:g}"
     seeds = [int(s) for s in a.seeds.split(",") if s.strip()]
-    files = yaml_files(a.roots, tier=a.tier)
+    files = yaml_files(a.roots, tier=a.tier, task=a.task)
     if not files:
         sys.exit(f"no scenario yaml under {a.roots}")
     os.makedirs(a.out, exist_ok=True)

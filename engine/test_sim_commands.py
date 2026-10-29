@@ -16,6 +16,7 @@ Covers:
 """
 
 import io
+import json
 import os
 import re
 import subprocess
@@ -130,6 +131,30 @@ class RegistryTest(unittest.TestCase):
                              "exactly once")
 
 
+class KindOfTest(unittest.TestCase):
+    """SL-0137: kind is inferred from the file's place in the tree -
+    never stored, so it cannot drift."""
+
+    def test_kind_of_paths(self):
+        self.assertEqual(simlib.kind_of("tests/faults/x.yaml"), "test")
+        self.assertEqual(simlib.kind_of("tests/a/b/x.yaml"), "test")
+        self.assertEqual(simlib.kind_of("scenarios/demos/x.yaml"),
+                         "demo")
+        self.assertEqual(simlib.kind_of("scenarios/examples/x.yaml"),
+                         "example")
+        self.assertEqual(simlib.kind_of("scenarios/challenges/x.yaml"),
+                         "challenge")
+
+    def test_kind_of_absolute_path(self):
+        p = os.path.join(simlib.SIM_ROOT, "tests", "smoke_copters.yaml")
+        self.assertEqual(simlib.kind_of(p), "test")
+
+    def test_kind_of_non_run_files(self):
+        self.assertIsNone(simlib.kind_of("sims/copters3.yaml"))
+        self.assertIsNone(simlib.kind_of("scenarios/loose.yaml"))
+        self.assertIsNone(simlib.kind_of("/etc/fstab"))
+
+
 class CliHelpTest(unittest.TestCase):
     def _run(self, *args):
         return subprocess.run([SIM, *args], cwd=simlib.SIM_ROOT,
@@ -162,6 +187,42 @@ class CliHelpTest(unittest.TestCase):
         p = self._run("show")
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("./sim show help", p.stderr + p.stdout)
+
+    def test_list_task_filter(self):
+        # SL-0137: --task selects only files whose `tasks:` carry the
+        # id; the --json row carries kind + tasks
+        tagged = os.path.join(simlib.SIM_ROOT, "tests",
+                              "zz_sl0137_tagged.yaml")
+        with open(tagged, "w") as fh:
+            fh.write("# zz_sl0137_tagged - temporary --task filter "
+                     "fixture\ntasks: [SL-0099]\n")
+        try:
+            p = self._run("list", "tests", "--task", "SL-0099")
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertIn("zz_sl0137_tagged.yaml", p.stdout)
+            self.assertNotIn("smoke_copters", p.stdout)
+            p = self._run("list", "tests", "--task", "SL-0099", "--json")
+            rows = json.loads(p.stdout)["roots"][0]["files"]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["tasks"], ["SL-0099"])
+            self.assertEqual(rows[0]["kind"], "test")
+            # a different id selects nothing
+            p = self._run("list", "tests", "--task", "SL-0001")
+            self.assertNotIn("zz_sl0137_tagged.yaml", p.stdout)
+        finally:
+            os.unlink(tagged)
+
+    def test_list_kind_filter(self):
+        # SL-0137: --kind keeps only the path-inferred kind
+        p = self._run("list", "--kind", "demo")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        for line in p.stdout.splitlines():
+            line = line.strip()
+            if line.endswith(".yaml") or "yaml " in line:
+                self.assertTrue(line.startswith("scenarios/demos/"),
+                                line)
+        self.assertFalse(re.search(r"^\s+tests/\S+\.yaml", p.stdout,
+                                   re.M))
 
 
 class ResolveSimArgTest(unittest.TestCase):

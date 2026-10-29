@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""simlib.py - core of droneengage_simulation_land.
+"""simlib.py - core of droneengage_studio.
 
 Three layers, all data:
 
@@ -297,6 +297,22 @@ def load_yaml(path):
             return yaml.safe_load(f) or {}
     except OSError as e:
         raise SimError(f"cannot read {path}: {e}")
+
+
+def kind_of(path):
+    """The file's EXECUTE kind (SL-0137), inferred from its place in the
+    tree - never stored in the file so it cannot drift: tests/** ->
+    test, scenarios/demos/** -> demo, scenarios/examples/** -> example,
+    scenarios/challenges/** -> challenge; anything else (sims/, loose
+    scenarios/*.yaml, files outside SIM_ROOT) -> None."""
+    rel = os.path.relpath(path, SIM_ROOT) if os.path.isabs(path) else path
+    parts = rel.split(os.sep)
+    if parts[0] == "tests":
+        return "test"
+    if parts[0] == "scenarios" and len(parts) > 2:
+        return {"demos": "demo", "examples": "example",
+                "challenges": "challenge"}.get(parts[1])
+    return None
 
 
 def deep_merge(base, over):
