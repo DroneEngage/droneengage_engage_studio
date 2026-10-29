@@ -195,19 +195,19 @@ class CliHelpTest(unittest.TestCase):
                               "zz_sl0137_tagged.yaml")
         with open(tagged, "w") as fh:
             fh.write("# zz_sl0137_tagged - temporary --task filter "
-                     "fixture\ntasks: [SL-0099]\n")
+                     "fixture\ntasks: [SL-9999]\n")
         try:
-            p = self._run("list", "tests", "--task", "SL-0099")
+            p = self._run("list", "tests", "--task", "SL-9999")
             self.assertEqual(p.returncode, 0, p.stderr)
             self.assertIn("zz_sl0137_tagged.yaml", p.stdout)
             self.assertNotIn("smoke_copters", p.stdout)
-            p = self._run("list", "tests", "--task", "SL-0099", "--json")
+            p = self._run("list", "tests", "--task", "SL-9999", "--json")
             rows = json.loads(p.stdout)["roots"][0]["files"]
             self.assertEqual(len(rows), 1)
-            self.assertEqual(rows[0]["tasks"], ["SL-0099"])
+            self.assertEqual(rows[0]["tasks"], ["SL-9999"])
             self.assertEqual(rows[0]["kind"], "test")
             # a different id selects nothing
-            p = self._run("list", "tests", "--task", "SL-0001")
+            p = self._run("list", "tests", "--task", "SL-9998")
             self.assertNotIn("zz_sl0137_tagged.yaml", p.stdout)
         finally:
             os.unlink(tagged)

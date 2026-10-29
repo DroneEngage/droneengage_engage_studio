@@ -1,0 +1,9 @@
+# Example stack: the comm server alone - no auth, no storage, no
+# relay. `./sim up example_comm_only` / `./sim down example_comm_only`
+# work without any engine edit; state lands under
+# var/example_comm_only/ (the stack name has no de_ prefix to strip).
+name: example_comm_only
+procs:
+  - name: de_server
+    repo_env: DE_SERVER_DIR
+    repo: droneengage_server

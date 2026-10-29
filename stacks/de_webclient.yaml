@@ -1,0 +1,15 @@
+# The webclient dev server: `npm start` (kind: npm) in DE_WEBCLIENT_DIR
+# - react-scripts on SIM_WEBCLIENT_URL (https :3000 default). The
+# webclient takes its auth/server target from URL params, so the deep
+# links `sim status` prints keep working unchanged. open_url is what
+# `./sim up de_webclient --open-web` opens and `sim status` shows.
+name: de_webclient
+# webpack's dev server binds late compared to the node servers
+up_timeout_s: 90
+open_url: "{webclient_url}"
+up_note: "de_webclient up - {webclient_url} (the first compile takes a while - `./sim logs de_webclient` to watch)"
+procs:
+  - name: de_webclient
+    kind: npm
+    repo_env: DE_WEBCLIENT_DIR
+    repo: droneengage_webclient_react

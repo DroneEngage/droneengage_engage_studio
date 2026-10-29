@@ -387,19 +387,18 @@ def main(argv):
                 sys.exit(f"unknown {' '.join(bad)} - ./sim up help")
             if len(files) != 1:
                 _usage_exit("up")
-            if files[0] == "de_servers":
-                # the dev server stack, not a sim - see engine/devstack
-                if "--open-web" in a:
-                    sys.exit("de_servers has no webclient link")
-                import devstack
-                return devstack.up(fresh="--fresh" in a)
-            if files[0] == "de_webclient":
-                # the webclient dev server, not a sim - same devstack
-                import devstack
-                devstack.up("de_webclient", fresh="--fresh" in a)
+            import devstack
+            if files[0] in devstack.stack_names():
+                # a dev stack from stacks/*.yaml, not a sim - see
+                # engine/devstack; --open-web only on stacks that
+                # declare an open_url
+                url = devstack.open_url(files[0])
+                if "--open-web" in a and not url:
+                    sys.exit(f"{files[0]} has no webclient link")
+                devstack.up(files[0], fresh="--fresh" in a)
                 if "--open-web" in a:
                     import ctl
-                    ctl.xdg_open(simlib.WEBCLIENT_URL)
+                    ctl.xdg_open(url)
                 return
             launcher.up(simlib.resolve_sim_arg(files[0]),
                         fresh="--fresh" in a,
@@ -410,8 +409,8 @@ def main(argv):
             bad = _bad_flags(a, sim_commands.allowed_flags("down"))
             if bad:
                 sys.exit(f"unknown {' '.join(bad)} - ./sim down help")
-            if names and names[0] in ("de_servers", "de_webclient"):
-                import devstack
+            import devstack
+            if names and names[0] in devstack.stack_names():
                 return devstack.down(names[0])
             launcher.down(None if not names or "--all" in a else names[0])
         elif c == "sims":
@@ -483,14 +482,17 @@ def main(argv):
             import ctl
             import devstack
             import launcher
-            n = len(devstack.pids())
-            if n:
-                print(f"de_servers: {n}/{len(devstack.STACKS['de_servers'])}"
-                      " procs up - ./sim servers", flush=True)
-            if devstack.pids("de_webclient"):
-                print("de_webclient: up - "
-                      + simlib.col_cyan(simlib.WEBCLIENT_URL)
-                      + " - ./sim logs de_webclient", flush=True)
+            for s in devstack.stack_names():
+                n = len(devstack.pids(s))
+                if not n:
+                    continue
+                url = devstack.open_url(s)
+                if url:
+                    print(f"{s}: up - " + simlib.col_cyan(url)
+                          + f" - ./sim logs {s}", flush=True)
+                else:
+                    print(f"{s}: {n}/{len(devstack.procs(s))}"
+                          " procs up - ./sim servers", flush=True)
             # SL-0066 - surface orphaned scenario runners: a runner pid
             # alive while its fleet is down can still fire teardown
             # (op_abort/land) into whatever runs next; `sim down` reaps it
@@ -670,8 +672,8 @@ def main(argv):
                 if "stacks" in roots:
                     import devstack
                     out["stacks"] = {
-                        name: [p[0] for p in procs]
-                        for name, procs in devstack.STACKS.items()}
+                        name: [p["name"] for p in spec["procs"]]
+                        for name, spec in devstack.STACKS.items()}
                 print(json.dumps(out, indent=1))
             else:
                 for root in file_roots:
@@ -686,9 +688,10 @@ def main(argv):
                     import devstack
                     w = max(len(n) for n in devstack.STACKS)
                     print(f"stacks/  ({len(devstack.STACKS)} stacks)")
-                    for name, procs in devstack.STACKS.items():
+                    for name, spec in devstack.STACKS.items():
                         print(f"  {name:{w}s}  "
-                              + " ".join(p[0] for p in procs))
+                              + " ".join(p["name"]
+                                         for p in spec["procs"]))
         elif c == "new":
             sensor = "--sensor" in a
             names = [x for x in a if not x.startswith("-")]
@@ -856,8 +859,8 @@ def main(argv):
             if a and a[0] in ("-s", "--sim"):
                 sim_name, a = a[1], a[2:]
             owner = a[0]
-            if owner in ("de_servers", "de_webclient"):
-                import devstack
+            import devstack
+            if owner in devstack.stack_names():
                 return devstack.logs(owner,
                                      a[1] if len(a) > 1 else None)
             if owner == "server":
