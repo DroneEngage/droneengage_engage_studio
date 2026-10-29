@@ -23,6 +23,7 @@
 # (the /var/run/sdp socket) - see docs/HIL.md.
 version: 1
 name: bt_spp_andruav
+tasks: [SL-0105]
 transport: real
 realtime: true
 settle_s: 15

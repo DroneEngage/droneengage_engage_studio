@@ -8,6 +8,7 @@
 # the module is starved, never de_comm itself.
 version: 1
 name: f_os_cpu_starve
+tasks: [SL-0014]
 transport: fake
 realtime: true
 settle_s: 30

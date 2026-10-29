@@ -6,6 +6,7 @@
 # mode: app (see pc_sound_say.yaml - same prerequisites).
 version: 1
 name: pc_cmd_vs_fact
+tasks: [SL-0099]
 tier: smoke
 realtime: true
 sim: {base: phone_stack.yaml}

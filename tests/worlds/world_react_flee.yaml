@@ -13,6 +13,7 @@
 # "event world.reacted latched").
 version: 1
 name: world_react_flee
+tasks: [SL-0013]
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7
 transport: fake

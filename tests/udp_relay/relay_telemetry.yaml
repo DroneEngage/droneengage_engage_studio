@@ -10,6 +10,7 @@
 # and never sends its 9008 pair-open request.
 version: 1
 name: relay_telemetry
+tasks: [GL-0063]
 transport: {type: real, auth: true, udp_relay: true,
             account: {user: sim@sim.droneengage.com, code: sim1234}}
 fleet:

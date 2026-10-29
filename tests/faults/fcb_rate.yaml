@@ -17,6 +17,7 @@
 # mid-download (POS_SOURCE_BACK while the rule is still on).
 version: 1
 name: f_fcb_rate
+tasks: [SL-0101]
 transport: real          # the proxy is ours - no fake server needed
 realtime: true
 settle_s: 30

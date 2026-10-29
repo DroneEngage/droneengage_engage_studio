@@ -11,6 +11,7 @@
 #        the GCS-side 1008 MI=3 summary lists BOTH boards in CP.b
 version: 1
 name: cpu_distributed_warning
+tasks: [SL-0067, GL-0041]
 transport: real
 settle_s: 10
 fleet:

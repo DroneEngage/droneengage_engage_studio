@@ -19,6 +19,7 @@
 #        the 8 m nadir mast, deterministic (p_detect 1, no noise).
 version: 1
 name: perception_unknown
+tasks: [SL-0035]
 seed: 14
 transport: fake
 world: ../../worlds/perception_unknown.yaml

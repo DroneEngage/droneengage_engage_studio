@@ -32,6 +32,7 @@
 # the payload text.
 version: 1
 name: android_test_echo
+tasks: [AN-0061]
 tier: smoke
 transport: real
 realtime: true

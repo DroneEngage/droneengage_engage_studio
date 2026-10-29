@@ -5,6 +5,7 @@
 # went_off latches.
 version: 1
 name: fc_io_rc_switch
+tasks: [MV-0020]
 transport: fake
 operation: ops/fc_io_rc.deop
 verify: {cli: ../../tools/verify_wrap.js}

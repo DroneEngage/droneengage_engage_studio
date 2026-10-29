@@ -10,6 +10,7 @@
 # stub logs.
 version: 1
 name: obs_contract
+tasks: [SL-0034]
 tier: smoke
 seed: 7
 transport: fake

@@ -10,6 +10,7 @@
 # GCS bridge is never proxied.
 version: 1
 name: real_link_cut
+tasks: [SL-0009]
 transport: {type: real, link_proxy: true}
 settle_s: 50
 fleet:

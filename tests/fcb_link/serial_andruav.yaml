@@ -23,6 +23,7 @@
 # over ttyUSBn on benches where adapters move around.
 version: 1
 name: serial_andruav
+tasks: [SL-0104]
 transport: real
 realtime: true
 settle_s: 15

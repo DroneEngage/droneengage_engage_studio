@@ -32,6 +32,7 @@
 #     exactly what the at_most side bounds.
 version: 1
 name: perception_tracks
+tasks: [SL-0035]
 seed: 11
 transport: fake
 world: ../../worlds/perception_tracks.yaml

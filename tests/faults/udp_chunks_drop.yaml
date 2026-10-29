@@ -17,6 +17,7 @@
 # never shrink the post-restore telemetry window.
 version: 1
 name: f_udp_chunks_drop
+tasks: [SL-0010]
 transport: real
 settle_s: 10
 teardown: land

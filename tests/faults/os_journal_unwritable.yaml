@@ -10,6 +10,7 @@
 # "package READY" #2 proves journaling resumed.
 version: 1
 name: f_os_journal_unwritable
+tasks: [SL-0014]
 transport: fake
 operation: ../../packages/copter_square.json
 settle_s: 20

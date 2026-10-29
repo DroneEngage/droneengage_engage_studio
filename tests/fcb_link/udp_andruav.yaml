@@ -22,6 +22,7 @@
 # honestly as zero bytes (UDP has no connect to refuse).
 version: 1
 name: udp_andruav
+tasks: [SL-0106]
 transport: real
 realtime: true
 settle_s: 15

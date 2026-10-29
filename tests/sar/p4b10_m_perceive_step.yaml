@@ -37,6 +37,7 @@
 # gate times out to "end", no watch.done, no OP_END.
 version: 1
 name: p4b10_m_perceive_step
+tasks: [MP-0215]
 seed: 7
 transport: fake
 world: ../../worlds/perceive_gate.yaml

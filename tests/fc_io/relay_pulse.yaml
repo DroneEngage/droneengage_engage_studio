@@ -5,6 +5,7 @@
 # supervisor.
 version: 1
 name: fc_io_relay_pulse
+tasks: [MV-0020]
 transport: fake
 operation: ops/fc_io_pulse.deop
 verify: {cli: ../../tools/verify_wrap.js}

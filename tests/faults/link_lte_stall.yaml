@@ -15,6 +15,7 @@
 # dies. transport: fake; the unit is c1.
 version: 1
 name: f_link_lte_stall
+tasks: [SL-0007]
 realtime: true
 transport: fake
 operation: ../../packages/copter_square_probe.json

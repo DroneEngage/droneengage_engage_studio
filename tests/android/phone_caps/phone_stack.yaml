@@ -27,6 +27,7 @@
 # (shared_prefs/de_native_stack.xml wanted=true, or press Connect).
 version: 1
 name: phone_stack
+tasks: [SL-0099]
 params:
   serial: {default: "",
            help: "adb serial of the device (empty = ANDROID_SERIAL)"}

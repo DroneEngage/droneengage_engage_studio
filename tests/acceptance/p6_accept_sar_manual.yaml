@@ -28,6 +28,7 @@
 #         + operator.log are what Task C replays.
 version: 1
 name: p6_accept_sar_manual
+tasks: [MP-0139]
 realtime: true                # wall-clock - the participant works in real time
 seed: 7
 transport: fake

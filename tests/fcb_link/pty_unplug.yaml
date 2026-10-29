@@ -10,6 +10,7 @@
 # The copter holds a LOITER hover through the whole window.
 version: 1
 name: f_pty_unplug
+tasks: [SL-0103]
 transport: real
 realtime: true
 settle_s: 30

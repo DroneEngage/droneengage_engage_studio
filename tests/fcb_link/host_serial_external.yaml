@@ -12,6 +12,7 @@
 # real (a wire with no client carries nothing).
 version: 1
 name: f_host_serial_ext
+tasks: [SL-0104]
 transport: real
 realtime: true
 settle_s: 15

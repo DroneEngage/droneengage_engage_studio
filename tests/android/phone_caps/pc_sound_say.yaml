@@ -14,6 +14,7 @@
 # SSL verify OFF, FCB TCP 127.0.0.1:8160, native stack wanted ON.
 version: 1
 name: pc_sound_say
+tasks: [SL-0099]
 tier: smoke
 realtime: true
 sim: {base: phone_stack.yaml}

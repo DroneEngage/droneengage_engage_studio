@@ -12,6 +12,7 @@
 # for real (a listening channel nobody called carries nothing).
 version: 1
 name: f_bt_spp_ext
+tasks: [SL-0105]
 transport: real
 realtime: true
 settle_s: 15

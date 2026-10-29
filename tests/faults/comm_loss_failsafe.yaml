@@ -8,6 +8,7 @@
 # itself. c2 keeps its link and its mode - the failsafe is per-unit.
 version: 1
 name: f_comm_loss_failsafe
+tasks: [AN-0074]
 transport: fake
 settle_s: 45
 fleet:

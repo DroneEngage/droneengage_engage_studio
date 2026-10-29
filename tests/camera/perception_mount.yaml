@@ -22,6 +22,7 @@
 #        stops the run.
 version: 1
 name: perception_mount
+tasks: [SL-0035]
 seed: 13
 transport: fake
 world: ../../worlds/perception_mount.yaml

@@ -16,6 +16,7 @@
 # never satisfy it.
 version: 1
 name: thermal_sar_k1_ctrl
+tasks: [MP-0218]
 speedup: 1
 seed: 7
 transport: fake

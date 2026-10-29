@@ -27,6 +27,7 @@
 #     merge despite being metres apart
 version: 1
 name: perception_thermal
+tasks: [SL-0035]
 seed: 12
 transport: fake
 world: ../../worlds/perception_thermal.yaml

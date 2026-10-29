@@ -20,6 +20,7 @@
 # share a network.
 version: 1
 name: tcp_andruav
+tasks: [SL-0106]
 transport: real
 realtime: true
 settle_s: 15

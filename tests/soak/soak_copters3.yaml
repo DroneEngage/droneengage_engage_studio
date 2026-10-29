@@ -13,6 +13,7 @@
 # chaos finding on de_comm's auth-retry, not a soak assertion).
 version: 1
 name: soak_copters3
+tasks: [SL-0011]
 seed: 1
 realtime: true            # pins SITL speedup 1 - a soak is wall-clock evidence
 transport: fake

@@ -13,6 +13,7 @@
 # `dumpsys battery reset` after the run.
 version: 1
 name: pc_phone_battery
+tasks: [SL-0099]
 tier: smoke
 realtime: true
 sim: {base: phone_stack.yaml}
