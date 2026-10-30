@@ -2420,6 +2420,13 @@ def gen_unit(u, sim, catalog):
                 cfg["auth_ip"] = hip
             else:
                 cfg["local_comm_server_ip"] = hip
+    if (u.get("android") or {}).get("remote_modules"):
+        # DE-0036: any remote module means some s2s leg crosses the
+        # LAN. A datagram bigger than the link MTU IP-fragments and
+        # Android drops fragments, so de_comm's capability answers
+        # (multi-KB de.cap payloads) never reach a host-side module -
+        # cap chunks at a WAN-safe size; the bus reassembles them
+        cfg["s2s_udp_packet_size"] = "1400"
     if not u["fc"]:
         p = u["position"]
         cfg["location"] = {
@@ -2590,6 +2597,11 @@ def gen_unit(u, sim, catalog):
             "s2s_udp_listening_port": str(u["ports"][m]),
             "use_unix_socket": False,
         })
+        if target_ip != "127.0.0.1":
+            # DE-0036: this module's s2s datagrams cross the LAN to
+            # reach de_comm - over-MTU datagrams IP-fragment and
+            # phones drop fragments, so cap chunks at a WAN-safe size
+            mcfg["s2s_udp_packet_size"] = "1400"
         mcfg = deep_merge(mcfg, _fill(spec.get("wire") or {},
                                       dict(ctx, port=u["ports"][m])))
         if m == "de_mavlink" and ctx.get("fcb_serial_path"):
