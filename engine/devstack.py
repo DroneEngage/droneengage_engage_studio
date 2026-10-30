@@ -14,6 +14,14 @@ react-scripts dev server on SIM_WEBCLIENT_URL (https :3000 default).
 The webclient takes its auth/server target from URL params, so the deep
 links printed by `sim status` keep working unchanged.
 
+stacks/de_mavlink3dmap.yaml (SL-0154): ONE shared Mavlink3DMap vite
+page (kind: node - `node --require <marker> <script> <args>` with an
+explicit port) that render: sims borrow instead of launching their own
+per-slot vite. A stack may declare `provides: {<what>: <proc>}`; sims
+resolve it through provided_port() - the de_mavlink3dmap stack provides
+`render_web`, so a live stack replaces the sim's own web proc while the
+per-sim mav_bridge keeps feeding ?mavlink= from its own slot port.
+
 Deliberately NOT sims: no manifest under var/run/, and the procs carry
 the --<stack> marker instead of a var/run path, so simlib.pid_is_ours
 stays False for them - `sim down`, `sim run`'s exclusive teardown and
@@ -39,8 +47,12 @@ STACKS_DIR = os.path.join(simlib.SIM_ROOT, "stacks")
 # proc kinds: "exec" runs a built binary at <repo>/<bin> (the Rust
 # servers - they ignore unknown args, so the --<stack> marker still
 # rides argv); "npm" rides `npm start` (the react-scripts dev server)
-# and takes its port from $PORT / SIM_WEBCLIENT_URL
-_KINDS = ("npm", "exec")
+# and takes its port from $PORT / SIM_WEBCLIENT_URL; "node" runs
+# `node --require <marker.cjs> <script> <args>` (vite-style tools that
+# reject unknown args - the marker is a preload file whose NAME carries
+# --<stack>) on an explicit `port:`/`port_env:` port, with `cwd:` a dir
+# inside the repo and `{port}` substituted in `args:`
+_KINDS = ("npm", "exec", "node")
 
 
 def _load_stacks():
@@ -108,15 +120,67 @@ def _load_stacks():
             if port_env is not None and not isinstance(port_env, str):
                 raise simlib.SimError(
                     f"{where}: port_env must be a string")
+            cwd = p.get("cwd")
+            if cwd is not None and (not isinstance(cwd, str)
+                                    or os.path.isabs(cwd)
+                                    or ".." in cwd.split("/")):
+                raise simlib.SimError(
+                    f"{where}: cwd must be a relative dir inside "
+                    "the repo")
+            script = p.get("script")
+            args = p.get("args")
+            port = p.get("port")
+            if kind == "node":
+                if isinstance(script, str):
+                    script = [script]
+                if not script or not all(
+                        isinstance(s, str) and s for s in script):
+                    raise simlib.SimError(
+                        f"{where}: kind node needs `script:` - a js "
+                        "path, or a list of candidates, relative to "
+                        "cwd (first existing wins)")
+                if args is not None and not (
+                        isinstance(args, list) and all(
+                            isinstance(a, (str, int, float))
+                            for a in args)):
+                    raise simlib.SimError(
+                        f"{where}: args must be a list")
+                if port is not None and not isinstance(port, int):
+                    raise simlib.SimError(
+                        f"{where}: port must be a number")
+                if port is None and not port_env:
+                    raise simlib.SimError(
+                        f"{where}: kind node needs `port:` or "
+                        "`port_env:`")
+            else:
+                for extra in ("script", "args", "port", "cwd"):
+                    if p.get(extra) is not None:
+                        raise simlib.SimError(
+                            f"{where}: `{extra}:` only with kind node")
             out.append({"name": pname, "repo": repo,
                         "repo_env": repo_env, "bin": bin_,
-                        "port_env": port_env, "kind": kind})
+                        "port_env": port_env, "kind": kind,
+                        "cwd": cwd, "script": script, "args": args,
+                        "port": port})
+        prov = spec.get("provides")
+        if prov is not None:
+            if not isinstance(prov, dict) or not all(
+                    isinstance(k, str) and isinstance(v, str)
+                    for k, v in prov.items()):
+                raise simlib.SimError(
+                    f"{base}: provides must map a name to a proc name")
+            unknown = set(prov.values()) - {p["name"] for p in out}
+            if unknown:
+                raise simlib.SimError(
+                    f"{base}: provides targets unknown proc(s) "
+                    f"{sorted(unknown)}")
         for k in ("open_url", "up_note"):
             if spec.get(k) is not None and not isinstance(spec[k], str):
                 raise simlib.SimError(f"{base}: {k} must be a string")
         stacks[name] = {"procs": out, "up_timeout_s": int(timeout),
                         "open_url": spec.get("open_url"),
-                        "up_note": spec.get("up_note")}
+                        "up_note": spec.get("up_note"),
+                        "provides": prov}
     return stacks
 
 
@@ -147,11 +211,40 @@ def procs(stack):
     return STACKS[stack]["procs"]
 
 
+def provided_port(what):
+    """The resolved port of the first live stack that `provides`
+    `what` (its named proc stack-marked alive), else None - callers
+    treat absence as 'run your own'."""
+    for name, spec in STACKS.items():
+        target = (spec.get("provides") or {}).get(what)
+        if not target or target not in pids(name):
+            continue
+        p = next((x for x in spec["procs"] if x["name"] == target),
+                 None)
+        if p is None:
+            continue
+        try:
+            return _port(name, p)
+        except (simlib.SimError, ValueError):
+            continue
+    return None
+
+
 def open_url(stack):
     """What `--open-web` / `sim status` show for the stack, with
-    {webclient_url} substituted; None when the stack opens nothing."""
+    {webclient_url} and {port} (the first proc's resolved port)
+    substituted; None when the stack opens nothing."""
     u = STACKS.get(stack, {}).get("open_url")
-    return u.replace("{webclient_url}", simlib.WEBCLIENT_URL) if u else None
+    if not u:
+        return None
+    u = u.replace("{webclient_url}", simlib.WEBCLIENT_URL)
+    if "{port}" in u:
+        try:
+            port = _port(stack, STACKS[stack]["procs"][0])
+        except (simlib.SimError, ValueError, IndexError):
+            port = 0
+        u = u.replace("{port}", str(port))
+    return u
 
 
 def _stack_dir(stack):
@@ -212,20 +305,31 @@ def _port(stack, p):
     """The port the proc will bind. exec procs: their repo's
     server.config + server.config.local (the same shallow merge the
     common loader does), then the env override some servers honour.
-    npm procs: $PORT, else the SIM_WEBCLIENT_URL port."""
+    npm procs: $PORT, else the SIM_WEBCLIENT_URL port. node procs:
+    port_env, else the yaml's explicit `port:`."""
     if p["kind"] == "npm":
         if os.environ.get("PORT"):
             return int(os.environ["PORT"])
         u = urllib.parse.urlparse(simlib.WEBCLIENT_URL)
         return u.port or (443 if u.scheme == "https" else 80)
+    env_key = p["port_env"]
+    if p["kind"] == "node":
+        # node procs honour sim.local.env like every other sim knob;
+        # exec procs keep the plain-os.environ check below
+        if env_key and simlib.setting(env_key):
+            return int(simlib.setting(env_key))
+        if p["port"] is None:
+            raise simlib.SimError(
+                f"{stack}.{p['name']}: no port - set `port:` in the "
+                "stack yaml or export " + str(env_key))
+        return p["port"]
+    if env_key and os.environ.get(env_key):
+        return int(os.environ[env_key])
     repo = _repo(p)
     cfg = simlib.load_config(os.path.join(repo, "server.config"))
     loc = os.path.join(repo, "server.config.local")
     if os.path.isfile(loc):
         cfg.update(simlib.load_config(loc))
-    env_key = p["port_env"]
-    if env_key and os.environ.get(env_key):
-        return int(os.environ[env_key])
     return int(cfg.get("server_port") or 0)
 
 
@@ -246,26 +350,63 @@ def _npm():
         if os.path.dirname(simlib.NODE) else "npm"
 
 
+def _marker_cjs(stack):
+    """node procs can't take a bare --<stack> arg (vite rejects unknown
+    flags): an empty preload file whose NAME carries the marker, so
+    `node --require .../marker--<stack>.cjs` puts it on the cmdline -
+    the same trick as the sim render procs' de_sim_marker.cjs."""
+    path = os.path.join(_stack_dir(stack),
+                        f"marker--{stack}.cjs")
+    simlib.write_text(path,
+                      "// stack pid marker: preloaded via node "
+                      "--require so the proc's cmdline names\n"
+                      f"// --{stack} (_pid_is_stack).\n")
+    return path
+
+
+def _node_script(repo, p):
+    """The proc's js entry as an absolute path: its `script:` candidate
+    list resolved against <repo>/<cwd>, first existing wins; None when
+    none exists (checked again at _check_repo for the error message)."""
+    cwd = os.path.join(repo, p["cwd"] or "")
+    for rel in p["script"] or []:
+        c = os.path.join(cwd, rel)
+        if os.path.isfile(c):
+            return os.path.abspath(c)
+    return None
+
+
 def _launch_script(stack, p):
     """Run in the repo (its own server.config(.local) and relative
     paths resolve there); the --<stack> marker is ignored by the
     launched program but identifies the pid as this stack's. npm procs
     ride `npm start -- <marker>` so the npm pid carries it (and
     react-scripts ignores it); exec procs pass it straight to the
-    binary (the Rust servers ignore unknown args)."""
+    binary (the Rust servers ignore unknown args); node procs preload
+    _marker_cjs and substitute {port} in their args."""
     repo, proc = _repo(p), p["name"]
+    cwd = repo
     if p["kind"] == "npm":
         # BROWSER=none: CRA opens the browser on first compile - the sim
         # stays headless, `--open-web` does it on demand
         cmd = "export BROWSER=none\nexec '%s' start -- %s" \
             % (_npm(), _marker(stack))
+    elif p["kind"] == "node":
+        cwd = os.path.join(repo, p["cwd"] or "")
+        port = _port(stack, p)
+        args = " ".join(
+            str(a).replace("{port}", str(port))
+            for a in (p["args"] or []))
+        cmd = "exec '%s' --require '%s' '%s' %s" \
+            % (simlib.NODE, _marker_cjs(stack),
+               _node_script(repo, p), args)
     else:
         cmd = "exec '%s' %s" % (os.path.join(repo, p["bin"]),
                                 _marker(stack))
     path = os.path.join(_stack_dir(stack), f"launch.{proc}.sh")
     simlib.write_text(path,
                       "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%s\n"
-                      % (repo, _pidfile(stack, proc), cmd), 0o755)
+                      % (cwd, _pidfile(stack, proc), cmd), 0o755)
     return path
 
 
@@ -282,6 +423,11 @@ def _check_repo(stack, p):
             raise simlib.SimError(
                 f"{proc}: no react-scripts under {repo}/node_modules - "
                 "run npm install there")
+    elif p["kind"] == "node":
+        if _node_script(repo, p) is None:
+            raise simlib.SimError(
+                f"{proc}: none of {p['script']} under "
+                f"{os.path.join(repo, p['cwd'] or '')} - {hint}")
     else:
         b = os.path.join(repo, p["bin"])
         if not (os.path.isfile(b) and os.access(b, os.X_OK)):

@@ -1,0 +1,28 @@
+# The shared Mavlink3DMap page (SL-0154): ONE vite dev server every
+# render: sim may borrow instead of launching its own per-slot vite.
+# The page itself is slot-agnostic - the viewer URL a sim prints
+# selects its feeds through ?mavlink= (its own per-sim mav_bridge,
+# which stays per-sim because SITL's --serial4 udpclient port is baked
+# at launch) and ?world=. `./sim up de_mavlink3dmap` once, then `sim up`
+# any render: sim - it starts no web proc while this stack is up, and
+# falls back to its own vite the moment the stack is down. Opt-in:
+# nothing requires it, and Mavlink3DMap stays optional for `sim doctor`.
+name: de_mavlink3dmap
+provides:
+  render_web: m3d_web        # the proc whose port render: sims borrow
+up_timeout_s: 90             # vite cold-starts slowly on a big dep tree
+open_url: "http://127.0.0.1:{port}/"
+up_note: "de_mavlink3dmap up - render: sims reuse this page; the viewer URL each sim prints carries its own ?mavlink="
+procs:
+  - name: m3d_web
+    kind: node               # `node --require <marker> <script> <args>`
+    repo_env: MAVLINK3DMAP_DIR
+    repo: Mavlink3DMap2
+    cwd: frontend            # vite resolves its config from the frontend dir
+    script:                  # first existing wins, relative to cwd
+      - ../node_modules/vite/bin/vite.js   # npm workspaces hoist to root
+      - node_modules/vite/bin/vite.js      # standalone frontend install
+    args: ["--port", "{port}", "--strictPort", "--host", "127.0.0.1"]
+    port: 8070               # WEB_PORT_BASE+0 - below the >=10 slot range,
+                             # so it never shadows a sim's own web_port
+    port_env: SIM_M3D_WEB_PORT

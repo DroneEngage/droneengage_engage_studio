@@ -547,11 +547,16 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                 f"mav_bridge did not open {render['mav_ws_port']} - "
                 f"see {rdir}/render/logs/mav_bridge.log"))
         # vite cold-starts slowly on a big dep tree; warn, don't fail -
-        # the URL still works once it is up
-        if not wait_port(render["web_port"], 30):
+        # the URL still works once it is up. With a shared page stack
+        # (render.page_port, no `web` proc - SL-0154) the stack's port
+        # answers at once when it is alive.
+        page_port = simlib.render_page_port(render)
+        if not wait_port(page_port, 30):
             print(simlib.col_yellow(
-                f"web viewer slow to open {render['web_port']} - "
-                f"see {rdir}/render/logs/web.log"))
+                f"web viewer slow to open {page_port} - "
+                + (f"see {rdir}/render/logs/web.log"
+                   if "web" in m.get("render_procs", [])
+                   else "check the shared page stack - `./sim servers`")))
         print("render viewer: " + simlib.col("1;36",
               simlib.render_viewer_url(render, world_stream)))
         if render.get("mode") in ("cameras", "full") \

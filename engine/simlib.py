@@ -1271,6 +1271,27 @@ def _render_spec(raw, slot_base):
                                      SINK_PORT_BASE + slot_base))}
 
 
+def shared_render_web_port():
+    """SL-0154: the page port a live dev stack provides for render: sims
+    (a stacks/*.yaml `provides: render_web` whose proc is stack-alive),
+    else None - the sim then runs its own slot-derived vite as always.
+    devstack is imported lazily and any failure degrades to None: a
+    malformed stacks/ file must not take every render: bring-up down."""
+    try:
+        import devstack
+        return devstack.provided_port("render_web")
+    except Exception as e:
+        print(col_dim(f"render: shared-page check skipped ({e})"))
+        return None
+
+
+def render_page_port(render):
+    """The port actually serving the Mavlink3DMap page: a shared dev
+    stack's when one was live at gen time (baked into the manifest as
+    render.page_port, SL-0154), else this sim's own slot web_port."""
+    return render.get("page_port") or render["web_port"]
+
+
 def render_viewer_url(render, world_stream=True):
     """The printed Mavlink3DMap URL. `world_stream` is only True when a
     de.worldstream/1 feed will serve stream_port - i.e. a scenario with
@@ -1279,7 +1300,7 @@ def render_viewer_url(render, world_stream=True):
     stream pins vehicles at the origin (attitude still works)."""
     q = (f"world=ws://127.0.0.1:{render['stream_port']}&"
          if world_stream else "")
-    return (f"http://127.0.0.1:{render['web_port']}/?{q}"
+    return (f"http://127.0.0.1:{render_page_port(render)}/?{q}"
             f"mavlink=ws://127.0.0.1:{render['mav_ws_port']}")
 
 
@@ -3135,7 +3156,7 @@ def _physics_render_procs(sim, render, rdir):
     url = ("http://127.0.0.1:%d/index_4w.html"
            "?world=ws://127.0.0.1:%d&mavlink=ws://127.0.0.1:%d"
            "&render=physics"
-           % (render["web_port"], render["stream_port"],
+           % (render_page_port(render), render["stream_port"],
               render["mav_ws_port"]))
     _chromium_proc(sim, rdir, url)
     return ["chromium"]
@@ -3189,7 +3210,7 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
     url = ("http://127.0.0.1:%d/index_4w.html"
            "?world=ws://127.0.0.1:%d&mavlink=ws://127.0.0.1:%d"
            "&render=cameras&sink=ws://127.0.0.1:%d"
-           % (render["web_port"], render["stream_port"],
+           % (render_page_port(render), render["stream_port"],
               render["mav_ws_port"], render["sink_port"]))
     _chromium_proc(sim, rdir, url)
     probe = os.path.join(ENGINE_DIR, "render_probe.py")
@@ -3251,7 +3272,14 @@ def gen_render(sim):
     frame farm (sink + chromium + probes). Scripts and logs live under
     var/run/<sim>/render/; the de_sim_marker.cjs preload puts the run dir
     in the node cmdline so pid_is_ours/`sim down` treat them like every
-    other process."""
+    other process.
+
+    SL-0154: when a dev stack `provides: render_web` is live (the shared
+    Mavlink3DMap vite page, e.g. de_mavlink3dmap), the sim starts no
+    `web` proc and bakes render.page_port = the stack's port into the
+    manifest instead - the page is slot-agnostic; ?mavlink=/ ?world=
+    in the viewer URL keep selecting this sim's own feeds. Stack down
+    or absent -> the per-sim vite exactly as before."""
     render = sim.get("render") or {}
     if not render or render["mode"] not in ("viewer", "cameras", "physics",
                                             "full") \
@@ -3259,14 +3287,17 @@ def gen_render(sim):
         return []
     m3d = MAVLINK3DMAP_DIR
     bridge = os.path.join(m3d, "backend", "src", "udp2websocket.js")
+    shared = shared_render_web_port()
     # npm workspaces hoist vite to the repo root; a standalone
-    # frontend install keeps it under frontend/node_modules
+    # frontend install keeps it under frontend/node_modules. The shared
+    # stack owns the page, so a missing local vite only fails when the
+    # sim would launch its own
     vite_js = next((p for p in (
             os.path.join(m3d, "node_modules", "vite", "bin", "vite.js"),
             os.path.join(m3d, "frontend", "node_modules", "vite",
                          "bin", "vite.js"))
             if os.path.isfile(p)), None)
-    for p in (bridge, vite_js):
+    for p in [bridge] + ([] if shared is not None else [vite_js]):
         if not p or not os.path.isfile(p):
             raise SimError(
                 f"render: {p} not found - set MAVLINK3DMAP_DIR in "
@@ -3289,11 +3320,15 @@ def gen_render(sim):
                    "'%s' --require '%s' ./src/udp2websocket.js -p %d -w %d"
                    % (NODE, marker, render["mav_port"],
                       render["mav_ws_port"]))
-    _render_script(sim, "web", os.path.join(m3d, "frontend"),
-                   "'%s' --require '%s' '%s' --port %d --strictPort "
-                   "--host 127.0.0.1"
-                   % (NODE, marker, vite_js, render["web_port"]))
-    procs = ["mav_bridge", "web"]
+    procs = ["mav_bridge"]
+    if shared is None:
+        _render_script(sim, "web", os.path.join(m3d, "frontend"),
+                       "'%s' --require '%s' '%s' --port %d --strictPort "
+                       "--host 127.0.0.1"
+                       % (NODE, marker, vite_js, render["web_port"]))
+        procs.append("web")
+    else:
+        render["page_port"] = shared
     if render["mode"] in ("cameras", "full"):
         procs += _camera_render_procs(sim, render, rdir, marker, m3d,
                                       vite_js)

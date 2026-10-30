@@ -7,6 +7,10 @@
     on render.mav_port / ws render.mav_ws_port and a vite dev server
     on render.web_port, pid-marked via node --require so sim down sees
     them, under var/run/<sim>/render/;
+  - SL-0154: a stack-alive `provides: render_web` replaces the sim's
+    own web proc - gen_render returns just mav_bridge, bakes
+    render.page_port and render_viewer_url serves it while ?mavlink=
+    keeps naming the sim's own bridge port;
   - gated smoke (skipped without node + MAVLINK3DMAP_DIR): boot both
     procs and check the ws port accepts and the page serves 200.
 """
@@ -20,6 +24,7 @@ import tempfile
 import time
 import unittest
 import urllib.request
+from unittest import mock
 
 # bytecode under var/pycache from the first import on (simlib sets it
 # too, but only after itself is compiled - that left __pycache__ dirs)
@@ -34,6 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 
 import simlib  # noqa: E402
+import devstack  # noqa: E402
 
 M3D = os.environ.get("MAVLINK3DMAP_DIR") or simlib.MAVLINK3DMAP_DIR
 BRIDGE = os.path.join(M3D, "backend", "src", "udp2websocket.js")
@@ -61,6 +67,18 @@ def _fake_m3d():
 
 
 class T(unittest.TestCase):
+
+    def setUp(self):
+        # SL-0154: gen_render asks devstack whether a shared page stack
+        # is live - pin it dead so these tests are identical whether or
+        # not ./sim up de_mavlink3dmap ran on this box. The shared-page
+        # tests re-patch inside their own `with`.
+        self._stack_down = mock.patch.object(devstack, "pids",
+                                             return_value={})
+        self._stack_down.start()
+
+    def tearDown(self):
+        self._stack_down.stop()
 
     def test_no_render_no_procs(self):
         sim = _sim(None)
@@ -123,6 +141,63 @@ class T(unittest.TestCase):
             self.assertIn("MAVLINK3DMAP_DIR", str(cm.exception))
         finally:
             simlib.MAVLINK3DMAP_DIR = saved
+
+    # ---- SL-0154: a live stack `provides: render_web` replaces the
+    # per-sim vite; the sim keeps only its own mav_bridge and bakes the
+    # stack's page port into render.page_port
+
+    def test_shared_page_replaces_own_vite(self):
+        saved = simlib.MAVLINK3DMAP_DIR
+        try:
+            simlib.MAVLINK3DMAP_DIR = _fake_m3d()
+            with mock.patch.object(simlib, "shared_render_web_port",
+                                   return_value=8070):
+                sim = _sim({"mode": "viewer", "headless": False})
+                stale = os.path.join(
+                    simlib.render_dir(sim["name"]), "launch.web.sh")
+                if os.path.exists(stale):
+                    os.unlink(stale)   # left by the own-vite tests
+                procs = simlib.gen_render(sim)
+        finally:
+            simlib.MAVLINK3DMAP_DIR = saved
+        self.assertEqual(procs, ["mav_bridge"])
+        self.assertEqual(sim["render"]["page_port"], 8070)
+        rdir = simlib.render_dir(sim["name"])
+        self.assertFalse(os.path.exists(
+            os.path.join(rdir, "launch.web.sh")))
+
+    def test_shared_page_viewer_url(self):
+        render = {"mode": "viewer", "web_port": 8080,
+                  "stream_port": 61010, "mav_port": 16460,
+                  "mav_ws_port": 8811, "page_port": 8070}
+        url = simlib.render_viewer_url(render, world_stream=False)
+        self.assertTrue(url.startswith("http://127.0.0.1:8070/"))
+        # ?mavlink= still selects THIS sim's own bridge
+        self.assertIn("mavlink=ws://127.0.0.1:8811", url)
+        # no shared page -> the slot-derived port again
+        del render["page_port"]
+        self.assertTrue(simlib.render_viewer_url(
+            render, world_stream=False).startswith(
+                "http://127.0.0.1:8080/"))
+
+    def test_shared_page_via_devstack(self):
+        """The real lookup: a stack whose provides proc is stack-alive
+        hands gen_render its port through devstack.provided_port."""
+        stack_port = devstack._port(
+            "de_mavlink3dmap",
+            next(p for p in devstack.STACKS["de_mavlink3dmap"]["procs"]
+                 if p["name"] == "m3d_web"))
+        saved = simlib.MAVLINK3DMAP_DIR
+        try:
+            simlib.MAVLINK3DMAP_DIR = _fake_m3d()
+            with mock.patch.object(devstack, "pids",
+                                   return_value={"m3d_web": 12345}):
+                sim = _sim({"mode": "viewer", "headless": False})
+                procs = simlib.gen_render(sim)
+        finally:
+            simlib.MAVLINK3DMAP_DIR = saved
+        self.assertEqual(procs, ["mav_bridge"])
+        self.assertEqual(sim["render"]["page_port"], stack_port)
 
     @unittest.skipUnless(
         shutil.which("node") and os.path.isfile(BRIDGE),
