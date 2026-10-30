@@ -38,8 +38,10 @@ STACKS_DIR = os.path.join(simlib.SIM_ROOT, "stacks")
 
 # proc kinds: "node" execs <repo>/src/server.js; "npm" rides `npm start`
 # (the react-scripts dev server) and takes its port from $PORT /
-# SIM_WEBCLIENT_URL
-_KINDS = ("node", "npm")
+# SIM_WEBCLIENT_URL; "exec" runs a built binary at <repo>/<bin> (the
+# Rust servers - they ignore unknown args, so the --<stack> marker
+# still rides argv)
+_KINDS = ("node", "npm", "exec")
 
 
 def _load_stacks():
@@ -95,12 +97,20 @@ def _load_stacks():
             if kind not in _KINDS:
                 raise simlib.SimError(
                     f"{where}: kind {kind!r} not in {_KINDS}")
+            bin_ = p.get("bin")
+            if kind == "exec" and not isinstance(bin_, str):
+                raise simlib.SimError(
+                    f"{where}: kind exec needs `bin:` "
+                    "(the binary path inside the repo)")
+            if bin_ is not None and kind != "exec":
+                raise simlib.SimError(
+                    f"{where}: `bin:` only with kind exec")
             port_env = p.get("port_env")
             if port_env is not None and not isinstance(port_env, str):
                 raise simlib.SimError(
                     f"{where}: port_env must be a string")
             out.append({"name": pname, "repo": repo,
-                        "repo_env": repo_env,
+                        "repo_env": repo_env, "bin": bin_,
                         "port_env": port_env, "kind": kind})
         for k in ("open_url", "up_note"):
             if spec.get(k) is not None and not isinstance(spec[k], str):
@@ -200,7 +210,7 @@ def pids(stack="de_servers"):
 
 
 def _port(stack, p):
-    """The port the proc will bind. node procs: their repo's
+    """The port the proc will bind. node/exec procs: their repo's
     server.config + server.config.local (the same shallow merge the
     common loader does), then the env override some servers honour.
     npm procs: $PORT, else the SIM_WEBCLIENT_URL port."""
@@ -242,16 +252,20 @@ def _launch_script(stack, p):
     resolve there); the --<stack> marker is ignored by the launched
     program but identifies the pid as this stack's. npm procs ride
     `npm start -- <marker>` so the npm pid carries it (and react-scripts
-    ignores it)."""
+    ignores it); exec procs pass it straight to the binary (the Rust
+    servers ignore unknown args)."""
+    repo, proc = _repo(p), p["name"]
     if p["kind"] == "npm":
         # BROWSER=none: CRA opens the browser on first compile - the sim
         # stays headless, `--open-web` does it on demand
         cmd = "export BROWSER=none\nexec '%s' start -- %s" \
             % (_npm(), _marker(stack))
+    elif p["kind"] == "exec":
+        cmd = "exec '%s' %s" % (os.path.join(repo, p["bin"]),
+                                _marker(stack))
     else:
         cmd = "exec '%s' ./src/server.js %s" % (simlib.NODE,
                                                 _marker(stack))
-    repo, proc = _repo(p), p["name"]
     path = os.path.join(_stack_dir(stack), f"launch.{proc}.sh")
     simlib.write_text(path,
                       "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%s\n"
@@ -272,6 +286,12 @@ def _check_repo(stack, p):
             raise simlib.SimError(
                 f"{proc}: no react-scripts under {repo}/node_modules - "
                 "run npm install there")
+    elif p["kind"] == "exec":
+        b = os.path.join(repo, p["bin"])
+        if not (os.path.isfile(b) and os.access(b, os.X_OK)):
+            raise simlib.SimError(
+                f"{proc}: no executable {p['bin']} under {repo} - "
+                f"cd {repo} && cargo build --release (or {hint})")
     elif not os.path.isfile(os.path.join(repo, "src", "server.js")):
         raise simlib.SimError(
             f"{proc}: no src/server.js under {repo} - {hint}")

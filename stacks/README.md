@@ -15,6 +15,10 @@ procs:                      # launch order - first entry starts first
     kind: node              # node (default): exec <repo>/src/server.js
                             # npm: exec `npm start` (react-scripts dev
                             # server, port from $PORT/SIM_WEBCLIENT_URL)
+                            # exec: run a built binary at <repo>/<bin>
+                            # (the Rust servers; the --<stack> marker
+                            # rides argv - they ignore unknown args)
+    bin: target/release/x   # kind exec only: binary path inside the repo
     repo_env: DE_AUTH_DIR   # sim.local.env / env override key (optional)
     repo: droneengage_authenticator
                             # repo dir: with repo_env this is the

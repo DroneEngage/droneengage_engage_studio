@@ -21,3 +21,5 @@ procs:
   - name: de_udp_proxy
     repo_env: DE_UDP_RELAY_DIR
     repo: droneengage_udp_proxy
+    kind: exec
+    bin: target/release/droneengage-udp-proxy
