@@ -97,16 +97,17 @@ def _module_check(d, name, spec, required, used_by=None):
             required)
 
 
-def _server_repo_check(d, label, repo, required):
-    """The spawned node servers: src/server.js + an npm-installed tree."""
-    srv_js = os.path.join(repo, "src", "server.js")
-    d.check(label, os.path.isfile(srv_js), srv_js,
-            f"check out the repo at {repo} or point its *_DIR key in "
-            "sim.local.env", required)
-    if os.path.isfile(srv_js):
-        nm = os.path.join(repo, "node_modules")
-        d.check(f"{label} npm install", os.path.isdir(nm), nm,
-                f"cd {repo} && npm install", required)
+def _server_repo_check(d, label, repo, bin_name, required):
+    """The spawned Rust servers: <repo>/target/release/<bin> must be a
+    built executable."""
+    b = simlib.server_bin(repo, bin_name)
+    ok = os.path.isfile(b) and os.access(b, os.X_OK)
+    if _which("cargo"):
+        fix = f"cd {repo} && cargo build --release"
+    else:
+        fix = ("install rustup (https://rustup.rs), then cd " + repo +
+               " && cargo build --release")
+    d.check(label, ok, b, fix, required)
 
 
 def gather(sim=None, esp32=False):
@@ -142,9 +143,10 @@ def gather(sim=None, esp32=False):
                          and not (render.get("headless")
                                   and render_mode != "physics"))
 
-    # node: spawned servers and the render farm run it; a sim with an
-    # external server and no render does not need it
-    node_needed = (sim is None) or real_stack or render_active
+    # node: the render farm (vite/mav_bridge) and the webclient stack
+    # run it; the spawned servers are Rust binaries. A real-stack sim
+    # with no render never needs it
+    node_needed = (sim is None) or render_active
     node = _which(simlib.NODE)
     d.check("node", node, node or simlib.NODE,
             "install node (nvm) or set NODE in sim.local.env",
@@ -161,13 +163,19 @@ def gather(sim=None, esp32=False):
             "build de_comm (droneengage_communication ./build.sh) or set "
             "DE_COMM_BIN in sim.local.env")
 
-    # spawned server repos
+    # spawned server repos: the Rust release binaries
     if sim is None or real_stack:
         _server_repo_check(d, "server repo", simlib.SERVER_REPO,
+                           simlib.SERVER_BINS["de_server"],
                            real_stack or sim is None)
         if sim is None or auth_on:
             _server_repo_check(d, "auth repo", simlib.AUTH_REPO,
+                               simlib.SERVER_BINS["de_auth"],
                                sim is None or auth_on)
+        if sim is None or sim["server"].get("udp_relay"):
+            _server_repo_check(d, "udp relay repo",
+                               simlib.UDP_RELAY_REPO,
+                               simlib.SERVER_BINS["udp_relay"], True)
     else:
         # external: the user's own stack - report reachability, never
         # fail (the user starts it when running the sim)
