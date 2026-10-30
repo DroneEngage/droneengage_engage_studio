@@ -15,6 +15,8 @@ Covers:
     name, ambiguous name (all against a tmp SIM_ROOT).
 """
 
+import importlib.machinery
+import importlib.util
 import io
 import json
 import os
@@ -23,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 # bytecode under var/pycache from the first import on (simlib sets it
 # too, but only after itself is compiled - that left __pycache__ dirs)
@@ -247,6 +250,85 @@ class CliHelpTest(unittest.TestCase):
                                 line)
         self.assertFalse(re.search(r"^\s+tests/\S+\.yaml", p.stdout,
                                    re.M))
+
+
+class StatusColorTest(unittest.TestCase):
+    """SL-0155: the status/catalog commands (ports, sims, show, list,
+    verbs, clean) colorize on a tty with the help palette and emit zero
+    escapes when piped."""
+
+    def _sim(self):
+        loader = importlib.machinery.SourceFileLoader("sim_cli", SIM)
+        spec = importlib.util.spec_from_loader("sim_cli", loader)
+        mod = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        return mod
+
+    def _main_out(self, mod, argv, tty):
+        buf = _Tty() if tty else io.StringIO()
+        old = sys.stdout
+        sys.stdout = buf
+        try:
+            mod.main(list(argv))
+        finally:
+            sys.stdout = old
+        return buf.getvalue()
+
+    def test_catalog_commands_color_on_tty(self):
+        mod = self._sim()
+        for argv in (["verbs"], ["list"], ["show", "copters3"],
+                     ["clean", "--dry-run"]):
+            out = self._main_out(mod, argv, tty=True)
+            self.assertIn("\x1b[", out, argv)
+
+    def test_ports_color_on_tty(self):
+        mod = self._sim()
+        rows = [("u1.de_comm", 62000, "udp"),
+                ("u1.sitl.fcb", 8160, "tcp")]
+        with mock.patch.object(simlib, "sim_names",
+                               return_value=["fake1"]), \
+             mock.patch.object(simlib, "read_pids", return_value=[1]), \
+             mock.patch.object(simlib, "load_manifest",
+                               return_value={"units": [{}]}), \
+             mock.patch.object(simlib, "port_rows", return_value=rows), \
+             mock.patch.object(simlib, "port_bound",
+                               side_effect=lambda p, proto: p == 62000):
+            out = self._main_out(mod, ["ports", "--all"], tty=True)
+        self.assertIn("\x1b[32mbound", out)   # bound green
+        self.assertIn("\x1b[33mfree", out)    # free yellow
+        self.assertIn("\x1b[36m 62000", out)  # ports cyan
+        self.assertIn("\x1b[1mfake1", out)    # sim name bold
+
+    def test_sims_color_on_tty(self):
+        mod = self._sim()
+        manifest = {"units": [{}], "server": {"type": "real"}}
+        with mock.patch.object(simlib, "sim_names",
+                               return_value=["fake1"]), \
+             mock.patch.object(simlib, "read_pids", return_value=[1]), \
+             mock.patch.object(simlib, "load_manifest",
+                               return_value=manifest):
+            out = self._main_out(mod, ["sims"], tty=True)
+        self.assertIn("\x1b[1mfake1", out)    # sim name bold
+        self.assertIn("\x1b[36mreal", out)    # server type cyan
+        self.assertIn("\x1b[32m1", out)       # alive count green
+
+    def test_piped_commands_have_no_escapes(self):
+        for argv in (["verbs"], ["list"], ["show", "copters3"],
+                     ["clean", "--dry-run"], ["sims", "--json"],
+                     ["verbs", "--json"], ["list", "--json"]):
+            p = subprocess.run([SIM, *argv], cwd=simlib.SIM_ROOT,
+                               capture_output=True, text=True, timeout=30)
+            self.assertNotIn("\x1b", p.stdout,
+                             f"./sim {' '.join(argv)} leaked ANSI")
+            self.assertEqual(p.returncode, 0,
+                             f"./sim {' '.join(argv)}: {p.stderr}")
+
+    def test_json_forms_stay_valid(self):
+        for argv in (["sims", "--json"], ["verbs", "--json"],
+                     ["list", "--json"]):
+            p = subprocess.run([SIM, *argv], cwd=simlib.SIM_ROOT,
+                               capture_output=True, text=True, timeout=30)
+            json.loads(p.stdout)
 
 
 class ResolveSimArgTest(unittest.TestCase):

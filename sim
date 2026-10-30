@@ -361,24 +361,38 @@ def main(argv):
             if sim["param_values"]:
                 # SL-0116: the resolved params: values (defaults + --set)
                 print("params: " + " ".join(
-                    f"{k}={v}" for k, v in sim["param_values"].items()))
-            print(f"server {srv['type']}{' +auth' if srv['auth'] else ''}: "
-                  f"wss {srv['port']} control {srv['control_port']}"
-                  + (f" auth {srv['auth_port']}" if srv["auth"] else "")
-                  + (f" relay {srv['udp_relay']['port']}"
+                    simlib.col_yellow(f"{k}={v}")
+                    for k, v in sim["param_values"].items()))
+            print("server " + simlib.col_bold(srv["type"])
+                  + (simlib.col_yellow(" +auth") if srv["auth"] else "")
+                  + ": wss " + simlib.col_cyan(str(srv["port"]))
+                  + " control " + simlib.col_cyan(str(srv["control_port"]))
+                  + (" auth " + simlib.col_cyan(str(srv["auth_port"]))
+                     if srv["auth"] else "")
+                  + (" relay " + simlib.col_cyan(
+                      str(srv["udp_relay"]["port"]))
                      if srv.get("udp_relay") else "")
                   + f" slot {sim['slot_base']}")
             for u in sim["units"]:
                 fc = u["fc"]
-                print(f"  {u['name']:12s} block={u['block']:16s} "
-                      + (f"{fc['vehicle']} sysid={fc['sysid']} pilot={fc['pilot_port']} "
-                         f"fcb={fc['fcb_port']} "
-                         + (f"fcbpx={fc['fcb_proxy']['port']}/"
-                            f"{fc['fcb_proxy']['ctrl']} "
-                            if fc.get("fcb_proxy") else "") if fc else "no-fc ")
-                      + " ".join(f"{m}:{p}" for m, p in u["ports"].items())
-                      + (f" acc={u['account']['user']}" if u.get("account") else "")
-                      + f"  @{u['position']['lat']:.6f},{u['position']['lng']:.6f}")
+                print("  " + simlib.col_green(f"{u['name']:12s}")
+                      + f"block={u['block']:16s} "
+                      + (f"{simlib.col_yellow(fc['vehicle'])} "
+                         f"sysid={fc['sysid']} "
+                         f"pilot={simlib.col_cyan(str(fc['pilot_port']))} "
+                         f"fcb={simlib.col_cyan(str(fc['fcb_port']))} "
+                         + ("fcbpx=" + simlib.col_cyan(
+                            str(fc['fcb_proxy']['port'])) + "/"
+                            + simlib.col_cyan(str(fc['fcb_proxy']['ctrl']))
+                            + " " if fc.get("fcb_proxy") else "")
+                         if fc else "no-fc ")
+                      + " ".join(f"{m}:{simlib.col_cyan(str(p))}"
+                               for m, p in u["ports"].items())
+                      + (f" acc={u['account']['user']}"
+                         if u.get("account") else "")
+                      + simlib.col_dim(
+                          f"  @{u['position']['lat']:.6f},"
+                          f"{u['position']['lng']:.6f}"))
         elif c == "up":
             import launcher
             files = [x for x in a if not x.startswith("-")]
@@ -433,9 +447,13 @@ def main(argv):
                 for n in names:
                     m = simlib.load_manifest(n)
                     srv = m["server"]
-                    print(f"{n:16s} {len(m['units'])} unit(s)  "
-                          f"server {srv['type']}  "
-                          f"{len(simlib.read_pids(n))} proc(s) alive")
+                    alive = len(simlib.read_pids(n))
+                    print(simlib.col_bold(f"{n:16s}")
+                          + f"{len(m['units'])} unit(s)  server "
+                          + simlib.col_cyan(srv["type"]) + "  "
+                          + (simlib.col_green(str(alive))
+                             if alive else simlib.col_yellow(str(alive)))
+                          + " proc(s) alive")
         elif c == "servers":
             # the dev stack started by `./sim up de_servers`
             import devstack
@@ -468,16 +486,24 @@ def main(argv):
                         if r[0] != f"{simlib.UDP_RELAY_LEASE}.range"]
                 n_bound = sum(simlib.port_bound(p, "udp")
                               for _, p, _ in rng)
-                print(f"{sn} ({alive} proc(s) alive)")
+                print(simlib.col_bold(sn) + f" ({alive} proc(s) alive)")
                 w = max(len(r[0]) for r in rows) if rows else 0
                 for owner, port, proto in rows:
-                    state = "bound" if simlib.port_bound(port, proto) \
-                        else "free"
-                    print(f"  {owner:{w}s}  {port:>6}  {proto:3s} {state}")
+                    state = simlib.col_green("bound") \
+                        if simlib.port_bound(port, proto) \
+                        else simlib.col_yellow("free")
+                    print("  " + simlib.col_green(f"{owner:{w}s}")
+                          + "  " + simlib.col_cyan(f"{port:>6}")
+                          + f"  {proto:3s} {state}")
                 if rng:
                     lo, hi = rng[0][1], rng[-1][1]
-                    print(f"  {simlib.UDP_RELAY_LEASE + '.range':{w}s}  "
-                          f"{lo}-{hi}  udp {n_bound}/{len(rng)} bound")
+                    tail = f"{n_bound}/{len(rng)} bound"
+                    print("  " + simlib.col_green(
+                        f"{simlib.UDP_RELAY_LEASE + '.range':{w}s}")
+                        + "  " + simlib.col_cyan(f"{lo}-{hi}")
+                        + "  udp "
+                        + (simlib.col_green(tail) if n_bound == len(rng)
+                           else simlib.col_yellow(tail)))
         elif c == "status":
             import ctl
             import devstack
@@ -678,20 +704,24 @@ def main(argv):
             else:
                 for root in file_roots:
                     rows = _list_files(root)
-                    print(f"{root}/  ({len(rows)} files)")
+                    print(simlib.col_bold(f"{root}/")
+                          + f"  ({len(rows)} files)")
                     for f, kind, tasks in rows:
                         rel = os.path.relpath(f, simlib.SIM_ROOT)
                         one = _sim_one_liner(f) if root == "sims" \
                             else _one_liner(f)
-                        print(f"  {rel:52s} {one[:80]}")
+                        print("  " + simlib.col_cyan(f"{rel:52s}")
+                              + f" {one[:80]}")
                 if "stacks" in roots:
                     import devstack
                     w = max(len(n) for n in devstack.STACKS)
-                    print(f"stacks/  ({len(devstack.STACKS)} stacks)")
+                    print(simlib.col_bold("stacks/")
+                          + f"  ({len(devstack.STACKS)} stacks)")
                     for name, spec in devstack.STACKS.items():
-                        print(f"  {name:{w}s}  "
-                              + " ".join(p["name"]
-                                         for p in spec["procs"]))
+                        print("  " + simlib.col_green(f"{name:{w}s}")
+                              + "  " + simlib.col_dim(
+                                  " ".join(p["name"]
+                                           for p in spec["procs"])))
         elif c == "new":
             sensor = "--sensor" in a
             names = [x for x in a if not x.startswith("-")]
@@ -902,16 +932,19 @@ def main(argv):
                           ("fault", "fault: kinds"),
                           ("check", "assert: checks"))
                 for kind, title in groups:
-                    print(title)
+                    print(simlib.col_bold(title))
                     for v in registry.by_kind(kind):
-                        args = ", ".join(
-                            [f"<{a}>" for a in v["req"]] +
-                            [f"[{a}]" for a in v["opt"]])
-                        print(f"  {v['name']:{w}}  {v['doc']}")
+                        args = [f"<{a}>" for a in v["req"]] + \
+                            [f"[{a}]" for a in v["opt"]]
+                        print("  " + simlib.col_green(f"{v['name']:{w}}")
+                              + f"  {v['doc']}")
                         if args:
-                            print(f"  {'':{w}}  args: {args}")
+                            print(f"  {'':{w}}  " + simlib.col_dim("args: ")
+                                  + ", ".join(simlib.col_yellow(t)
+                                              for t in args))
                         if v["eg"]:
-                            print(f"  {'':{w}}  eg:   {v['eg']}")
+                            print(f"  {'':{w}}  " + simlib.col_dim("eg:   ")
+                                  + v["eg"])
                     print()
         elif c == "clean":
             import clean

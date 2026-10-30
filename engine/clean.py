@@ -46,7 +46,8 @@ def _sweep(root, days, dry, alive_check=None):
         if not os.path.isdir(path):
             continue
         if alive_check and alive_check(name):
-            print(f"  keep  {name:32s} live")
+            print("  " + simlib.col_green("keep")
+                  + f"  {name:32s} " + simlib.col_dim("live"))
             continue
         try:
             mtime = os.path.getmtime(path)
@@ -56,7 +57,8 @@ def _sweep(root, days, dry, alive_check=None):
                 or time.time() - mtime < MIN_KEEP_S:
             continue
         size = _tree_bytes(path)
-        print(f"  {'would rm' if dry else 'rm'}     {name:32s} {_mb(size)}")
+        print("  " + simlib.col_yellow('would rm' if dry else 'rm')
+              + f"     {name:32s} {_mb(size)}")
         if not dry:
             shutil.rmtree(path, ignore_errors=True)
         freed += size
@@ -79,10 +81,11 @@ def main(argv):
         else:
             sys.exit(__doc__)
         i += 1
-    print(f"var/run/ ({simlib.RUN_DIR})")
+    print(simlib.col_bold("var/run/") + f" ({simlib.RUN_DIR})")
     freed = _sweep(simlib.RUN_DIR, days, dry,
                    alive_check=lambda n: bool(simlib.read_pids(n)))
-    print(f"var/results/ ({simlib.RESULTS_DIR})")
+    print(simlib.col_bold("var/results/") + f" ({simlib.RESULTS_DIR})")
     freed += _sweep(simlib.RESULTS_DIR, days, dry)
-    print(f"{'would free' if dry else 'freed'} {_mb(freed)}")
+    print(simlib.col_bold('would free' if dry else 'freed')
+          + f" {_mb(freed)}")
     return 0
