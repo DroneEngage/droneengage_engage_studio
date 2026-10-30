@@ -3,9 +3,16 @@
 # A 25 s link cut (sv_comm_lost_s 3) makes de_comm journal the offline
 # line, fire "handler comm_lost fired ... -> rtl" and pause the run
 # ("paused (handler:comm_lost)") while the FC flies the rtl backstop.
-# After the link returns, SIM_BATT_VOLTAGE drops to 10.5 V - five
-# seconds of low bat_pct fires "handler battery_low fired ... -> rtl".
-# Each handler latches once per run, so both appear exactly once.
+# A pilot GUIDED override then catches the descent before touchdown -
+# a landing would disarm and COMPLETE the run - and once the link is
+# back `resume` lifts the pause (armed + flying + out of failsafe
+# mode), because handlers only latch while the engine is RUNNING.
+# The battery fault then sets BATT_CAPACITY=50 mAh so remaining
+# percent collapses (battery_low keys on PERCENT, which the FC derives
+# from consumed mAh - a bare voltage sag never moves it) plus a 10.5 V
+# sag for the telemetry side; five seconds under the threshold fires
+# "handler battery_low fired ... -> rtl" on the same run. Each handler
+# latches once per run, so both appear exactly once.
 # Proves declared policies actually drive FC behaviour, not just
 # journals.
 version: 1
@@ -27,11 +34,20 @@ timeline:
   - {t: 20, fault: link_cut, unit: c1, dur_s: 25}
   - {t: 30, do: wait_journal, unit: c1, re: "handler comm_lost fired",
      timeout: 60}
+  # catch the rtl descent before touchdown - landing disarms and
+  # COMPLETES the run, after which no handler can latch
+  - {t: 31, do: mode, unit: c1, mode: GUIDED}
   - {t: 55, do: wait_journal, unit: c1, re: "comm line online",
      timeout: 60}
+  # link back - resume lifts the comm_lost pause so the run is RUNNING
+  # again; a refusal would surface here, not at the battery wait
+  - {t: 57, do: resume}
+  - {t: 58, do: wait_journal, unit: c1,
+     re: "resumed \\(was handler:comm_lost\\)", timeout: 30}
   # then a low battery - the second handler fires on the same run
-  - {t: 65, fault: battery, unit: c1, volts: 10.5, dur_s: 40}
-  - {t: 75, do: wait_journal, unit: c1, re: "handler battery_low fired",
+  - {t: 62, fault: battery, unit: c1, volts: 10.5, cap_mah: 50,
+     dur_s: 200}
+  - {t: 72, do: wait_journal, unit: c1, re: "handler battery_low fired",
      timeout: 90}
 assert:
   - journal_count: {unit: c1, re: "comm line offline", equals: 1}
@@ -41,5 +57,5 @@ assert:
   - journal_count: {unit: c1, re: "handler battery_low fired.*-> rtl",
                     equals: 1}
   - journal_count: {unit: c1, re: "paused \\(handler:", equals: 2}
-  - telemetry_value: {unit: c1, field: bat_v, lt: 11.0}
+  - telemetry_value: {unit: c1, field: bat_v, lt: 11.0, pick: min}
 teardown: reset
