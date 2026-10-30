@@ -440,6 +440,16 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                 _android.clean_sim_overrides(u)
 
     m = simlib.generate(sim, _label(sim_src))
+    # DE-0050: a camera unit whose configured /dev/videoN does not exist
+    # dies at start ("Bad start or end video index") and wait_ready
+    # hangs - refuse here, naming the devices and the fix
+    missing_cams = simlib.camera_missing_nodes(sim)
+    if missing_cams:
+        sys.exit(simlib.col_red(
+            f"missing camera device(s) {missing_cams} - "
+            f"`./sim vcam {_label(sim_src)}` creates them (needs sudo), "
+            "then stream them via `camera_feed:` in the sim or a "
+            "feeder (scripts/video_clock.sh)"))
     # SL-0066 - stamp this fleet instance's generation into the manifest:
     # a scenario runner records it at run start and re-checks it before
     # teardown, so a runner orphaned by `sim down`/a takeover `up` cannot
@@ -569,6 +579,27 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                   + simlib.col_cyan(f"ws://127.0.0.1:{render['sink_port']}")
                   + " + headless chromium")
 
+    # ---- camera feeders (DE-0050): ffmpeg producers on each camera
+    # unit's /dev/videoN BEFORE de_camera's one-time scan - an
+    # exclusive_caps loopback only advertises CAPTURE while a producer
+    # streams, so wait for the caps before the units start
+    feed_procs = m.get("feed_procs", [])
+    for p in feed_procs:
+        ctl.start_proc("feed", p)
+    if feed_procs:
+        fed = sorted({i for u in m["units"]
+                      for i in simlib.camera_video_indices(u)})
+        t0 = time.time()
+        nocap = list(fed)
+        while nocap and time.time() - t0 < 10:
+            nocap = [i for i in fed
+                     if not simlib.video_capture_capable(i)]
+            if nocap:
+                time.sleep(0.5)
+        if nocap:
+            sys.exit(simlib.col_red(
+                f"camera device(s) {nocap} never advertised CAPTURE - "
+                f"see {rdir}/feed/logs/ (feeder dead or wrong args)"))
     # ---- units ----
     for u in m["units"]:
         simlib.save_boot_mark(u)

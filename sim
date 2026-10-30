@@ -414,9 +414,24 @@ def main(argv):
                     import ctl
                     ctl.xdg_open(url)
                 return
-            launcher.up(simlib.resolve_sim_arg(files[0]),
+            launcher.up(simlib.resolve_sim_arg(files[0], choose=True),
                         fresh="--fresh" in a,
                         open_web="--open-web" in a)
+        elif c == "vcam":
+            # DE-0050: create the v4l2loopback devices a camera sim's
+            # merged de_camera configs need (the only sudo path in the
+            # engine - `sim up` itself stays unprivileged)
+            files = [x for x in a if not x.startswith("-")]
+            bad = _bad_flags(a, sim_commands.allowed_flags("vcam"))
+            if bad:
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim vcam help")
+            if len(files) != 1:
+                _usage_exit("vcam")
+            sim = simlib.load_sim(simlib.resolve_sim_arg(files[0],
+                                                         choose=True))
+            sys.exit(simlib.vcam_run(
+                sim, print_only="--print" in a or "--dry-run" in a,
+                reload="--reload" in a))
         elif c == "down":
             import launcher
             names = [x for x in a if not x.startswith("-")]

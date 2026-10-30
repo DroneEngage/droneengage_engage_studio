@@ -199,6 +199,97 @@ class T(unittest.TestCase):
         self.assertEqual(procs, ["mav_bridge"])
         self.assertEqual(sim["render"]["page_port"], stack_port)
 
+    # ---- DE-0050: virtual cameras - index derivation, feeder procs,
+    # the vcam plan and the dead-proc fail-fast
+
+    def _cam_sim(self, feed=None, unit_cfg=None):
+        spec = {"version": 1, "name": "vcam_t", "slot_base": 10,
+                "server": {"type": "fake",
+                           "port": simlib.SERVER_PORT + 10},
+                "units": [{"block": "camera_fixed", "name": "cam1"}]}
+        if feed is not None:
+            spec["camera_feed"] = feed
+        if unit_cfg:
+            spec["units"][0]["config"] = unit_cfg
+        return simlib.load_sim(spec)
+
+    def test_camera_video_indices(self):
+        sim = self._cam_sim(unit_cfg={
+            "de_camera": {"camera": {"camera_start_index": 3,
+                                     "camera_end_index": 3}}})
+        self.assertEqual(
+            simlib.camera_video_indices(sim["units"][0]), [3])
+        # non-camera units derive nothing
+        spec = {"version": 1, "name": "vcam_t", "slot_base": 10,
+                "server": {"type": "fake",
+                           "port": simlib.SERVER_PORT + 10},
+                "units": [{"block": "comm_only", "name": "mast1"}]}
+        sim2 = simlib.load_sim(spec)
+        self.assertEqual(simlib.camera_video_indices(sim2["units"][0]),
+                         [])
+        self.assertEqual(simlib.camera_missing_nodes(sim2), [])
+
+    def test_camera_feed_gen(self):
+        sim = self._cam_sim(feed="testsrc2", unit_cfg={
+            "de_camera": {"camera": {"camera_start_index": 3,
+                                     "camera_end_index": 3}}})
+        self.assertEqual(sim["camera_feed"]["source"], "testsrc2")
+        procs = simlib.gen_feeds(sim)
+        self.assertEqual(procs, ["cam1_3"])
+        body = open(os.path.join(
+            simlib.feed_dir(sim["name"]),
+            "launch.cam1_3.sh")).read()
+        self.assertIn("testsrc2", body)
+        self.assertIn("/dev/video3", body)
+        self.assertIn("feed.cam1_3.pid", body)
+        # pidfile owns the bash wrapper (its cmdline names var/run) -
+        # ffmpeg rides & + wait with a TERM trap for `sim down`
+        self.assertIn("&", body)
+        self.assertIn("trap", body)
+        self.assertIn("wait", body)
+        # no camera_feed -> no procs
+        sim2 = self._cam_sim(unit_cfg={
+            "de_camera": {"camera": {"camera_start_index": 3,
+                                     "camera_end_index": 3}}})
+        self.assertEqual(simlib.gen_feeds(sim2), [])
+
+    def test_vcam_plan(self):
+        sim = self._cam_sim(unit_cfg={
+            "de_camera": {"camera": {"camera_start_index": 3,
+                                     "camera_end_index": 3}}})
+        plan = simlib.vcam_plan(sim)
+        self.assertEqual(plan["needed"], [3])
+        self.assertEqual(sorted(plan["missing"] + plan["real"]
+                                + plan["loopback"]), [3])
+        if plan["missing"]:
+            self.assertEqual(plan["cmd"][0], "modprobe")
+            self.assertIn("video_nr=3", plan["cmd"])
+            self.assertIn("devices=1", plan["cmd"])
+        else:
+            self.assertIsNone(plan["cmd"])
+
+    def test_wait_ready_dead_proc_fails_fast(self):
+        """A watched proc that already exited returns False at once
+        instead of hanging to timeout."""
+        import ctl
+        u = {"name": "deadcam1", "sim": "vcam_t",
+             "modules": ["de_camera"]}
+        pf = simlib.pid_path("vcam_t", "deadcam1", "de_camera")
+        os.makedirs(os.path.dirname(pf), exist_ok=True)
+        # a guaranteed-dead pid: fork + reap
+        pid = os.fork()
+        if pid == 0:
+            os._exit(0)
+        os.waitpid(pid, 0)
+        with open(pf, "w") as f:
+            f.write(str(pid))
+        try:
+            t0 = time.time()
+            self.assertFalse(ctl.wait_ready([u], 30))
+            self.assertLess(time.time() - t0, 10)
+        finally:
+            os.unlink(pf)
+
     @unittest.skipUnless(
         shutil.which("node") and os.path.isfile(BRIDGE),
         "needs node + a real MAVLINK3DMAP_DIR checkout")

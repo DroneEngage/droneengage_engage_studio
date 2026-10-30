@@ -81,3 +81,19 @@ runs its own vite on its slot-derived `web_port`, torn down with the
 sim. Nothing requires the stack: `sim doctor` and every suite pass
 without Mavlink3DMap, and no test may depend on it. Stop it only with
 `./sim down de_mavlink3dmap`.
+
+## `./sim vcam` — virtual camera devices (DE-0050)
+
+Not a stack — a one-shot setup command. `./sim vcam <sim.yaml>`
+derives the `/dev/videoN` indices a sim's camera units open (merged
+`camera_start_index`/`camera_end_index` / `camera_list device_num`)
+and `sudo modprobe`s the missing v4l2loopback devices itself — the
+only sudo path in the engine. Real devices are never touched;
+`--print` shows the modprobe line, `--reload` replaces an
+already-loaded module's devices (drops them).
+
+Pair it with `camera_feed:` in the sim yaml — an ffmpeg lavfi testsrc
+producer per configured index, launched before the units and killed by
+`sim down` (required with `exclusive_caps`: a loopback device only
+advertises CAPTURE while a producer streams). See
+`sims/copter_and_cameras.md` for the full flow.

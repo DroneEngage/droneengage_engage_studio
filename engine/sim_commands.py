@@ -136,6 +136,26 @@ COMMANDS = {
                      "./sim up de_servers"],
         "takes_sim": True,
     },
+    "vcam": {
+        "group": "LIVE",
+        "summary": "create the v4l2loopback devices a camera sim needs",
+        "usage": ["./sim vcam <sim.yaml> [--print] [--reload]"],
+        "description": "Derive the /dev/videoN indices a sim's camera "
+                       "units open from their merged de_camera configs "
+                       "and sudo-modprobe v4l2loopback for the missing "
+                       "ones (real devices are never touched). The only "
+                       "sudo path in the engine - `sim up` stays "
+                       "unprivileged.",
+        "flags": {
+            "--print": "show the modprobe line without running it",
+            "--reload": "unload the module first (drops its existing "
+                        "devices) when it is already loaded",
+        },
+        "shared_flags": False,
+        "examples": ["./sim vcam sims/copter_and_cameras.yaml",
+                     "./sim vcam copter_and_cameras --print"],
+        "takes_sim": True,
+    },
     "down": {
         "group": "LIVE",
         "summary": "stop one sim, or every sim",

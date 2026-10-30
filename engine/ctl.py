@@ -740,8 +740,8 @@ def fc_param_set(m, u, name, value, timeout=5):
 
 def owner_sim(owner):
     """Sim owning a process owner: a unit's own sim, or the context sim
-    for the synthetic 'server'/'render' owners."""
-    if owner in ("server", "render"):
+    for the synthetic 'server'/'render'/'feed' owners."""
+    if owner in ("server", "render", "feed"):
         return _ctx_name()
     u = simlib.find_unit(owner, CTX)
     if not u:
@@ -754,6 +754,8 @@ def owner_dir(owner):
         return simlib.server_dir(owner_sim(owner))
     if owner == "render":
         return simlib.render_dir(owner_sim(owner))
+    if owner == "feed":
+        return simlib.feed_dir(owner_sim(owner))
     u = simlib.find_unit(owner, CTX)
     if not u:
         sys.exit(f"unknown unit {owner!r} (no generated sim has it)")
@@ -1130,6 +1132,20 @@ def wait_ready(units, timeout, marks=None):
     t0 = time.time()
     while pending and time.time() - t0 < timeout:
         for key, (u, rx, sink) in list(pending.items()):
+            # DE-0050: a proc that already exited can never report
+            # ready - fail fast naming it instead of waiting out the
+            # timeout (e.g. de_camera dying on a missing /dev/videoN)
+            pf = simlib.pid_path(u["sim"], u["name"], key[1])
+            if os.path.isfile(pf):
+                try:
+                    pid = int(open(pf).read().strip())
+                except ValueError:
+                    pid = None
+                if pid and not os.path.isdir(f"/proc/{pid}"):
+                    print(simlib.col_red(
+                        f"{u['name']}: {key[1]} exited - "
+                        f"see {simlib.unit_dir(u)}/logs/{key[1]}.log"))
+                    return False
             # a mark of {} (no journal file yet) means "from the start",
             # not "fall back to the boot mark" - that would match the
             # ready line of the previous boot

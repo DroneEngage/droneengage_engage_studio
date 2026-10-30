@@ -754,7 +754,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
     spec = _substitute_params(spec, param_values)
     unknown = set(spec) - {"version", "name", "description", "server", "home",
                            "slot_base", "units", "render", "speedup",
-                           "fcb_proxy", "fcb_link", "example"}
+                           "fcb_proxy", "fcb_link", "example",
+                           "camera_feed"}
     if unknown:
         raise SimError(f"sim: unknown keys {sorted(unknown)}")
     if spec.get("version", 1) != 1:
@@ -810,6 +811,10 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         "fcb_link": spec.get("fcb_link"),
         "units": [],
         "render": _render_spec(spec.get("render"), slot_base),
+        # DE-0050: `camera_feed: <src>` spawns ffmpeg testsrc producers
+        # onto each camera unit's /dev/videoN before de_camera scans
+        # (exclusive_caps needs a producer for CAPTURE to enumerate)
+        "camera_feed": _camera_feed_spec(spec.get("camera_feed")),
         # SL-0116: the params: declarations and their resolved values
         # (defaults + --set overrides) - the declarations are kept for
         # `./sim show`/introspection, the values are what ${name} spread
@@ -1863,6 +1868,10 @@ def server_dir(sim):
 
 def render_dir(sim):
     return os.path.join(run_dir(sim), "render")
+
+
+def feed_dir(sim):
+    return os.path.join(run_dir(sim), "feed")
 
 
 def manifest_path(sim):
@@ -3337,6 +3346,205 @@ def gen_render(sim):
     return procs
 
 
+# ------------------------------------------------- virtual cameras (DE-0050)
+
+_FEED_SRC_ALIASES = {"clock": "testsrc2", "colors": "rgbtestsrc"}
+V4L2_CAP_VIDEO_CAPTURE = 0x1
+_VIDIOC_QUERYCAP = 0x80685600
+
+
+def _camera_feed_spec(raw):
+    """`camera_feed: <src>` or {source, size, rate, pix_fmt} -> a
+    normalized dict, or None. `src` aliases clock/colors map to the
+    lavfi sources video_clock.sh/video_colors.sh use; anything else is
+    passed to ffmpeg's lavfi -i verbatim."""
+    if raw is None or raw is False:
+        return None
+    if isinstance(raw, str):
+        raw = {"source": raw}
+    if not isinstance(raw, dict):
+        raise SimError("camera_feed: must be a source name or a mapping")
+    bad = set(raw) - {"source", "size", "rate", "pix_fmt"}
+    if bad:
+        raise SimError(f"camera_feed: unknown keys {sorted(bad)}")
+    src = _FEED_SRC_ALIASES.get(str(raw.get("source", "testsrc2")),
+                                str(raw.get("source", "testsrc2")))
+    return {"source": src,
+            "size": str(raw.get("size", "640x480")),
+            "rate": int(raw.get("rate", 30)),
+            "pix_fmt": str(raw.get("pix_fmt", "yuyv422"))}
+
+
+def camera_video_indices(u):
+    """Sorted /dev/videoN indices this unit's de_camera will open:
+    camera.camera_list `device_num` entries plus the
+    camera_start_index..camera_end_index scan range (falling back to
+    the legacy flat fields, like the module does). `device_name`
+    entries are driver-name lookups, not indices - skipped here.
+    [] for non-camera units."""
+    if "de_camera" not in u.get("modules", []):
+        return []
+    dcfg = (u.get("config") or {}).get("de_camera") or {}
+    cfg = dcfg.get("camera") or {}
+    idx = set()
+    for e in cfg.get("camera_list") or []:
+        if isinstance(e, dict) and isinstance(e.get("device_num"), int):
+            idx.add(e["device_num"])
+    a = cfg.get("camera_start_index", dcfg.get("camera_start_index"))
+    b = cfg.get("camera_end_index", dcfg.get("camera_end_index"))
+    if a is not None or b is not None:
+        a, b = int(a or 0), int(b if b is not None else a)
+        idx.update(range(a, b + 1))
+    return sorted(idx)
+
+
+def video_is_loopback(idx):
+    """True when /dev/video<idx> is a v4l2loopback virtual device
+    (loopback nodes live under /sys/devices/virtual/video4linux/)."""
+    return os.path.isdir(
+        f"/sys/devices/virtual/video4linux/video{idx}")
+
+
+def video_device_caps(path):
+    """The V4L2 device_caps bitmask of a video node
+    (VIDIOC_QUERYCAP), or None when it cannot be queried. With
+    exclusive_caps a loopback device advertises CAPTURE only while a
+    producer streams into it."""
+    import fcntl
+    import struct
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        buf = fcntl.ioctl(fd, _VIDIOC_QUERYCAP, bytes(104))
+        return struct.unpack_from("<I", buf, 84)[0]
+    except OSError:
+        return None
+    finally:
+        os.close(fd)
+
+
+def video_capture_capable(idx):
+    c = video_device_caps(f"/dev/video{idx}")
+    return c is not None and bool(c & V4L2_CAP_VIDEO_CAPTURE)
+
+
+def gen_feeds(sim):
+    """camera_feed (DE-0050): per camera unit + configured /dev/videoN
+    a pid-tracked ffmpeg lavfi producer under var/run/<sim>/feed/, so
+    exclusive_caps loopback devices advertise CAPTURE before de_camera
+    scans. Procs are `feed.<unit>_<idx>`; the pidfile pid is the launch
+    bash (its cmdline names the launch script under var/run, which is
+    what pid_is_ours matches) - ffmpeg rides `&`+`wait` like SITL, and
+    the TERM trap kills it on `sim down`. [] without a camera_feed."""
+    feed = sim.get("camera_feed")
+    if not feed:
+        return []
+    rdir = feed_dir(sim["name"])
+    os.makedirs(rdir, exist_ok=True)
+    os.makedirs(pids_dir(sim["name"]), exist_ok=True)
+    procs = []
+    for u in sim["units"]:
+        for idx in camera_video_indices(u):
+            proc = f"{u['name']}_{idx}"
+            cmd = (f"'{FFMPEG_BIN}' -hide_banner -loglevel warning "
+                   f"-f lavfi -i "
+                   f"'{feed['source']}=size={feed['size']}"
+                   f":rate={feed['rate']}' -pix_fmt {feed['pix_fmt']} "
+                   f"-c:v rawvideo -f v4l2 '/dev/video{idx}'")
+            path = os.path.join(rdir, f"launch.{proc}.sh")
+            write_text(path,
+                       "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%s &\n"
+                       "trap 'kill %%1 2>/dev/null' TERM\nwait\n"
+                       % (rdir, pid_path(sim["name"], "feed", proc),
+                          cmd), 0o755)
+            procs.append(proc)
+    return procs
+
+
+def camera_missing_nodes(sim):
+    """Sorted /dev/videoN indices a camera unit will open that do not
+    exist on this host."""
+    out = set()
+    for u in sim["units"]:
+        for i in camera_video_indices(u):
+            if not os.path.exists(f"/dev/video{i}"):
+                out.add(i)
+    return sorted(out)
+
+
+def vcam_plan(sim):
+    """DE-0050: the v4l2loopback setup a camera sim needs, as a dict:
+    `needed` (every /dev/videoN index its de_camera units open),
+    `real`/`loopback` (indices already present, split by driver),
+    `missing` (indices to create), `loaded` (module state) and `cmd`
+    (the modprobe argv for the missing indices). `real` devices are
+    capture devices already - never touched."""
+    needed = sorted({i for u in sim["units"]
+                     for i in camera_video_indices(u)})
+    real, loopback = [], []
+    for i in needed:
+        if not os.path.exists(f"/dev/video{i}"):
+            continue
+        (loopback if video_is_loopback(i) else real).append(i)
+    missing = [i for i in needed
+               if not os.path.exists(f"/dev/video{i}")]
+    labels = [f"DE-VCAM-{i}" for i in missing]
+    cmd = (["modprobe", "v4l2loopback",
+            f"devices={len(missing)}",
+            "video_nr=" + ",".join(str(i) for i in missing),
+            "card_label=" + ",".join(labels),
+            "exclusive_caps=" + ",".join("1" for _ in missing)]
+           if missing else None)
+    return {"needed": needed, "real": real, "loopback": loopback,
+            "missing": missing, "loaded": _module_loaded("v4l2loopback"),
+            "cmd": cmd}
+
+
+def _module_loaded(name):
+    import subprocess
+    try:
+        out = subprocess.run(["lsmod"], capture_output=True, text=True,
+                             timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return any(ln.split() and ln.split()[0] == name
+               for ln in out.splitlines())
+
+
+def vcam_run(sim, print_only=False, reload=False):
+    """`./sim vcam <sim>`: print the plan, then sudo modprobe the
+    missing loopback devices. reload=True unloads the module first
+    (needed when the module is already loaded without the indices the
+    sim wants - reload drops every existing loopback device)."""
+    import subprocess
+    plan = vcam_plan(sim)
+    if not plan["needed"]:
+        print(f"sim {sim['name']}: no camera units - nothing to do")
+        return 0
+    print(f"sim {sim['name']}: camera indices {plan['needed']}"
+          + (f"  (loopback {plan['loopback']})"
+             if plan["loopback"] else "")
+          + (f"  (real device(s) {plan['real']} - left alone)"
+             if plan["real"] else ""))
+    if not plan["missing"]:
+        print("every configured index already exists - nothing to do")
+        return 0
+    cmdline = "sudo " + " ".join(plan["cmd"])
+    print(f"missing: {plan['missing']} -> {cmdline}")
+    if plan["loaded"] and not reload:
+        print("v4l2loopback is already loaded - its existing devices "
+              "are kept; pass --reload to replace them")
+        return 0
+    if print_only:
+        return 0
+    if plan["loaded"]:
+        if subprocess.call(["sudo", "modprobe", "-r", "v4l2loopback"]):
+            sys.exit("could not unload v4l2loopback (a device is open)")
+    return subprocess.call(["sudo"] + plan["cmd"])
+
+
 def generate(sim, sim_file=None):
     """Write var/run/<sim>/<unit>/... for every unit and the sim's manifest."""
     catalog = load_catalog()
@@ -3347,11 +3555,14 @@ def generate(sim, sim_file=None):
         gen_unit(u, sim, catalog)
     server_procs = gen_server(sim)
     render_procs = gen_render(sim)
+    feed_procs = gen_feeds(sim)
     manifest = {"version": 1, "name": sim["name"], "sim_file": sim_file,
                 "sim_hash": sim["hash"], "owner": owner_record(),
                 "server": sim["server"],
                 "server_procs": server_procs,
                 "render_procs": render_procs,
+                "feed_procs": feed_procs,
+                "camera_feed": sim.get("camera_feed"),
                 "render": sim.get("render"),
                 "module_overrides": dict(_MODULE_BINS),
                 "home": sim["home"], "speedup": sim.get("speedup", 1),

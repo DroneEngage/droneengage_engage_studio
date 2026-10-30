@@ -349,6 +349,26 @@ def gather(sim=None, esp32=False):
                 "attach the USB-serial adapter, and join the `dialout` "
                 "group (or udev-rule the device) for rw access")
 
+    # DE-0050: camera units' configured /dev/videoN - missing nodes
+    # fail `sim up` outright; existing-but-not-capture ones (unfed
+    # exclusive_caps loopback) are a warning
+    cam_idx = sorted({i for u in (sim or {}).get("units", [])
+                      for i in simlib.camera_video_indices(u)})
+    for i in cam_idx:
+        dev = f"/dev/video{i}"
+        if not os.path.exists(dev):
+            d.check(f"camera device {dev}", False, "missing",
+                    f"./sim vcam <sim> creates it (sudo), or fix the "
+                    "unit's camera_start_index/camera_end_index")
+        elif not simlib.video_capture_capable(i):
+            d.check(f"camera device {dev}", False,
+                    "exists but no CAPTURE (no producer)",
+                    "stream it - camera_feed: in the sim or "
+                    "scripts/video_clock.sh", required=False)
+        else:
+            d.ok(f"camera device {dev}",
+                 "loopback" if simlib.video_is_loopback(i) else "real")
+
     # render deps: the frame farm's chromium + ffmpeg (cameras|full);
     # Mavlink3DMap itself is always optional (never a failure)
     needs_farm = bool(sim and render_mode in ("cameras", "full")

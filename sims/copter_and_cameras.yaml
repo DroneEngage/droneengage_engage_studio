@@ -8,6 +8,10 @@ description: |
   real server. Needs the de_camera binary + a V4L2 device per camera
   unit (see blocks/copter_camera).
 version: 1
+# DE-0050: ffmpeg testsrc producers on every camera unit's configured
+# /dev/videoN before de_camera scans (exclusive_caps needs a producer
+# for CAPTURE to enumerate). Create the devices first: ./sim vcam
+camera_feed: testsrc2
 units:
   - {block: copter_camera, name: camcopter}
   - block: camera_fixed
