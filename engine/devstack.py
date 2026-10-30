@@ -383,6 +383,25 @@ def logs(stack="de_servers", proc=None):
     subprocess.call(["tail", "-n", "40"] + files)
 
 
+def _foreign_owner_pid(port):
+    """The pid actually serving a stack port when no stack-owned proc
+    holds it (hand-started servers on the same ports). Display only -
+    teardown never touches it."""
+    try:
+        out = subprocess.run(["ss", "-tlnpH", f"sport = :{port}"],
+                             capture_output=True, text=True,
+                             timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    i = out.find("pid=")
+    if i < 0:
+        return None
+    try:
+        return int(out[i + 4:].split(",")[0].split(")")[0])
+    except ValueError:
+        return None
+
+
 def _rows(stack):
     live = pids(stack)
     rows = []
@@ -399,18 +418,25 @@ def _rows(stack):
             bound = False
         rows.append({"proc": proc, "repo": _repo(p),
                      "pid": live.get(proc), "port": port,
-                     "bound": bound})
+                     "bound": bound,
+                     "foreign": None if (live.get(proc) or not bound)
+                                else _foreign_owner_pid(port)})
     return rows
 
 
 def status(stack="de_servers"):
+    rows = _rows(stack)
+    bound = sum(1 for r in rows if r["bound"])
     print(stack + " " + simlib.col_dim(
-        f"({len(pids(stack))}/{len(procs(stack))} procs up)"))
-    for r in _rows(stack):
+        f"({bound}/{len(rows)} bound, "
+        f"{len(pids(stack))} stack-owned)"))
+    for r in rows:
+        pid = r["pid"] or r["foreign"]
+        tag = " (foreign)" if (r["foreign"] and not r["pid"]) else ""
         state = simlib.col_green("bound") if r["bound"] \
             else (simlib.col_yellow("not bound")
                   if r["pid"] else "down")
-        print(f"  {r['proc']:14s} pid {r['pid'] or '-':>6}  "
+        print(f"  {r['proc']:14s} pid {pid or '-':>6}{tag}  "
               f"port {r['port']:>6}  {state}")
 
 
