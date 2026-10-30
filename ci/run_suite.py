@@ -21,6 +21,12 @@ serially - a run owns the machine. Verdicts:
 Outputs <out>/summary.md (owner table) and <out>/junit.xml (CI). Exit 1
 when any verdict is FAIL; FLAKY keeps the suite amber, not green - it
 also exits 1 so the workflow surfaces it.
+
+--shared / SIM_SHARED=1 (SL-0152): run additively on a busy machine -
+every scenario goes through `./sim run --shared --slot-base any` (a
+free port block, no teardown of other sessions' sims) and the suite
+downs the sim it started after each run, so two agents can run suites
+side by side.
 """
 
 import argparse
@@ -35,6 +41,7 @@ import xml.sax.saxutils as sax
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RUNNER = os.path.join(ROOT, "run_scenario.py")
+SIM = os.path.join(ROOT, "sim")
 
 # bytecode under var/pycache from the first import on (simlib sets it
 # too, but only after itself is compiled - that left __pycache__ dirs)
@@ -46,6 +53,7 @@ sys.pycache_prefix = os.environ.setdefault(
 
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 import simlib          # noqa: E402
+import launcher        # noqa: E402
 import scenario        # noqa: E402
 
 RESULTS = simlib.RESULTS_DIR
@@ -137,13 +145,35 @@ def gate_check(path, results_dir):
     return True, f"gate blocked: {errs} error(s) rules {rules}"
 
 
-def run_once(yaml_path, seed, keep):
+def _sim_name(yaml_path):
+    """The sim a scenario spawns: its top-level yaml `name:` else the
+    file stem."""
+    try:
+        for line in open(yaml_path, encoding="utf-8"):
+            m = re.match(r"name:\s+['\"]?([^'\"\s#]+)", line)
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return os.path.splitext(os.path.basename(yaml_path))[0]
+
+
+def run_once(yaml_path, seed, keep, shared=False):
     name = os.path.splitext(os.path.basename(yaml_path))[0]
-    cmd = [sys.executable, RUNNER, yaml_path, "--seed", str(seed)]
+    if shared:
+        cmd = [SIM, "run", yaml_path, "--seed", str(seed),
+               "--shared", "--slot-base", "any"]
+    else:
+        cmd = [sys.executable, RUNNER, yaml_path, "--seed", str(seed)]
     if keep:
         cmd.append("--keep")
     t0 = time.time()
     r = subprocess.run(cmd, cwd=ROOT)
+    if shared and not keep:
+        # the run parked its sim - free the slot block for the next
+        # scenario; foreign-owned same-name sims are kept by the owner
+        # guard
+        launcher.down(_sim_name(yaml_path), quiet=True)
     wall = round(time.time() - t0, 1)
     rd = latest_results_dir(name, t0 - 1.0)
     if r.returncode == 0:
@@ -160,6 +190,11 @@ def main():
     ap.add_argument("--seeds", default="1,2,3")
     ap.add_argument("--out", default=os.path.join(RESULTS, "nightly"))
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--shared", action="store_true",
+                    help="run additively on a busy machine: every "
+                         "scenario gets --shared --slot-base any and "
+                         "the suite downs the sim it started (= "
+                         "SIM_SHARED=1)")
     ap.add_argument("--tier", default=None,
                     choices=["smoke", "regression"],
                     help="only files marked `tier: <name>` (absent = "
@@ -175,6 +210,7 @@ def main():
     if a.speedup:
         os.environ["SIM_SPEEDUP"] = f"{a.speedup:g}"
     seeds = [int(s) for s in a.seeds.split(",") if s.strip()]
+    shared = a.shared or os.environ.get("SIM_SHARED") == "1"
     files = yaml_files(a.roots, tier=a.tier, task=a.task)
     if not files:
         sys.exit(f"no scenario yaml under {a.roots}")
@@ -184,7 +220,7 @@ def main():
     for f in files:
         rel = os.path.relpath(f, ROOT)
         for s in seeds:
-            v, wall, rd, why = run_once(f, s, a.keep)
+            v, wall, rd, why = run_once(f, s, a.keep, shared)
             rec = {"file": rel, "seed": s, "attempt1": v, "attempt2": "",
                    "verdict": v, "wall_s": wall, "why": why,
                    "results": rd}
