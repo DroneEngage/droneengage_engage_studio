@@ -6,10 +6,7 @@
   "vehicle": {
     "type": "copter"
   },
-  "requires": [
-    "camera",
-    "payload"
-  ],
+  "requires": [],
   "fc_items": [
     {
       "c": 22,
@@ -32,8 +29,8 @@
         5,
         0,
         0,
-        30.1,
-        31.1,
+        -35.3632,
+        149.1661,
         50
       ]
     },
@@ -45,8 +42,8 @@
         5,
         0,
         0,
-        30.2,
-        31.2,
+        -35.3622,
+        149.1662,
         50
       ]
     },
@@ -58,8 +55,8 @@
         0,
         0,
         0,
-        30.2,
-        31.2,
+        -35.3622,
+        149.1662,
         50
       ]
     },
@@ -71,9 +68,22 @@
         5,
         0,
         0,
-        30.3,
-        31.3,
+        -35.3615,
+        149.1663,
         40
+      ]
+    },
+    {
+      "c": 222,
+      "ft": 2,
+      "mv": [
+        60,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
       ]
     },
     {
@@ -97,8 +107,8 @@
         5,
         0,
         0,
-        30.4,
-        31.4,
+        -35.3628,
+        149.1650,
         40
       ]
     },
@@ -123,8 +133,8 @@
         0,
         0,
         0,
-        0,
-        0,
+        -35.3615,
+        149.1663,
         40
       ]
     },
@@ -149,8 +159,8 @@
         0,
         0,
         0,
-        0,
-        0,
+        -35.3615,
+        149.1663,
         40
       ]
     }
@@ -163,7 +173,7 @@
       "priority": 0,
       "segment": {
         "start": 1,
-        "end": 11
+        "end": 12
       },
       "end_state": "hold",
       "end_backstop": {
@@ -251,6 +261,12 @@
       "seq": 6,
       "mission": "main",
       "step": "gd",
+      "kind": "set.guided_limits"
+    },
+    {
+      "seq": 7,
+      "mission": "main",
+      "step": "gd",
       "kind": "nav.guided_flag"
     },
     {
@@ -262,13 +278,13 @@
       "on": "reached"
     },
     {
-      "seq": 7,
+      "seq": 8,
       "mission": "main",
       "step": "w3",
       "kind": "nav.wp"
     },
     {
-      "seq": 8,
+      "seq": 9,
       "mission": "main",
       "step": "r",
       "kind": "nav.rtl"
@@ -278,23 +294,23 @@
       "step": "e4",
       "kind": "emit",
       "event": "v1.9",
-      "at_seq": 8,
+      "at_seq": 9,
       "on": "start"
-    },
-    {
-      "seq": 9,
-      "mission": "main",
-      "step": "end",
-      "kind": "end.hold"
     },
     {
       "seq": 10,
       "mission": "main",
       "step": "end",
-      "kind": "end.contingency"
+      "kind": "end.hold"
     },
     {
       "seq": 11,
+      "mission": "main",
+      "step": "end",
+      "kind": "end.contingency"
+    },
+    {
+      "seq": 12,
       "mission": "main",
       "step": "end",
       "kind": "end.guard"
