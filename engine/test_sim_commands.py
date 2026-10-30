@@ -102,6 +102,30 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(_print_usage_captured(doc, tty=False),
                          doc + "\n")
 
+    def test_usage_error_exit_colored_on_tty(self):
+        # usage errors (missing arg, bad flag) get the print_usage
+        # colors on stderr: command green, <params>/[flags] yellow, the
+        # ./sim <cmd> help pointer green; plain text off a tty.
+        for tty in (True, False):
+            buf = _Tty() if tty else io.StringIO()
+            old = sys.stderr
+            sys.stderr = buf
+            try:
+                with self.assertRaises(SystemExit):
+                    simlib.usage_error_exit(
+                        "./sim show <sim.yaml> [--json]"
+                        " - ./sim show help")
+            finally:
+                sys.stderr = old
+            if tty:
+                self.assertIn("\x1b[32m./sim show \x1b[33m<sim.yaml>",
+                              buf.getvalue())
+                self.assertIn("\x1b[33m[--json]", buf.getvalue())
+                self.assertIn("\x1b[32m./sim show help", buf.getvalue())
+            else:
+                self.assertNotIn("\x1b[", buf.getvalue())
+                self.assertIn("./sim show help", buf.getvalue())
+
     def test_allowed_flags_up_includes_shared(self):
         flags = sim_commands.allowed_flags("up")
         for f in ("--fresh", "--open-web", "--user", "--password",

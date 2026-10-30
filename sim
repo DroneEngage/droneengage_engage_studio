@@ -38,8 +38,8 @@ def _print_usage():
 def _usage_exit(c, hint=""):
     """usage error -> the command registry's first usage line plus the
     ./sim <cmd> help pointer (SL-0124); extra hints keep riding along."""
-    sys.exit(sim_commands.COMMANDS[c]["usage"][0] +
-             f" - ./sim {c} help" + hint)
+    simlib.usage_error_exit(sim_commands.COMMANDS[c]["usage"][0] +
+                            f" - ./sim {c} help" + hint)
 
 
 def _bad_flags(a, known):
@@ -332,7 +332,7 @@ def main(argv):
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("show"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim show help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim show help")
             if len(files) != 1:
                 _usage_exit("show")
             sim = simlib.load_sim(simlib.resolve_sim_arg(files[0]))
@@ -384,7 +384,7 @@ def main(argv):
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("up"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim up help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim up help")
             if len(files) != 1:
                 _usage_exit("up")
             import devstack
@@ -408,7 +408,7 @@ def main(argv):
             names = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("down"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim down help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim down help")
             import devstack
             if names and names[0] in devstack.stack_names():
                 return devstack.down(names[0])
@@ -417,7 +417,7 @@ def main(argv):
             json_out = "--json" in a
             bad = _bad_flags(a, sim_commands.allowed_flags("sims"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim sims help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim sims help")
             names = simlib.sim_names()
             if json_out:
                 print(json.dumps({"sims": [
@@ -447,7 +447,7 @@ def main(argv):
             names = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("ports"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim ports help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim ports help")
             if len(names) > 1:
                 _usage_exit("ports")
             scope = names or [n for n in simlib.sim_names()
@@ -547,7 +547,7 @@ def main(argv):
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags(c))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim {c} help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim {c} help")
             if len(files) != 1:
                 _usage_exit(c)
             files[0] = simlib.resolve_sim_arg(files[0],
@@ -593,7 +593,7 @@ def main(argv):
             dirs = [x for x in a if not x.startswith("-")] or ["tests"]
             bad = _bad_flags(a, sim_commands.allowed_flags("suite"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim suite help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim suite help")
             cmd = [sys.executable,
                    os.path.join(simlib.SIM_ROOT, "ci", "run_suite.py"),
                    "--roots"] + dirs + ["--seeds", seeds] \
@@ -621,7 +621,7 @@ def main(argv):
             roots = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("list"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim list help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim list help")
             if any(r not in ("scenarios", "tests", "sims", "stacks")
                    for r in roots):
                 _usage_exit("list")
@@ -697,7 +697,7 @@ def main(argv):
             names = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("new"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim new help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim new help")
             ok_name = len(names) == 1 and \
                 re.fullmatch(r"[\w-]+(/[\w-]+)*", names[0])
             if not ok_name:
@@ -733,7 +733,7 @@ def main(argv):
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("validate"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim validate help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim validate help")
             if len(files) != 1:
                 _usage_exit("validate")
             files[0] = simlib.resolve_sim_arg(files[0],
@@ -761,7 +761,7 @@ def main(argv):
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("expand"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim expand help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim expand help")
             if len(files) != 1:
                 _usage_exit("expand")
             scn = scenario_mod.load_scenario(files[0], seed=seed,
@@ -828,7 +828,7 @@ def main(argv):
             files = [x for x in rest if not x.startswith("-")]
             bad = _bad_flags(rest, sim_commands.allowed_flags("studio"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim studio help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim studio help")
             if len(files) != 1:
                 _usage_exit("studio")
             launcher.studio(simlib.resolve_sim_arg(files[0]),
@@ -846,7 +846,7 @@ def main(argv):
             files = [x for x in a if not x.startswith("-")]
             bad = _bad_flags(a, sim_commands.allowed_flags("view"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim view help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim view help")
             if len(files) != 1:
                 _usage_exit("view")
             files[0] = simlib.resolve_sim_arg(files[0],
@@ -887,7 +887,7 @@ def main(argv):
             import registry
             bad = _bad_flags(a, sim_commands.allowed_flags("verbs"))
             if bad:
-                sys.exit(f"unknown {' '.join(bad)} - ./sim verbs help")
+                simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim verbs help")
             if "--json" in a:
                 print(json.dumps({"verbs": [
                     {"name": v["name"], "kind": v["kind"],

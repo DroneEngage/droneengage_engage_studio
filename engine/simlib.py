@@ -272,6 +272,32 @@ def print_usage(doc):
               + (pad + white + desc + reset if desc else ""))
 
 
+def usage_error_exit(text):
+    """A one-line usage error (`<usage> - ./sim <cmd> help` or
+    `unknown <flag> - ./sim <cmd> help`) -> stderr, exit 1. On a tty it
+    carries the print_usage colors - the command green, its
+    <params>/[flags] yellow, the rest white - so the error looks like
+    the help it points at. Plain text off a tty."""
+    line = text
+    if sys.stderr.isatty():
+        green, yellow, white, reset = \
+            "\033[32m", "\033[33m", "\033[37m", "\033[0m"
+        param_rx = re.compile(r"<[^>]*>|\[[^\]]*\]|\.\.\.|--\S+")
+        usage, sep, tail = text.partition(" - ")
+        base = green if usage.startswith("./sim") else white
+        line = base + param_rx.sub(yellow + r"\g<0>" + base, usage) \
+            + reset
+        if sep:
+            # the `- ./sim <cmd> help` pointer keeps command green and
+            # any hint after `help` white
+            m = re.match(r"^(\./sim \S+ help)(.*)$", tail)
+            tail = green + m.group(1) + reset + white + m.group(2) \
+                + reset if m else white + tail + reset
+            line += white + sep + reset + tail
+    print(line, file=sys.stderr)
+    sys.exit(1)
+
+
 # ---------------------------------------------------------------- json/yaml
 
 def strip_comments(text):
