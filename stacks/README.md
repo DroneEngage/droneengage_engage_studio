@@ -12,13 +12,13 @@ open_url: "{webclient_url}" # optional: what --open-web opens and
 up_note: "..."              # optional line printed after a successful up
 procs:                      # launch order - first entry starts first
   - name: de_auth           # proc name: pids/<name>.pid, logs/<name>.log
-    kind: node              # node (default): exec <repo>/src/server.js
+    kind: exec              # exec (default): run a built binary at
+                            # <repo>/<bin> (the Rust servers; the
+                            # --<stack> marker rides argv - they
+                            # ignore unknown args)
                             # npm: exec `npm start` (react-scripts dev
                             # server, port from $PORT/SIM_WEBCLIENT_URL)
-                            # exec: run a built binary at <repo>/<bin>
-                            # (the Rust servers; the --<stack> marker
-                            # rides argv - they ignore unknown args)
-    bin: target/release/x   # kind exec only: binary path inside the repo
+    bin: target/release/x   # kind exec: binary path inside the repo
     repo_env: DE_AUTH_DIR   # sim.local.env / env override key (optional)
     repo: droneengage_authenticator
                             # repo dir: with repo_env this is the

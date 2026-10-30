@@ -1,23 +1,29 @@
 # The developer's own server stack - the headless equivalent of
-# servers/sh_start_servers.sh. Each proc runs FROM ITS REPO (node
-# ./src/server.js) with no --config override, so it loads its own
-# server.config + server.config.local on the real ports - the stack
-# `server: {type: external}` sims join. Launch order matters: auth
-# first so the comm server's s2s link dials a live target (the old
-# script's `sleep 1` chain).
+# servers/sh_start_servers.sh. Each proc runs FROM ITS REPO
+# (./target/release/<binary>) with no --config override, so it loads
+# its own server.config + server.config.local on the real ports - the
+# stack `server: {type: external}` sims join. Launch order matters:
+# auth first so the comm server's s2s link dials a live target (the
+# old script's `sleep 1` chain).
 name: de_servers
 up_note: "de_servers up - external sims can join (./sim up sims/quadcopter.yaml)"
 procs:
   - name: de_auth
     repo_env: DE_AUTH_DIR
     repo: droneengage_authenticator
+    kind: exec
+    bin: target/release/andruavauth
   - name: de_server
     repo_env: DE_SERVER_DIR
     repo: droneengage_server
+    kind: exec
+    bin: target/release/andruavmainserver
   - name: de_storage
     repo_env: DE_STORAGE_DIR
     repo: droneengage_storage_server
     port_env: de_storage_server_port
+    kind: exec
+    bin: target/release/de_storage_server
   - name: de_udp_proxy
     repo_env: DE_UDP_RELAY_DIR
     repo: droneengage_udp_proxy

@@ -36,16 +36,15 @@ import simlib
 
 STACKS_DIR = os.path.join(simlib.SIM_ROOT, "stacks")
 
-# proc kinds: "node" execs <repo>/src/server.js; "npm" rides `npm start`
-# (the react-scripts dev server) and takes its port from $PORT /
-# SIM_WEBCLIENT_URL; "exec" runs a built binary at <repo>/<bin> (the
-# Rust servers - they ignore unknown args, so the --<stack> marker
-# still rides argv)
-_KINDS = ("node", "npm", "exec")
+# proc kinds: "exec" runs a built binary at <repo>/<bin> (the Rust
+# servers - they ignore unknown args, so the --<stack> marker still
+# rides argv); "npm" rides `npm start` (the react-scripts dev server)
+# and takes its port from $PORT / SIM_WEBCLIENT_URL
+_KINDS = ("npm", "exec")
 
 
 def _load_stacks():
-    """stacks/*.yaml -> {name: {"procs": [{name, repo, repo_env,
+    """stacks/*.yaml -> {name: {"procs": [{name, repo, repo_env, bin,
     port_env, kind}], "up_timeout_s", "open_url", "up_note"}}. Proc
     order is launch order. A malformed file raises SimError naming it -
     a stack typo must never abort with a traceback."""
@@ -93,7 +92,7 @@ def _load_stacks():
                 repo = pname
             if not isinstance(repo, str):
                 raise simlib.SimError(f"{where}: repo must be a string")
-            kind = p.get("kind", "node")
+            kind = p.get("kind", "exec")
             if kind not in _KINDS:
                 raise simlib.SimError(
                     f"{where}: kind {kind!r} not in {_KINDS}")
@@ -210,7 +209,7 @@ def pids(stack="de_servers"):
 
 
 def _port(stack, p):
-    """The port the proc will bind. node/exec procs: their repo's
+    """The port the proc will bind. exec procs: their repo's
     server.config + server.config.local (the same shallow merge the
     common loader does), then the env override some servers honour.
     npm procs: $PORT, else the SIM_WEBCLIENT_URL port."""
@@ -248,24 +247,21 @@ def _npm():
 
 
 def _launch_script(stack, p):
-    """Run in the repo (node_modules + its own server.config(.local)
-    resolve there); the --<stack> marker is ignored by the launched
-    program but identifies the pid as this stack's. npm procs ride
-    `npm start -- <marker>` so the npm pid carries it (and react-scripts
-    ignores it); exec procs pass it straight to the binary (the Rust
-    servers ignore unknown args)."""
+    """Run in the repo (its own server.config(.local) and relative
+    paths resolve there); the --<stack> marker is ignored by the
+    launched program but identifies the pid as this stack's. npm procs
+    ride `npm start -- <marker>` so the npm pid carries it (and
+    react-scripts ignores it); exec procs pass it straight to the
+    binary (the Rust servers ignore unknown args)."""
     repo, proc = _repo(p), p["name"]
     if p["kind"] == "npm":
         # BROWSER=none: CRA opens the browser on first compile - the sim
         # stays headless, `--open-web` does it on demand
         cmd = "export BROWSER=none\nexec '%s' start -- %s" \
             % (_npm(), _marker(stack))
-    elif p["kind"] == "exec":
+    else:
         cmd = "exec '%s' %s" % (os.path.join(repo, p["bin"]),
                                 _marker(stack))
-    else:
-        cmd = "exec '%s' ./src/server.js %s" % (simlib.NODE,
-                                                _marker(stack))
     path = os.path.join(_stack_dir(stack), f"launch.{proc}.sh")
     simlib.write_text(path,
                       "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%s\n"
@@ -286,15 +282,12 @@ def _check_repo(stack, p):
             raise simlib.SimError(
                 f"{proc}: no react-scripts under {repo}/node_modules - "
                 "run npm install there")
-    elif p["kind"] == "exec":
+    else:
         b = os.path.join(repo, p["bin"])
         if not (os.path.isfile(b) and os.access(b, os.X_OK)):
             raise simlib.SimError(
                 f"{proc}: no executable {p['bin']} under {repo} - "
                 f"cd {repo} && cargo build --release (or {hint})")
-    elif not os.path.isfile(os.path.join(repo, "src", "server.js")):
-        raise simlib.SimError(
-            f"{proc}: no src/server.js under {repo} - {hint}")
 
 
 def up(stack="de_servers", fresh=False):

@@ -7,3 +7,5 @@ procs:
   - name: de_server
     repo_env: DE_SERVER_DIR
     repo: droneengage_server
+    kind: exec
+    bin: target/release/andruavmainserver
