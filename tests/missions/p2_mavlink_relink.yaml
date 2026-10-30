@@ -1,0 +1,24 @@
+# missions/p2_mavlink_relink - DE-0035 focused repro: restart de_mavlink
+# and prove the unit re-links to the FC inside a bound. On an android
+# remote_modules unit (declared, or the SIM_ANDROID_MODULES env hook)
+# de_mavlink's fcb_connection_uri goes through the unit's fcb proxy,
+# whose "new client replaces the old session" accept is immune to the
+# stale ESTABLISHED socket SITL's single-client serial TCP keeps after a
+# kill - a direct dial loops on refused connects forever there.
+version: 1
+name: p2_mavlink_relink
+transport: fake
+settle_s: 10
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 10, fault: restart, unit: c1, proc: de_mavlink}
+  - {t: 15, do: wait_log, unit: c1, module: de_mavlink,
+     re: "Mavlink Connected", timeout: 90}
+  - {t: 25, fault: restart, unit: c1, proc: de_mavlink}
+  - {t: 30, do: wait_log, unit: c1, module: de_mavlink,
+     re: "Mavlink Connected", timeout: 90}
+assert:
+  - module_log_count: {unit: c1, module: de_mavlink,
+                       re: "Mavlink Connected", at_least: 2}
+teardown: land

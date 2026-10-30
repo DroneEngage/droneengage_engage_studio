@@ -1682,14 +1682,6 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         px = entry.get("fcb_proxy")
         if px is None:
             px = bool(sim.get("fcb_proxy"))
-        # SL-0095: a phone-side de_mavlink always dials through the
-        # proxy - SITL's serial TCP listener is single-client and keeps
-        # the killed module's socket ESTABLISHED, so a restarted remote
-        # module can never re-dial SITL directly; the proxy is a stable
-        # host-side hop it can reconnect to freely
-        if not px and "de_mavlink" in (
-                (entry.get("android") or {}).get("remote_modules") or []):
-            px = True
         if px or link_kind in ("pty", "host_serial", "bt_spp", "udp") \
                 or (link_kind == "tcp" and fc_client == "external"):
             # a serial/udp link only fronts the proxy - it cannot
@@ -1761,6 +1753,19 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         u["android"] = {"serial": None, "remote_modules": remote,
                         "mode": "sim", "net": "auto",
                         "device_ip": None, "clock_offset_ms": 0}
+    # SL-0095: a phone-side de_mavlink always dials through the
+    # proxy - SITL's serial TCP listener is single-client and keeps
+    # the killed module's socket ESTABLISHED, so a restarted remote
+    # module can never re-dial SITL directly; the proxy is a stable
+    # host-side hop it can reconnect to freely. Checked on the resolved
+    # u["android"] so the SIM_ANDROID_MODULES env hook above - which
+    # lands after the fc resolve - is covered as well as a spec-declared
+    # android: unit (DE-0035).
+    if u["fc"] and not u["fc"].get("fcb_proxy") \
+            and "de_mavlink" in (
+                (u.get("android") or {}).get("remote_modules") or []):
+        u["fc"]["fcb_proxy"] = {"port": 7760 + 10 * slot,
+                                "ctrl": 7860 + 10 * slot}
     return u
 
 
