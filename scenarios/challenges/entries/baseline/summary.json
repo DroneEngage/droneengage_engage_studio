@@ -1,6 +1,6 @@
 {
   "scenario": "sar_challenge_baseline",
-  "file": "/mnt/8a619ce7-cd3f-4520-af65-7991f16410f7/public_versions/drone_engage/droneengage_simulation_land/scenarios/challenges/entries/baseline/scenario.yaml",
+  "file": "/mnt/8a619ce7-cd3f-4520-af65-7991f16410f7/public_versions/drone_engage/droneengage_studio/scenarios/challenges/entries/baseline/scenario.yaml",
   "seed": 11,
   "started_utc": "2026-10-21T01:01:16Z",
   "wall_s": 282.3,

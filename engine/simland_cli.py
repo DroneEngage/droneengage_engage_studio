@@ -21,7 +21,7 @@ def main():
     if not path:
         sys.exit("sim-land: no `sim` front-end found - run from an "
                  "editable install of the checkout (pip install -e .) "
-                 "or set SIM_ROOT to the simulation_land directory")
+                 "or set SIM_ROOT to the droneengage_studio directory")
     sys.argv[0] = path
     runpy.run_path(path, run_name="__main__")
 

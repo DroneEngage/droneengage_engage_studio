@@ -7,7 +7,7 @@ Companion docs, written in parallel:
 
 - `droneengage_server/wiki/PluginEvents.md`: read-only server event hooks
   and the sim plugin that streams them (task 1).
-- `droneengage_simulation_land/docs/port_allocation.md`: the
+- `droneengage_studio/docs/port_allocation.md`: the
   `port_allocation_management` registry and the per-sim manifest (task 2).
 
 This doc was first written against the interfaces sketched before

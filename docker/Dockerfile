@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 #
-# droneengage_simulation_land - all-in-one scenario playground image.
+# droneengage_studio - all-in-one scenario playground image.
 #
 #   docker build -f docker/Dockerfile -t de-sim .
 #   docker run -it --network host de-sim view docker/canopy_quickstart.yaml
@@ -130,7 +130,7 @@ RUN python3 -m venv /opt/venv \
 ENV PATH="/opt/venv/bin:/usr/local/bin:${PATH}"
 
 # the sim engine itself (build context = this repo)
-WORKDIR /opt/de_code/droneengage_simulation_land
+WORKDIR /opt/de_code/droneengage_studio
 COPY . .
 
 # fetched / built dependencies laid out the way sim.local.env expects
@@ -166,7 +166,7 @@ RUN printf '%s\n' \
 # stubs use (6544/6545/6546), so the image points DE_DATABUS_DIR at the
 # vendored, identical client this repo already ships for the RPi tools.
 RUN mkdir -p /opt/de_code/de_databus \
- && ln -s ../droneengage_simulation_land/tools/rpi/de_databus_py \
+ && ln -s ../droneengage_studio/tools/rpi/de_databus_py \
         /opt/de_code/de_databus/python
 
 # The public de_mavlink has no nav adapter, so 'nav adapter hello' is
@@ -180,7 +180,7 @@ RUN sed -i 's/^  ready_re: "nav adapter hello"$/  ready_log_re: "Communicator Se
  && grep -q 'ready_log_re: "Communicator Server Found"' \
         modules/catalog.yaml
 
-COPY docker/entrypoint.sh /opt/de_code/droneengage_simulation_land/docker/entrypoint.sh
+COPY docker/entrypoint.sh /opt/de_code/droneengage_studio/docker/entrypoint.sh
 RUN chmod +x docker/entrypoint.sh sim stubs/*.py
-ENTRYPOINT ["/opt/de_code/droneengage_simulation_land/docker/entrypoint.sh"]
+ENTRYPOINT ["/opt/de_code/droneengage_studio/docker/entrypoint.sh"]
 CMD ["view", "docker/canopy_quickstart.yaml"]

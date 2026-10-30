@@ -158,7 +158,7 @@ de_gpio:
 # same way via blocks/<name>/catalog.yaml.
 
 stub_ai_box:
-  repo: droneengage_simulation_land
+  repo: droneengage_studio
   bin: stubs/stub_ai_box.py
   template: stub.json
   port_base: 58000
@@ -168,7 +168,7 @@ stub_ai_box:
   local: {file: stub_ai_box.local}
 
 stub_sdr:
-  repo: droneengage_simulation_land
+  repo: droneengage_studio
   bin: stubs/stub_sdr.py
   template: stub.json
   port_base: 59000
@@ -177,7 +177,7 @@ stub_sdr:
   local: {file: stub_sdr.local}
 
 stub_payload:
-  repo: droneengage_simulation_land
+  repo: droneengage_studio
   bin: stubs/stub_payload.py
   template: stub.json
   port_base: 60000
@@ -190,7 +190,7 @@ stub_payload:
 # detection is geometric: world `pad` entities + the vehicle pose feed
 # decide what the downward camera sees. No v4l2, no scene files.
 stub_precland:
-  repo: droneengage_simulation_land
+  repo: droneengage_studio
   bin: stubs/stub_precland.py
   template: stub.json
   port_base: 55000
@@ -207,7 +207,7 @@ stub_precland:
 # length, so started/finished facts stay deterministic on a host
 # without a sound card; loop_max_s 5 keeps the loop-limit check fast.
 de_sound:
-  repo: droneengage_simulation_land
+  repo: droneengage_studio
   bin: modules/bin/de_sound.sh
   template: de_snd.sim.json
   port_base: 54000

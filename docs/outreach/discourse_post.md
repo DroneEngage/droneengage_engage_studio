@@ -1,6 +1,6 @@
 # Discourse post draft — for the human to adapt/post
 
-> Title: *Simulation land: rehearse drone missions like software —
+> Title: *DroneEngage Studio: rehearse drone missions like software —
 > scenarios, seeded ground truth, POD grading*
 
 Hi all — we've been building a public scenario playground for

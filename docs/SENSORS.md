@@ -99,7 +99,7 @@ the fleet `cls:` and the module lands in `add_modules:` via
 
 ```yaml
 stub_demo_range:
-  repo: droneengage_simulation_land
+  repo: droneengage_studio
   bin: stub_demo_range.py        # resolves inside this block dir
   template: stub.json            # falls back to modules/templates/
   port_base: 62000

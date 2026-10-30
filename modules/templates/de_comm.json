@@ -24,7 +24,7 @@
     "accessCode"                : "sim1234",
     "unitID"                    : "sim_unit",
     "groupID"                   : "1",
-    "unitDescription"           : "droneengage_simulation_land unit",
+    "unitDescription"           : "droneengage_studio unit",
 
     "logger_enabled"            : false,
     "logger_debug"              : false,

@@ -1,4 +1,4 @@
-# DroneEngage Simulation Land — User Guide
+# DroneEngage Studio — User Guide
 
 Fly simulated drones on your own computer. No drone, no radio, no risk.
 

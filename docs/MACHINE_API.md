@@ -163,7 +163,7 @@ That file is the full run report:
 ```json
 {"scenario": "smoke_copters", "file": "...yaml", "seed": 1,
  "started_utc": "2026-10-12T15:48:10Z", "wall_s": 240.1,
- "commits": {"droneengage_simulation_land": "...", "...": "..."},
+ "commits": {"droneengage_studio": "...", "...": "..."},
  "speedup": {...}, "speedup_requested": 1,
  "realtime": {"required": false, "ok": true, "note": ""},
  "step_ok": true,

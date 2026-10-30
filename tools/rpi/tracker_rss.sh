@@ -32,7 +32,7 @@ CLIP="$RUN_DIR/clip.mp4"
 LOCK_WINDOW_S="${LOCK_WINDOW_S:-300}"
 CYCLES="${CYCLES:-10}"
 # de_databus python client (contains de_module.py) for bus_agent.py
-DE_DATABUS_PY="${DE_DATABUS_PY:-$HOME/droneengage_simulation_land/tools/rpi/de_databus_py}"
+DE_DATABUS_PY="${DE_DATABUS_PY:-$HOME/droneengage_studio/tools/rpi/de_databus_py}"
 # onnxruntime C++ lib dir for de_perceive (libonnxruntime.so.*) - empty if
 # the binary already resolves its libs.
 ORT_LIB="${ORT_LIB:-}"

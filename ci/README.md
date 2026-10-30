@@ -75,6 +75,6 @@ Runner labels: `self-hosted, linux, sitl`.
 
 Or a cron on a dedicated machine:
 
-    17 2 * * * cd ~/de_code/droneengage_simulation_land && ./sim down && \
+    17 2 * * * cd ~/de_code/droneengage_studio && ./sim down && \
         python3 ci/run_suite.py --roots tests --seeds 1,2,3 \
         >> var/results/nightly/cron.log 2>&1

@@ -25,7 +25,7 @@ the WebClient.
 ## Run
 
 ```bash
-cd droneengage_simulation_land
+cd droneengage_studio
 
 # 1. WebClient dev server (separate terminal, leave running)
 cd ../droneengage_webclient_react

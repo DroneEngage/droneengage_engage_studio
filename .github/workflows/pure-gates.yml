@@ -102,7 +102,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: droneengage_simulation_land
+          path: droneengage_studio
 
       - name: webclient (verifier sources)
         uses: actions/checkout@v4
@@ -129,7 +129,7 @@ jobs:
         run: npm install --no-save --no-audit --no-fund typescript
 
       - name: verify-gate ops blocked with declared rules
-        working-directory: droneengage_simulation_land
+        working-directory: droneengage_studio
         env:
           DE_WEBCLIENT_DIR: ${{ github.workspace }}/droneengage_webclient_react
         run: |

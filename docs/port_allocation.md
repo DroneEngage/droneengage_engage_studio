@@ -334,7 +334,7 @@ Docker (decided: keep it simple, warn only, never require):
   "kind": "free",                           // free | block | prefer | pin
   "block": null,                            // {"base": 20410, "size": 10} for block members
   "sim": "copters3_faults",
-  "worktree": "/home/you/de_code/droneengage_simulation_land",
+  "worktree": "/home/you/de_code/droneengage_studio",
   "name": "server.hq.wss",                  // hierarchical; see section 4
   "state": "reserved",                      // reserved -> bound -> (released)
   "holder": {"pid": 81234, "start": 991223344},  // the ./sim up process during bring-up
