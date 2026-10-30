@@ -119,6 +119,24 @@ AUTH_REPO = repo_dir("DE_AUTH_DIR", "droneengage_authenticator")
 UDP_RELAY_REPO = repo_dir("DE_UDP_RELAY_DIR", "droneengage_udp_proxy")
 STORAGE_REPO = repo_dir("DE_STORAGE_DIR", "droneengage_storage_server")
 WEBCLIENT_REPO = repo_dir("DE_WEBCLIENT_DIR", "droneengage_webclient_react")
+# SL-0144: the servers are Rust 1:1 replacements of the old node ones
+# (same config files, server.config.local merge, env overrides, ports
+# and endpoints; the old code stays on each repo's
+# pr_nodejs_last_version branch). `cargo build --release` in the repo
+# produces <repo>/target/release/<binary>; every binary takes
+# --config=<file> and ignores unknown args, so the --sim_run /
+# --<stack> pid markers keep working.
+SERVER_BINS = {
+    "de_auth": "andruavauth",
+    "de_server": "andruavmainserver",
+    "de_storage": "de_storage_server",
+    "udp_relay": "droneengage-udp-proxy",
+}
+
+
+def server_bin(repo, name):
+    """A server repo's built binary: <repo>/target/release/<name>."""
+    return os.path.join(repo, "target", "release", name)
 # P5-14: Mavlink3DMap2 lives inside the DE_CODE tree; only needed for
 # render modes that launch the viewer
 MAVLINK3DMAP_DIR = setting("MAVLINK3DMAP_DIR",
@@ -2811,16 +2829,17 @@ def gen_unit(u, sim, catalog):
     u.pop("parm_files", None)
 
 
-def _node_script(sim, repo, name, cfg):
-    """Launch script for a node server: run in its repo (node_modules,
-    plugins and the --config path are resolved there); the extra
-    --sim_run arg is ignored by the server but marks the pid as ours."""
+def _server_script(sim, repo, name, cfg):
+    """Launch script for a Rust server: run in its repo (ssl_local/ and
+    the --config path are resolved there); the extra --sim_run arg is
+    ignored by the binary but marks the pid as ours."""
     rel = os.path.relpath(cfg, repo)
     path = os.path.join(server_dir(sim["name"]), f"launch.{name}.sh")
     write_text(path,
                "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n"
-               "exec '%s' ./src/server.js --config=%s --sim_run=%s\n"
-               % (repo, pid_path(sim["name"], "server", name), NODE, rel,
+               "exec '%s' --config=%s --sim_run=%s\n"
+               % (repo, pid_path(sim["name"], "server", name),
+                  server_bin(repo, SERVER_BINS[name]), rel,
                   run_dir(sim["name"])), 0o755)
     return path
 
@@ -2891,7 +2910,7 @@ def gen_server(sim):
         })
         cfg = os.path.join(sdir, "de_auth.config")
         write_json(cfg, acfg)
-        _node_script(sim, AUTH_REPO, "de_auth", cfg)
+        _server_script(sim, AUTH_REPO, "de_auth", cfg)
         procs.append("de_auth")
 
     scfg = load_config(os.path.join(SERVER_REPO, "server.config"))
@@ -2920,10 +2939,11 @@ def gen_server(sim):
         # comm server then routes 9008 pair opens to it (`udp_relay` in
         # its config). Started before de_server so the client connects
         # on the first try.
-        if not os.path.isdir(
-                os.path.join(UDP_RELAY_REPO, "node_modules", "ws")):
-            raise SimError(f"{UDP_RELAY_REPO}: run `npm install` there "
-                           "first (the relay needs its ws dependency)")
+        if not os.path.isfile(
+                server_bin(UDP_RELAY_REPO, SERVER_BINS["udp_relay"])):
+            raise SimError(f"{UDP_RELAY_REPO}: run `cargo build "
+                           "--release` there first (the relay binary "
+                           "is missing)")
         secret_path = os.path.join(sdir, "udp_relay_s2s_secret.key")
         write_text(secret_path, secrets.token_hex(32) + "\n")
         os.chmod(secret_path, 0o600)
@@ -2952,7 +2972,7 @@ def gen_server(sim):
         })
         cfg = os.path.join(sdir, "udp_relay.config")
         write_json(cfg, rcfg)
-        _node_script(sim, UDP_RELAY_REPO, "udp_relay", cfg)
+        _server_script(sim, UDP_RELAY_REPO, "udp_relay", cfg)
         procs.append("udp_relay")
         scfg["udp_relay"] = [{
             "host": "127.0.0.1", "port": urelay["port"],
@@ -2962,7 +2982,7 @@ def gen_server(sim):
 
     cfg = os.path.join(sdir, "de_server.config")
     write_json(cfg, scfg)
-    _node_script(sim, SERVER_REPO, "de_server", cfg)
+    _server_script(sim, SERVER_REPO, "de_server", cfg)
     procs.append("de_server")
 
     # one persistent GCS session on the real server, exposing the same
@@ -2977,11 +2997,12 @@ def binaries_needed(sim, catalog):
                              or []) for u in sim["units"]):
         out.add(resolve_bin("de_comm"))
     if sim["server"]["type"] == "real":
-        out.add(os.path.join(SERVER_REPO, "src", "server.js"))
+        out.add(server_bin(SERVER_REPO, SERVER_BINS["de_server"]))
         if sim["server"]["auth"]:
-            out.add(os.path.join(AUTH_REPO, "src", "server.js"))
+            out.add(server_bin(AUTH_REPO, SERVER_BINS["de_auth"]))
         if sim["server"].get("udp_relay"):
-            out.add(os.path.join(UDP_RELAY_REPO, "src", "server.js"))
+            out.add(server_bin(UDP_RELAY_REPO,
+                              SERVER_BINS["udp_relay"]))
     for u in sim["units"]:
         remote = set((u.get("android") or {}).get("remote_modules") or [])
         for m in u["modules"]:
@@ -2997,9 +3018,14 @@ def check_binaries(sim):
     missing = [b for b in binaries_needed(sim, load_catalog())
                if not os.path.isfile(b)]
     if missing:
+        # server repos build with cargo, not sim.local.env keys
+        lines = [b + ("   # cd %s && cargo build --release"
+                      % b.split("/target/release/")[0]
+                      if "/target/release/" in b else "")
+                 for b in missing]
         raise SimError("missing binaries - build them, or point sim.local.env "
                        "at them (see sim.local.env.example):\n  "
-                       + "\n  ".join(missing))
+                       + "\n  ".join(lines))
 
 
 def _render_script(sim, proc, cwd, cmd):
