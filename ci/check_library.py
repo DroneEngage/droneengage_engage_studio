@@ -73,9 +73,14 @@ for f in yamls:
         fail("schema", f, "`sim:`+`steps:` is the removed legacy format "
              "(SL-0020) - rewrite as de.scenario/1")
         continue
-    if f.startswith(os.path.join(ROOT, "sims") + os.sep):
-        continue                    # sims/*.yaml are fleet specs, not
-                                    # de.scenario/1 - resolved by ./sim show
+    if f.startswith(os.path.join(ROOT, "sims") + os.sep) or \
+            scenario.is_sim_spec(raw):
+        continue                    # fleet specs are not de.scenario/1:
+                                    # sims/*.yaml by convention; shared
+                                    # specs (phone_caps/phone_stack.yaml)
+                                    # sit next to the tests that
+                                    # `sim: {base:}` them - ./sim show
+                                    # resolves them
     try:
         scenario.load_scenario(f, seed=1, probe_ports=False)
     except SystemExit as e:

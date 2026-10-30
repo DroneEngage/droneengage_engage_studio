@@ -46,6 +46,7 @@ sys.pycache_prefix = os.environ.setdefault(
 
 sys.path.insert(0, os.path.join(ROOT, "engine"))
 import simlib          # noqa: E402
+import scenario        # noqa: E402
 
 RESULTS = simlib.RESULTS_DIR
 
@@ -60,9 +61,12 @@ def yaml_files(roots, tier=None, task=None):
     """Every *.yaml under each root - except opt-in dirs: a */soak/ dir
     holds wall-clock runs (tests/soak is 30 min at speed-up 1) and a
     */experimental/ dir holds tests excluded from release gating; both
-    run only via an explicit --roots <path>/<name>. `tier` keeps only
-    files whose `tier:` key matches (absent = regression); `task` keeps
-    only files whose `tasks:` list carries the TeamEngage id (SL-0137)."""
+    run only via an explicit --roots <path>/<name>. Fleet specs
+    (units-only files a scenario names via `sim: {base:}` - e.g.
+    tests/**/phone_stack.yaml) are dropped too: they are not run files.
+    `tier` keeps only files whose `tier:` key matches (absent =
+    regression); `task` keeps only files whose `tasks:` list carries
+    the TeamEngage id (SL-0137)."""
     out = []
     for r in roots:
         d = os.path.join(ROOT, r)
@@ -75,6 +79,8 @@ def yaml_files(roots, tier=None, task=None):
                      if not set(_OPT_IN_DIRS)
                      & set(os.path.relpath(f, d).split(os.sep))]
         out += files
+    out = [f for f in out
+           if not scenario.is_sim_spec(simlib.load_yaml(f) or {})]
     if tier:
         out = [f for f in out
                if (simlib.load_yaml(f) or {}).get("tier", "regression")
