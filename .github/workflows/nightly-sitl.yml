@@ -11,9 +11,12 @@
 # MUST run on a machine that owns the machine: self-hosted runner with
 # the full DroneEngage workspace checked out as siblings of this repo
 # (de_code layout), the sibling binaries built (de_comm, de_mavlink,
-# de_server, de_camera...), ArduPilot SITL installed, and nothing else
-# bound to the sim port ranges. See ci/README.md. It is NOT a
-# GitHub-hosted job.
+# de_camera...), a Rust toolchain (rustup) and `cargo build --release`
+# done in the server repos (they pull droneengage_server_common from
+# the private DroneEngage/droneengage_server_common repo - the runner
+# needs read access: SSH key or SERVER_COMMON_PAT), ArduPilot SITL
+# installed, and nothing else bound to the sim port ranges. See
+# ci/README.md. It is NOT a GitHub-hosted job.
 name: nightly-sitl
 on:
   schedule:

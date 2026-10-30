@@ -56,10 +56,18 @@ The job assumes a machine that may own the machine:
 
 - the `de_code` sibling layout: this repo plus `droneengage_webclient_react`,
   `droneengage_communication`, `droneengage_mavlink`, `droneengage_server`,
-  `droneengage_authenticator` checked out side by side (or the `DE_*_DIR`
-  env vars set),
-- sibling binaries built (`de_comm`, `de_mavlink`, `de_server`,
-  `de_camera` for camera blocks),
+  `droneengage_authenticator`, `droneengage_udp_proxy`,
+  `droneengage_storage_server` checked out side by side (or the
+  `DE_*_DIR` env vars set),
+- sibling binaries built (`de_comm`, `de_mavlink`, `de_camera` for
+  camera blocks),
+- a Rust toolchain (rustup) and `cargo build --release` done in
+  `droneengage_server` and `droneengage_authenticator` (plus
+  `droneengage_udp_proxy` / `droneengage_storage_server` when the
+  suites that spawn them run); the builds pull
+  `droneengage_server_common` from the private
+  DroneEngage/droneengage_server_common repo, so the machine needs
+  read access to it (an SSH key git can use, or a SERVER_COMMON_PAT),
 - ArduPilot SITL reachable via `sim.local.env` / env settings,
 - `sim.local.env` copied and filled in,
 - nothing else bound to the sim port ranges; the workflow `./sim down`s
