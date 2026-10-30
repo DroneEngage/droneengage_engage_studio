@@ -388,7 +388,7 @@ between the reservation and the bind. Mitigations, in order:
    then fail with a message naming the foreign process (from `ss -lptn`).
 
 Handing already-bound sockets to child processes (fd passing) was
-considered and rejected: SITL, the C++ modules, and the node servers
+considered and rejected: SITL, the C++ modules, and the Rust servers
 can't adopt an inherited socket.
 
 ---

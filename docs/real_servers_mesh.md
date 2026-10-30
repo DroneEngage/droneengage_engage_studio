@@ -41,6 +41,13 @@ resolved, and the mismatches still open.
 These facts constrain the design. Each was checked against the code, not
 the README.
 
+> Since SL-0144 the servers are the Rust 1:1 ports — a node runs as its
+> repo's release binary, `./target/release/<name> --config=<file>`,
+> built with `cargo build --release` in the checkout. Code citations
+> below (`src/server.js`, `js_*.js`) refer to the Node originals, kept
+> on each repo's `pr_nodejs_last_version` branch for reference; the
+> behaviour they describe is unchanged.
+
 | Fact | Where | Consequence for the sim |
 |---|---|---|
 | Parent role: `enable_super_server: true` opens a **separate wss listener** on `s2s_super_server_ip:s2s_super_server_port`, using the same `ssl_key_file`/`ssl_cert_file` | `src/server.js:186`, `js_parent_comm_server.js:_startServer` | A parent needs a second allocated port (`<name>.s2s`) |
@@ -107,9 +114,9 @@ Node types:
 
 | type | Process | Notes |
 |---|---|---|
-| `comm` | `droneengage_server/src/server.js` | Parent automatically when any node or unit has `relay_to: <it>` (`enable_super_server`); child when it has `relay_to` (`enable_persistant_relay`); can be both |
-| `storage` | `droneengage_storage_server` | Shared-secret mode by default (`s2s_cert_enabled: false`), with a per-run secret file. `ed25519: true` switches to cert mode using the comm servers' per-run public keys |
-| `auth` | `droneengage_authenticator` | As today: `single` account, `s2s_auth_enabled: false` |
+| `comm` | `droneengage_server` (`target/release/andruavmainserver`) | Parent automatically when any node or unit has `relay_to: <it>` (`enable_super_server`); child when it has `relay_to` (`enable_persistant_relay`); can be both |
+| `storage` | `droneengage_storage_server` (`target/release/de_storage_server`) | Shared-secret mode by default (`s2s_cert_enabled: false`), with a per-run secret file. `ed25519: true` switches to cert mode using the comm servers' per-run public keys |
+| `auth` | `droneengage_authenticator` (`target/release/andruavauth`) | As today: `single` account, `s2s_auth_enabled: false` |
 | `external` | none | A stack the user runs themself. Only valid as the `gcs:` node, and nothing may `relay_to` it unless the user's server trusts our key (section 3.4) |
 | `fake` | `engine/fake_fleet_server.py` | Message-level loss, clock skew, `noclock`. Can't take part in a mesh or storage (it speaks neither S2S nor storage) |
 
@@ -248,8 +255,8 @@ generator per type. Each writes `var/run/<sim>/server/<node>/` (or
   `s2s_shared_secret_file`, ssl paths from the storage repo's
   `ssl_local/ssl_airgap`. New `sim.local.env` key: `DE_STORAGE_DIR` →
   `$DE_CODE/droneengage_storage_server`, with `STORAGE_REPO` resolved
-  like `SERVER_REPO`/`AUTH_REPO`; `check_binaries` adds its
-  `src/server.js` when needed.
+  like `SERVER_REPO`/`AUTH_REPO`; `check_binaries` adds its release
+  binary (`target/release/de_storage_server`) when needed.
 - **`_gen_auth(node)`**: today's authenticator block, moved as is, ports
   from leases.
 - **`_gen_comm(node)`**: today's `scfg.update` block plus:

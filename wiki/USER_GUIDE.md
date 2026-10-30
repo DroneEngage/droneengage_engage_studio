@@ -39,7 +39,7 @@ already exist on your machine:
 | Python 3 packages | `pip install websockets pymavlink pyyaml` | everything |
 | ArduPilot SITL built | in your ardupilot checkout: `./waf configure --board sitl && ./waf copter plane rover` | any flying vehicle |
 | `de_comm` + `de_ardupilot` binaries | `./build.sh` in their repos (`droneengage_communication`, `droneengage_mavlink`) | every unit |
-| `node` + `npm install` | in `droneengage_server` (and `droneengage_authenticator` for login tests) | the server |
+| Rust toolchain + `cargo build --release` | via rustup, then in `droneengage_server` (and `droneengage_authenticator` for login tests) | the server |
 
 Other DroneEngage modules (camera, tracker, ...) are only needed if a
 block uses them. If something is missing, `./sim up` stops early and

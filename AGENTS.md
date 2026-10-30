@@ -10,7 +10,10 @@ file covers what is specific to this repo. `README.md` is the user-facing
 reference.
 
 Python 3 only (`websockets`, `pymavlink`, `pyyaml`). The repo has no build
-step. It launches binaries and node servers from the sibling repos.
+step. It launches binaries from the sibling repos (the servers are the
+Rust ports - `<repo>/target/release/<name>` after
+`cargo build --release`; the old Node code stays on each repo's
+`pr_nodejs_last_version` branch for reference).
 
 ## When to use it
 

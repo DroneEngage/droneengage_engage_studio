@@ -8,7 +8,8 @@ sim sets `server: {type: fake}`; the default is the real droneengage_server.
 Grows Phase-2 tools/fake_comm_server.py from one client to a fleet: N de_comm
 connect over wss, get registered by their de_auth frame (s=party_id,
 at='d'|'g'), and every message is routed by `tg` with the same rules as the
-real server (droneengage_server js_chat_routing.js):
+real server (droneengage_server js_chat_routing.js - the Node original,
+kept on the repo's pr_nodejs_last_version branch):
 
     tg "_GCS_" -> all GCS          tg "_GD_"  -> everyone
     tg "_AGN_" -> all drones       tg <party> -> that unit only

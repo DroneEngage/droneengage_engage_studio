@@ -128,8 +128,9 @@ The machine also needs:
 - ArduPilot SITL built (`./waf configure --board sitl && ./waf copter plane rover`).
 - `de_comm` and `de_ardupilot` built (`bin/` in their repos). Other modules
   are only needed when a block uses them.
-- `npm install` done in `droneengage_server` and `droneengage_authenticator`.
-  `node` must be on PATH, or set `NODE`.
+- `cargo build --release` done in `droneengage_server` and
+  `droneengage_authenticator` (plus `droneengage_udp_proxy` for
+  `udp_relay:` sims) - a Rust toolchain, e.g. via rustup.
 - `pip install websockets pymavlink pyyaml`, and `openssl` (fake server only).
 
 No root needed. Servers and modules use 127.0.0.1. de_comm's s2s UDP port

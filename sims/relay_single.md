@@ -12,7 +12,8 @@ Requirements:
   GL-0063+ relay client — until the chain merges that is the
   `_wt/droneengage_server-GL-0063` worktree.
 - `DE_UDP_RELAY_DIR` (sim.local.env) points at the `droneengage_udp_proxy`
-  checkout with `npm install` done.
+  checkout with `cargo build --release` done
+  (`target/release/droneengage-udp-proxy` must exist).
 
 ## Run
 
