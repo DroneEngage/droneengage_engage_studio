@@ -5,8 +5,14 @@
 # all_of barrier can release. The FC-side hold (LOITER_TIME 75 s) expires
 # and every unit falls through to its gate contingency (RTL) - the
 # documented "hold until the FC backstop" path.
+# realtime: the cut must land mid-leg, before ANY unit emits
+# staging.ready (a latched emit survives the peer going LOST); `do:
+# start` returns when the started replies land, so wait+cut lands ~15 s
+# into a ~45-50 s leg. (do: opstart waits out a ~40 s reply window -
+# at speedup the leg is already over and the gate releases by cond.)
 version: 1
 name: p4a10_barrier_hold
+realtime: true
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4a10_searcher_hold.deploy.json
 fleet:
@@ -20,8 +26,9 @@ timeline:
   - {t: 0, do: mode, unit: all, mode: GUIDED}
   - {t: 0, do: deploy}
   - {t: 0, do: arm, unit: all}
-  - {t: 0, do: opstart}
-  - {t: 0, do: wait, seconds: 10}
+  - {t: 0, do: start}
+  - {t: 0, do: wait, seconds: 10} # rosters already flow from READY; the
+                                # cut lands mid-leg, before any emit
   - {t: 0, fault: link_cut, unit: 1, dur_s: 300}
   # gate entered ~35-50 s in; the 75 s loiter then ends -> contingency
   - {t: 0, do: wait_journal, unit: 2, re: "timed out -> rtl", timeout: 240}
