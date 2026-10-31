@@ -168,6 +168,12 @@ the sim up fresh. Several tests can share one sim and run back to back without
 restarting SITL. Handed a bare `sims/*.yaml` file instead of a test, `run`
 (and `view`) just ensure the sim is up - there are no steps to execute.
 
+File arguments take a bare name too: `./sim up copters3` (or
+`copters3.yaml`) finds `sims/copters3.yaml`; `run`/`view`/`validate` also
+search `tests/**` and `scenarios/**`. A name that matches files in more
+than one directory prints a numbered list to pick from (a hard error
+when stdin is not a tty). A path with `/` is always used as given.
+
 ## Blocks - reusable unit types
 
 `blocks/<name>/block.yaml`, plus optional per-module config overlays in the
@@ -228,8 +234,8 @@ units:
   - {block: plane, name: plane1, at: {east_m: 60}}
   - block: camera_fixed
     name: tower1
+    cameras: [DE-CAM2]               # binds that pool label; cameras: 2 = two auto labels
     at: {north_m: -50, east_m: 30}
-    config: {de_camera: {camera: {camera_start_index: 3, camera_end_index: 3}}}
   - {block: copter, name: quad1,
      account: {user: "{name}@sim.droneengage.com", code: sim1234}}  # own login
 ```

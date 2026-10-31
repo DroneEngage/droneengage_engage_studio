@@ -182,6 +182,12 @@ wss 62008, control 62009, authenticator +10/+11. The opt-in link proxy
 and `61501+10k` (fault control port). Keep `slot_base` >= 10 so
 sim ports never collide with the developer's own servers.
 
+A unit can run several instances of the same module (SL-0163
+`cameras:`; SL-0165 `ctl add_module`): instance `i` (1-based,
+`de_camera` = 1, `de_camera{i}` after) takes `port_base + 10k +
+2*(i-1)` — the odd offset under each instance stays that instance's
+SL-0010 udp_proxy port; max 5 instances per unit.
+
 ## Extending
 
 **New unit type → a block (no code).** `blocks/<name>/block.yaml`:
@@ -189,6 +195,19 @@ sim ports never collide with the developer's own servers.
     description: ...
     extends: copter            # optional
     add_modules: [de_camera]   # | modules: [...] | remove_modules: [...]
+    # `cameras:` on a unit runs that many de_camera instances (SL-0163):
+    #   cameras: 2                     # auto-binds next free DE-CAM labels
+    #   cameras: [DE-CAM1, 0, {label: DE-CAM3, name: front}]
+    # A de_camera unit with no `cameras:`/`camera:` selection defaults
+    # to one auto pool label. Devices come from the named pool, created
+    # once with root by tools/setup_v4l2loopback.sh (./sim vcam --pool,
+    # --persist for across reboots): DE-CAM1..10, DE-SRC/DE-AI render
+    # pairs, and the camera repo's named-VC labels - indices are
+    # kernel-picked so real webcams are never collided with./sim up
+    # <sim> --cam <dev> pins a single-camera sim to a real device or
+    # label; ./sim ctl add_module <unit> de_camera hot-adds an instance
+    # on a live unit (remove_module reverses; hot-added procs live in
+    # the manifest and survive a same-spec `sim up`).
     fc: {vehicle: copter|plane|rover, model: quad, params: {PARAM: value}}   # fc: null = no SITL
     config: {de_comm: {sv_comm_lost_s: 20}}
     location: {north_m: 0, east_m: 0}
@@ -202,7 +221,8 @@ extra SITL params in `blocks/<name>/sitl.parm`. Check the result with
 `port_base` (pick an unused range; slot ports must stay < 65535),
 `start_delay`, `needs_fc`, `local` (`arg: -b` only if the binary's getopt
 accepts it, otherwise `file:` in the cwd), `set`, `wire` (placeholders
-`{fcb_port} {pilot_port} {sysid} {comm_port} {port} {unit}`), and `ready_re`
+`{fcb_port} {pilot_port} {sysid} {comm_port} {port} {unit}` fill in
+both), and `ready_re`
 (a journal line proving the module is up; `sim up` waits for it). Add the
 `dir_env`/`bin_env` keys to `sim.local.env.example`.
 
@@ -243,6 +263,17 @@ and make `ctl.ctrl` refuse it for that server type.
 - **Only kill our own pids.** `simlib.pid_is_ours` matches only command
   lines containing `RUN_DIR`/`ENGINE_DIR`. Never `pkill` by binary name:
   the Phase-4A fleet and the developer's own servers use the same binaries.
+- **The engine stays unprivileged.** The only root step is the one-time
+  camera pool (`tools/setup_v4l2loopback.sh` / `./sim vcam --pool`) -
+  `sim up` never sudo's; camera sims fail fast naming the script on a
+  host without the pool.
+- **Feeds never touch real devices.** ffmpeg producers only stream into
+  sim-managed devices (pool/loopback/missing indices); a real webcam or
+  capture card is never written to, so `--cam 0` is safe.
+- **Feed before camera.** An `exclusive_caps` loopback advertises
+  CAPTURE only while a producer streams, so every bound index's feed
+  reaches CAPTURE before its de_camera instance launches (cold-start
+  and `add_module` alike).
 - **SITL must stay a child of its launch shell.** SITL exits when its
   parent dies, so `launch.sitl.sh` runs it with `&` and `wait`s, never
   `exec`. Every other launch script `exec`s and writes its own pidfile.

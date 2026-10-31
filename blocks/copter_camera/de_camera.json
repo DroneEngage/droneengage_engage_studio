@@ -1,6 +1,7 @@
 {
     // overlay on droneengage_camera/de_camera.config.module.json
+    // no camera: selection - the unit's `cameras:` spec binds a pool
+    // label (default: one auto-assigned DE-CAM device)
     "module_id": "SimCam",
-    "camera": { "camera_start_index": 2, "camera_end_index": 3 },
     "send_image_gcs": true
 }

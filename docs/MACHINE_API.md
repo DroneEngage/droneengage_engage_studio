@@ -45,6 +45,16 @@ The resolved sim — the same data `./sim show` prints as text:
 `fc` is `null` for units with no flight controller. Exit 0, or non-zero
 with a `SimError` text when the sim does not resolve.
 
+Camera bindings live under `units[].config.<proc>.camera.camera_list`
+— one entry per `de_camera` instance (`de_camera`, `de_camera2`, ...):
+`{"name": "CAM0", "key": "cam_0", "device_name": "DE-CAM1"}` for a pool
+label or `"device_num": N` for a real index. Instances listed via
+`cameras:` get suffix ports (`port_base + 10*slot + 2*(i-1)`). A
+manifest (`var/run/<sim>/sim.json`) additionally carries
+`units[].hot_added` — procs created by `./sim ctl add_module` that the
+spec itself does not declare; they survive a same-hash `sim up` reuse
+and are dropped on any spec-change restart.
+
 ## `./sim sims --json`
 
 Every generated sim (live or downed):
