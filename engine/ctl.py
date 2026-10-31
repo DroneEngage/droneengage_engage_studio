@@ -127,6 +127,10 @@ Module s2s faults (the unit's udp_proxy: [<module>] opt-in - a scenario
   udp_chunks <unit> <module> stats  the proxy's counters
 
 Processes:
+  add_module <unit> <mod> [--cam dev]  hot-add a module to a live unit
+                                    (de_camera allocates a free DE-CAM
+                                    label + feed); remove_module reverses
+  remove_module <unit> <proc>         kill a hot-added module + its feed
   kill <unit> <proc> | restart <unit> <proc> | start_proc <unit> <proc>
   freeze <unit> <proc> [s]          SIGSTOP the process - it stays alive
                                     (sockets open) but silent: a hang, not
@@ -163,6 +167,7 @@ Processes:
 
 import asyncio
 import base64
+import copy
 import hashlib
 import hmac
 import json
@@ -760,6 +765,132 @@ def owner_dir(owner):
     if not u:
         sys.exit(f"unknown unit {owner!r} (no generated sim has it)")
     return simlib.unit_dir(u)
+
+
+def add_module(uname, mod, cam_dev=None):
+    """SL-0165: hot-add a module to a live unit without restarting
+    SITL. Picks the next free instance name + port, generates its
+    config/launch artifacts; de_camera also allocates a free DE-CAM
+    label (or --cam dev), starts the feed and waits CAPTURE before the
+    proc (exclusive_caps needs a producer first). The manifest records
+    it under units[].hot_added - the spec hash stays unchanged, so a
+    later `sim up` reuses the live sim."""
+    sim_name = _ctx_name()
+    m = simlib.load_manifest(sim_name)
+    u = next((x for x in m["units"] if x["name"] == uname), None)
+    if not u:
+        sys.exit(f"no live unit {uname!r} in {sim_name}")
+    catalog = simlib.load_catalog()
+    base = simlib.module_base(mod, catalog)
+    if mod in ("de_comm", "sitl") or base not in catalog:
+        sys.exit(f"add_module: cannot hot-add {mod!r}")
+    if mod in u["modules"]:
+        sys.exit(f"{uname} already runs {mod}")
+    if base in ((u.get("android") or {}).get("remote_modules") or []):
+        sys.exit(f"add_module: {mod} is an android remote module - "
+                 "hot-add refused")
+    insts = [x for x in u["modules"]
+             if simlib.module_base(x, catalog) == base]
+    n = 1 + max((simlib.module_instance(x, catalog) for x in insts),
+                default=0)
+    proc = base if n == 1 else f"{base}{n}"
+    slot = (u["ports"]["de_comm"] - simlib.DE_COMM_PORT_BASE) // 10
+    port = simlib.instance_port(catalog[base]["port_base"], slot, n)
+    if port in set(u["ports"].values()):
+        sys.exit(f"add_module: port {port} is already claimed on {uname}")
+    binp = simlib.resolve_bin(proc, catalog[base])
+    if not os.path.isfile(binp):
+        sys.exit(f"add_module: binary {binp} does not exist")
+    # the instance inherits the base module's overlay; a config.<proc>
+    # entry would still win on top
+    u["config"][proc] = simlib.deep_merge(
+        copy.deepcopy(u["config"].get(base) or {}),
+        u["config"].get(proc) or {})
+    cfg = u["config"][proc]
+    if base == "de_camera":
+        dev = cam_dev or simlib.free_cam_label()
+        if not dev:
+            sys.exit("add_module: no free DE-CAM label in the pool")
+        camcfg = cfg.setdefault("camera", {})
+        for k in ("camera_start_index", "camera_end_index"):
+            camcfg.pop(k, None)
+            cfg.pop(k, None)
+        e = {"name": f"CAM{n - 1}", "key": f"cam_{n - 1}"}
+        if str(dev).isdigit():
+            e["device_num"] = int(dev)
+        else:
+            e["device_name"] = str(dev)
+        camcfg["camera_list"] = [e]
+        if n > 1:
+            cfg["module_id"] = \
+                f"{cfg.get('module_id') or 'de_camera'}{n}"
+    u["modules"].append(proc)
+    u["ports"][proc] = port
+    simlib.gen_module(u, m, proc, catalog)
+    fed = []
+    if base == "de_camera" and m.get("camera_feed"):
+        idxs = simlib.camera_feed_indices(u)
+        for idx in idxs:
+            fp = f"{u['name']}_{idx}"
+            simlib.gen_feed_script(m, fp, idx)
+            start_proc("feed", fp)
+            fed.append(fp)
+        # exclusive_caps: the producer must advertise CAPTURE before
+        # de_camera enumerates devices
+        t0 = time.time()
+        for idx in idxs:
+            while not simlib.video_capture_capable(idx):
+                if time.time() - t0 > 20:
+                    sys.exit(f"feed never opened /dev/video{idx}")
+                time.sleep(1)
+    start_proc(u["name"], proc)
+    mark = simlib.journal_mark(u)
+    rx = (catalog.get(base) or {}).get("ready_log_re")
+    if rx:
+        t0 = time.time()
+        while not simlib.log_match(u, proc, rx, mark):
+            if time.time() - t0 > 30:
+                print(f"{uname}.{proc}: no ready line - continuing")
+                break
+            time.sleep(1)
+    u.setdefault("hot_added", []).append(proc)
+    m["feed_procs"] = sorted(set(m.get("feed_procs") or []) | set(fed))
+    simlib.write_json(simlib.manifest_path(sim_name), m, indent=2)
+    print(f"{uname}.{proc}: added"
+          + (f" ({dev})" if base == "de_camera" else ""))
+
+
+def remove_module(uname, proc):
+    """reverse add_module: kill the proc and its feed(s), strip the
+    manifest entries (modules/ports/config/hot_added/feed_procs) and
+    leave the run-dir artifacts for post-mortem."""
+    sim_name = _ctx_name()
+    m = simlib.load_manifest(sim_name)
+    u = next((x for x in m["units"] if x["name"] == uname), None)
+    if not u or proc not in u["modules"]:
+        sys.exit(f"{uname} does not run {proc}")
+    if proc in ("de_comm", "sitl"):
+        sys.exit(f"remove_module: cannot remove {proc}")
+    # feed indices this proc drives - computed before stripping the
+    # module so the binding still resolves
+    idxs = simlib.camera_feed_indices(u) \
+        if simlib.module_base(proc) == "de_camera" else []
+    kill_proc(u["name"], proc)
+    killed_feeds = []
+    for idx in idxs:
+        fp = f"{u['name']}_{idx}"
+        if fp in (m.get("feed_procs") or []):
+            kill_proc("feed", fp)
+            killed_feeds.append(fp)
+    u["modules"].remove(proc)
+    u["ports"].pop(proc, None)
+    u["config"].pop(proc, None)
+    if proc in (u.get("hot_added") or []):
+        u["hot_added"].remove(proc)
+    m["feed_procs"] = sorted(set(m.get("feed_procs") or [])
+                             - set(killed_feeds))
+    simlib.write_json(simlib.manifest_path(sim_name), m, indent=2)
+    print(f"{uname}.{proc}: removed")
 
 
 def kill_proc(owner, proc):
@@ -2466,6 +2597,18 @@ def main(argv):
                          for k in simlib.read_pids(_ctx_name())
                          if k.startswith("server.")}:
                 start_proc("server", p)
+    elif c == "add_module":
+        a = list(a)
+        cam = None
+        if "--cam" in a:
+            i = a.index("--cam")
+            if i + 1 >= len(a):
+                sys.exit("--cam needs a value")
+            cam = a.pop(i + 1)
+            a.pop(i)
+        add_module(a[0], a[1], cam)
+    elif c == "remove_module":
+        remove_module(a[0], a[1])
     elif c in ("kill", "restart", "start_proc"):
         if a[0] == "server":
             owners = [("server", p) for p in server_procs(a[1] if len(a) > 1 else "all")]

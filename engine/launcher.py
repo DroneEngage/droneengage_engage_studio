@@ -375,9 +375,23 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         # where they still must be unique), restart only the same-named
         # one
         simlib.check_conflicts(sim)
-        if not _force() and name in simlib.live_sim_names():
-            fo = simlib.foreign_owner(
-                simlib.load_manifest(name, required=False))
+        m_old = simlib.load_manifest(name, required=False) \
+            if name in simlib.live_sim_names() else None
+        if m_old and m_old.get("sim_hash") == sim["hash"] \
+                and _sim_alive(m_old):
+            # SL-0165: spec unchanged - a restart would drop ctl
+            # add_module's hot-added procs (they live in the manifest,
+            # not the spec), so reuse the live sim like ensure() does
+            hot = [f"{u['name']}.{p}" for u in m_old["units"]
+                   for p in u.get("hot_added") or []]
+            print(simlib.col_dim(
+                f"sim {name} unchanged - reusing the live sim"
+                + (f" (hot-added: {', '.join(hot)})" if hot else "")),
+                flush=True)
+            ctl.CTX = name
+            return m_old
+        if m_old and not _force():
+            fo = simlib.foreign_owner(m_old)
             if fo:
                 sys.exit(simlib.col_red(
                     f"sim {name!r} is owned by another session "

@@ -2803,174 +2803,9 @@ def gen_unit(u, sim, catalog):
                srv["ip"], srv["port"], pdir, srv["seed"]))
 
     # ---- generic s2s modules ----
-    ctx = {"unit": u["name"], "comm_port": u["ports"]["de_comm"],
-           "cam_index": u.get("cam_index", 0),
-           "src_label": u.get("cam_labels", ("", ""))[0],
-           "ai_label": u.get("cam_labels", ("", ""))[1]}
-    if u["fc"]:
-        ctx.update({k: u["fc"][k] for k in ("fcb_port", "pilot_port", "sysid")})
-        # SL-0008: where de_mavlink actually dials the FC - the proxy's
-        # listen port when the unit runs one, else the SITL fcb port
-        ctx["fcb_connect_port"] = (u["fc"].get("fcb_proxy") or {}) \
-            .get("port", u["fc"]["fcb_port"])
-        # SL-0102: `fcb_link: {kind: pty}` turns the dial into a serial
-        # open of the unit's socat-bridged fcb.tty (dynamic: false -
-        # the device is promised present at start, like real hardware)
-        link = u["fc"].get("fcb_link") or {}
-        if link.get("kind") == "pty":
-            ctx["fcb_serial_path"] = link["tty"]
-            ctx["fcb_connection_uri"] = {"type": "serial",
-                                         "port": link["tty"],
-                                         "baudrate": link["baud"],
-                                         "dynamic": False}
-        else:
-            ctx["fcb_connection_uri"] = {"ip": "127.0.0.1",
-                                         "port": ctx["fcb_connect_port"],
-                                         "type": "tcp"}
-        # SL-0095: a phone-side de_mavlink dials the host's fcb port over
-        # the LAN (SITL already binds INADDR_ANY - HIL.md Q1)
-        if u.get("android") and "de_mavlink" in u["android"]["remote_modules"]:
-            import android as _android
-            if _android.host_ip():
-                ctx["fcb_connection_uri"] = {
-                    "ip": _android.host_ip(),
-                    "port": ctx["fcb_connect_port"], "type": "tcp"}
     for m in u["modules"]:
-        if m == "de_comm":
-            continue
-        spec = catalog[module_base(m, catalog)]
-        # normpath: DE_CODE ends with "/" so $DE_CODE/<repo> renders
-        # "dir//dir"; inside a JSON string de_common's comment stripper
-        # then eats the line from "//" on and the module fails to parse
-        ctx["module_dir"] = os.path.normpath(module_dir(spec))
-        if m == "de_precland":
-            # the generated scene library the wire points test_source +
-            # camera at: DE_PRECLAND_SCENES, else the repo's own
-            # tools/sim_scenes
-            ctx["precland_scenes"] = os.path.normpath(setting(
-                "DE_PRECLAND_SCENES",
-                os.path.join(module_dir(spec), "tools", "sim_scenes")))
-        mdir = os.path.join(udir, m)
-        os.makedirs(mdir, exist_ok=True)
-        menv = (u.get("env") or {}).get(m) or {}
-        if "DE_PROC_STAT_PATH" in menv:
-            # SL-0067: a live fake /proc/stat for this module - the
-            # writer rewrites it every tick from the load percent in
-            # <mdir>/cpu_load.json (a scenario write_file flips it)
-            stat_path = str(menv["DE_PROC_STAT_PATH"]) \
-                .replace("{unit}", u["name"]) \
-                .replace("{unit_dir}", udir)
-            os.makedirs(os.path.dirname(stat_path), exist_ok=True)
-            _launch_script(
-                u, f"fake_proc_{m}", udir,
-                f"'{sys.executable}' "
-                f"'{os.path.join(SIM_ROOT, 'stubs', 'fake_proc_stat.py')}'"
-                f" --out '{stat_path}'"
-                f" --ctl '{os.path.join(mdir, 'cpu_load.json')}'")
-        mcfg = load_config(module_template(spec))
-        mcfg = deep_merge(mcfg, _fill(spec.get("set") or {},
-                                      dict(ctx, module=m)))
-        mcfg = deep_merge(mcfg, u["config"].get(m))
-        # SL-0010: a proxied module aims at its udp_proxy port instead
-        # of de_comm's - engine wiring, so block/unit overlays cannot
-        # break it either way
-        target = u["ports"].get("udp_proxy_" + m, u["ports"]["de_comm"])
-        target_ip = "127.0.0.1"
-        listen_ip = "127.0.0.1"
-        if u.get("android"):
-            import android as _android
-            remote = u["android"]["remote_modules"]
-            if m in remote:
-                if "de_comm" in remote:
-                    # same phone - s2s stays on the device loopback
-                    target_ip = "127.0.0.1"
-                else:
-                    # phone-side module -> host-side de_comm over LAN
-                    target_ip = _android.host_ip() or target_ip
-                listen_ip = "0.0.0.0"
-            elif "de_comm" in remote and u["android"].get("device_ip"):
-                # de_comm is on the phone - a host-side module of the
-                # same unit must dial the phone, and must bind a real
-                # interface or its packets carry src=127.0.0.1 and the
-                # replies loop back on the phone itself
-                target_ip = u["android"]["device_ip"]
-                listen_ip = "0.0.0.0"
-        mcfg.update({
-            "s2s_udp_target_ip": target_ip,
-            "s2s_udp_target_port": str(target),
-            "s2s_udp_listening_ip": listen_ip,
-            "s2s_udp_listening_port": str(u["ports"][m]),
-            "use_unix_socket": False,
-        })
-        if target_ip != "127.0.0.1":
-            # DE-0036: this module's s2s datagrams cross the LAN to
-            # reach de_comm - over-MTU datagrams IP-fragment and
-            # phones drop fragments, so cap chunks at a WAN-safe size
-            mcfg["s2s_udp_packet_size"] = "1400"
-        mcfg = deep_merge(mcfg, _fill(spec.get("wire") or {},
-                                      dict(ctx, port=u["ports"][m],
-                                             module=m)))
-        if m == "de_mavlink" and ctx.get("fcb_serial_path"):
-            # SL-0102: the serial uri replaces the template's tcp keys
-            # outright - deep_merge would keep its ip: 0.0.0.0 behind
-            mcfg["fcb_connection_uri"] = ctx["fcb_connection_uri"]
-        if "udp_proxy_" + m in u["ports"]:
-            # a catalog `wire:` s2s_udp_target_port would win that merge -
-            # the proxy keeps the last word
-            mcfg["s2s_udp_target_port"] = str(target)
-        cfg_path = os.path.join(mdir, f"{m}.config.json")
-        write_json(cfg_path, mcfg)
-        if "udp_proxy_" + m in u["ports"]:
-            # SL-0010: the pass-through default - ctl udp_chunks flips
-            # the knobs at fault time. The cmdline carries ENGINE_DIR
-            # so pid_is_ours claims it.
-            pdir = os.path.join(udir, "udp_proxy_" + m)
-            os.makedirs(pdir, exist_ok=True)
-            _launch_script(
-                u, "udp_proxy_" + m, pdir,
-                "python3 -u '%s' --listen '127.0.0.1:%d' "
-                "--upstream '127.0.0.1:%d' --peer '127.0.0.1:%d' "
-                "--label '%s.%s'"
-                % (os.path.join(ENGINE_DIR, "udp_proxy.py"),
-                   u["ports"]["udp_proxy_" + m],
-                   u["ports"]["de_comm"], u["ports"][m],
-                   u["name"], m))
-        local = spec.get("local") or {}
-        cmd = f"'{resolve_bin(m, spec)}' -c '{cfg_path}'"
-        if local:
-            lpath = os.path.join(mdir, local["file"])
-            write_json(lpath, {"module_key": f"{u['name']}-{m}"}, indent=1)
-            if local.get("arg"):
-                cmd += f" {local['arg']} '{lpath}'"
-        # P5-15 ordering: exclusive_caps loopbacks only advertise
-        # CAPTURE once a producer is attached, and both consumers abort
-        # on an output-only device - probe a frame first. yolo's source
-        # is primed by render_sink (black frames until real frames come);
-        # de_camera's input is produced by yolo itself. Missing label ->
-        # gen_render errors before launch
-        # de_camera waits on its configured source: the annotated AI
-        # device when a de_yolo_ai produces it, else the render sink's
-        # own src device (TASK-EV-CAM)
-        wait_idx = {"de_yolo_ai": 0,
-                    "de_camera": 1 if "de_yolo_ai" in u["modules"] else 0}
-        if m in wait_idx and u.get("cam_labels"):
-            wait_dev = v4l2_label_map().get(u["cam_labels"][wait_idx[m]])
-            if wait_dev:
-                # one bash -c: `exec` in the launch template applies to
-                # the whole line, and exec-until is not a thing
-                cmd = (f"bash -c \"until timeout 3 '{FFMPEG_BIN}' "
-                       f"-loglevel error -f v4l2 -i '{wait_dev}' "
-                       f"-frames:v 1 -f null - 2>/dev/null; "
-                       f"do sleep 2; done; exec {cmd}\"")
-        if m == "de_mavlink" and ctx.get("fcb_serial_path"):
-            # SL-0102: the pty link file appears when the unit's socat
-            # bridge (proc fcb_tty) is running - de_mavlink opens the
-            # device once at startup, so hold it until the link exists
-            cmd = (f"bash -c \"until [ -e '{ctx['fcb_serial_path']}' ]; "
-                   f"do sleep 1; done; exec {cmd}\"")
-        _launch_script(u, m, mdir, cmd, spec.get("start_delay", 0),
-                       env=tuple(_module_env(u, m)))
-
+        if m != "de_comm":
+            gen_module(u, sim, m, catalog)
     # ---- SITL ----
     if u["fc"]:
         fc, p = u["fc"], u["position"]
@@ -3115,6 +2950,181 @@ def gen_unit(u, sim, catalog):
                 % (pdir, px["ctrl"], fl["peer"], px["port"]))
     u.pop("config", None)
     u.pop("parm_files", None)
+
+
+
+
+def gen_module(u, sim, m, catalog):
+    """Generate the run-dir artifacts of one generic s2s module: its
+    merged <m>.config.json, optional local file and launch.<m>.sh.
+    Shared by gen_unit (every module at bring-up) and ctl add_module
+    (one proc on a live unit)."""
+    udir = unit_dir(u)
+    ctx = {"unit": u["name"], "comm_port": u["ports"]["de_comm"],
+           "cam_index": u.get("cam_index", 0),
+           "src_label": u.get("cam_labels", ("", ""))[0],
+           "ai_label": u.get("cam_labels", ("", ""))[1]}
+    if u["fc"]:
+        ctx.update({k: u["fc"][k] for k in ("fcb_port", "pilot_port", "sysid")})
+        # SL-0008: where de_mavlink actually dials the FC - the proxy's
+        # listen port when the unit runs one, else the SITL fcb port
+        ctx["fcb_connect_port"] = (u["fc"].get("fcb_proxy") or {}) \
+            .get("port", u["fc"]["fcb_port"])
+        # SL-0102: `fcb_link: {kind: pty}` turns the dial into a serial
+        # open of the unit's socat-bridged fcb.tty (dynamic: false -
+        # the device is promised present at start, like real hardware)
+        link = u["fc"].get("fcb_link") or {}
+        if link.get("kind") == "pty":
+            ctx["fcb_serial_path"] = link["tty"]
+            ctx["fcb_connection_uri"] = {"type": "serial",
+                                         "port": link["tty"],
+                                         "baudrate": link["baud"],
+                                         "dynamic": False}
+        else:
+            ctx["fcb_connection_uri"] = {"ip": "127.0.0.1",
+                                         "port": ctx["fcb_connect_port"],
+                                         "type": "tcp"}
+        # SL-0095: a phone-side de_mavlink dials the host's fcb port over
+        # the LAN (SITL already binds INADDR_ANY - HIL.md Q1)
+        if u.get("android") and "de_mavlink" in u["android"]["remote_modules"]:
+            import android as _android
+            if _android.host_ip():
+                ctx["fcb_connection_uri"] = {
+                    "ip": _android.host_ip(),
+                    "port": ctx["fcb_connect_port"], "type": "tcp"}
+    spec = catalog[module_base(m, catalog)]
+    # normpath: DE_CODE ends with "/" so $DE_CODE/<repo> renders
+    # "dir//dir"; inside a JSON string de_common's comment stripper
+    # then eats the line from "//" on and the module fails to parse
+    ctx["module_dir"] = os.path.normpath(module_dir(spec))
+    if m == "de_precland":
+        # the generated scene library the wire points test_source +
+        # camera at: DE_PRECLAND_SCENES, else the repo's own
+        # tools/sim_scenes
+        ctx["precland_scenes"] = os.path.normpath(setting(
+            "DE_PRECLAND_SCENES",
+            os.path.join(module_dir(spec), "tools", "sim_scenes")))
+    mdir = os.path.join(udir, m)
+    os.makedirs(mdir, exist_ok=True)
+    menv = (u.get("env") or {}).get(m) or {}
+    if "DE_PROC_STAT_PATH" in menv:
+        # SL-0067: a live fake /proc/stat for this module - the
+        # writer rewrites it every tick from the load percent in
+        # <mdir>/cpu_load.json (a scenario write_file flips it)
+        stat_path = str(menv["DE_PROC_STAT_PATH"]) \
+            .replace("{unit}", u["name"]) \
+            .replace("{unit_dir}", udir)
+        os.makedirs(os.path.dirname(stat_path), exist_ok=True)
+        _launch_script(
+            u, f"fake_proc_{m}", udir,
+            f"'{sys.executable}' "
+            f"'{os.path.join(SIM_ROOT, 'stubs', 'fake_proc_stat.py')}'"
+            f" --out '{stat_path}'"
+            f" --ctl '{os.path.join(mdir, 'cpu_load.json')}'")
+    mcfg = load_config(module_template(spec))
+    mcfg = deep_merge(mcfg, _fill(spec.get("set") or {},
+                                  dict(ctx, module=m)))
+    mcfg = deep_merge(mcfg, u["config"].get(m))
+    # SL-0010: a proxied module aims at its udp_proxy port instead
+    # of de_comm's - engine wiring, so block/unit overlays cannot
+    # break it either way
+    target = u["ports"].get("udp_proxy_" + m, u["ports"]["de_comm"])
+    target_ip = "127.0.0.1"
+    listen_ip = "127.0.0.1"
+    if u.get("android"):
+        import android as _android
+        remote = u["android"]["remote_modules"]
+        if m in remote:
+            if "de_comm" in remote:
+                # same phone - s2s stays on the device loopback
+                target_ip = "127.0.0.1"
+            else:
+                # phone-side module -> host-side de_comm over LAN
+                target_ip = _android.host_ip() or target_ip
+            listen_ip = "0.0.0.0"
+        elif "de_comm" in remote and u["android"].get("device_ip"):
+            # de_comm is on the phone - a host-side module of the
+            # same unit must dial the phone, and must bind a real
+            # interface or its packets carry src=127.0.0.1 and the
+            # replies loop back on the phone itself
+            target_ip = u["android"]["device_ip"]
+            listen_ip = "0.0.0.0"
+    mcfg.update({
+        "s2s_udp_target_ip": target_ip,
+        "s2s_udp_target_port": str(target),
+        "s2s_udp_listening_ip": listen_ip,
+        "s2s_udp_listening_port": str(u["ports"][m]),
+        "use_unix_socket": False,
+    })
+    if target_ip != "127.0.0.1":
+        # DE-0036: this module's s2s datagrams cross the LAN to
+        # reach de_comm - over-MTU datagrams IP-fragment and
+        # phones drop fragments, so cap chunks at a WAN-safe size
+        mcfg["s2s_udp_packet_size"] = "1400"
+    mcfg = deep_merge(mcfg, _fill(spec.get("wire") or {},
+                                  dict(ctx, port=u["ports"][m],
+                                         module=m)))
+    if m == "de_mavlink" and ctx.get("fcb_serial_path"):
+        # SL-0102: the serial uri replaces the template's tcp keys
+        # outright - deep_merge would keep its ip: 0.0.0.0 behind
+        mcfg["fcb_connection_uri"] = ctx["fcb_connection_uri"]
+    if "udp_proxy_" + m in u["ports"]:
+        # a catalog `wire:` s2s_udp_target_port would win that merge -
+        # the proxy keeps the last word
+        mcfg["s2s_udp_target_port"] = str(target)
+    cfg_path = os.path.join(mdir, f"{m}.config.json")
+    write_json(cfg_path, mcfg)
+    if "udp_proxy_" + m in u["ports"]:
+        # SL-0010: the pass-through default - ctl udp_chunks flips
+        # the knobs at fault time. The cmdline carries ENGINE_DIR
+        # so pid_is_ours claims it.
+        pdir = os.path.join(udir, "udp_proxy_" + m)
+        os.makedirs(pdir, exist_ok=True)
+        _launch_script(
+            u, "udp_proxy_" + m, pdir,
+            "python3 -u '%s' --listen '127.0.0.1:%d' "
+            "--upstream '127.0.0.1:%d' --peer '127.0.0.1:%d' "
+            "--label '%s.%s'"
+            % (os.path.join(ENGINE_DIR, "udp_proxy.py"),
+               u["ports"]["udp_proxy_" + m],
+               u["ports"]["de_comm"], u["ports"][m],
+               u["name"], m))
+    local = spec.get("local") or {}
+    cmd = f"'{resolve_bin(m, spec)}' -c '{cfg_path}'"
+    if local:
+        lpath = os.path.join(mdir, local["file"])
+        write_json(lpath, {"module_key": f"{u['name']}-{m}"}, indent=1)
+        if local.get("arg"):
+            cmd += f" {local['arg']} '{lpath}'"
+    # P5-15 ordering: exclusive_caps loopbacks only advertise
+    # CAPTURE once a producer is attached, and both consumers abort
+    # on an output-only device - probe a frame first. yolo's source
+    # is primed by render_sink (black frames until real frames come);
+    # de_camera's input is produced by yolo itself. Missing label ->
+    # gen_render errors before launch
+    # de_camera waits on its configured source: the annotated AI
+    # device when a de_yolo_ai produces it, else the render sink's
+    # own src device (TASK-EV-CAM)
+    wait_idx = {"de_yolo_ai": 0,
+                "de_camera": 1 if "de_yolo_ai" in u["modules"] else 0}
+    if m in wait_idx and u.get("cam_labels"):
+        wait_dev = v4l2_label_map().get(u["cam_labels"][wait_idx[m]])
+        if wait_dev:
+            # one bash -c: `exec` in the launch template applies to
+            # the whole line, and exec-until is not a thing
+            cmd = (f"bash -c \"until timeout 3 '{FFMPEG_BIN}' "
+                   f"-loglevel error -f v4l2 -i '{wait_dev}' "
+                   f"-frames:v 1 -f null - 2>/dev/null; "
+                   f"do sleep 2; done; exec {cmd}\"")
+    if m == "de_mavlink" and ctx.get("fcb_serial_path"):
+        # SL-0102: the pty link file appears when the unit's socat
+        # bridge (proc fcb_tty) is running - de_mavlink opens the
+        # device once at startup, so hold it until the link exists
+        cmd = (f"bash -c \"until [ -e '{ctx['fcb_serial_path']}' ]; "
+               f"do sleep 1; done; exec {cmd}\"")
+    _launch_script(u, m, mdir, cmd, spec.get("start_delay", 0),
+                   env=tuple(_module_env(u, m)))
+
 
 
 def _server_script(sim, repo, name, cfg):
@@ -3700,6 +3710,19 @@ def camera_binding_desc(u, label_map=None):
     return ",".join(out)
 
 
+def free_cam_label(exclude=None):
+    """first DE-CAM-k label present on the host (v4l2 pool) and not
+    claimed by any live manifest's camera bindings - runtime
+    allocation for ctl add_module (live state, not spec)."""
+    taken = set(exclude or ())
+    for n in live_sim_names():
+        taken.update(claimed_camera_labels(load_manifest(n)))
+    for label in sorted(v4l2_label_map()):
+        if re.fullmatch(r"DE-CAM\d+", label) and label not in taken:
+            return label
+    return None
+
+
 def claimed_camera_labels(sim):
     """Card labels this sim claims on the machine: every de_camera
     device_name binding plus the render units' DE-SRC/DE-AI pairs -
@@ -3754,26 +3777,34 @@ def gen_feeds(sim):
     feed = sim.get("camera_feed")
     if not feed:
         return []
-    rdir = feed_dir(sim["name"])
-    os.makedirs(rdir, exist_ok=True)
+    os.makedirs(feed_dir(sim["name"]), exist_ok=True)
     os.makedirs(pids_dir(sim["name"]), exist_ok=True)
     procs = []
     for u in sim["units"]:
         for idx in camera_feed_indices(u):
             proc = f"{u['name']}_{idx}"
-            cmd = (f"'{FFMPEG_BIN}' -hide_banner -loglevel warning "
-                   f"-f lavfi -i "
-                   f"'{feed['source']}=size={feed['size']}"
-                   f":rate={feed['rate']}' -pix_fmt {feed['pix_fmt']} "
-                   f"-c:v rawvideo -f v4l2 '/dev/video{idx}'")
-            path = os.path.join(rdir, f"launch.{proc}.sh")
-            write_text(path,
-                       "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%s &\n"
-                       "trap 'kill %%1 2>/dev/null' TERM\nwait\n"
-                       % (rdir, pid_path(sim["name"], "feed", proc),
-                          cmd), 0o755)
+            gen_feed_script(sim, proc, idx)
             procs.append(proc)
     return procs
+
+
+def gen_feed_script(sim, proc, idx):
+    """write launch.<proc>.sh for one feed.<unit>_<idx> - the
+    single-feed half of gen_feeds, shared with ctl add_module."""
+    feed = sim.get("camera_feed") or {}
+    rdir = feed_dir(sim["name"])
+    os.makedirs(rdir, exist_ok=True)
+    cmd = (f"'{FFMPEG_BIN}' -hide_banner -loglevel warning "
+           f"-f lavfi -i "
+           f"'{feed['source']}=size={feed['size']}"
+           f":rate={feed['rate']}' -pix_fmt {feed['pix_fmt']} "
+           f"-c:v rawvideo -f v4l2 '/dev/video{idx}'")
+    path = os.path.join(rdir, f"launch.{proc}.sh")
+    write_text(path,
+               "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%s &\n"
+               "trap 'kill %%1 2>/dev/null' TERM\nwait\n"
+               % (rdir, pid_path(sim["name"], "feed", proc),
+                  cmd), 0o755)
 
 
 def camera_missing_nodes(sim):
