@@ -2482,7 +2482,14 @@ def gen_unit(u, sim, catalog):
                     "local_comm_server_ip": srv["ip"],
                     "local_comm_server_port":
                         u["link_proxy"]["port"]
-                        if u.get("link_proxy") else srv["port"]})
+                        if u.get("link_proxy") else srv["port"],
+                    # SL-0159: the template carries the real stack's
+                    # auth endpoint (19408). With a live authenticator
+                    # on this host an auth-off unit would probe a foreign
+                    # server and get rejected - point it at this sim's
+                    # reserved auth slot instead (nothing serves it when
+                    # auth is off: connection refused, same as before).
+                    "auth_ip": srv["auth_ip"], "auth_port": srv["auth_port"]})
     if u.get("android") and "de_comm" in u["android"]["remote_modules"]:
         # SL-0095: de_comm runs on the phone - it dials the host's
         # servers over the LAN, and listens on the phone for any
@@ -2522,8 +2529,8 @@ def gen_unit(u, sim, catalog):
         "unitDescription": f"sim unit {u['name']} (block {u['block']})",
         "userName": cfg.get("userName", "sim@sim.droneengage.com"),
         "accessCode": cfg.get("accessCode", "sim1234"),
-        "auth_ip": cfg.get("auth_ip", "127.0.0.1"),
-        "auth_port": cfg.get("auth_port", 19408),
+        "auth_ip": cfg.get("auth_ip", srv["auth_ip"]),
+        "auth_port": cfg.get("auth_port", srv["auth_port"]),
     }, indent=1)
     # P4F-03: a per-unit boot id file stands in for the kernel boot id -
     # `ctl bootid` rewrites it so a de_comm restart reads as a reboot
