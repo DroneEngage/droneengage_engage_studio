@@ -870,7 +870,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         bad = set(entry) - {"block", "name", "count", "at", "config", "fc",
                             "account", "add_modules", "role", "fcb_proxy",
                             "fcb_link", "fc_client", "faketime",
-                            "udp_proxy", "link_proxy", "android", "env"}
+                            "udp_proxy", "link_proxy", "android", "env",
+                            "cameras"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -887,6 +888,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
             if count is not None and "at" in entry:
                 at["north_m"] = at.get("north_m", 0) + SPACING_M * i
             sim["units"].append(_expand_unit(sim, b, uname, entry, at, catalog))
+    sim.pop("_cam_alloc", None)
+    sim.pop("_cam_taken", None)
     seen = set()
     for u in sim["units"]:
         if u["name"] in seen:
@@ -1557,6 +1560,101 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                               "device_name": feed_label,
                               "key": "cam_0"}]}},
                 u["config"].get("de_camera") or {})
+    # SL-0163: `cameras:` -> one de_camera instance per binding. Each
+    # instance's generated camera_list carries exactly one entry: str
+    # entries bind a pool label (device_name), ints a /dev/videoN
+    # (device_num), dicts give {label|num, name, key} explicitly. An int
+    # count auto-assigns the next DE-CAM-k labels in declaration order -
+    # deterministic (the spec alone decides bindings, sim_hash stays
+    # stable). Default: a de_camera unit that selects nothing gets one
+    # labeled cam; the other pool devices stay free for tracker/AI.
+    cam_mods = [m for m in u["modules"]
+                if module_base(m, catalog) == "de_camera"]
+    raw_cams = entry.get("cameras")
+    if raw_cams is not None and not cam_mods:
+        raise SimError(f"unit {name}: `cameras:` but the unit runs no "
+                       "de_camera module")
+
+    def _has_cam_selection(m):
+        flat = u["config"].get(m) or {}
+        c = flat.get("camera") or {}
+        return bool(c.get("camera_list")) \
+            or c.get("camera_start_index") is not None \
+            or c.get("camera_end_index") is not None \
+            or flat.get("camera_start_index") is not None \
+            or flat.get("camera_end_index") is not None
+
+    if raw_cams is None:
+        raw_cams = 1 if cam_mods and not any(
+            _has_cam_selection(m) for m in cam_mods) else 0
+    if isinstance(raw_cams, int):
+        cam_list = [None] * raw_cams
+    elif isinstance(raw_cams, list):
+        cam_list = list(raw_cams)
+    else:
+        raise SimError(f"unit {name}: `cameras:` must be a count or a "
+                       "list of bindings")
+    if len(cam_list) > 5:
+        raise SimError(f"unit {name}: `cameras:` - max 5 de_camera "
+                       "instances per unit")
+    if cam_list and _is_render_camera_unit(u["modules"], sim):
+        raise SimError(f"unit {name}: `cameras:` - a rendered-camera "
+                       "unit binds its DE-SRC/DE-AI feed, not pool "
+                       "labels")
+    def _alloc_cam_label():
+        # next free DE-CAM label vs bindings made so far in this sim -
+        # deterministic: declaration order decides, never live state
+        taken = sim.setdefault("_cam_taken", set())
+        n = sim.get("_cam_alloc", 0) + 1
+        while f"DE-CAM{n}" in taken:
+            n += 1
+        sim["_cam_alloc"] = n
+        taken.add(f"DE-CAM{n}")
+        return f"DE-CAM{n}"
+
+    for i, cam in enumerate(cam_list):
+        proc = "de_camera" if i == 0 else f"de_camera{i + 1}"
+        if proc not in u["modules"]:
+            u["modules"].append(proc)
+        if i > 0:
+            # instances inherit the base de_camera overlay; a
+            # config.<proc> entry can still override on top
+            u["config"][proc] = deep_merge(
+                copy.deepcopy(u["config"].get("de_camera") or {}),
+                u["config"].get(proc) or {})
+        cfg = u["config"].setdefault(proc, {})
+        if cam is None:
+            cam = {"device_name": _alloc_cam_label()}
+        elif isinstance(cam, str):
+            cam = {"device_name": cam}
+        elif isinstance(cam, int):
+            cam = {"device_num": cam}
+        elif isinstance(cam, dict):
+            cam = dict(cam)
+            if "label" in cam:
+                cam["device_name"] = cam.pop("label")
+            if "num" in cam:
+                cam["device_num"] = cam.pop("num")
+            if "device_name" not in cam and "device_num" not in cam:
+                cam["device_name"] = _alloc_cam_label()
+        else:
+            raise SimError(f"unit {name}: cameras[{i}] must be a label, "
+                           "an index or {label|num, name, key}")
+        if cam.get("device_name"):
+            sim.setdefault("_cam_taken", set()).add(cam["device_name"])
+        cam.setdefault("name", f"CAM{i}")
+        cam.setdefault("key", f"cam_{i}")
+        # the instance binds exactly one camera - the generated entry
+        # replaces any `camera:` scan selection
+        camcfg = cfg.setdefault("camera", {})
+        for k in ("camera_start_index", "camera_end_index"):
+            camcfg.pop(k, None)
+            cfg.pop(k, None)
+        camcfg["camera_list"] = [cam]
+        if i > 0:
+            # s2s module ids must differ on one unit
+            cfg["module_id"] = \
+                f"{cfg.get('module_id') or 'de_camera'}{i + 1}"
     # per-unit account: the drone's own login, like a real vehicle.
     # `{name}` in user expands to the unit name so `count:` fleets get
     # quad1@.., quad2@.. - None falls back to server.account.
@@ -2723,7 +2821,8 @@ def gen_unit(u, sim, catalog):
                 f" --out '{stat_path}'"
                 f" --ctl '{os.path.join(mdir, 'cpu_load.json')}'")
         mcfg = load_config(module_template(spec))
-        mcfg = deep_merge(mcfg, _fill(spec.get("set") or {}, ctx))
+        mcfg = deep_merge(mcfg, _fill(spec.get("set") or {},
+                                      dict(ctx, module=m)))
         mcfg = deep_merge(mcfg, u["config"].get(m))
         # SL-0010: a proxied module aims at its udp_proxy port instead
         # of de_comm's - engine wiring, so block/unit overlays cannot
@@ -2762,7 +2861,8 @@ def gen_unit(u, sim, catalog):
             # phones drop fragments, so cap chunks at a WAN-safe size
             mcfg["s2s_udp_packet_size"] = "1400"
         mcfg = deep_merge(mcfg, _fill(spec.get("wire") or {},
-                                      dict(ctx, port=u["ports"][m])))
+                                      dict(ctx, port=u["ports"][m],
+                                             module=m)))
         if m == "de_mavlink" and ctx.get("fcb_serial_path"):
             # SL-0102: the serial uri replaces the template's tcp keys
             # outright - deep_merge would keep its ip: 0.0.0.0 behind

@@ -63,7 +63,9 @@ de_camera:
   start_delay: 3
   local: {file: de_camera.config.local}
   set:
-    media_folder: "./img"
+    # stills + recordings land in a per-instance /tmp subfolder (mkdir
+    # is non-recursive - one level only); a unit's config: can override
+    media_folder: /tmp/{unit}_{module}_media
   # stdout-only signal - the de_comm journal never sees module init;
   # the module registers once its camera produces frames, so on a
   # rendered-camera unit `sim up` also waits on the frame farm

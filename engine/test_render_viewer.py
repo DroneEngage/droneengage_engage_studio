@@ -353,6 +353,84 @@ class T(unittest.TestCase):
                 simlib.check_conflicts(sim)
         self.assertIn("DE-CAM1", str(cm.exception))
 
+    # ---- SL-0163: `cameras:` -> multi-instance de_camera
+
+    def _cams_sim(self, units):
+        spec = {"version": 1, "name": "vcam_t", "slot_base": 10,
+                "server": {"type": "fake",
+                           "port": simlib.SERVER_PORT + 10},
+                "units": units}
+        return simlib.load_sim(spec)
+
+    def test_cameras_explicit_labels(self):
+        sim = self._cams_sim([{"block": "camera_fixed", "name": "cam1",
+                               "cameras": ["DE-CAM1", "DE-CAM3"]}])
+        u = sim["units"][0]
+        self.assertEqual(u["modules"], ["de_comm", "de_camera",
+                                        "de_camera2"])
+        self.assertEqual(u["ports"]["de_camera"], 64100)
+        self.assertEqual(u["ports"]["de_camera2"], 64102)
+        a = u["config"]["de_camera"]["camera"]["camera_list"]
+        b = u["config"]["de_camera2"]["camera"]["camera_list"]
+        self.assertEqual([e["device_name"] for e in a], ["DE-CAM1"])
+        self.assertEqual([e["device_name"] for e in b], ["DE-CAM3"])
+        self.assertEqual(u["config"]["de_camera2"]["module_id"],
+                         "FixedCam2")
+        # the generated binding replaces the block's 2-3 scan
+        self.assertNotIn("camera_start_index",
+                         u["config"]["de_camera"]["camera"])
+
+    def test_cameras_auto_alloc_skips_claimed(self):
+        sim = self._cams_sim([
+            {"block": "camera_fixed", "name": "cam1",
+             "cameras": ["DE-CAM1", "DE-CAM3"]},
+            {"block": "camera_fixed", "name": "cam2", "cameras": 2}])
+        binds = [u["config"][m]["camera"]["camera_list"][0]
+                 ["device_name"]
+                 for u in sim["units"]
+                 for m in u["modules"] if m.startswith("de_camera")]
+        self.assertEqual(binds, ["DE-CAM1", "DE-CAM3",
+                                 "DE-CAM2", "DE-CAM4"])
+        # hash-stable: resolving the same spec twice is identical
+        sim2 = self._cams_sim([
+            {"block": "camera_fixed", "name": "cam1",
+             "cameras": ["DE-CAM1", "DE-CAM3"]},
+            {"block": "camera_fixed", "name": "cam2", "cameras": 2}])
+        self.assertEqual(sim["hash"], sim2["hash"])
+
+    def test_cameras_udp_proxy_and_caps(self):
+        sim = self._cams_sim([
+            {"block": "camera_fixed", "name": "cam1",
+             "cameras": ["DE-CAM1", "DE-CAM3"],
+             "udp_proxy": ["de_camera2"]}])
+        self.assertEqual(sim["units"][0]["ports"]
+                         ["udp_proxy_de_camera2"], 64103)
+        with self.assertRaises(simlib.SimError):
+            self._cams_sim([{"block": "camera_fixed", "name": "cam1",
+                             "cameras": 6}])
+        with self.assertRaises(simlib.SimError):
+            self._cams_sim([{"block": "comm_only", "name": "m1",
+                             "cameras": 1}])
+
+    def test_cameras_default_single_and_legacy_scan(self):
+        # a de_camera unit with no selection gets one pool label
+        spec = {"version": 1, "name": "vcam_t", "slot_base": 10,
+                "server": {"type": "fake",
+                           "port": simlib.SERVER_PORT + 10},
+                "units": [{"block": "comm_only", "name": "c1",
+                           "add_modules": ["de_camera"]}]}
+        sim = simlib.load_sim(spec)
+        cl = sim["units"][0]["config"]["de_camera"]["camera"] \
+               ["camera_list"]
+        self.assertEqual(len(cl), 1)
+        self.assertEqual(cl[0]["device_name"], "DE-CAM1")
+        # legacy scan config stays a single proc with range intact
+        sim2 = self._cam_sim()
+        u2 = sim2["units"][0]
+        self.assertEqual(u2["modules"], ["de_comm", "de_camera"])
+        self.assertEqual(u2["config"]["de_camera"]["camera"]
+                         ["camera_start_index"], 2)
+
     def test_wait_ready_dead_proc_fails_fast(self):
         """A watched proc that already exited returns False at once
         instead of hanging to timeout."""
