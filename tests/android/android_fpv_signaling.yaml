@@ -1,0 +1,43 @@
+# android_fpv_signaling - E0d (AN-0080): FPV signaling regression guard
+# for Plan E. One android_copter phone unit (app mode, real server+auth
+# like phone_stack). The GCS dials the camera channel with a 1021
+# {joinme} packet; the phone must answer with ONE offer carrying exactly
+# one sendonly m=video and no m=audio (Unified Plan, AN-0078/AN-0079).
+# A {hangup} then tears the session down; a second joinme must produce a
+# fresh offer - proving the close actually happened. Needs a real adb
+# phone preset per tests/android/phone_caps/phone_stack.yaml.
+version: 1
+name: android_fpv_signaling
+tasks: [AN-0080]
+transport: real
+realtime: true
+slot_base: 40
+fleet:
+  - {id: phone1, cls: android_copter,
+     android: {remote_modules: [de_comm, de_mavlink]}}
+timeline:
+  # phone modules + app WS online (same gate as android_bringup)
+  - {t: 8, do: wait_journal, unit: phone1, re: "nav adapter hello",
+     timeout: 240}
+  # GCS dials the stream: 1021 joinme -> phone creates a peer and offers
+  - {t: 30, do: send, ty: i, mt: 1021, tg: phone1,
+     ms: {w: {packet: {joinme: true}, id: GCS_ANDROID_FPV_SIGNALING,
+              number: GCS_ANDROID_FPV_SIGNALING, channel: phone1}}}
+  # viewer hangs up -> the phone's session must close
+  - {t: 60, do: send, ty: i, mt: 1021, tg: phone1,
+     ms: {w: {packet: {hangup: true}, id: GCS_ANDROID_FPV_SIGNALING,
+              number: GCS_ANDROID_FPV_SIGNALING, channel: phone1}}}
+  # re-dial: a closed session must be re-establishable
+  - {t: 75, do: send, ty: i, mt: 1021, tg: phone1,
+     ms: {w: {packet: {joinme: true}, id: GCS_ANDROID_FPV_SIGNALING,
+              number: GCS_ANDROID_FPV_SIGNALING, channel: phone1}}}
+assert:
+  # offer after the first joinme: type=offer, sdp with exactly one
+  # m=video, a=sendonly, and no m=audio. Negative-lookahead on two
+  # m=video occurrences is the E0a/E0b regression tripwire - editing the
+  # expectation to allow m=audio must FAIL the scenario.
+  - gcs_msg: {mt: 1021, secs: 30,
+      re: '(?=.*"type":"offer")(?=.*"sdp":"(?=[^"]*m=video)(?![^"]*m=video[^"]*m=video)(?=[^"]*a=sendonly)(?![^"]*m=audio))'}
+  # a fresh offer after hangup + re-dial proves the first session closed
+  - gcs_msg: {mt: 1021, secs: 30,
+      re: '(?=.*"type":"offer")(?=.*"sdp":"(?=[^"]*m=video)(?![^"]*m=video[^"]*m=video)(?=[^"]*a=sendonly)(?![^"]*m=audio))'}
