@@ -433,6 +433,39 @@ def module_bin(name, spec):
     return b if os.path.isabs(b) else os.path.join(module_dir(spec), b)
 
 
+def module_base(m, catalog=None):
+    """Catalog key for an instance proc name: strip a trailing instance
+    number only when m itself is not a catalog key and the stripped
+    base is (de_camera2 -> de_camera; a catalog key ending in a digit
+    stays itself)."""
+    catalog = catalog if catalog is not None else load_catalog()
+    if m in catalog:
+        return m
+    b = re.sub(r"\d+$", "", m)
+    return b if b in catalog else m
+
+
+def module_instance(m, catalog=None):
+    """Instance number of a module proc name: the trailing digits
+    (de_camera3 -> 3) when module_base resolves a different base,
+    else 1."""
+    b = module_base(m, catalog)
+    if b == m:
+        return 1
+    n = m[len(b):]
+    return int(n) if n.isdigit() else 1
+
+
+def instance_port(port_base, slot, i):
+    """s2s port for module instance i (1-based): port_base + 10*slot +
+    2*(i-1). The odd offset under each instance stays the SL-0010
+    udp_proxy port, so instances stride by 2; a port_base stride is
+    1000, so i<=5 keeps the slot's 10-port block."""
+    if i > 5:
+        raise SimError(f"module instance {i}: max 5 instances per unit")
+    return int(port_base) + 10 * slot + 2 * (i - 1)
+
+
 # --module name=path (./sim run|try): per-run binary overrides - the
 # agent-iteration hook ("rebuilt de_mavlink, try it on the warm sim").
 # They feed the sim hash, so a different override never silently reuses a
@@ -708,7 +741,7 @@ def load_block(name, _chain=()):
 
 def validate_block(b, catalog):
     for m in b["modules"]:
-        if m != "de_comm" and m not in catalog:
+        if m != "de_comm" and module_base(m, catalog) not in catalog:
             raise SimError(f"block {b['name']}: unknown module {m!r} "
                            f"(catalog: de_comm, {', '.join(catalog)})")
         if catalog.get(m, {}).get("needs_fc") and not b["fc"]:
@@ -859,6 +892,17 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         if u["name"] in seen:
             raise SimError(f"sim: duplicate unit name {u['name']!r}")
         seen.add(u["name"])
+    # a card label is one physical device - two bindings to the same
+    # label (across units or across a unit's camera instances) would
+    # open the same camera twice
+    label_owner = {}
+    for u in sim["units"]:
+        for l in camera_video_labels(u):
+            if l in label_owner:
+                raise SimError(
+                    f"sim: {label_owner[l]} and {u['name']} both bind "
+                    f"camera label {l} - one device, one binding")
+            label_owner[l] = u["name"]
     # one host_serial adapter can only front one unit's wire - a
     # sim-level `fcb_link:` fan-out or a duplicated device: must not
     # silently bridge two units onto the same tty. The same goes for a
@@ -896,32 +940,59 @@ def sim_hash(sim, overrides):
         sort_keys=True).encode()).hexdigest()[:16]
 
 
-def resolve_sim_arg(arg, kinds=("sims",)):
+def _pick_match(arg, rel, matches):
+    """Numbered pick on a tty for a name that resolves to more than one
+    file. Anything but a valid number (empty, q, EOF, Ctrl-C) -> the same
+    SimError the non-interactive path raises."""
+    print(f"ambiguous name {arg!r}:", file=sys.stderr)
+    for i, r in enumerate(rel, 1):
+        print(f"  {i}) {r}", file=sys.stderr)
+    try:
+        ans = input(f"which one [1-{len(rel)}]? ").strip()
+    except (EOFError, KeyboardInterrupt):
+        ans = ""
+    if ans.isdigit() and 1 <= int(ans) <= len(matches):
+        return matches[int(ans) - 1]
+    raise SimError(f"ambiguous name {arg!r} - {', '.join(rel)}")
+
+
+def resolve_sim_arg(arg, kinds=("sims",), choose=False):
     """Resolve a sim/test argument to a file path. An existing path is
     returned unchanged (so sims/copters3.yaml and tests/a/b.yaml work as
-    written). A bare name (no '/', no .yaml) resolves to sims/<name>.yaml,
-    and when `kinds` includes "tests" also tests/**/<name>.yaml (recursive
-    - a test may nest under an area subdir). One match -> the path; none
-    -> SimError pointing at `./sim list sims`; several -> SimError listing
-    them. A path with '/' or .yaml that does not exist is returned as-is
-    so the downstream loader reports the file-not-found."""
+    written). A bare name - with or without the .yaml suffix - resolves
+    to sims/<name>.yaml, and when `kinds` includes "tests" also
+    tests/**/<name>.yaml, with "scenarios" also scenarios/**/<name>.yaml
+    (both recursive - a file may nest under an area subdir). One match
+    -> the path; none -> SimError pointing at `./sim list sims`; several
+    -> a numbered pick when `choose` and stdin is a tty, else SimError
+    listing them. A path with '/', or an unmatched arg that carried a
+    .yaml suffix, is returned as-is so the downstream loader reports
+    the file-not-found."""
     if os.path.exists(arg):
         return arg
-    if "/" in arg or arg.endswith(".yaml"):
+    if "/" in arg:
         return arg
+    name = arg[:-5] if arg.endswith(".yaml") else arg
     matches = []
     if "sims" in kinds:
-        p = os.path.join(SIM_ROOT, "sims", arg + ".yaml")
+        p = os.path.join(SIM_ROOT, "sims", name + ".yaml")
         if os.path.isfile(p):
             matches.append(p)
     if "tests" in kinds:
         matches.extend(sorted(glob.glob(os.path.join(
-            SIM_ROOT, "tests", "**", arg + ".yaml"), recursive=True)))
+            SIM_ROOT, "tests", "**", name + ".yaml"), recursive=True)))
+    if "scenarios" in kinds:
+        matches.extend(sorted(glob.glob(os.path.join(
+            SIM_ROOT, "scenarios", "**", name + ".yaml"), recursive=True)))
     if len(matches) == 1:
         return matches[0]
     if not matches:
+        if arg.endswith(".yaml"):
+            return arg
         raise SimError(f"no sim or test named {arg!r} - ./sim list sims")
     rel = [os.path.relpath(m, SIM_ROOT) for m in matches]
+    if choose and sys.stdin.isatty():
+        return _pick_match(arg, rel, matches)
     raise SimError(f"ambiguous name {arg!r} - {', '.join(rel)}")
 
 
@@ -1444,10 +1515,11 @@ def _expand_unit(sim, b, name, entry, at, catalog):
     for m in entry.get("add_modules", []):
         if m in u["modules"]:
             continue
-        if m not in catalog:
+        if module_base(m, catalog) not in catalog:
             raise SimError(f"unit {name}: unknown add_modules entry {m!r} "
                            f"(catalog: {', '.join(catalog)})")
-        if catalog.get(m, {}).get("needs_fc") and not b["fc"]:
+        if catalog.get(module_base(m, catalog), {}).get("needs_fc") \
+                and not b["fc"]:
             raise SimError(f"unit {name}: module {m} needs an `fc:`")
         u["modules"].append(m)
     for mod, over in (entry.get("config") or {}).items():
@@ -1514,7 +1586,9 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         if lp else None
     for m in u["modules"]:
         if m != "de_comm":
-            u["ports"][m] = int(catalog[m]["port_base"]) + 10 * slot
+            u["ports"][m] = instance_port(
+                catalog[module_base(m, catalog)]["port_base"], slot,
+                module_instance(m, catalog))
     for m in entry.get("udp_proxy") or []:
         # SL-0010: a chunk-fault proxy on this module's s2s link. It
         # claims the module's slot port +1 (port_base strides are 1000,
@@ -2203,17 +2277,20 @@ def check_conflicts(sim):
     (_names_must_be_unique)."""
     ports = used_ports(sim)
     names = {u["name"] for u in sim["units"]}
+    labels = set(claimed_camera_labels(sim))
     for other in live_sim_names():
         if other == sim["name"]:
             continue
         m = load_manifest(other)
         clash = sorted(ports & used_ports(m))
+        lclash = sorted(labels & set(claimed_camera_labels(m)))
         dup = (sorted(names & {u["name"] for u in m["units"]})
                if _names_must_be_unique(sim, m) else [])
-        if clash or dup:
+        if clash or dup or lclash:
             raise SimError(
                 f"sim {sim['name']!r} conflicts with running sim {other!r}:"
                 + (f" ports {clash}" if clash else "")
+                + (f" camera labels {lclash}" if lclash else "")
                 + (f" unit names {dup}" if dup else "")
                 + (f" - rerun with --shared --slot-base any to park on a "
                    f"free block, or `./sim down {other}` first" if clash
@@ -2379,9 +2456,9 @@ def ready_checks(u, catalog=None):
     catalog = catalog or load_catalog()
     out = []
     for m in u["modules"]:
-        if m == "de_comm" or m not in catalog:
+        spec = catalog.get(module_base(m, catalog))
+        if m == "de_comm" or spec is None:
             continue
-        spec = catalog[m]
         if spec.get("ready_re"):
             out.append((m, spec["ready_re"], "journal"))
         if spec.get("ready_log_re"):
@@ -2392,8 +2469,9 @@ def ready_checks(u, catalog=None):
 # ---------------------------------------------------------------- generation
 
 def _fill(v, ctx):
-    """Fill "{key}" placeholders in catalog `wire` values. A string that is
-    exactly one placeholder takes the value's own type (ports stay ints)."""
+    """Fill "{key}" placeholders in catalog `set`/`wire` values. A string
+    that is exactly one placeholder takes the value's own type (ports
+    stay ints)."""
     if isinstance(v, dict):
         return {k: _fill(x, ctx) for k, x in v.items()}
     if isinstance(v, list):
@@ -2615,7 +2693,7 @@ def gen_unit(u, sim, catalog):
     for m in u["modules"]:
         if m == "de_comm":
             continue
-        spec = catalog[m]
+        spec = catalog[module_base(m, catalog)]
         # normpath: DE_CODE ends with "/" so $DE_CODE/<repo> renders
         # "dir//dir"; inside a JSON string de_common's comment stripper
         # then eats the line from "//" on and the module fails to parse
@@ -2645,7 +2723,7 @@ def gen_unit(u, sim, catalog):
                 f" --out '{stat_path}'"
                 f" --ctl '{os.path.join(mdir, 'cpu_load.json')}'")
         mcfg = load_config(module_template(spec))
-        mcfg = deep_merge(mcfg, spec.get("set"))
+        mcfg = deep_merge(mcfg, _fill(spec.get("set") or {}, ctx))
         mcfg = deep_merge(mcfg, u["config"].get(m))
         # SL-0010: a proxied module aims at its udp_proxy port instead
         # of de_comm's - engine wiring, so block/unit overlays cannot
@@ -3070,7 +3148,7 @@ def binaries_needed(sim, catalog):
         remote = set((u.get("android") or {}).get("remote_modules") or [])
         for m in u["modules"]:
             if m != "de_comm" and m not in remote:
-                out.add(resolve_bin(m, catalog[m]))
+                out.add(resolve_bin(m, catalog[module_base(m, catalog)]))
         if u["fc"]:
             out.add(os.path.join(ARDUPILOT_DIR, "build", "sitl", "bin",
                                  FC_KINDS[u["fc"]["vehicle"]]["bin"]))
@@ -3382,27 +3460,70 @@ def _camera_feed_spec(raw):
             "pix_fmt": str(raw.get("pix_fmt", "yuyv422"))}
 
 
-def camera_video_indices(u):
-    """Sorted /dev/videoN indices this unit's de_camera will open:
-    camera.camera_list `device_num` entries plus the
+def camera_video_indices(u, label_map=None):
+    """Sorted /dev/videoN indices this unit's de_camera instances open:
+    camera.camera_list `device_num` entries, `device_name` card labels
+    resolved through v4l2_label_map (pass a fixture map in tests;
+    unresolved labels surface via camera_missing_labels), plus the
     camera_start_index..camera_end_index scan range (falling back to
-    the legacy flat fields, like the module does). `device_name`
-    entries are driver-name lookups, not indices - skipped here.
-    [] for non-camera units."""
-    if "de_camera" not in u.get("modules", []):
-        return []
-    dcfg = (u.get("config") or {}).get("de_camera") or {}
-    cfg = dcfg.get("camera") or {}
+    the legacy flat fields, like the module does). [] for non-camera
+    units."""
+    label_map = label_map if label_map is not None else v4l2_label_map()
     idx = set()
-    for e in cfg.get("camera_list") or []:
-        if isinstance(e, dict) and isinstance(e.get("device_num"), int):
-            idx.add(e["device_num"])
-    a = cfg.get("camera_start_index", dcfg.get("camera_start_index"))
-    b = cfg.get("camera_end_index", dcfg.get("camera_end_index"))
-    if a is not None or b is not None:
-        a, b = int(a or 0), int(b if b is not None else a)
-        idx.update(range(a, b + 1))
+    for m in u.get("modules", []):
+        if module_base(m) != "de_camera":
+            continue
+        dcfg = (u.get("config") or {}).get(m) or {}
+        cfg = dcfg.get("camera") or {}
+        for e in cfg.get("camera_list") or []:
+            if not isinstance(e, dict):
+                continue
+            if isinstance(e.get("device_num"), int):
+                idx.add(e["device_num"])
+            elif e.get("device_name") in label_map:
+                idx.add(int(
+                    label_map[e["device_name"]].rsplit("video", 1)[-1]))
+        a = cfg.get("camera_start_index", dcfg.get("camera_start_index"))
+        b = cfg.get("camera_end_index", dcfg.get("camera_end_index"))
+        if a is not None or b is not None:
+            a, b = int(a or 0), int(b if b is not None else a)
+            idx.update(range(a, b + 1))
     return sorted(idx)
+
+
+def camera_video_labels(u):
+    """Card labels this unit's de_camera instances bind via camera_list
+    `device_name` - the pool labels it claims. [] for non-camera
+    units."""
+    out = []
+    for m in u.get("modules", []):
+        if module_base(m) != "de_camera":
+            continue
+        dcfg = (u.get("config") or {}).get(m) or {}
+        for e in (dcfg.get("camera") or {}).get("camera_list") or []:
+            if isinstance(e, dict) and e.get("device_name"):
+                out.append(e["device_name"])
+    return out
+
+
+def camera_missing_labels(sim, label_map=None):
+    """Sorted camera-binding labels the sim claims that no host V4L2
+    device carries (v4l2_label_map keys)."""
+    label_map = label_map if label_map is not None else v4l2_label_map()
+    return sorted({l for u in sim["units"]
+                   for l in camera_video_labels(u)
+                   if l not in label_map})
+
+
+def claimed_camera_labels(sim):
+    """Card labels this sim claims on the machine: every de_camera
+    device_name binding plus the render units' DE-SRC/DE-AI pairs -
+    machine-global, clashes checked like ports."""
+    out = set()
+    for u in sim["units"]:
+        out.update(camera_video_labels(u))
+        out.update(u.get("cam_labels") or ())
+    return sorted(out)
 
 
 def video_is_loopback(idx):

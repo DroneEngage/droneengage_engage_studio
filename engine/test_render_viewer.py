@@ -268,6 +268,91 @@ class T(unittest.TestCase):
         else:
             self.assertIsNone(plan["cmd"])
 
+    # ---- SL-0162: label pool plumbing - instance names/ports,
+    # label->index resolution, label claims + clashes
+
+    def test_module_base_instance_names(self):
+        cat = {"de_camera": {"port_base": 64000},
+               "m3d8": {"port_base": 50000}}
+        self.assertEqual(simlib.module_base("de_camera", cat), "de_camera")
+        self.assertEqual(simlib.module_base("de_camera2", cat), "de_camera")
+        self.assertEqual(simlib.module_base("de_camera10", cat), "de_camera")
+        # a catalog key ending in a digit stays itself
+        self.assertEqual(simlib.module_base("m3d8", cat), "m3d8")
+        # a name neither in catalog nor stripping to one passes through
+        self.assertEqual(simlib.module_base("m3d82", cat), "m3d82")
+        self.assertEqual(simlib.module_instance("de_camera", cat), 1)
+        self.assertEqual(simlib.module_instance("de_camera3", cat), 3)
+        self.assertEqual(simlib.module_instance("m3d8", cat), 1)
+
+    def test_instance_port_stride(self):
+        ports = [simlib.instance_port(64000, 10, i) for i in range(1, 6)]
+        self.assertEqual(ports, [64100, 64102, 64104, 64106, 64108])
+        with self.assertRaises(simlib.SimError):
+            simlib.instance_port(64000, 10, 6)
+
+    def test_instance_ports_and_udp_proxy_on_unit(self):
+        """de_camera2 resolves against the de_camera spec: slot port +2,
+        its udp_proxy on +1 - no clash with the next instance"""
+        spec = {"version": 1, "name": "vcam_t", "slot_base": 10,
+                "server": {"type": "fake",
+                           "port": simlib.SERVER_PORT + 10},
+                "units": [{"block": "camera_fixed", "name": "cam1",
+                           "add_modules": ["de_camera2"],
+                           "udp_proxy": ["de_camera2"]}]}
+        sim = simlib.load_sim(spec)
+        u = sim["units"][0]
+        self.assertEqual(u["ports"]["de_camera"], 64100)
+        self.assertEqual(u["ports"]["de_camera2"], 64102)
+        self.assertEqual(u["ports"]["udp_proxy_de_camera2"], 64103)
+
+    def test_camera_video_indices_labels(self):
+        lmap = {"DE-CAM1": "/dev/video2", "DE-CAM3": "/dev/video4"}
+        sim = self._cam_sim(unit_cfg={
+            "de_camera": {"camera": {"camera_list": [
+                {"name": "A", "device_name": "DE-CAM3"},
+                {"name": "B", "device_num": 7}]}}})
+        # label resolves through the map; the block's 2-3 scan range
+        # unions in as before
+        self.assertEqual(
+            simlib.camera_video_indices(sim["units"][0], lmap),
+            [2, 3, 4, 7])
+        self.assertEqual(simlib.camera_missing_labels(sim, lmap), [])
+        sim2 = self._cam_sim(unit_cfg={
+            "de_camera": {"camera": {"camera_list": [
+                {"name": "A", "device_name": "DE-CAM9"}]}}})
+        self.assertEqual(simlib.camera_missing_labels(sim2, lmap),
+                         ["DE-CAM9"])
+
+    def test_duplicate_camera_label_refused(self):
+        spec = {"version": 1, "name": "vcam_t", "slot_base": 10,
+                "server": {"type": "fake",
+                           "port": simlib.SERVER_PORT + 10},
+                "units": [
+                    {"block": "camera_fixed", "name": "cam1",
+                     "config": {"de_camera": {"camera": {"camera_list":
+                        [{"name": "A", "device_name": "DE-CAM1"}]}}}},
+                    {"block": "camera_fixed", "name": "cam2",
+                     "config": {"de_camera": {"camera": {"camera_list":
+                        [{"name": "B", "device_name": "DE-CAM1"}]}}}}]}
+        with self.assertRaises(simlib.SimError) as cm:
+            simlib.load_sim(spec)
+        self.assertIn("DE-CAM1", str(cm.exception))
+
+    def test_camera_label_clash_with_live_sim(self):
+        sim = self._cam_sim(unit_cfg={
+            "de_camera": {"camera": {"camera_list":
+                [{"name": "A", "device_name": "DE-CAM1"}]}}})
+        m = {"name": "other", "server": sim["server"],
+             "units": sim["units"], "render": None}
+        with mock.patch.object(simlib, "live_sim_names",
+                               lambda: ["other"]), \
+                mock.patch.object(simlib, "load_manifest",
+                                  lambda n, required=True: m):
+            with self.assertRaises(simlib.SimError) as cm:
+                simlib.check_conflicts(sim)
+        self.assertIn("DE-CAM1", str(cm.exception))
+
     def test_wait_ready_dead_proc_fails_fast(self):
         """A watched proc that already exited returns False at once
         instead of hanging to timeout."""

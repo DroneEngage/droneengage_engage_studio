@@ -213,7 +213,8 @@ def gather(sim=None, esp32=False):
     used = set()
     if sim:
         for u in sim["units"]:
-            used.update(m for m in u["modules"] if m != "de_comm")
+            used.update(simlib.module_base(m, catalog)
+                        for m in u["modules"] if m != "de_comm")
     for name in sorted(catalog):
         spec = catalog[name]
         if sim:
