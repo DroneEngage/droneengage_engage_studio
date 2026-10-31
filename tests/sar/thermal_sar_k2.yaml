@@ -26,7 +26,11 @@
 #     and each sighting lands on the bus from its own unit (BUS_IN src)
 #   - the hotspot target confirms by k_sources_within ONLY once the
 #     second unit's sighting arrives: journal_order WM_NEW (candidate)
-#     then WM_STATE confirmed; WM_UPDATE n=2 members
+#     then WM_STATE confirmed. A born-confirmed target (both sightings
+#     fused in one recompute) carries the confirm inside diff.added and
+#     never journals a WM_UPDATE, so the assert set proves k:2 by the
+#     confirmed -> dispatched -> served path only, never by an update
+#     event firing (DE-0045)
 #   - the fused target is on the casualty (distance_to), no person or
 #     coldspot target ever forms
 #   - the confirmation dispatches the responder (transit to target.pos)
@@ -116,7 +120,6 @@ assert:
   - journal_count: {unit: "all",
                     re: "WM_STATE .* confirmed by k_sources_within",
                     equals: 1}
-  - journal_count: {unit: "all", re: "WM_UPDATE .* n=2", at_least: 1}
   # --- the wire vocabulary is thermal; no entity-cls target forms -----
   - no_journal: {unit: "all", re: "WM_NEW .* cls=(coldspot|person)"}
   - obs_frames: {unit: therm1, min_frames: 10, cls: [hotspot],
