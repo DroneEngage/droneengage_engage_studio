@@ -5,6 +5,12 @@
 # second "RUN started" line appears. This is the unit-level version of
 # the fleet resync scenario (tests/fleet_bus/p4a05_restart.yaml, which
 # also covers the roster restart).
+# BATT_CAPACITY pinned 10x (same as the p4f05 family): a phone-in-the-loop
+# run flies the square ~3x longer wall/sim time (clock offset, slower
+# relink) and the default 5000 mAh drained to 0 -> FC battery failsafe
+# LAND paused the run before completion (DE-0049). 50000 keeps remaining
+# percent ~90+ for any run length, so no FS_BATT trigger and no
+# supervisor battery_low handler can interrupt the resync proof.
 version: 1
 name: p2_reboot_resync
 transport: fake
@@ -12,7 +18,7 @@ operation: ../../packages/copter_square.json
 verify: {cli: ../../tools/verify_wrap.js}
 settle_s: 30
 fleet:
-  - {id: c1, cls: copter}
+  - {id: c1, cls: copter, params: {BATT_CAPACITY: 50000}}
 timeline:
   - {t: 0, do: mode, unit: c1, mode: GUIDED}
   - {t: 2, do: deploy}
