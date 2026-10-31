@@ -2948,7 +2948,8 @@ def gen_unit(u, sim, catalog):
                 "done; socat -d -d UDP4:%s tcp:127.0.0.1:%d; "
                 "sleep 1; done\""
                 % (pdir, px["ctrl"], fl["peer"], px["port"]))
-    u.pop("config", None)
+    # the resolved config stays on the manifest unit - camera bindings,
+    # label claims and ctl add_module's inheritance all read it there
     u.pop("parm_files", None)
 
 

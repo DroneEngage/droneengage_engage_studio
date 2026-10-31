@@ -784,7 +784,7 @@ def add_module(uname, mod, cam_dev=None):
     base = simlib.module_base(mod, catalog)
     if mod in ("de_comm", "sitl") or base not in catalog:
         sys.exit(f"add_module: cannot hot-add {mod!r}")
-    if mod in u["modules"]:
+    if mod in u["modules"] and mod != base:
         sys.exit(f"{uname} already runs {mod}")
     if base in ((u.get("android") or {}).get("remote_modules") or []):
         sys.exit(f"add_module: {mod} is an android remote module - "

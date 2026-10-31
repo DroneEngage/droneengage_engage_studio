@@ -377,7 +377,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         simlib.check_conflicts(sim)
         m_old = simlib.load_manifest(name, required=False) \
             if name in simlib.live_sim_names() else None
-        if m_old and m_old.get("sim_hash") == sim["hash"] \
+        if not fresh and m_old and m_old.get("sim_hash") == sim["hash"] \
                 and _sim_alive(m_old):
             # SL-0165: spec unchanged - a restart would drop ctl
             # add_module's hot-added procs (they live in the manifest,
