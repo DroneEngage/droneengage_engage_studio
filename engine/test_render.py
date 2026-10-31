@@ -179,8 +179,8 @@ class T(unittest.TestCase):
 
     def test_prepare_sim_injects_geo_for_yolo_unit(self):
         """de_yolo_ai units get the world camera's geo_projection on
-        de_mavlink, same as stub units - the real 1078s project through
-        the same lens."""
+        de_mavlink, same as stub units - the real obs frames (6546)
+        project through the same lens."""
         import world
         w = world.load(os.path.join(ROOT, "worlds", "forest_a.yaml"), 7)
         scn = {"world": "w.yaml", "seed": 7,

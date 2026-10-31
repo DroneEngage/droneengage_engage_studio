@@ -721,7 +721,7 @@ class World:
         return sizes
 
     def classes(self):
-        """Distinct entity classes (the 1077 class list order is stable:
+        """Distinct entity classes (order is stable:
         first-seen entity order)."""
         out = []
         for e in self.entities:

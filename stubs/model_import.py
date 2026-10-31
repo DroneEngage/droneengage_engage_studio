@@ -18,7 +18,10 @@ _STUB_DIR = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_STUB_DIR)
 
 # the de_databus python client's constants (messages.py) - the shim
-# carries the same values, so a selftest log matches the live path
+# carries the same values, so a selftest log matches the live path.
+# (The retired TargetLocation 1078 is deliberately absent - it is gone
+# from the live client; stub_ai_box keeps its own
+# TYPE_AI_TARGET_LOCATION_LEGACY for the --legacy-box negative control.)
 _IDS = {
     "ANDRUAV_PROTOCOL_MESSAGE_TYPE": "mt",
     "ANDRUAV_PROTOCOL_MESSAGE_CMD": "ms",
@@ -26,7 +29,6 @@ _IDS = {
     "TYPE_AndruavModule_Location_Info": 9102,
     "TYPE_AndruavMessage_AI_Recognition_ACTION": 1076,
     "TYPE_AndruavMessage_AI_Recognition_STATUS": 1077,
-    "TYPE_AndruavMessage_AI_Recognition_TargetLocation": 1078,
     "TYPE_AndruavMessage_AI_OBSERVATIONS": 6546,
     "TYPE_AndruavMessage_Sync_EventFire": 1061,
     "TYPE_AndruavMessage_PRECLAND_ACTION": 6536,

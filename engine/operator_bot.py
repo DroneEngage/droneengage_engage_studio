@@ -223,8 +223,8 @@ class OperatorBot:
                             return
                     elif env_cls != det_cls:
                         return
-                # the obs entry's box (6546, SL-0034 - 1078 `b`/`t`
-                # before it) reaches the envelope as `b`: the normalized
+                # the obs entry's box (6546, SL-0034) reaches the
+                # envelope as `b`: the normalized
                 # {x,y,w,h} detection box - a dict for best-object, a
                 # list for multi-target payloads
                 box = p.get("b")

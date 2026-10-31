@@ -6,8 +6,9 @@ the P5-08 stub AI box needs (ground truth -> normalized image box).
 Frames: camera (x right, y down, z forward) -> body FRD (x fwd, y right,
 z down) -> NED. Mount pitch -90 deg = camera looking straight down; with
 that mount image u+ maps to body +y (right) and image v+ maps to body -x
-(behind). Normalized image coordinates are centered -0.5..0.5; the 1078
-box convention (0..1 top-left) converts with geoBoxToCentered.
+(behind). Normalized image coordinates are centered -0.5..0.5; the
+obs-entry box convention (6546; 0..1 top-left) converts with
+geoBoxToCentered.
 
 The forward path is a line-for-line port so the C++ round-trip test
 (stubs/test_geo_projection.py) can compare bit-for-bit projections.

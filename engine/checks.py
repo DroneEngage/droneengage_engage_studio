@@ -2536,7 +2536,7 @@ def _iou(b1, b2):
 def _detection_precision_render(name, a, ctx):
     """P5-15: of the detection boxes the real chain reported (bot
     world-model targets carrying `box` - the obs entry's box since
-    SL-0034, the 1078 `b` before), the fraction matching an ID-pass box
+    SL-0034), the fraction matching an ID-pass box
     of the same unit's temporally-nearest visibility frame at IoU >=
     `iou` (default 0.3). `unit:` narrows to one camera unit's
     reports."""
