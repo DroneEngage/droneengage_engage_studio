@@ -6,6 +6,14 @@
 # 2+3 depart once both emitted, without waiting for copter1. On its own
 # side copter1 sees 2+3 LOST, so its own emit satisfies its gate too -
 # it departs alone, later.
+# realtime + `do: start`: the cut must land before ANY unit emits
+# staging.ready - if copter1's emit is latched before the cut, all three
+# emits are in and the gate releases by cond without waiting for the
+# LOST shrink, and the lost-before-release order asserts below become
+# timing luck (measured margin was ~0.8 s with `do: opstart`, whose ~40 s
+# reply window pushed the cut to the emit point). `do: start` returns
+# when the started replies land, so wait+cut lands ~10-15 s in, ~30 s
+# before the first emit (DE-0047, same fix as p4a10_barrier_hold).
 version: 1
 name: p4a10_barrier_lost
 realtime: true
@@ -22,7 +30,7 @@ timeline:
   - {t: 0, do: mode, unit: all, mode: GUIDED}
   - {t: 0, do: deploy}
   - {t: 0, do: arm, unit: all}
-  - {t: 0, do: opstart}
+  - {t: 0, do: start}
   - {t: 0, do: wait, seconds: 10} # rosters already flow from READY; the
                                  # cut lands mid-leg, before any emit
   - {t: 0, fault: link_cut, unit: 1, dur_s: 300} # the far unit goes silent mid-leg
