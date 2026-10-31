@@ -431,6 +431,57 @@ class T(unittest.TestCase):
         self.assertEqual(u2["config"]["de_camera"]["camera"]
                          ["camera_start_index"], 2)
 
+    # ---- SL-0164: feed real-device skip, --cam override, cam= display
+
+    def test_feed_indices_skip_real_devices(self, ):
+        import unittest.mock as _m
+        idx = self._cam_sim(unit_cfg={
+            "de_camera": {"camera": {"camera_list": [
+                {"name": "A", "device_num": 0},
+                {"name": "B", "device_num": 3}]}}})["units"][0]
+        with _m.patch.object(simlib.os.path, "exists",
+                             lambda p: True), \
+                _m.patch.object(simlib, "video_is_loopback",
+                                lambda i: i == 3):
+            self.assertEqual(simlib.camera_feed_indices(idx), [3])
+
+    def test_cam_override_binds_and_hashes(self):
+        spec = {"version": 1, "name": "vcam_t", "slot_base": 10,
+                "server": {"type": "fake",
+                           "port": simlib.SERVER_PORT + 10},
+                "units": [{"block": "camera_fixed", "name": "cam1",
+                           "cameras": "DE-CAM1"}]}
+        # list form needed for multi; single entry keeps one instance
+        simlib.set_cam_override("0")
+        try:
+            sim = simlib.load_sim(dict(spec, units=[
+                {"block": "camera_fixed", "name": "cam1",
+                 "cameras": ["DE-CAM1"]}]))
+        finally:
+            simlib.set_cam_override(None)
+        e = sim["units"][0]["config"]["de_camera"]["camera"] \
+              ["camera_list"][0]
+        self.assertEqual(e["device_num"], 0)
+        self.assertNotIn("device_name", e)
+        # a different --cam changes the hash; same reuses
+        simlib.set_cam_override("5")
+        try:
+            sim2 = simlib.load_sim(dict(spec, units=[
+                {"block": "camera_fixed", "name": "cam1",
+                 "cameras": ["DE-CAM1"]}]))
+        finally:
+            simlib.set_cam_override(None)
+        self.assertNotEqual(sim["hash"], sim2["hash"])
+        # multi-camera sim refuses
+        simlib.set_cam_override("0")
+        try:
+            with self.assertRaises(simlib.SimError):
+                simlib.load_sim(dict(spec, units=[
+                    {"block": "camera_fixed", "name": "cam1",
+                     "cameras": ["DE-CAM1", "DE-CAM3"]}]))
+        finally:
+            simlib.set_cam_override(None)
+
     def test_wait_ready_dead_proc_fails_fast(self):
         """A watched proc that already exited returns False at once
         instead of hanging to timeout."""

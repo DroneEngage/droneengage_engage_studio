@@ -191,7 +191,7 @@ def _cli_flags(argv):
     while i < len(argv):
         a = argv[i]
         if a in ("--user", "--password", "--auth-server", "--slot-base",
-                 "--with"):
+                 "--with", "--cam"):
             if i + 1 >= len(argv):
                 sys.exit(f"{a} needs a value")
             kw[a[2:].replace("-", "_")] = argv[i + 1]
@@ -246,7 +246,7 @@ def main(argv):
             return 0
         # `./sim help <sim-or-test>` -> the full per-sim help (SL-0121)
         simlib.print_usage(sim_help.render_help(simlib.resolve_sim_arg(
-            argv[1], ("sims", "tests"))))
+            argv[1], ("sims", "tests", "scenarios"), choose=True)))
         return 0
     if argv[0] in ("-v", "--version", "version"):
         print(f"sim {_version()}")
@@ -274,10 +274,10 @@ def main(argv):
             if sim_help.wants_sim_help(c, a):
                 pos = next(x for x in a if not x.startswith("-")
                            and x not in ("help", "--help", "-h"))
-                kinds = ("sims", "tests") if c in ("run", "try") \
-                    else ("sims",)
+                kinds = ("sims", "tests", "scenarios") \
+                    if c in ("run", "try", "view") else ("sims",)
                 simlib.print_usage(sim_help.render_help(
-                    simlib.resolve_sim_arg(pos, kinds), c))
+                    simlib.resolve_sim_arg(pos, kinds, choose=True), c))
                 return 0
             if flags.get("shared"):
                 # launcher._shared() reads os.environ at call time; the
@@ -306,6 +306,10 @@ def main(argv):
                 # inherit them (same env channel --with/--slot-base use).
                 simlib.set_param_overrides(flags["set"])
                 os.environ["SIM_PARAMS"] = json.dumps(flags["set"])
+            if flags.get("cam") is not None:
+                # --cam <dev> pins the single de_camera instance's
+                # device; applied inside load_sim so it feeds sim_hash
+                simlib.set_cam_override(flags["cam"])
             auth = {k: v for k, v in flags.items()
                     if k in ("user", "password", "auth_server")}
             if auth and c in ("suite", "validate"):
@@ -335,7 +339,8 @@ def main(argv):
                 simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim show help")
             if len(files) != 1:
                 _usage_exit("show")
-            sim = simlib.load_sim(simlib.resolve_sim_arg(files[0]))
+            sim = simlib.load_sim(simlib.resolve_sim_arg(files[0],
+                                                         choose=True))
             if json_out:
                 srv = sim["server"]
                 out = {
@@ -388,6 +393,9 @@ def main(argv):
                          if fc else "no-fc ")
                       + " ".join(f"{m}:{simlib.col_cyan(str(p))}"
                                for m, p in u["ports"].items())
+                      + (f" cam={simlib.col_cyan(cbd)}"
+                         if (cbd := simlib.camera_binding_desc(u))
+                         else "")
                       + (f" acc={u['account']['user']}"
                          if u.get("account") else "")
                       + simlib.col_dim(
@@ -425,6 +433,13 @@ def main(argv):
             bad = _bad_flags(a, sim_commands.allowed_flags("vcam"))
             if bad:
                 simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim vcam help")
+            if "--pool" in a:
+                # the one-time named-label pool - plain alias for the
+                # root setup script; no sim arg needed
+                sys.exit(subprocess.call(
+                    ["sudo", os.path.join(simlib.SIM_ROOT, "tools",
+                                          "setup_v4l2loopback.sh")]
+                    + [x for x in a if x != "--pool"]))
             if len(files) != 1:
                 _usage_exit("vcam")
             sim = simlib.load_sim(simlib.resolve_sim_arg(files[0],
@@ -592,7 +607,8 @@ def main(argv):
             if len(files) != 1:
                 _usage_exit(c)
             files[0] = simlib.resolve_sim_arg(files[0],
-                                              ("sims", "tests"))
+                                              ("sims", "tests", "scenarios"),
+                                              choose=True)
             # `try` is the iteration form of `run`: it always keeps the
             # sim (no teardown) so the next try lands on a warm fleet
             keep = "--keep" in a or c == "try"
@@ -782,7 +798,8 @@ def main(argv):
             if len(files) != 1:
                 _usage_exit("validate")
             files[0] = simlib.resolve_sim_arg(files[0],
-                                              ("sims", "tests"))
+                                              ("sims", "tests", "scenarios"),
+                                              choose=True)
             problems = _validate_file(files[0])
             if json_out:
                 print(json.dumps({"file": files[0],
@@ -847,7 +864,9 @@ def main(argv):
             if tgt is not None:
                 try:
                     a[tgt] = simlib.resolve_sim_arg(a[tgt],
-                                                    ("sims", "tests"))
+                                                    ("sims", "tests",
+                                                     "scenarios"),
+                                                    choose=True)
                 except simlib.SimError:
                     pass
             record_mod.main(a)
@@ -876,7 +895,8 @@ def main(argv):
                 simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim studio help")
             if len(files) != 1:
                 _usage_exit("studio")
-            launcher.studio(simlib.resolve_sim_arg(files[0]),
+            launcher.studio(simlib.resolve_sim_arg(files[0],
+                                                   choose=True),
                             world=world, record_out=record,
                             teardown="--down" in rest)
         elif c == "view":
@@ -895,7 +915,8 @@ def main(argv):
             if len(files) != 1:
                 _usage_exit("view")
             files[0] = simlib.resolve_sim_arg(files[0],
-                                              ("sims", "tests"))
+                                              ("sims", "tests", "scenarios"),
+                                              choose=True)
             return scenario_runner.run(files[0], hold=True,
                                        record=record,
                                        open_web="--open-web" in a)

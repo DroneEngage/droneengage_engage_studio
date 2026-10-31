@@ -473,6 +473,51 @@ def instance_port(port_base, slot, i):
 # when the fleet spec itself is unchanged.
 _MODULE_BINS = {}
 
+# ./sim up --cam <dev>: pin THE camera of a single-camera sim. Applied
+# inside load_sim like the auth/slot overrides so the value is part of
+# the resolved spec and feeds sim_hash - a different --cam never
+# silently reuses the live sim.
+_CAM_OVERRIDE = None
+
+
+def set_cam_override(dev):
+    global _CAM_OVERRIDE
+    _CAM_OVERRIDE = None if dev is None else str(dev)
+
+
+def apply_cam_override(sim, dev):
+    """--cam <dev> on the resolved spec: the single de_camera instance
+    of the sim's only camera unit binds this device. Numeric ->
+    device_num, anything else -> a card label (device_name)."""
+    cam_units = []
+    for u in sim["units"]:
+        insts = [m for m in u["modules"]
+                 if module_base(m) == "de_camera"]
+        if len(insts) > 1:
+            raise SimError(
+                f"--cam: unit {u['name']!r} runs {len(insts)} de_camera "
+                "instances - use `cameras:`")
+        if insts:
+            cam_units.append((u, insts[0]))
+    if not cam_units:
+        raise SimError("--cam: the sim runs no de_camera unit")
+    if len(cam_units) > 1:
+        raise SimError("--cam: several units run de_camera "
+                       f"({[u['name'] for u, _ in cam_units]}) - "
+                       "use `cameras:`")
+    u, proc = cam_units[0]
+    cfg = u["config"].setdefault(proc, {})
+    camcfg = cfg.setdefault("camera", {})
+    for k in ("camera_start_index", "camera_end_index"):
+        camcfg.pop(k, None)
+        cfg.pop(k, None)
+    e = {"name": "CAM", "key": "cam_0"}
+    if dev.isdigit():
+        e["device_num"] = int(dev)
+    else:
+        e["device_name"] = dev
+    camcfg["camera_list"] = [e]
+
 
 def set_module_overrides(overrides):
     """Install {module: abs bin path} for this process. Called by the
@@ -888,6 +933,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
             if count is not None and "at" in entry:
                 at["north_m"] = at.get("north_m", 0) + SPACING_M * i
             sim["units"].append(_expand_unit(sim, b, uname, entry, at, catalog))
+    if _CAM_OVERRIDE is not None:
+        apply_cam_override(sim, _CAM_OVERRIDE)
     sim.pop("_cam_alloc", None)
     sim.pop("_cam_taken", None)
     seen = set()
@@ -3615,6 +3662,44 @@ def camera_missing_labels(sim, label_map=None):
                    if l not in label_map})
 
 
+def camera_feed_indices(u, label_map=None):
+    """device indices a feed producer may write into for this unit:
+    camera_video_indices minus real (non-loopback) devices - a real
+    webcam/capture card never gets ffmpeg streamed into it."""
+    return [i for i in camera_video_indices(u, label_map)
+            if not os.path.exists(f"/dev/video{i}")
+            or video_is_loopback(i)]
+
+
+def camera_binding_desc(u, label_map=None):
+    """`cam=...` text for `sim show`: every de_camera instance's bound
+    device - DE-CAM1(/dev/video2) for a resolved label, /dev/videoN for
+    a device_num, the bare label when unresolved, the scan range for
+    index-mode units."""
+    label_map = label_map if label_map is not None else v4l2_label_map()
+    out = []
+    for m in u.get("modules", []):
+        if module_base(m) != "de_camera":
+            continue
+        cfg = (u.get("config") or {}).get(m) or {}
+        cam = cfg.get("camera") or {}
+        for e in cam.get("camera_list") or []:
+            if not isinstance(e, dict):
+                continue
+            if e.get("device_name"):
+                l = e["device_name"]
+                out.append(l + (f"({label_map[l]})"
+                                if l in label_map else ""))
+            elif e.get("device_num") is not None:
+                out.append(f"/dev/video{e['device_num']}")
+        if not out and (cam.get("camera_start_index") is not None
+                        or cam.get("camera_end_index") is not None):
+            a = cam.get("camera_start_index", 0)
+            b = cam.get("camera_end_index", a)
+            out.append(f"video{a}-{b}" if a != b else f"video{a}")
+    return ",".join(out)
+
+
 def claimed_camera_labels(sim):
     """Card labels this sim claims on the machine: every de_camera
     device_name binding plus the render units' DE-SRC/DE-AI pairs -
@@ -3674,7 +3759,7 @@ def gen_feeds(sim):
     os.makedirs(pids_dir(sim["name"]), exist_ok=True)
     procs = []
     for u in sim["units"]:
-        for idx in camera_video_indices(u):
+        for idx in camera_feed_indices(u):
             proc = f"{u['name']}_{idx}"
             cmd = (f"'{FFMPEG_BIN}' -hide_banner -loglevel warning "
                    f"-f lavfi -i "

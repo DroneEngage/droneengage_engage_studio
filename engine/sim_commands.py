@@ -130,6 +130,8 @@ COMMANDS = {
         "flags": {
             "--fresh": "fresh bring-up (tear down any same-named sim first)",
             "--open-web": "xdg-open the webclient link once the sim is up",
+            "--cam": "pin THE camera of a single-camera sim: --cam 0 binds "
+                    "/dev/video0, --cam DE-CAM3 binds that card label",
         },
         "shared_flags": True,
         "examples": ["./sim up copters3", "./sim up copters3 --fresh",
@@ -150,6 +152,8 @@ COMMANDS = {
             "--print": "show the modprobe line without running it",
             "--reload": "unload the module first (drops its existing "
                         "devices) when it is already loaded",
+            "--pool": "run tools/setup_v4l2loopback.sh - the one-time "
+                      "named-label pool (DE-CAM*, DE-SRC/DE-AI, ...)",
         },
         "shared_flags": False,
         "examples": ["./sim vcam sims/copter_and_cameras.yaml",

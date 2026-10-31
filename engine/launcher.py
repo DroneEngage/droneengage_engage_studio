@@ -450,6 +450,14 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
             f"`./sim vcam {_label(sim_src)}` creates them (needs sudo), "
             "then stream them via `camera_feed:` in the sim or a "
             "feeder (scripts/video_clock.sh)"))
+    # a label binding needs the named pool, not vcam indices - one
+    # root run of the setup script, --persist for across reboots
+    missing_labels = simlib.camera_missing_labels(sim)
+    if missing_labels:
+        sys.exit(simlib.col_red(
+            f"missing camera label(s) {missing_labels} - "
+            "`sudo tools/setup_v4l2loopback.sh` creates the named "
+            "pool once (`--persist` survives reboot)"))
     # SL-0066 - stamp this fleet instance's generation into the manifest:
     # a scenario runner records it at run start and re-checks it before
     # teardown, so a runner orphaned by `sim down`/a takeover `up` cannot
@@ -588,7 +596,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         ctl.start_proc("feed", p)
     if feed_procs:
         fed = sorted({i for u in m["units"]
-                      for i in simlib.camera_video_indices(u)})
+                      for i in simlib.camera_feed_indices(u)})
         t0 = time.time()
         nocap = list(fed)
         while nocap and time.time() - t0 < 10:
@@ -652,6 +660,24 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
           + (simlib.col_yellow(
              "\nSITL needs ~1-2 min for GPS/EKF before `arm` succeeds.")
              if any(u["fc"] for u in m["units"]) else ""))
+    # where each de_camera instance drops stills/recordings
+    for u in m["units"]:
+        for proc in u.get("modules", []):
+            if simlib.module_base(proc) != "de_camera":
+                continue
+            mdir = os.path.join(simlib.unit_dir(u), proc)
+            try:
+                cfg = simlib.load_config(
+                    os.path.join(mdir, f"{proc}.config.json"))
+                folder = (cfg or {}).get("media_folder")
+            except OSError:
+                folder = None
+            if folder:
+                if not os.path.isabs(folder):
+                    folder = os.path.normpath(
+                        os.path.join(mdir, folder))
+                print(f"{u['name']} {proc} media: "
+                      + simlib.col_cyan(folder))
     # the GCS deep links - always printed; --open-web only adds the
     # browser open
     print("webclient: " + simlib.col_cyan(simlib.webclient_url(m)))
