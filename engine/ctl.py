@@ -74,6 +74,10 @@ Link faults (server type fake, or real with `link_proxy: true`):
                                       cut <s> | clear
                                       (loss_tx/loss_rx and profiles with
                                       loss knobs are fake-only)
+  relay stats                       the standalone udp_relay's counters
+                                    ({pairs, ports_free, rejected}) - sims
+                                    whose server runs one
+                                    (`server: {udp_relay: ...}`, SL-0089)
 
 Vehicle faults:
   param <unit> <NAME> <value>       SITL param set, verified: the
@@ -131,7 +135,7 @@ Processes:
                                     (de_camera allocates a free DE-CAM
                                     label + feed); remove_module reverses
   remove_module <unit> <proc>         kill a hot-added module + its feed
-  kill <unit> <proc> | restart <unit> <proc> | start_proc <unit> <proc>
+  kill|restart|start_proc <unit> <proc> [proc...]
   freeze <unit> <proc> [s]          SIGSTOP the process - it stays alive
                                     (sockets open) but silent: a hang, not
                                     a crash. With <s> it self-resumes.
@@ -2610,10 +2614,15 @@ def main(argv):
     elif c == "remove_module":
         remove_module(a[0], a[1])
     elif c in ("kill", "restart", "start_proc"):
+        procs = a[1:]
         if a[0] == "server":
-            owners = [("server", p) for p in server_procs(a[1] if len(a) > 1 else "all")]
+            owners = [("server", p) for t in (procs or ["all"])
+                      for p in server_procs(t)]
         else:
-            owners = [(u["name"], a[1]) for u in resolve(a[0])]
+            if not procs:
+                sys.exit(f"usage: {c} <unit> <proc> [proc...]")
+            owners = [(u["name"], p) for u in resolve(a[0])
+                      for p in procs]
         for owner, p in owners:
             if c in ("kill", "restart"):
                 kill_proc(owner, p)

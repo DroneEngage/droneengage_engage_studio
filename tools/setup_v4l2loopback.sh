@@ -22,16 +22,20 @@
 # The sim engine itself never needs root: `sim up` checks the labels
 # exist and points here when they don't.
 
-CAMS="${1:-10}"
-PAIRS="${2:-2}"
 FORCE=0
 PERSIST=0
+FILL=0
+ARGS=()
 for a in "$@"; do
     case "$a" in
         --force)   FORCE=1 ;;
         --persist) PERSIST=1 ;;
+        --fill)    FILL=1 ;;
+        *)         ARGS+=("$a") ;;
     esac
 done
+CAMS="${ARGS[0]:-10}"
+PAIRS="${ARGS[1]:-2}"
 case "$CAMS"  in ''|*[!0-9]*) echo "usage: $0 [cam_count [pair_count]] [--force] [--persist]"; exit 2;; esac
 case "$PAIRS" in ''|*[!0-9]*) echo "usage: $0 [cam_count [pair_count]] [--force] [--persist]"; exit 2;; esac
 
@@ -46,6 +50,19 @@ CAPS=$(printf '1,%.'0s $(seq $DEVICES) | sed 's/,$//')
 in_set() {   # label $1 in csv $2 ?
     echo ",$2," | grep -q ",$1,"
 }
+
+# --fill: invoked from the /etc/modprobe.d install hook --persist writes
+# when the kernel cap forces ctl-added devices - the hook hands us the
+# load, so bypass it (--ignore-install), then add the rest
+if [ "$FILL" = "1" ]; then
+    modprobe --ignore-install v4l2loopback devices=1 \
+             card_label="$(echo "$LABELS" | cut -d, -f1)" \
+             exclusive_caps="1" || exit 1
+    for l in $(echo "$LABELS" | tr ',' ' ' | cut -d' ' -f2-); do
+        v4l2loopback-ctl add -n "$l" -x 1 || exit 1
+    done
+    exit 0
+fi
 
 # ---- loaded-set classification ----------------------------------------
 if lsmod | grep -q ^v4l2loopback; then
@@ -87,15 +104,44 @@ if lsmod | grep -q ^v4l2loopback; then
         echo "could not unload v4l2loopback"; exit 1; }
 fi
 
-modprobe v4l2loopback devices=${DEVICES} \
-         card_label="${LABELS}" exclusive_caps="${CAPS}" || {
-    echo "modprobe failed - install v4l2loopback-dkms first"; exit 1; }
+# one modprobe when the kernel build takes the whole list; v4l2loopback
+# has a compile-time device cap (EINVAL above it), so a bigger pool
+# falls back to a single loaded device plus v4l2loopback-ctl add for
+# the rest - same labels, same exclusive_caps
+FIRST=$(echo "$LABELS" | cut -d, -f1)
+CTL_FILL=0
+if ! modprobe v4l2loopback devices=${DEVICES} \
+        card_label="${LABELS}" exclusive_caps="${CAPS}"; then
+    if ! command -v v4l2loopback-ctl >/dev/null; then
+        echo "modprobe devices=${DEVICES} rejected and no "
+        echo "v4l2loopback-ctl to add the rest - shrink the pool: "
+        echo "$0 <cam_count> <pair_count>"
+        exit 1
+    fi
+    lsmod | grep -q ^v4l2loopback || \
+        modprobe v4l2loopback devices=1 card_label="${FIRST}" \
+                 exclusive_caps="1" || {
+        echo "modprobe failed - install v4l2loopback-dkms first"; exit 1; }
+    for l in $(echo "$LABELS" | tr ',' ' ' | cut -d' ' -f2-); do
+        v4l2loopback-ctl add -n "$l" -x 1 || {
+            echo "v4l2loopback-ctl add $l failed"; exit 1; }
+    done
+    CTL_FILL=1
+    echo "kernel device cap below ${DEVICES} - pool filled via v4l2loopback-ctl"
+fi
 
 # ---- persist across reboots -------------------------------------------
 if [ "$PERSIST" = "1" ]; then
     echo v4l2loopback > /etc/modules-load.d/v4l2loopback.conf
-    echo "options v4l2loopback devices=${DEVICES} card_label=\"${LABELS}\" exclusive_caps=\"${CAPS}\"" \
-         > /etc/modprobe.d/de-vcam.conf
+    if [ "$CTL_FILL" = "1" ]; then
+        # an options line hits the same cap at boot - the install hook
+        # reproduces the full pool through this script's --fill mode
+        echo "install v4l2loopback $0 --fill" \
+             > /etc/modprobe.d/de-vcam.conf
+    else
+        echo "options v4l2loopback devices=${DEVICES} card_label=\"${LABELS}\" exclusive_caps=\"${CAPS}\"" \
+             > /etc/modprobe.d/de-vcam.conf
+    fi
     echo "persisted: /etc/modules-load.d/v4l2loopback.conf + /etc/modprobe.d/de-vcam.conf"
 fi
 

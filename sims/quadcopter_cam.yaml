@@ -1,0 +1,54 @@
+# Runbook: sims/quadcopter_cam.md
+#
+# Personal sim: ONE quadcopter box with an onboard camera - ArduCopter
+# SITL (raw binary over TCP, like sitl_tcp.sh) + de_comm + de_mavlink +
+# de_camera - on YOUR OWN server stack.
+#
+# Start your servers first (servers/sh_start_servers.sh): authenticator on
+# 19408, comm server on 9966. Nothing server-side is spawned here; only a
+# per-sim GCS bridge runs so `./sim ctl` keeps working.
+#
+# de_camera needs a V4L2 device: `./sim vcam sims/quadcopter_cam.yaml`
+# sudo-modprobes the missing v4l2loopback nodes once, and `camera_feed:`
+# below streams an ffmpeg test pattern into them on every `sim up`.
+#
+# Runs in parallel with quadcopter.yaml / rover.yaml / plane.yaml - each
+# personal sim uses its own slot_base so SITL (pilot/aux/fcb), de_comm,
+# de_mavlink and de_camera ports never overlap. `./sim up` refuses to
+# start if ports or unit names clash with a live sim anyway.
+description: |
+  Personal sim: one quadcopter box with an onboard camera (ArduCopter
+  SITL + de_comm + de_mavlink + de_camera) on your own external server
+  stack (auth on, slot_base 80). Includes render: {mode: viewer} for the
+  Mavlink3DMap mav_bridge + vite page.
+version: 1
+slot_base: 80                 # camquad: pilot 6560, fcb 8460, de_comm 62800,
+                              # de_mavlink s2s 63800, de_camera s2s 64800,
+                              # ctl 62089, sysid 80
+server:
+  type: external
+  auth: true                  # units log in via your authenticator
+  auth_ip: 127.0.0.1
+  auth_port: 19408
+  ip: 127.0.0.1               # your comm server (auth: false = direct)
+  port: 9966
+  # account:      {user: ..., code: ...}   # GCS bridge login (GCS bit) -
+  # unit_account: {user: ..., code: ...}   # default unit login (unit bit;
+  #                                        # cannot login as GCS)
+  # else SIM_AUTH_* / SIM_UNIT_AUTH_* from sim.local.env (out of git),
+  # or ./sim --user/--password/--auth-server on the command line
+render: {mode: viewer}          # Mavlink3DMap: mav_bridge + vite dev page;
+                                # needs MAVLINK3DMAP_DIR in sim.local.env
+# DE-0050: ffmpeg testsrc producers on the camera unit's configured
+# /dev/videoN before de_camera scans (exclusive_caps needs a producer
+# for CAPTURE to enumerate). Create the devices first: ./sim vcam
+camera_feed: testsrc2
+units:
+  - block: copter_camera
+    name: camquad1
+    config:
+      de_camera: {module_id: HorusEye}   # true module id, not the block's SimCam
+    # account: {user: camquad1, code: ...}
+    #   # this unit's own login; must exist on your authenticator in the
+    #   # same team as the GCS account or the GCS won't see the unit.
+    #   # `{name}` in user expands to the unit name (for count: fleets)

@@ -118,7 +118,7 @@ COMMANDS = {
         "group": "LIVE",
         "summary": "start a sim (restarts the same-named one)",
         "usage": ["./sim up <sim.yaml|de_servers|de_webclient> [--fresh] "
-                  "[--open-web]"],
+                  "[--open-web] [--cam dev]"],
         "description": "Start a sim. Restarts the same-named sim; refuses "
                        "ports of a live sim - sims run in parallel; unit "
                        "names may repeat on per-sim servers but stay unique "
@@ -141,15 +141,22 @@ COMMANDS = {
     "vcam": {
         "group": "LIVE",
         "summary": "create the v4l2loopback devices a camera sim needs",
-        "usage": ["./sim vcam <sim.yaml> [--print] [--reload]"],
+        "usage": ["./sim vcam <sim.yaml> [--print|--dry-run] [--reload] "
+                  "| --pool"],
         "description": "Derive the /dev/videoN indices a sim's camera "
                        "units open from their merged de_camera configs "
                        "and sudo-modprobe v4l2loopback for the missing "
                        "ones (real devices are never touched). The only "
                        "sudo path in the engine - `sim up` stays "
-                       "unprivileged.",
+                       "unprivileged. --pool instead runs "
+                       "tools/setup_v4l2loopback.sh - the one-time "
+                       "named-label pool (DE-CAM*, DE-SRC/DE-AI, ...) "
+                       "label-bound cameras and hot-added de_camera "
+                       "instances need; its other args (--persist, "
+                       "--force, counts) pass through to the script.",
         "flags": {
             "--print": "show the modprobe line without running it",
+            "--dry-run": "alias for --print",
             "--reload": "unload the module first (drops its existing "
                         "devices) when it is already loaded",
             "--pool": "run tools/setup_v4l2loopback.sh - the one-time "
@@ -157,7 +164,8 @@ COMMANDS = {
         },
         "shared_flags": False,
         "examples": ["./sim vcam sims/copter_and_cameras.yaml",
-                     "./sim vcam copter_and_cameras --print"],
+                     "./sim vcam copter_and_cameras --print",
+                     "./sim vcam --pool --persist"],
         "takes_sim": True,
     },
     "down": {

@@ -379,6 +379,56 @@ class ResolveSimArgTest(unittest.TestCase):
         finally:
             simlib.SIM_ROOT = old
 
+    def test_bare_name_with_yaml_suffix(self):
+        """`sim up copter_and_cameras.yaml` searches like the bare name;
+        an unmatched .yaml arg passes through for the loader's
+        file-not-found."""
+        root = self._tmp_root()
+        open(os.path.join(root, "sims", "foo.yaml"), "w").close()
+        old = simlib.SIM_ROOT
+        simlib.SIM_ROOT = root
+        try:
+            self.assertEqual(simlib.resolve_sim_arg("foo.yaml"),
+                             os.path.join(root, "sims", "foo.yaml"))
+            self.assertEqual(simlib.resolve_sim_arg("missing.yaml"),
+                             "missing.yaml")
+        finally:
+            simlib.SIM_ROOT = old
+
+    def test_scenarios_kind_and_choose(self):
+        """scenarios/** only when "scenarios" is in kinds; a name that
+        resolves to several files is a tty pick under choose=True."""
+        root = self._tmp_root()
+        os.makedirs(os.path.join(root, "scenarios", "demos"))
+        open(os.path.join(root, "sims", "foo.yaml"), "w").close()
+        open(os.path.join(root, "scenarios", "demos", "scn.yaml"),
+             "w").close()
+        open(os.path.join(root, "scenarios", "demos", "foo.yaml"),
+             "w").close()
+        old = simlib.SIM_ROOT
+        simlib.SIM_ROOT = root
+        try:
+            kinds = ("sims", "tests", "scenarios")
+            self.assertEqual(
+                simlib.resolve_sim_arg("scn", kinds),
+                os.path.join(root, "scenarios", "demos", "scn.yaml"))
+            with mock.patch("sys.stdin", mock.Mock(isatty=lambda: False)):
+                # stdin is not a tty here - ambiguity stays an error
+                with self.assertRaises(simlib.SimError):
+                    simlib.resolve_sim_arg("foo", kinds, choose=True)
+            tty = mock.Mock(isatty=lambda: True)
+            with mock.patch("sys.stdin", tty), \
+                    mock.patch("builtins.input", return_value="2"):
+                self.assertEqual(
+                    simlib.resolve_sim_arg("foo", kinds, choose=True),
+                    os.path.join(root, "scenarios", "demos", "foo.yaml"))
+            with mock.patch("sys.stdin", tty), \
+                    mock.patch("builtins.input", return_value="9"), \
+                    self.assertRaises(simlib.SimError):
+                simlib.resolve_sim_arg("foo", kinds, choose=True)
+        finally:
+            simlib.SIM_ROOT = old
+
 
 if __name__ == "__main__":
     unittest.main()
