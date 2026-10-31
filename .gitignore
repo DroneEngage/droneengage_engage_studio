@@ -3,3 +3,5 @@ __pycache__
 /.pytest_cache
 # per-machine paths (copy sim.local.env.example)
 /sim.local.env
+
+.playwright-mcp/
