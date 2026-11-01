@@ -142,7 +142,7 @@ COMMANDS = {
         "group": "LIVE",
         "summary": "create the v4l2loopback devices a camera sim needs",
         "usage": ["./sim vcam <sim.yaml> [--print|--dry-run] [--reload] "
-                  "| --pool"],
+                  "| --pool | --list"],
         "description": "Derive the /dev/videoN indices a sim's camera "
                        "units open from their merged de_camera configs "
                        "and sudo-modprobe v4l2loopback for the missing "
@@ -153,7 +153,11 @@ COMMANDS = {
                        "named-label pool (DE-CAM*, DE-SRC/DE-AI, ...) "
                        "label-bound cameras and hot-added de_camera "
                        "instances need; its other args (--persist, "
-                       "--force, counts) pass through to the script.",
+                       "--force, counts) pass through to the script. "
+                       "--list is read-only and unprivileged: every "
+                       "/dev/videoN with its label, kind, the live-sim "
+                       "unit.proc bound to it and the feed producing "
+                       "into it, plus the free pool labels.",
         "flags": {
             "--print": "show the modprobe line without running it",
             "--dry-run": "alias for --print",
@@ -161,11 +165,14 @@ COMMANDS = {
                         "devices) when it is already loaded",
             "--pool": "run tools/setup_v4l2loopback.sh - the one-time "
                       "named-label pool (DE-CAM*, DE-SRC/DE-AI, ...)",
+            "--list": "list every /dev/videoN: label, real/loopback, "
+                      "bound unit.proc and feed proc, plus free labels",
         },
         "shared_flags": False,
         "examples": ["./sim vcam sims/copter_and_cameras.yaml",
                      "./sim vcam copter_and_cameras --print",
-                     "./sim vcam --pool --persist"],
+                     "./sim vcam --pool --persist",
+                     "./sim vcam --list"],
         "takes_sim": True,
     },
     "down": {

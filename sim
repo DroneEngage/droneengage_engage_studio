@@ -440,6 +440,10 @@ def main(argv):
                     ["sudo", os.path.join(simlib.SIM_ROOT, "tools",
                                           "setup_v4l2loopback.sh")]
                     + [x for x in a if x != "--pool"]))
+            if "--list" in a:
+                # SL-0170: read-only device inventory (index <-> label
+                # <-> owner <-> feed); no sim arg needed
+                sys.exit(simlib.vcam_list())
             if len(files) != 1:
                 _usage_exit("vcam")
             sim = simlib.load_sim(simlib.resolve_sim_arg(files[0],

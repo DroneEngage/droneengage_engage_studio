@@ -3890,6 +3890,78 @@ def vcam_run(sim, print_only=False, reload=False):
     return subprocess.call(["sudo"] + plan["cmd"])
 
 
+def vcam_list():
+    """SL-0170 `./sim vcam --list`: every /dev/videoN with its card
+    name, kind (real vs loopback), the live-sim unit.proc bound to it
+    and the feed.<unit>_<idx> producing into it - the answer to "which
+    cam number or label is free" before add_module. Read-only and
+    unprivileged; owners/feeds come from live manifests only, so a dead
+    sim's stale bindings never claim a device."""
+    label_map = v4l2_label_map()
+    owners, feeds = {}, {}
+    for n in live_sim_names():
+        m = load_manifest(n)
+        for u in m["units"]:
+            for mod in u.get("modules", []):
+                if module_base(mod) != "de_camera":
+                    continue
+                cam = ((u.get("config") or {}).get(mod) or {}) \
+                    .get("camera") or {}
+                for e in cam.get("camera_list") or []:
+                    if not isinstance(e, dict):
+                        continue
+                    idx = e.get("device_num") \
+                        if isinstance(e.get("device_num"), int) else None
+                    if idx is None and e.get("device_name") in label_map:
+                        idx = int(label_map[e["device_name"]]
+                                  .rsplit("video", 1)[-1])
+                    if idx is not None:
+                        owners.setdefault(idx, set()) \
+                            .add(f"{n}:{u['name']}.{mod}")
+        live = read_pids(n)
+        for p in m.get("feed_procs") or []:
+            idx = p.rsplit("_", 1)[-1]
+            if idx.isdigit():
+                feeds.setdefault(int(idx), set()).add(
+                    f"{n}:feed.{p}"
+                    + ("" if f"feed.{p}" in live else "(dead)"))
+    v4l = "/sys/class/video4linux"
+    rows, free = [], []
+    if os.path.isdir(v4l):
+        for name in sorted((x for x in os.listdir(v4l)
+                            if x.startswith("video")
+                            and x[5:].isdigit()),
+                           key=lambda x: int(x[5:])):
+            idx = int(name[5:])
+            try:
+                label = open(os.path.join(v4l, name, "name")) \
+                    .read().strip()
+            except OSError:
+                label = "?"
+            loop = video_is_loopback(idx)
+            owner = "+".join(sorted(owners.get(idx) or ()))
+            feed = "+".join(sorted(feeds.get(idx) or ()))
+            status = owner or ("free" if loop else "-")
+            if not loop or owner:
+                pass
+            else:
+                free.append(f"{label}(/dev/video{idx})")
+            rows.append((f"/dev/video{idx}", label,
+                         "loopback" if loop else "real", status, feed))
+    if not rows:
+        print("no video devices found")
+        return 0
+    w = max(len(r[1]) for r in rows)
+    for dev, label, kind, status, feed in rows:
+        line = f"{dev:<12} {label:<{w}}  {kind:<9} {status}"
+        if feed:
+            line += f"  feed={feed}"
+        print(line)
+    if free:
+        print("free: " + " ".join(free))
+    return 0
+
+
 def generate(sim, sim_file=None):
     """Write var/run/<sim>/<unit>/... for every unit and the sim's manifest."""
     catalog = load_catalog()
