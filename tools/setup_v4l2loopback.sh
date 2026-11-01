@@ -51,6 +51,10 @@ in_set() {   # label $1 in csv $2 ?
     echo ",$2," | grep -q ",$1,"
 }
 
+in_set() {   # label $1 in csv $2 ?
+    echo ",$2," | grep -q ",$1,"
+}
+
 # --fill: invoked from the /etc/modprobe.d install hook --persist writes
 # when the kernel cap forces ctl-added devices - the hook hands us the
 # load, so bypass it (--ignore-install), then add the rest
@@ -66,7 +70,18 @@ fi
 
 # ---- loaded-set classification ----------------------------------------
 if lsmod | grep -q ^v4l2loopback; then
-    cur=$(cat /sys/module/v4l2loopback/parameters/card_label 2>/dev/null)
+    # read the labels the loaded DEVICES actually carry, from sysfs -
+    # NOT the card_label modparam: the kernel-cap ctl-fill path below
+    # (devices=1 + v4l2loopback-ctl add) leaves that param holding only
+    # the first label (or absent entirely), which made every rerun see
+    # the full pool as missing and reload it - orphaning live producers.
+    cur=""
+    for d in /sys/class/video4linux/video*; do
+        n=$(basename "$d")
+        [ -d "/sys/devices/virtual/video4linux/$n" ] || continue
+        l=$(cat "$d/name" 2>/dev/null)
+        [ -n "$l" ] && cur="${cur:+$cur,}$l"
+    done
     missing=""
     for l in $(echo "$LABELS" | tr ',' ' '); do
         in_set "$l" "$cur" || missing="$missing $l"
@@ -88,13 +103,31 @@ if lsmod | grep -q ^v4l2loopback; then
         exit 1
     fi
 
-    # never drop a device in use - name the holders
+    # never drop a device in use - name the holders; this gate precedes
+    # ANY device drop (modprobe -r here is the only one today). fuser
+    # first; when it reports no holders at all a single /proc fd sweep
+    # confirms before dropping - a restricted sudo env or missing
+    # psmisc must not let a silent fuser slip a reload through while a
+    # producer streams.
     holders=""
     for nr in $(ls /sys/class/video4linux/ | sed 's/^video//'); do
         [ -d "/sys/devices/virtual/video4linux/video${nr}" ] || continue
         pids=$(fuser "/dev/video${nr}" 2>/dev/null)
         [ -n "$pids" ] && holders="$holders /dev/video${nr}:$pids"
     done
+    if [ -z "$holders" ]; then
+        for fd in /proc/[0-9]*/fd/*; do
+            t=$(readlink "$fd" 2>/dev/null) || continue
+            case "$t" in
+                /dev/video*)
+                    n=$(basename "$t")
+                    [ -d "/sys/devices/virtual/video4linux/$n" ] \
+                        || continue
+                    pid=${fd#/proc/}
+                    holders="$holders $t:${pid%%/*}" ;;
+            esac
+        done
+    fi
     if [ -n "$holders" ]; then
         echo "loopback device(s) in use - refusing to reload:$holders"
         exit 1
