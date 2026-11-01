@@ -12,6 +12,8 @@
 - **Feeds never touch real devices.** ffmpeg producers only stream into
   sim-managed devices (pool/loopback/missing indices); a real webcam or
   capture card is never written to, so `--cam 0` is safe.
+  `add_module --ffmpeg <src>` is refused outright when the bound device
+  is real rather than silently skipping the feed.
 - **Feed before camera.** An `exclusive_caps` loopback advertises
   CAPTURE only while a producer streams, so every bound index's feed
   reaches CAPTURE before its de_camera instance launches (cold-start
@@ -32,7 +34,11 @@
   instead of being silently ignored. An already-bound device is
   refused naming its owner (`sim:unit.proc`); binding a labeled
   loopback by index claims its label too. `./sim vcam --list` shows
-  every device with label, owner and feed.
+  every device with label, owner and feed. `--ffmpeg <src>` starts a
+  `feed.<unit>_<idx>` producing into the newly bound index only - a
+  second `add_module` never respawns feeds on indices already fed; the
+  manifest `feeds[idx]` spec overrides the sim-level `camera_feed:` for
+  that index and survives a same-spec `sim up`.
 - **SITL must stay a child of its launch shell.** SITL exits when its
   parent dies, so `launch.sitl.sh` runs it with `&` and `wait`s, never
   `exec`. Every other launch script `exec`s and writes its own pidfile.

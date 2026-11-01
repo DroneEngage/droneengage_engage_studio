@@ -130,8 +130,9 @@ COMMANDS = {
         "flags": {
             "--fresh": "fresh bring-up (tear down any same-named sim first)",
             "--open-web": "xdg-open the webclient link once the sim is up",
-            "--cam": "pin THE camera of a single-camera sim: --cam 0 binds "
-                    "/dev/video0, --cam DE-CAM3 binds that card label",
+            "--cam": "pin THE camera of a single-camera sim: --cam 0 "
+                    "(or video0, /dev/video0) binds /dev/video0, --cam "
+                    "DE-CAM3 binds that card label",
         },
         "shared_flags": True,
         "examples": ["./sim up copters3", "./sim up copters3 --fresh",

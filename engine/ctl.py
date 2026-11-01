@@ -131,9 +131,15 @@ Module s2s faults (the unit's udp_proxy: [<module>] opt-in - a scenario
   udp_chunks <unit> <module> stats  the proxy's counters
 
 Processes:
-  add_module <unit> <mod> [--cam dev]  hot-add a module to a live unit
+  add_module <unit> <mod> [--cam dev] [--ffmpeg src]
+                                    hot-add a module to a live unit
                                     (de_camera allocates a free DE-CAM
-                                    label + feed); remove_module reverses
+                                    label + feed; --cam N, videoN or
+                                    /dev/videoN binds by index, any
+                                    other string by card label;
+                                    --ffmpeg <src> feeds only the newly
+                                    bound index - refused on a real
+                                    device); remove_module reverses
   remove_module <unit> <proc>         kill a hot-added module + its feed
   kill|restart|start_proc <unit> <proc> [proc...]
   freeze <unit> <proc> [s]          SIGSTOP the process - it stays alive
@@ -2671,8 +2677,9 @@ def main(argv):
                 ff = a.pop(i + 1)
                 a.pop(i)
         if len(a) != 2:
-            sys.exit("usage: add_module <unit> <mod> [--cam dev] - "
-                     "a device is a --cam value, not a positional arg")
+            sys.exit("usage: add_module <unit> <mod> [--cam dev] "
+                     "[--ffmpeg src] - a device is a --cam value, not "
+                     "a positional arg")
         add_module(a[0], a[1], cam, ff)
     elif c == "remove_module":
         remove_module(a[0], a[1])

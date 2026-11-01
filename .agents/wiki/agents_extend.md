@@ -15,9 +15,10 @@
     # pairs, and the camera repo's named-VC labels - indices are
     # kernel-picked so real webcams are never collided with./sim up
     # <sim> --cam <dev> pins a single-camera sim to a real device or
-    # label; ./sim ctl add_module <unit> de_camera [--cam <dev>] hot-adds
-    # an instance on a live unit (remove_module reverses; hot-added
-    # procs live in the manifest and survive a same-spec `sim up`).
+    # label; ./sim ctl add_module <unit> de_camera [--cam <dev>]
+    # [--ffmpeg <src>] hot-adds an instance on a live unit
+    # (remove_module reverses; hot-added procs live in the manifest and
+    # survive a same-spec `sim up`).
     # `--cam` is a flag - a positional device errors out. The value is
     # an index or a card name: `--cam 0`/`--cam video0`/`--cam /dev/video0`
     # all bind /dev/video0 (device_num); `--cam DE-CAM3`/`--cam
@@ -25,7 +26,11 @@
     # already bound by a live unit is refused - run `./sim vcam --list`
     # first: it prints every /dev/videoN with its label, real/loopback,
     # the sim:unit.proc owning it and the feed producing into it, plus
-    # a `free:` summary of unbound pool labels.
+    # a `free:` summary of unbound pool labels. `--ffmpeg <src>` takes
+    # the same source names as `camera_feed:` below, starts a feed into
+    # the newly bound index only and is refused when that device is
+    # real; its manifest `feeds[idx]` spec overrides a sim-level
+    # camera_feed for that index.
     fc: {vehicle: copter|plane|rover, model: quad, params: {PARAM: value}}   # fc: null = no SITL
     config: {de_comm: {sv_comm_lost_s: 20}}
     location: {north_m: 0, east_m: 0}

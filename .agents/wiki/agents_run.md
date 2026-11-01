@@ -36,6 +36,12 @@
 - `./sim ctl -s <sim>` pins a command to one sim; without it commands
   that need a single sim use the only live one, and unit lookups search
   live sims first.
+- `./sim ctl add_module <unit> de_camera [--cam dev] [--ffmpeg src]`
+  hot-adds a camera instance on a live unit without restarting SITL
+  (`remove_module` reverses). Run `./sim vcam --list` first to pick a
+  free device: `--cam` takes an index (`4`), `videoN`, `/dev/videoN` or
+  a card label; `--ffmpeg <src>` feeds only the newly bound index and
+  is refused on a real device.
 - `./sim run` reuses the running sim only when its hash matches and every
   process is alive; otherwise `up --fresh`. Run tests on the same sim back to
   back to skip the 1-2 min SITL/EKF warm-up.
