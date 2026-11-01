@@ -3836,6 +3836,14 @@ def video_capture_capable(idx):
     return c is not None and bool(c & V4L2_CAP_VIDEO_CAPTURE)
 
 
+def unit_feed_spec(u, sim, idx):
+    """SL-0172: feed spec for one bound /dev/videoN index - a
+    per-camera u["feeds"][idx] override (ctl add_module --ffmpeg)
+    wins, then sim camera_feed, then the default test pattern."""
+    return (u.get("feeds") or {}).get(str(idx)) \
+        or sim.get("camera_feed") or dict(_DEFAULT_FEED)
+
+
 def gen_feeds(sim):
     """camera_feed (DE-0050): per camera unit + configured /dev/videoN
     a pid-tracked ffmpeg lavfi producer under var/run/<sim>/feed/, so
@@ -3853,7 +3861,8 @@ def gen_feeds(sim):
     for u in sim["units"]:
         for idx in camera_feed_indices(u):
             proc = f"{u['name']}_{idx}"
-            gen_feed_script(sim, proc, idx)
+            gen_feed_script(sim, proc, idx,
+                            feed=unit_feed_spec(u, sim, idx))
             procs.append(proc)
     return procs
 

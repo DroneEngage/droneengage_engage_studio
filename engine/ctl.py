@@ -771,7 +771,7 @@ def owner_dir(owner):
     return simlib.unit_dir(u)
 
 
-def add_module(uname, mod, cam_dev=None):
+def add_module(uname, mod, cam_dev=None, feed_src=None):
     """SL-0165: hot-add a module to a live unit without restarting
     SITL. Picks the next free instance name + port, generates its
     config/launch artifacts; de_camera also allocates a free DE-CAM
@@ -859,10 +859,19 @@ def add_module(uname, mod, cam_dev=None):
         feedable = idx is not None and (
             not os.path.exists(f"/dev/video{idx}")
             or simlib.video_is_loopback(idx))
+        if feed_src is not None and not feedable:
+            sys.exit(f"add_module: --ffmpeg needs a virtual camera - "
+                     f"{cam_dev!r} resolves to a real or unknown device")
         idxs = [idx] if feedable else []
         for idx in idxs:
+            spec = (u.get("feeds") or {}).get(str(idx))
+            if feed_src is not None:
+                # SL-0172: per-camera feed spec, kept on the manifest
+                # unit so a same-spec `sim up` regenerates the same feed
+                spec = simlib._camera_feed_spec(feed_src)
+                u.setdefault("feeds", {})[str(idx)] = spec
             fp = f"{u['name']}_{idx}"
-            simlib.gen_feed_script(m, fp, idx)
+            simlib.gen_feed_script(m, fp, idx, feed=spec)
             start_proc("feed", fp)
             fed.append(fp)
         # exclusive_caps: the producer must advertise CAPTURE before
@@ -902,12 +911,26 @@ def remove_module(uname, proc):
     if proc in ("de_comm", "sitl"):
         sys.exit(f"remove_module: cannot remove {proc}")
     # feed indices this proc drives - computed before stripping the
-    # module so the binding still resolves
-    idxs = simlib.camera_feed_indices(u) \
-        if simlib.module_base(proc) == "de_camera" else []
+    # module so the binding still resolves; only THIS proc's bound
+    # indices, not every camera on the unit (SL-0172)
+    idxs = []
+    if simlib.module_base(proc) == "de_camera":
+        lm = simlib.v4l2_label_map()
+        cam = ((u.get("config") or {}).get(proc) or {}) \
+            .get("camera") or {}
+        for e in cam.get("camera_list") or []:
+            if not isinstance(e, dict):
+                continue
+            i = e.get("device_num") \
+                if isinstance(e.get("device_num"), int) else None
+            if i is None and e.get("device_name") in lm:
+                i = int(lm[e["device_name"]].rsplit("video", 1)[-1])
+            if i is not None:
+                idxs.append(i)
     kill_proc(u["name"], proc)
     killed_feeds = []
     for idx in idxs:
+        (u.get("feeds") or {}).pop(str(idx), None)
         fp = f"{u['name']}_{idx}"
         if fp in (m.get("feed_procs") or []):
             kill_proc("feed", fp)
@@ -2636,10 +2659,21 @@ def main(argv):
                 sys.exit("--cam needs a value")
             cam = a.pop(i + 1)
             a.pop(i)
+        ff = None
+        for x in list(a):
+            if x.startswith("--ffmpeg="):
+                ff = x.split("=", 1)[1]
+                a.remove(x)
+            elif x == "--ffmpeg":
+                i = a.index(x)
+                if i + 1 >= len(a):
+                    sys.exit("--ffmpeg needs a value")
+                ff = a.pop(i + 1)
+                a.pop(i)
         if len(a) != 2:
             sys.exit("usage: add_module <unit> <mod> [--cam dev] - "
                      "a device is a --cam value, not a positional arg")
-        add_module(a[0], a[1], cam)
+        add_module(a[0], a[1], cam, ff)
     elif c == "remove_module":
         remove_module(a[0], a[1])
     elif c in ("kill", "restart", "start_proc"):
