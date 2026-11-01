@@ -4022,12 +4022,20 @@ def vcam_list():
         return 0
     w = max(len(r[1]) for r in rows)
     for dev, label, kind, status, feed in rows:
-        line = f"{dev:<12} {label:<{w}}  {kind:<9} {status}"
+        lab, stat = f"{label:<{w}}", status
+        if kind == "real":
+            lab, stat = col_dim(lab), col_dim(stat)
+        elif status == "free":
+            lab, stat = col_green(lab), col_green(stat)
+        else:
+            lab, stat = col_yellow(lab), col_cyan(stat)
+        line = f"{dev:<12} {lab}  {kind:<9} {stat}"
         if feed:
-            line += f"  feed={feed}"
+            line += "  feed=" + (col_red(feed) if "(dead)" in feed
+                                   else col_dim(feed))
         print(line)
     if free:
-        print("free: " + " ".join(free))
+        print(col_green("free: " + " ".join(free)))
     return 0
 
 
