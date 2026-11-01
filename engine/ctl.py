@@ -812,18 +812,32 @@ def add_module(uname, mod, cam_dev=None):
         u["config"].get(proc) or {})
     cfg = u["config"][proc]
     if base == "de_camera":
-        dev = cam_dev or simlib.free_cam_label()
-        if not dev:
-            sys.exit("add_module: no free DE-CAM label in the pool")
         camcfg = cfg.setdefault("camera", {})
         for k in ("camera_start_index", "camera_end_index"):
             camcfg.pop(k, None)
             cfg.pop(k, None)
         e = {"name": f"CAM{n - 1}", "key": f"cam_{n - 1}"}
-        if str(dev).isdigit():
-            e["device_num"] = int(dev)
+        if cam_dev is not None:
+            # SL-0171: index/path/label forms normalize the same way
+            # `sim up --cam` does; an explicit device must exist as a
+            # name and not be bound by a live unit already
+            e.update(simlib.normalize_cam_dev(cam_dev))
+            if "device_name" in e \
+                    and e["device_name"] not in simlib.v4l2_label_map():
+                sys.exit(f"add_module: unknown camera name "
+                         f"{e['device_name']!r} - ./sim vcam --list "
+                         "shows what exists")
+            owner = simlib.camera_device_owner(e)
+            if owner:
+                sys.exit(f"add_module: device {cam_dev!r} is already "
+                         f"bound to {owner} - ./sim vcam --list shows "
+                         "what is free")
+            dev = cam_dev
         else:
-            e["device_name"] = str(dev)
+            dev = simlib.free_cam_label()
+            if not dev:
+                sys.exit("add_module: no free DE-CAM label in the pool")
+            e["device_name"] = dev
         camcfg["camera_list"] = [e]
         if n > 1:
             cfg["module_id"] = \
@@ -2610,6 +2624,9 @@ def main(argv):
                 sys.exit("--cam needs a value")
             cam = a.pop(i + 1)
             a.pop(i)
+        if len(a) != 2:
+            sys.exit("usage: add_module <unit> <mod> [--cam dev] - "
+                     "a device is a --cam value, not a positional arg")
         add_module(a[0], a[1], cam)
     elif c == "remove_module":
         remove_module(a[0], a[1])

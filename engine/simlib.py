@@ -511,11 +511,12 @@ def apply_cam_override(sim, dev):
     for k in ("camera_start_index", "camera_end_index"):
         camcfg.pop(k, None)
         cfg.pop(k, None)
-    e = {"name": "CAM", "key": "cam_0"}
-    if dev.isdigit():
-        e["device_num"] = int(dev)
-    else:
-        e["device_name"] = dev
+    e = {"name": "CAM", "key": "cam_0", **normalize_cam_dev(dev)}
+    owner = camera_device_owner(e, exclude_sim=sim["name"])
+    if owner:
+        raise SimError(f"--cam {dev!r}: device already bound to "
+                       f"{owner} - ./sim vcam --list shows what is "
+                       "free")
     camcfg["camera_list"] = [e]
 
 
@@ -3650,18 +3651,86 @@ def camera_video_indices(u, label_map=None):
 
 
 def camera_video_labels(u):
-    """Card labels this unit's de_camera instances bind via camera_list
-    `device_name` - the pool labels it claims. [] for non-camera
-    units."""
+    """Card labels this unit's de_camera instances bind - every
+    camera_list device_name plus the pool label a device_num resolves
+    to when the node is a labeled loopback (binding /dev/video2 by
+    index claims DE-CAM1 just like naming it - SL-0171; index-bound
+    real devices claim nothing, consistent with feeds never touching
+    them). [] for non-camera units."""
     out = []
+    idx_label = {v: k for k, v in v4l2_label_map().items()}
     for m in u.get("modules", []):
         if module_base(m) != "de_camera":
             continue
         dcfg = (u.get("config") or {}).get(m) or {}
         for e in (dcfg.get("camera") or {}).get("camera_list") or []:
-            if isinstance(e, dict) and e.get("device_name"):
+            if not isinstance(e, dict):
+                continue
+            if e.get("device_name"):
                 out.append(e["device_name"])
+            elif isinstance(e.get("device_num"), int):
+                l = idx_label.get(f"/dev/video{e['device_num']}")
+                if l and video_is_loopback(e["device_num"]):
+                    out.append(l)
     return out
+
+
+def normalize_cam_dev(dev):
+    """SL-0171: a --cam device value -> the camera_list binding dict:
+    '4', 'video4' and '/dev/video4' -> device_num:4; anything else ->
+    device_name (a V4L2 card name, which de_camera matches against the
+    card string - never a /dev path). Shared by `sim up --cam`
+    (apply_cam_override) and `ctl add_module --cam`."""
+    dev = str(dev).strip()
+    m = re.fullmatch(r"(?:/dev/)?video(\d+)", dev)
+    if m:
+        return {"device_num": int(m.group(1))}
+    if dev.isdigit():
+        return {"device_num": int(dev)}
+    return {"device_name": dev}
+
+
+def camera_device_owner(binding, exclude_sim=None):
+    """SL-0171: the 'sim:unit.proc' already bound to a --cam device
+    anywhere in the live manifests, or None - the claim check an
+    explicit --cam passes so a second unit never grabs an already-bound
+    device. device_num matches any bound index (device_num entries and
+    resolved device_names); device_name matches a claimed label and,
+    when it resolves to an index, index-bound owners too."""
+    label_map = v4l2_label_map()
+    idx = None
+    if isinstance(binding.get("device_num"), int):
+        idx = binding["device_num"]
+    elif binding.get("device_name") in label_map:
+        idx = int(label_map[binding["device_name"]]
+                  .rsplit("video", 1)[-1])
+    label = binding.get("device_name")
+    for n in live_sim_names():
+        if n == exclude_sim:
+            continue
+        m = load_manifest(n)
+        for u in m["units"]:
+            for mod in u.get("modules", []):
+                if module_base(mod) != "de_camera":
+                    continue
+                cam = ((u.get("config") or {}).get(mod) or {}) \
+                    .get("camera") or {}
+                for e in cam.get("camera_list") or []:
+                    if not isinstance(e, dict):
+                        continue
+                    if label and e.get("device_name") == label:
+                        return f"{n}:{u['name']}.{mod}"
+                    if idx is not None:
+                        eidx = e.get("device_num") \
+                            if isinstance(e.get("device_num"), int) \
+                            else None
+                        if eidx is None \
+                                and e.get("device_name") in label_map:
+                            eidx = int(label_map[e["device_name"]]
+                                       .rsplit("video", 1)[-1])
+                        if eidx == idx:
+                            return f"{n}:{u['name']}.{mod}"
+    return None
 
 
 def camera_missing_labels(sim, label_map=None):
