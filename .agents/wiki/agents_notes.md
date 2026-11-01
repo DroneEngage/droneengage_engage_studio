@@ -16,6 +16,23 @@
   CAPTURE only while a producer streams, so every bound index's feed
   reaches CAPTURE before its de_camera instance launches (cold-start
   and `add_module` alike).
+- **`vcam --pool` / `--reload` orphans live producers.** Reloading
+  v4l2loopback deletes and recreates every /dev/videoN; running feed
+  ffmpegs keep writing into dead fds (the proc looks alive but the new
+  node has no producer) and de_camera capturers read a dead node. Never
+  run it while camera sims are live. Recovery: TERM the feed launch
+  bashes (their trap kills ffmpeg), rerun `feed/launch.*.sh` under
+  setsid+nohup (pidfiles rewrite themselves), then
+  `ctl restart <unit> de_camera [de_camera2 ...]`.
+- **`ctl add_module`'s `--cam` is a flag, index/path or card name.**
+  `--cam 0`, `--cam video0` and `--cam /dev/video0` all ->
+  `device_num` -> /dev/video0; `--cam DE-CAM3`/`--cam "C270 HD
+  WEBCAM"` -> `device_name` matched against the V4L2 card string. A
+  positional device (`add_module u de_camera /dev/video0`) errors
+  instead of being silently ignored. An already-bound device is
+  refused naming its owner (`sim:unit.proc`); binding a labeled
+  loopback by index claims its label too. `./sim vcam --list` shows
+  every device with label, owner and feed.
 - **SITL must stay a child of its launch shell.** SITL exits when its
   parent dies, so `launch.sitl.sh` runs it with `&` and `wait`s, never
   `exec`. Every other launch script `exec`s and writes its own pidfile.
