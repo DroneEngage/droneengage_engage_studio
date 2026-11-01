@@ -52,6 +52,17 @@ overlay, not a new file: `sims/overlays/<name>.yaml` +
 fleet from a sims file with `sim: {base: copters3, with: [...]}` instead
 of `fleet:`/`transport:`.
 
+`camera_feed: <src>` streams an ffmpeg lavfi producer into every bound
+loopback (`feed.<unit>_<idx>` procs; real devices are never written).
+`src` is `clock` (→ testsrc2) or `colors` (→ rgbtestsrc), matching the
+camera repo's video_clock.sh/video_colors.sh; anything else is passed
+to `ffmpeg -f lavfi -i` verbatim - `testsrc`, `smptebars`,
+`smptehdbars`, `mptestsrc`, `gradients`, `mandelbrot`, `cellauto`,
+`life`, or a parameterized string like
+`smptehdbars=size=1280x720:rate=30`. The mapping form tunes it:
+`camera_feed: {source: mptestsrc, size: "1280x720", rate: 30, pix_fmt: yuyv422}`
+(defaults 640x480 @ 30 yuyv422).
+
 **New test/scenario → a file (no code)** when existing steps, faults and
 assertions suffice. Tests are de.scenario/1 (`fleet:` + `timeline:`,
 docs/SCENARIOS.md) — `./sim new <name>` scaffolds one, `./sim validate`
