@@ -846,8 +846,20 @@ def add_module(uname, mod, cam_dev=None):
     u["ports"][proc] = port
     simlib.gen_module(u, m, proc, catalog)
     fed = []
-    if base == "de_camera" and m.get("camera_feed"):
-        idxs = simlib.camera_feed_indices(u)
+    if base == "de_camera":
+        # DE-0051: feed the NEWLY bound index only (and even when the
+        # sim has no camera_feed - gen_feed_script falls back to the
+        # default pattern). Loopbacks and missing nodes are feedable;
+        # a real device never gets a producer.
+        lm = simlib.v4l2_label_map()
+        idx = e.get("device_num") \
+            if isinstance(e.get("device_num"), int) else None
+        if idx is None and e.get("device_name") in lm:
+            idx = int(lm[e["device_name"]].rsplit("video", 1)[-1])
+        feedable = idx is not None and (
+            not os.path.exists(f"/dev/video{idx}")
+            or simlib.video_is_loopback(idx))
+        idxs = [idx] if feedable else []
         for idx in idxs:
             fp = f"{u['name']}_{idx}"
             simlib.gen_feed_script(m, fp, idx)

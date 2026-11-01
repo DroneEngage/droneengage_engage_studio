@@ -3858,10 +3858,16 @@ def gen_feeds(sim):
     return procs
 
 
-def gen_feed_script(sim, proc, idx):
+_DEFAULT_FEED = {"source": "testsrc2", "size": "640x480",
+                 "rate": 30, "pix_fmt": "yuyv422"}
+
+
+def gen_feed_script(sim, proc, idx, feed=None):
     """write launch.<proc>.sh for one feed.<unit>_<idx> - the
-    single-feed half of gen_feeds, shared with ctl add_module."""
-    feed = sim.get("camera_feed") or {}
+    single-feed half of gen_feeds, shared with ctl add_module.
+    `feed` overrides the sim's camera_feed spec (DE-0051: a sim
+    without camera_feed still gets the default test pattern)."""
+    feed = feed or sim.get("camera_feed") or _DEFAULT_FEED
     rdir = feed_dir(sim["name"])
     os.makedirs(rdir, exist_ok=True)
     cmd = (f"'{FFMPEG_BIN}' -hide_banner -loglevel warning "
