@@ -92,10 +92,7 @@ signature).
 - PASS: FC still disarmed, mission unchanged, and on a `server: {udp_relay}`
   sim `./sim ctl relay stats` shows `rejected.gcs_not_allowed >= 1`
   (`gcs_unpinned` alone does not count).
-- SKIP: relay sim whose 1071 port is outside `udp_port_range` (the server
-  has no relay support) - same rule as `udp_proxy_mavlink`; nothing is sent.
-- `expect: fail` flips the verdict and asserts the injection *landed*; used
-  by `tests/udp_relay/builtin_injection_expect_fail.yaml` to record the
-  built-in proxy's hole.
+- FAIL: relay sim whose 1071 port is outside `udp_port_range` - same rule as
+  `udp_proxy_mavlink`; nothing is sent.
 - Registered in `engine/registry.py`, documented in `docs/SCENARIOS.md`,
   tests in `engine/test_checks.py` (`TestUdpProxyRejects`).

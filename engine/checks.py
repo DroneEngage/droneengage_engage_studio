@@ -47,7 +47,7 @@ Journal assertions keep the runner.py semantics (same helpers, same
                          chunk read-back the WebClient draws)
   - UDP proxy:           udp_proxy_mavlink - the unit's 1071 {a,p}
                          endpoint, then raw-datagram HEARTBEAT counting
-                         (built-in proxy or spawned udp_relay alike)
+                         (through the spawned udp_relay)
 """
 
 import hashlib
@@ -1802,13 +1802,11 @@ def _udp_proxy_mavlink(name, a, ctx):
     heartbeat opens the GCS peer from a real datagram, then FC
     HEARTBEATs with the unit's sysid are counted for `secs`. On a relay
     sim (server.udp_relay) an endpoint outside the relay's
-    udp_port_range means the comm server ignored its `udp_relay`
-    config and stayed on the built-in proxy - the unit reports SKIP,
-    not FAIL."""
+    udp_port_range fails: the pair did not come from the relay."""
     secs = float(a.get("secs", 15))
     at_least = int(a.get("at_least", 1))
     urelay = (ctx["manifest"].get("server") or {}).get("udp_relay")
-    ok, bits, vals, any_fc, skipped = True, [], [], False, False
+    ok, bits, vals, any_fc = True, [], [], False
     for u in _units(a, ctx):
         if not u["fc"]:
             bits.append(f"{u['name']}: no fc - skipped")
@@ -1823,10 +1821,9 @@ def _udp_proxy_mavlink(name, a, ctx):
         if urelay:
             lo, hi = urelay["udp_port_range"]
             if not (lo <= port <= hi):
-                skipped = True
-                bits.append(f"{u['name']}: SKIP - 1071 port {port} "
-                            f"outside the relay range [{lo},{hi}] "
-                            "(server has no udp_relay support)")
+                ok = False
+                bits.append(f"{u['name']}: 1071 port {port} "
+                            f"outside the relay range [{lo},{hi}]")
                 continue
         _udp_proxy_resume(u["party_id"])
         n = udp_heartbeat_count(ip, port, u["fc"]["sysid"], secs)
@@ -1835,7 +1832,7 @@ def _udp_proxy_mavlink(name, a, ctx):
         ok &= good
         bits.append(f"{u['name']}: {n} heartbeat(s) via {ip}:{port}"
                     + ("" if good else f" (need >= {at_least})"))
-    if ok and (skipped or not any_fc):
+    if ok and not any_fc:
         return _r(name, "SKIP", None, "; ".join(bits))
     return _r(name, "PASS" if ok else "FAIL",
               sum(vals) / len(vals) if vals else None, "; ".join(bits))
@@ -1925,23 +1922,19 @@ def _udp_proxy_inject(ip, port, sysid, from_ip, secs):
 
 
 def _udp_proxy_rejects(name, a, ctx):
-    """udp_proxy_rejects {unit, from_ip, secs, expect}: a stranger must
+    """udp_proxy_rejects {unit, from_ip, secs}: a stranger must
     not drive the FC through the proxy pair. Datagrams are sent to the
     unit's 1071 {a,p} from a socket bound to `from_ip` (default
     127.0.0.2 - the allowlisted GCS is the bridge at 127.0.0.1): an ARM
     COMMAND_LONG and a one-item mission upload whose MISSION_REQUESTs
     are answered so the write can land. PASS requires the FC still
     disarmed, the mission signature unchanged, and - on a relay sim -
-    relay stats counting >= 1 gcs_not_allowed.
-    expect: fail flips the verdict - the built-in proxy has this hole
-    today (last-sender wins), so its variant asserts the injection
-    landed instead."""
+    relay stats counting >= 1 gcs_not_allowed."""
     secs = float(a.get("secs", 10))
     from_ip = a.get("from_ip", "127.0.0.2")
-    want_fail = str(a.get("expect", "pass")).lower() == "fail"
     urelay = (ctx["manifest"].get("server") or {}).get("udp_relay")
-    ok, bits, any_fc, n_landed = True, [], False, 0
-    skipped, n_tested = False, 0
+    ok, bits, any_fc = True, [], False
+    n_tested = 0
     for u in _units(a, ctx):
         if not u["fc"]:
             bits.append(f"{u['name']}: no fc - skipped")
@@ -1956,14 +1949,12 @@ def _udp_proxy_rejects(name, a, ctx):
         if urelay:
             lo, hi = urelay["udp_port_range"]
             if not (lo <= port <= hi):
-                skipped = True
-                bits.append(f"{u['name']}: SKIP - 1071 port {port} "
-                            f"outside the relay range [{lo},{hi}] "
-                            "(server has no udp_relay support)")
+                ok = False
+                bits.append(f"{u['name']}: 1071 port {port} "
+                            f"outside the relay range [{lo},{hi}]")
                 continue
         n_tested += 1
-        # on the built-in proxy the pair must actually be OPEN to prove
-        # the hole - a paused proxy would hide it
+        # the pair must actually be OPEN - a paused proxy would hide a hole
         _udp_proxy_resume(u["party_id"])
         armed0 = _fc_armed(u)
         sig0 = mission_signature(u)
@@ -1975,7 +1966,6 @@ def _udp_proxy_rejects(name, a, ctx):
                 or reqs > 0)
         if hole:
             ok = False
-            n_landed += 1
             bits.append(f"{u['name']}: INJECTION LANDED - "
                         f"armed {armed0}->{armed1}, "
                         f"mission {'changed' if sig1 != sig0 else 'same'}, "
@@ -1984,21 +1974,14 @@ def _udp_proxy_rejects(name, a, ctx):
             bits.append(f"{u['name']}: rejected - still "
                         f"{'disarmed' if armed1 is False else 'unarmed?'}, "
                         "mission unchanged")
-    if skipped and not n_tested:
-        return _r(name, "SKIP", None, "; ".join(bits))
     if urelay and n_tested:
         st = ctl.relay_stats()
         rej = (st or {}).get("rejected") or {}
         n_gcs = int(rej.get("gcs_not_allowed", 0))
         bits.append(f"relay rejected: {rej}")
-        if n_gcs < 1 and not want_fail:
+        if n_gcs < 1:
             ok = False
             bits.append("relay counted no gcs_not_allowed drop")
-    if want_fail:
-        note = "expected failure observed - " if n_landed \
-            else "expected the injection to land but it was blocked - "
-        return _r(name, "PASS" if n_landed else "FAIL", None,
-                  note + "; ".join(bits))
     if ok and not any_fc:
         return _r(name, "SKIP", None, "; ".join(bits))
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))

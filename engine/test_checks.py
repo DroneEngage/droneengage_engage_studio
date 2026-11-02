@@ -1689,9 +1689,9 @@ class TestUdpProxyMavlink(unittest.TestCase):
                     "server_procs": []},
                 "marks": {}, "file": "/x/s.yaml", "results_dir": None}
 
-    def test_off_relay_range_skips(self):
-        # a spawned server without udp_relay support leaves the unit on
-        # the built-in proxy - the 1071 port lands outside the range
+    def test_off_relay_range_fails(self):
+        # a pair that did not come from the relay: the 1071 port lands
+        # outside the range
         c = self._ctx()
         with mock.patch.object(checks.ctl, "resolve",
                                lambda tok, m=None: c["manifest"]["units"]), \
@@ -1699,7 +1699,7 @@ class TestUdpProxyMavlink(unittest.TestCase):
                                   return_value=("127.0.0.1", 9999)):
             r = checks.check_assertion(
                 {"udp_proxy_mavlink": {"unit": "u1", "secs": 0.1}}, c)
-        self.assertEqual(r["status"], "SKIP")
+        self.assertEqual(r["status"], "FAIL")
 
     def test_in_range_counts_and_passes(self):
         c = self._ctx()
@@ -1837,7 +1837,7 @@ class TestUdpProxyRejects(unittest.TestCase):
         self.assertEqual(r["status"], "FAIL")
 
     def test_injection_landed_fails(self):
-        # builtin proxy (no relay): the stranger's ARM reaches the FC
+        # the stranger's ARM reaches the FC
         c = self._ctx(relay=False)
         with contextlib.ExitStack() as st:
             for m_ in self._patched(
@@ -1857,7 +1857,7 @@ class TestUdpProxyRejects(unittest.TestCase):
                 {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
         self.assertEqual(r["status"], "FAIL")
 
-    def test_off_relay_range_skips(self):
+    def test_off_relay_range_fails(self):
         # server without udp_relay support: the 1071 port is outside the
         # relay range -> SKIP like udp_proxy_mavlink, nothing injected
         c = self._ctx(relay=True)
@@ -1872,7 +1872,7 @@ class TestUdpProxyRejects(unittest.TestCase):
                 checks, "_udp_proxy_inject", inj))
             r = checks.check_assertion(
                 {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
-        self.assertEqual(r["status"], "SKIP")
+        self.assertEqual(r["status"], "FAIL")
         inj.assert_not_called()
 
     def test_unpinned_alone_does_not_pass(self):
@@ -1886,31 +1886,6 @@ class TestUdpProxyRejects(unittest.TestCase):
             r = checks.check_assertion(
                 {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
         self.assertEqual(r["status"], "FAIL")
-
-    def test_expect_fail_flips_verdict(self):
-        # expect: fail on a builtin sim - PASS means the hole exists
-        c = self._ctx(relay=False)
-        with contextlib.ExitStack() as st:
-            for m_ in self._patched(
-                    c, [False, True], ["s", "s"], 0):
-                st.enter_context(m_)
-            r = checks.check_assertion(
-                {"udp_proxy_rejects":
-                 {"unit": "u1", "secs": 0.1, "expect": "fail"}}, c)
-        self.assertEqual(r["status"], "PASS")
-
-    def test_expect_fail_blocked_fails(self):
-        # expect: fail but the injection was blocked -> FAIL
-        c = self._ctx(relay=False)
-        with contextlib.ExitStack() as st:
-            for m_ in self._patched(
-                    c, [False, False], ["s", "s"], 0):
-                st.enter_context(m_)
-            r = checks.check_assertion(
-                {"udp_proxy_rejects":
-                 {"unit": "u1", "secs": 0.1, "expect": "fail"}}, c)
-        self.assertEqual(r["status"], "FAIL")
-
 
 if __name__ == "__main__":
     unittest.main()

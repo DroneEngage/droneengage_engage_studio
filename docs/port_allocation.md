@@ -71,8 +71,8 @@ stub_precland 55000, de_sound 54000.
 | control (fake) | `port + 1` (hard-wired in `fake_fleet_server.py:624`) | fake_fleet_server | same |
 | authenticator https | `port + 10` | de_auth | de_comm login, bridge |
 | authenticator s2s | `port + 11` | de_auth | de_server `s2s_ws_target_port` |
-| comm server UDP proxies | ephemeral, chosen by the OS (`allow_udpproxy_fixed_port: false`) | de_server | units, via the server |
-| comm server UDP proxy, fixed | the unit's de_mavlink `udp_proxy_fixed_port` becomes `socket2.port`, which the server binds when `allow_udpproxy_fixed_port: true` (`js_chat_system_commands.js`); `socket1` stays random | de_server | GCS telemetry clients. **Not used by the sim today**; see §2.2 |
+| UDP proxy pairs | inside the relay's `udp_port_range` (`server: {udp_relay}` only; without it a unit gets `en:false`) | udp_relay | units, via the server |
+| UDP proxy, fixed | the unit's de_mavlink `udp_proxy_fixed_port` becomes `socket2.port`, which the relay binds when `allow_fixed_port: true` and the port is inside its range; `socket1` stays random | de_server | GCS telemetry clients. **Not used by the sim today**; see §2.2 |
 | storage server | **not run** (`enable_storage_server: False`) | — | — |
 | external server | `port` (default 9966), `auth_port` (19408): remote, not ours | — | de_comm, bridge |
 | external bridge control | `control_port`, default `62009 + sb` | gcs_bridge | ctl |
@@ -267,8 +267,8 @@ The answer to "will we run with fixed ports?" is yes, either by asking
 for specific ports or by using fixed defaults. What happens today:
 de_mavlink's `udp_proxy_fixed_port` (in its config, and **persisted in
 the unit's local config file** by `cLocalConfigFile.addNumericField`,
-`fcb_main.cpp:330`) is sent as `socket2.port`. The comm server binds it
-only when `allow_udpproxy_fixed_port: true`.
+`fcb_main.cpp:330`) is sent as `socket2.port`. The relay binds it only
+when `allow_fixed_port: true` and the port is inside its range.
 
 Design:
 - New unit key `udp_proxy_port: <N> | auto`. `N` is a **pin** (that exact
@@ -281,8 +281,8 @@ Design:
   unit's local file from a previous run would otherwise win and bypass
   the allocator. This has to be verified against how `cLocalConfigFile`
   orders config vs local values.
-- `gen_server` sets `allow_udpproxy_fixed_port: true` on a server as soon
-  as any unit routed to it has `udp_proxy_port`.
+- `gen_server` keeps the relay's `allow_fixed_port: true` as soon as any
+  unit routed to it has `udp_proxy_port`.
 - Fixed defaults (e.g. "use 14550 like a real board"): written as a pin.
   Only one sim on the machine can hold such a port, and the second gets
   the normal clash error naming the sim that holds it. That's the
@@ -634,8 +634,7 @@ allocator never needs to know what a parent is.
 
 - `udp_proxy_port: N|auto` on units, the `unit.<u>.udp_telemetry`
   lease, de_mavlink's `udp_proxy_fixed_port` written and the persisted
-  local value reset, and `allow_udpproxy_fixed_port: true` on the
-  serving comm server.
+  local value reset, and `allow_fixed_port: true` on the serving relay.
 
 **Acceptance**
 - A unit with `udp_proxy_port: auto`: a GCS telemetry client receives
