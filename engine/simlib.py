@@ -3420,8 +3420,11 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
     viewer procs: render_sink.js demuxes the binary WS frames into one
     ffmpeg per camera unit writing that unit's DE-SRC-k loopback device,
     a headless Chromium runs the ?render=cameras page, and one
-    render_probe per unit reads the strip back off the device for the
-    render_latency rows."""
+    render_probe per unit taps the sink's copy of the same frames
+    (ws .../tap/<unit_idx>) for the render_latency rows. DE-0052: the
+    probe never opens the device - an exclusive_caps loopback carries
+    producer + exactly ONE consumer, already held by the unit's
+    de_camera/de_yolo_ai."""
     sink_js = os.path.join(m3d, "backend", "src", "render_sink.js")
     cam_units = [u for u in sim["units"] if u.get("cam_labels")]
     if not cam_units:
@@ -3470,10 +3473,12 @@ def _camera_render_procs(sim, render, rdir, marker, m3d, vite_js):
     for m in mapping:
         _render_script(
             sim, f"render_probe_{m['cam_index']}", rdir,
-            "'%s' '%s' --device '%s' --unit '%s' "
-            "--stream 'ws://127.0.0.1:%d'"
-            % (sys.executable, probe, m["device"], m["name"],
-               render["stream_port"]))
+            "'%s' '%s' --unit '%s' "
+            "--sink 'ws://127.0.0.1:%d/tap/%d' "
+            "--stream 'ws://127.0.0.1:%d' --mark '%s'"
+            % (sys.executable, probe, m["name"],
+               render["sink_port"], m["unit_idx"],
+               render["stream_port"], rdir))
     procs = ["render_sink", "chromium"]
     procs += [f"render_probe_{m['cam_index']}" for m in mapping]
     return procs
