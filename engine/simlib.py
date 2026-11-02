@@ -3219,6 +3219,9 @@ def gen_server(sim):
         "server_port": srv["port"],
         "public_host": host_ip or "127.0.0.1",
         "local_server_enabled": not srv["auth"],
+        # no UDP proxy unless the sim asks for a relay below: the shipped
+        # config points at a local relay, which may belong to someone else
+        "udp_relay": [],
         "s2s_ws_target_ip": "127.0.0.1",
         "s2s_ws_target_port": str(srv["auth_s2s_port"]),
         "ssl_key_file": os.path.join(ssl_dir, "ssl_airgap/domain.key"),
