@@ -388,6 +388,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                 f"sim {name} unchanged - reusing the live sim"
                 + (f" (hot-added: {', '.join(hot)})" if hot else "")),
                 flush=True)
+            err = ctl.bridge_login_error(name)
+            if err:
+                print(simlib.col_red(err), flush=True)
             ctl.CTX = name
             return m_old
         if m_old and not _force():
@@ -664,7 +667,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         if e.code:
             print(e.code)
             sys.exit(simlib.col_red(
-                "sim up FAILED (units offline) - check "
+                "sim up FAILED (units offline) - see the line above, then "
                 "var/run/<unit>/logs/de_comm.log"))
     if not ctl.wait_ready(m["units"], timeout):
         sys.exit(simlib.col_red(

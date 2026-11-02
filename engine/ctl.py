@@ -1392,6 +1392,31 @@ def wait_ready(units, timeout, marks=None):
     return True
 
 
+def bridge_login_error(sim, since=0.0):
+    """The GCS bridge's login refusal, or None. online_parties only sees
+    what the bridge hears, so a refused bridge looks like every unit being
+    offline. Reads the log's newest [bridge] line, since an old run's lines
+    stay in this append-only log: `since` skips a log not written since then."""
+    path = os.path.join(simlib.run_dir(sim), "server", "logs", "gcs_bridge.log")
+    try:
+        if os.path.getmtime(path) < since:
+            return None
+        with open(path, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - 8192))
+            lines = fh.read().decode(errors="replace").splitlines()
+    except OSError:
+        return None
+    last = next((ln for ln in reversed(lines) if ln.startswith("[bridge] ")), "")
+    m = re.search(r"login refused: (.*?)['\"]?\) - retrying", last)
+    if m is None:
+        return None
+    user = (simlib.load_manifest(sim)["server"].get("account") or {}).get("user", "?")
+    return (f"GCS bridge login refused for '{user}': {m.group(1)} - add it to "
+            f"the authenticator, or set SIM_AUTH_USER / SIM_AUTH_CODE in "
+            f"sim.local.env (units may be fine - nothing can see them)")
+
+
 def online_parties(sim=None):
     """Parties recently heard by one sim's GCS backend (its control port)."""
     port = manifest(sim)["server"]["control_port"]
@@ -2763,6 +2788,13 @@ def main(argv):
                 print(simlib.col_green(
                     f"all {len(want)} units online ({time.time()-t0:.0f}s)"))
                 return
+            # a bridge that cannot log in will never see a unit: say so
+            # now rather than at the timeout (5 s lets a fresh bridge log)
+            if time.time() - t0 > 5:
+                for n in sims:
+                    err = bridge_login_error(n, t0)
+                    if err:
+                        sys.exit(simlib.col_red(err))
             time.sleep(1)
         sys.exit(simlib.col_red(
             f"TIMEOUT: {len(got)}/{len(want)} units online after "
