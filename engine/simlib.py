@@ -3227,7 +3227,6 @@ def gen_server(sim):
         "s2s_my_private_key": os.path.join(ssl_dir, "DE_ServerComm_private.pem"),
         "command_plugin": [],
         "enable_storage_server": False,
-        "allow_udpproxy_fixed_port": False,
         "ignoreLog": True,
         "log_directory": os.path.join(sdir, "logs") + "/",
     })
@@ -3248,8 +3247,8 @@ def gen_server(sim):
         write_text(secret_path, secrets.token_hex(32) + "\n")
         os.chmod(secret_path, 0o600)
         lo = _udp_relay_range(sim)
-        # the manifest records the resolved range - the
-        # udp_proxy_mavlink check gates relay-vs-builtin on it
+        # the manifest records the resolved range - the UDP proxy checks
+        # require the unit's endpoint to be inside it
         urelay["udp_port_range"] = [int(lo[0]), int(lo[1])]
         rcfg = load_config(os.path.join(UDP_RELAY_REPO, "server.config"))
         rcfg.update({

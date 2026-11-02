@@ -1,10 +1,8 @@
 # UDP relay telemetry: one copter's MAVLink reaches the GCS through the
-# spawned droneengage_udp_proxy relay, not the comm server's built-in
-# proxy. Proves the GL-0063 relay path end to end: the unit's 1071
+# spawned droneengage_udp_proxy relay. Proves the GL-0063 relay path end to end: the unit's 1071
 # UDPProxy_Info advertises a port inside the relay's udp_port_range
 # (recorded in the run manifest), and FC HEARTBEATs flow back to the
-# GCS datagram that opened the peer. With a DE_SERVER_DIR that lacks
-# the relay client the check reports SKIP, not FAIL. auth: true is
+# GCS datagram that opened the peer. auth: true is
 # required - in local_server mode de_comm reports its never-started
 # remote link status to modules, so de_mavlink never learns REGISTERED
 # and never sends its 9008 pair-open request.

@@ -3,14 +3,11 @@
 One quad copter on a spawned real `droneengage_server` (local mode, no
 authenticator) **plus the standalone `droneengage_udp_proxy` relay**.
 The comm server config carries `udp_relay: [R1]`, so the unit's 9008
-pair opens land on the relay's UDP sockets instead of the built-in
-proxy.
+pair opens land on the relay's UDP sockets.
 
 Requirements:
 
-- `DE_SERVER_DIR` (sim.local.env) points at a comm server build with the
-  GL-0063+ relay client — until the chain merges that is the
-  `_wt/droneengage_server-GL-0063` worktree.
+- `DE_SERVER_DIR` (sim.local.env) points at a comm server build.
 - `DE_UDP_RELAY_DIR` (sim.local.env) points at the `droneengage_udp_proxy`
   checkout with `cargo build --release` done
   (`target/release/droneengage-udp-proxy` must exist).

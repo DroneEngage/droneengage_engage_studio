@@ -2,8 +2,8 @@
 #
 # One quad copter on the real droneengage_server plus the standalone
 # droneengage_udp_proxy relay (server: {type: real, udp_relay: true}).
-# The comm server routes 9008 pair opens to the relay instead of its
-# built-in proxy; tests/udp_relay/ proves GCS-side MAVLink flows through
+# The comm server routes 9008 pair opens to the relay;
+# tests/udp_relay/ proves GCS-side MAVLink flows through
 # it. Needs a relay-capable comm server build (GL-0063+) in
 # DE_SERVER_DIR, the authenticator (DE_AUTH_DIR) for auth: true, and
 # the relay repo (DE_UDP_RELAY_DIR) with `cargo build --release` done.
