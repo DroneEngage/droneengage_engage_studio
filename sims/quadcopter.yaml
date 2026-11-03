@@ -33,7 +33,7 @@ server:
 render: {mode: viewer}          # Mavlink3DMap: mav_bridge + vite dev page;
                                 # needs MAVLINK3DMAP_DIR in sim.local.env
 units:
-  - {block: copter, name: quad1}
+  - {block: copter, name: quad1, add_modules: [stub_ai_box]}
     # account: {user: quad1, code: ...}
     #   # this unit's own login; must exist on your authenticator in the
     #   # same team as the GCS account or the GCS won't see the unit.
