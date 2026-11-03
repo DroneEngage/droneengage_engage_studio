@@ -78,6 +78,17 @@ Link faults (server type fake, or real with `link_proxy: true`):
                                     ({pairs, ports_free, rejected}) - sims
                                     whose server runs one
                                     (`server: {udp_relay: ...}`, SL-0089)
+  relay gcs start <name> --ip <src> [--port <n>]
+                                    spawn a fake GCS: a MAVLink heartbeat
+                                    once a second into a pair's socket2
+                                    from <src> (single pair's port by
+                                    default) + telemetry counted back
+  relay gcs stop|silence|resume <name>
+                                    kill it / hold the heartbeat but keep
+                                    counting / send again
+  relay gcs cmd <name> <arm|disarm> a one-shot COMMAND_LONG from its source
+  relay gcs status [name]           the fake GCSs' counters/state
+                                    (SL-0178; `./sim down` kills them)
 
 Vehicle faults:
   param <unit> <NAME> <value>       SITL param set, verified: the
@@ -756,7 +767,7 @@ def fc_param_set(m, u, name, value, timeout=5):
 def owner_sim(owner):
     """Sim owning a process owner: a unit's own sim, or the context sim
     for the synthetic 'server'/'render'/'feed' owners."""
-    if owner in ("server", "render", "feed"):
+    if owner in ("server", "render", "feed", "relay_gcs"):
         return _ctx_name()
     u = simlib.find_unit(owner, CTX)
     if not u:
@@ -1548,6 +1559,246 @@ def relay_stats():
     return rep.get("ms") or rep
 
 
+def relay_list():
+    """The udp_relay's pair rows (its `list` reply)."""
+    rep = asyncio.run(_relay_control("list", {}))
+    return (rep.get("ms") or {}).get("pairs") or []
+
+
+# ----------------------------------------------------------------------
+# SL-0178: scriptable fake GCS procs for the udp_relay takeover tests.
+# `./sim ctl relay gcs start <name> --ip <src> [--port <n>]` spawns a
+# detached worker (same file, the --gcs-run argv path) that heartbeats
+# once a second into a pair's socket2 from the chosen source IP and
+# counts the telemetry coming back. State lands in
+# var/run/<sim>/relay_gcs/<name>.json once a second; <name>.ctl carries
+# silence/resume/stop, <name>.cmd a one-shot arm|disarm. The pidfile
+# (pids/relay_gcs.<name>.pid) makes `./sim down` reap it.
+# ----------------------------------------------------------------------
+
+def _relay_gcs_dir(sim=None):
+    d = os.path.join(simlib.run_dir(sim or _ctx_name()), "relay_gcs")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _gcs_paths(name, sim=None):
+    d = _relay_gcs_dir(sim)
+    return {"state": os.path.join(d, name + ".json"),
+            "ctl": os.path.join(d, name + ".ctl"),
+            "cmd": os.path.join(d, name + ".cmd"),
+            "launch": os.path.join(d, "launch." + name + ".sh")}
+
+
+def relay_gcs_status(name=None):
+    """Live fake-GCS state {name: {...}} from the procs' state files;
+    a state file whose pidfile is dead is reported with dead:true."""
+    pids = simlib.read_pids(_ctx_name())
+    d = _relay_gcs_dir()
+    names = [name] if name else sorted(
+        f[:-5] for f in os.listdir(d) if f.endswith(".json"))
+    out = {}
+    for n in names:
+        try:
+            st = json.load(open(os.path.join(d, n + ".json")))
+        except (OSError, ValueError):
+            continue
+        st["pid"] = pids.get("relay_gcs." + n)
+        if st["pid"] is None:
+            st["dead"] = True
+        out[n] = st
+    return out
+
+
+def _gcs_running(name):
+    st = relay_gcs_status(name).get(name)
+    return st if st and not st.get("dead") else None
+
+
+def _relay_gcs_default_port():
+    pairs = relay_list()
+    if len(pairs) != 1:
+        sys.exit(f"{len(pairs)} relay pairs - pass --port <socket2 port>")
+    port = (pairs[0].get("socket2") or {}).get("port")
+    if not port:
+        sys.exit("the relay pair has no socket2 port")
+    return int(port)
+
+
+def _relay_gcs_start(name, ip, port):
+    if _gcs_running(name):
+        sys.exit(f"relay gcs {name!r}: already running")
+    target = port or _relay_gcs_default_port()
+    paths = _gcs_paths(name)
+    for k in ("state", "ctl", "cmd"):
+        if os.path.exists(paths[k]):
+            os.unlink(paths[k])
+    sim = _ctx_name()
+    pidf = simlib.pid_path(sim, "relay_gcs", name)
+    # the launch script writes the pidfile itself, then execs the worker
+    # (its cmdline carries engine/ctl.py, so pid_is_ours accepts it)
+    simlib.write_text(
+        paths["launch"],
+        "#!/bin/bash\n"
+        f"echo $$ > '{pidf}'\n"
+        f"exec {sys.executable} '{os.path.abspath(__file__)}' "
+        f"--gcs-run '{name}' '{ip}' {int(target)} '{sim}'\n", 0o755)
+    subprocess.Popen(["/bin/bash", paths["launch"]],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=True)
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        st = _gcs_running(name)
+        if st:
+            print(json.dumps(st, indent=1))
+            return
+        time.sleep(0.1)
+    sys.exit(f"relay gcs {name!r}: did not come up (no state file)")
+
+
+def _relay_gcs_stop(name):
+    paths = _gcs_paths(name)
+    if _gcs_running(name):
+        simlib.write_text(paths["ctl"], "stop")
+        deadline = time.time() + 2
+        while time.time() < deadline and _gcs_running(name):
+            time.sleep(0.1)
+    if _gcs_running(name):
+        kill_proc("relay_gcs", name)
+    else:
+        pf = simlib.pid_path(_ctx_name(), "relay_gcs", name)
+        if os.path.isfile(pf):
+            os.unlink(pf)
+    for k in ("state", "ctl", "cmd"):
+        if os.path.exists(paths[k]):
+            os.unlink(paths[k])
+    print(f"{name}: stopped")
+
+
+def _relay_gcs_ctl(name, what):
+    if not _gcs_running(name):
+        sys.exit(f"relay gcs {name!r}: not running")
+    simlib.write_text(_gcs_paths(name)["ctl"], what)
+    print(f"{name}: {what}")
+
+
+def _relay_gcs_cmd_file(name, what):
+    if what not in ("arm", "disarm"):
+        sys.exit("usage: relay gcs cmd <name> <arm|disarm>")
+    if not _gcs_running(name):
+        sys.exit(f"relay gcs {name!r}: not running")
+    simlib.write_text(_gcs_paths(name)["cmd"], what)
+    print(f"{name}: {what} queued")
+
+
+def _relay_gcs_cmd(a):
+    """Dispatch of `relay gcs <op> ...` (start/stop/silence/resume/cmd/
+    status)."""
+    if not a:
+        sys.exit("usage: relay gcs start|stop|silence|resume|cmd|status")
+    op, rest = a[0], a[1:]
+    if op == "status":
+        print(json.dumps(relay_gcs_status(rest[0] if rest else None),
+                         indent=1))
+    elif op == "stop":
+        if not rest:
+            sys.exit("usage: relay gcs stop <name>")
+        _relay_gcs_stop(rest[0])
+    elif op in ("silence", "resume"):
+        if not rest:
+            sys.exit(f"usage: relay gcs {op} <name>")
+        _relay_gcs_ctl(rest[0], op)
+    elif op == "cmd":
+        if len(rest) < 2:
+            sys.exit("usage: relay gcs cmd <name> <arm|disarm>")
+        _relay_gcs_cmd_file(rest[0], rest[1])
+    elif op == "start":
+        if not rest:
+            sys.exit("usage: relay gcs start <name> --ip <src> "
+                     "[--port <n>]")
+        name, ip, port, i = rest[0], None, None, 1
+        while i < len(rest):
+            if rest[i] == "--ip" and i + 1 < len(rest):
+                ip = rest[i + 1]
+                i += 2
+            elif rest[i] == "--port" and i + 1 < len(rest):
+                port = int(rest[i + 1])
+                i += 2
+            else:
+                sys.exit("usage: relay gcs start <name> --ip <src> "
+                         "[--port <n>]")
+        if not ip:
+            sys.exit("relay gcs start: --ip <source ip> is required")
+        _relay_gcs_start(name, ip, port)
+    else:
+        sys.exit("usage: relay gcs start|stop|silence|resume|cmd|status")
+
+
+def _relay_gcs_proc(name, ip, target_port, sim):
+    """The spawned fake GCS (--gcs-run): a MAVLink heartbeat to the
+    pair's socket2 once a second from <ip>:<port>, telemetry counted on
+    the way back, state json each second, ctl/cmd files obeyed."""
+    from pymavlink import mavutil
+    paths = _gcs_paths(name, sim)
+    mav = mavutil.mavlink.MAVLink(None)
+    mav.srcSystem = 255
+    mav.srcComponent = mavutil.mavlink.MAV_COMP_ID_MISSIONPLANNER
+    hb = mav.heartbeat_encode(mavutil.mavlink.MAV_TYPE_GCS,
+                              mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                              0, 0, 0).pack(mav)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind((ip, 0))
+    s.settimeout(0.2)
+    st = {"name": name, "ip": ip, "port": s.getsockname()[1],
+          "target_port": target_port, "silenced": False,
+          "heartbeats": 0, "cmds_sent": 0,
+          "telemetry": 0, "telemetry_bytes": 0, "last_rx_ms": None,
+          "started_ms": int(time.time() * 1000)}
+
+    def arm_cmd(p1):
+        return mav.command_long_encode(
+            1, 1, mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+            0, p1, 0, 0, 0, 0, 0, 0).pack(mav)
+
+    def dump():
+        simlib.write_text(paths["state"], json.dumps(st))
+
+    next_send, wrote = 0.0, 0.0
+    while True:
+        try:
+            ctl = open(paths["ctl"]).read().strip()
+        except OSError:
+            ctl = ""
+        if ctl == "stop":
+            break
+        st["silenced"] = ctl == "silence"
+        try:
+            what = open(paths["cmd"]).read().strip()
+            os.unlink(paths["cmd"])
+        except OSError:
+            what = ""
+        if what in ("arm", "disarm"):
+            s.sendto(arm_cmd(1 if what == "arm" else 0),
+                     ("127.0.0.1", target_port))
+            st["cmds_sent"] += 1
+        now = time.time()
+        if not st["silenced"] and now >= next_send:
+            s.sendto(hb, ("127.0.0.1", target_port))
+            st["heartbeats"] += 1
+            next_send = now + 1.0
+        try:
+            data, _ = s.recvfrom(65536)
+            st["telemetry"] += 1
+            st["telemetry_bytes"] += len(data)
+            st["last_rx_ms"] = int(time.time() * 1000)
+        except socket.timeout:
+            pass
+        if now - wrote >= 1.0:
+            wrote = now
+            dump()
+    dump()
+
+
 def gcs_collect(first, mts, secs, stop_on_last=False):
     if server()["type"] == "fake":
         return asyncio.run(_fake_ws_collect(first, mts, secs, stop_on_last))
@@ -2245,6 +2496,10 @@ def cmd_status(scope="live", json_out=False, open_web=False):
 def main(argv):
     global CTX
     argv = list(argv)
+    # SL-0178 worker, spawned by `relay gcs start` - not an operator cmd
+    if argv[:1] == ["--gcs-run"]:
+        _relay_gcs_proc(argv[1], argv[2], int(argv[3]), argv[4])
+        return
     while argv and argv[0] in ("-s", "--sim"):
         CTX, argv = argv[1], argv[2:]
     if not argv:
@@ -2492,10 +2747,16 @@ def main(argv):
     elif c == "relay":
         # SL-0089: the standalone udp_relay's control API (per-run HMAC
         # secret). `relay stats` prints the {pairs, ports_free,
-        # rejected} counters udp_proxy_rejects reads.
-        if not a or a[0] != "stats":
-            sys.exit("usage: relay stats")
-        print(json.dumps(relay_stats(), indent=1))
+        # rejected} counters udp_proxy_rejects reads. SL-0178: `relay
+        # gcs ...` drives the fake-GCS procs the takeover checks read.
+        if not a:
+            sys.exit("usage: relay stats | relay gcs ...")
+        if a[0] == "stats":
+            print(json.dumps(relay_stats(), indent=1))
+        elif a[0] == "gcs":
+            _relay_gcs_cmd(a[1:])
+        else:
+            sys.exit("usage: relay stats | relay gcs ...")
     elif c == "clock":
         ctrl(f"clock offset {a[1]}")
     elif c == "noclock":

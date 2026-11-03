@@ -96,3 +96,22 @@ signature).
   `udp_proxy_mavlink`; nothing is sent.
 - Registered in `engine/registry.py`, documented in `docs/SCENARIOS.md`,
   tests in `engine/test_checks.py` (`TestUdpProxyRejects`).
+
+## Example: the fake-GCS relay checks (SL-0178)
+
+`./sim ctl relay gcs start <name> --ip <src> [--port <n>]` spawns a fake
+GCS: a MAVLink heartbeat once a second into the relay pair's socket2
+from `<src>` (the single pair's port by default, `--port` to pick), the
+telemetry counted on the way back and reported in
+`relay gcs status [name]` / the proc's state file. `stop`, `silence`
+(hold the heartbeat, keep counting), `resume`, `cmd <name> <arm|disarm>`
+round it out; `./sim down` kills them like every other sim proc. Three
+checks read that state:
+
+- `relay_gcs_telemetry {gcs, secs, at_least}` — PASS when the named fake
+  GCS's telemetry counter grows by `at_least` (default 1) inside `secs`
+  (default 3); FAIL when it is not running or the count stalls.
+- `relay_gcs_no_telemetry {gcs, secs}` — PASS when it receives nothing
+  for the window (the lock moved elsewhere or the pair is silent).
+- `relay_gcs_locked {unit, gcs}` — PASS when the pair's `list` row
+  `pinned.gcs {ip,port}` equals the named fake GCS's own source address.

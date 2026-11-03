@@ -81,7 +81,7 @@ UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
                 "journal_order", "no_journal", "final_state",
                 "fc_items_unchanged_without_cause", "mission_current",
                 "mission_items", "mission_pull", "udp_proxy_mavlink",
-                "udp_proxy_rejects",
+                "udp_proxy_rejects", "relay_gcs_locked",
                 "proc_alive", "proc_dead", "roster_value", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
                 "log_match_delta", "bt_no_squatters",
@@ -1987,6 +1987,74 @@ def _udp_proxy_rejects(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
 
 
+def _relay_gcs_grab(gcs, ctx):
+    """Live state of the named fake GCS (`./sim ctl relay gcs`), or None
+    when it is not running - ctx is unused, it keeps the grader shape."""
+    st = ctl.relay_gcs_status(gcs).get(gcs)
+    return st if st and not st.get("dead") else None
+
+
+def _relay_gcs_telemetry(name, a, ctx):
+    """relay_gcs_telemetry {gcs, secs, at_least}: the named fake GCS is
+    receiving telemetry back through the relay pair - its counter must
+    grow by at_least (default 1) within secs (default 3)."""
+    gcs = a.get("gcs")
+    secs = float(a.get("secs", 3))
+    at_least = int(a.get("at_least", 1))
+    st0 = _relay_gcs_grab(gcs, ctx)
+    if st0 is None:
+        return _r(name, "FAIL", None,
+                  f"{gcs}: not running - `./sim ctl relay gcs start`")
+    time.sleep(secs)
+    st1 = _relay_gcs_grab(gcs, ctx)
+    n = (st1 or {}).get("telemetry", 0) - st0.get("telemetry", 0)
+    ok = n >= at_least
+    return _r(name, "PASS" if ok else "FAIL", n,
+              f"{gcs}: +{n} telemetry datagram(s) in {secs:g}s "
+              f"(need >= {at_least})")
+
+
+def _relay_gcs_no_telemetry(name, a, ctx):
+    """relay_gcs_no_telemetry {gcs, secs}: the named fake GCS receives
+    no telemetry for secs (default 3) - the lock moved to another
+    source, or the pair is silent."""
+    gcs = a.get("gcs")
+    secs = float(a.get("secs", 3))
+    st0 = _relay_gcs_grab(gcs, ctx)
+    if st0 is None:
+        return _r(name, "FAIL", None,
+                  f"{gcs}: not running - `./sim ctl relay gcs start`")
+    time.sleep(secs)
+    st1 = _relay_gcs_grab(gcs, ctx)
+    n = (st1 or {}).get("telemetry", 0) - st0.get("telemetry", 0)
+    return _r(name, "PASS" if n == 0 else "FAIL", n,
+              f"{gcs}: +{n} telemetry datagram(s) in {secs:g}s "
+              "(need 0)")
+
+
+def _relay_gcs_locked(name, a, ctx):
+    """relay_gcs_locked {unit, gcs}: the unit's relay pair is pinned to
+    the named fake GCS - its `list` pinned.gcs {ip,port} equals the
+    fake's own source address."""
+    gcs = a.get("gcs")
+    st = _relay_gcs_grab(gcs, ctx)
+    if st is None:
+        return _r(name, "FAIL", None,
+                  f"{gcs}: not running - `./sim ctl relay gcs start`")
+    pairs = ctl.relay_list()
+    ok, bits = True, []
+    for u in _units(a, ctx):
+        row = next((p for p in pairs if p.get("unit") == u["name"]), None)
+        pin = ((row or {}).get("pinned") or {}).get("gcs") or {}
+        good = pin.get("ip") == st["ip"] \
+            and int(pin.get("port") or -1) == int(st["port"])
+        ok &= good
+        bits.append(f"{u['name']}: pin {pin.get('ip')}:{pin.get('port')}"
+                    f" {'==' if good else '!='} "
+                    f"{gcs} {st['ip']}:{st['port']}")
+    return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
+
+
 def _no_fc_command_to_static(name, a, ctx):
     ok, bits, n_all = True, [], 0
     for u in _units(a, ctx):
@@ -2709,6 +2777,9 @@ DISPATCH = {
     "mission_pull": _mission_pull,
     "udp_proxy_mavlink": _udp_proxy_mavlink,
     "udp_proxy_rejects": _udp_proxy_rejects,
+    "relay_gcs_telemetry": _relay_gcs_telemetry,
+    "relay_gcs_no_telemetry": _relay_gcs_no_telemetry,
+    "relay_gcs_locked": _relay_gcs_locked,
     "no_fc_command_to_static": _no_fc_command_to_static,
     "max_latency": lambda n, a, c: _journal_delta(n, a, c, ms=True),
     "proc_alive": lambda n, a, c: _proc_state(n, a, c, True),

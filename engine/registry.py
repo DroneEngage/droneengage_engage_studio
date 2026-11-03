@@ -521,6 +521,18 @@ VERBS = [
       doc="a stranger at from_ip cannot inject ARM/mission writes "
           "through the proxy pair",
       eg="{udp_proxy_rejects: {unit: c1, from_ip: '127.0.0.2'}}"),
+    V("relay_gcs_telemetry", "check", req=["gcs"],
+      opt=["secs", "at_least"],
+      doc="the named fake GCS (`relay gcs start`) keeps receiving "
+          "telemetry back through the relay pair",
+      eg="{relay_gcs_telemetry: {gcs: qgc1, secs: 5, at_least: 3}}"),
+    V("relay_gcs_no_telemetry", "check", req=["gcs"],
+      opt=["secs"],
+      doc="the named fake GCS receives no telemetry for the window",
+      eg="{relay_gcs_no_telemetry: {gcs: qgc2, secs: 5}}"),
+    V("relay_gcs_locked", "check", req=["unit", "gcs"],
+      doc="the relay pair's pinned GCS address is the named fake GCS",
+      eg="{relay_gcs_locked: {unit: c1, gcs: qgc1}}"),
     V("no_fc_command_to_static", "check", opt=["unit"],
       doc="no MAVLink command was ever sent to a no-FC unit",
       eg="{no_fc_command_to_static: {unit: s1}}"),

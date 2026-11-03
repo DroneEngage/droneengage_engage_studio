@@ -1725,6 +1725,98 @@ class TestUdpProxyMavlink(unittest.TestCase):
         self.assertEqual(r["value"], 2)
 
 
+class TestRelayGcsChecks(unittest.TestCase):
+    """SL-0178: the fake-GCS relay checks - statuses come from
+    ctl.relay_gcs_status, the locked address from ctl.relay_list."""
+
+    @staticmethod
+    def _ctx():
+        return {"manifest": {
+                    "name": "t",
+                    "units": [{"name": "u1", "party_id": "p1",
+                               "fc": {"sysid": 42}}],
+                    "server": {"type": "real"}},
+                "marks": {}, "file": "/x/s.yaml", "results_dir": None}
+
+    @staticmethod
+    def _status(telemetry=5):
+        return {"qgc": {"ip": "127.0.0.2", "port": 55001,
+                        "target_port": 40401, "telemetry": telemetry,
+                        "heartbeats": 3}}
+
+    def test_telemetry_counts_growth_pass_and_fail(self):
+        c = self._ctx()
+        snaps = iter([self._status(5), self._status(9)])
+        with mock.patch.object(checks.ctl, "relay_gcs_status",
+                               side_effect=lambda n=None: next(snaps)):
+            r = checks.check_assertion(
+                {"relay_gcs_telemetry": {"gcs": "qgc", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "PASS")
+        self.assertEqual(r["value"], 4)
+
+        snaps = iter([self._status(9), self._status(9)])
+        with mock.patch.object(checks.ctl, "relay_gcs_status",
+                               side_effect=lambda n=None: next(snaps)):
+            r = checks.check_assertion(
+                {"relay_gcs_telemetry": {"gcs": "qgc", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_telemetry_fails_when_the_fake_gcs_is_dead_or_missing(self):
+        c = self._ctx()
+        with mock.patch.object(checks.ctl, "relay_gcs_status",
+                               return_value={}):
+            r = checks.check_assertion(
+                {"relay_gcs_telemetry": {"gcs": "qgc", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "FAIL")
+        dead = {"qgc": {"ip": "127.0.0.2", "port": 1, "telemetry": 3,
+                        "dead": True}}
+        with mock.patch.object(checks.ctl, "relay_gcs_status",
+                               return_value=dead):
+            r = checks.check_assertion(
+                {"relay_gcs_telemetry": {"gcs": "qgc", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_no_telemetry_pass_and_fail(self):
+        c = self._ctx()
+        snaps = iter([self._status(9), self._status(9)])
+        with mock.patch.object(checks.ctl, "relay_gcs_status",
+                               side_effect=lambda n=None: next(snaps)):
+            r = checks.check_assertion(
+                {"relay_gcs_no_telemetry": {"gcs": "qgc", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "PASS")
+
+        snaps = iter([self._status(9), self._status(11)])
+        with mock.patch.object(checks.ctl, "relay_gcs_status",
+                               side_effect=lambda n=None: next(snaps)):
+            r = checks.check_assertion(
+                {"relay_gcs_no_telemetry": {"gcs": "qgc", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_locked_matches_and_mismatches_the_pinned_row(self):
+        c = self._ctx()
+        pairs = [{"unit": "u1",
+                  "pinned": {"gcs": {"policy": "tofu", "mode": "tofu",
+                                     "ip": "127.0.0.2", "port": 55001},
+                             "unit": {"mode": "open"}}}]
+
+        def run():
+            with mock.patch.object(
+                    checks.ctl, "resolve",
+                    lambda tok, m=None: c["manifest"]["units"]), \
+                 mock.patch.object(checks.ctl, "relay_gcs_status",
+                                   return_value=self._status()), \
+                 mock.patch.object(checks.ctl, "relay_list",
+                                   return_value=pairs):
+                return checks.check_assertion(
+                    {"relay_gcs_locked": {"unit": "u1", "gcs": "qgc"}}, c)
+
+        self.assertEqual(run()["status"], "PASS")
+        pairs[0]["pinned"]["gcs"]["ip"] = "127.0.0.9"
+        self.assertEqual(run()["status"], "FAIL")
+        pairs[0]["pinned"]["gcs"] = {"policy": "tofu", "mode": "tofu"}
+        self.assertEqual(run()["status"], "FAIL")
+
+
 class TestUdpProxyRejects(unittest.TestCase):
     """TASK-84: udp_proxy_rejects - the stranger-injection grader and
     its injection helper."""
