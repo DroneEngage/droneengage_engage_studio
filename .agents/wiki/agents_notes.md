@@ -125,3 +125,11 @@ Minimum before handing back:
     ./sim run tests/smoke_copters_auth.yaml            # if login / bridge / server gen touched
     ./sim run tests/mixed_bringup.yaml                 # if FC_KINDS / pilot commands touched
     ./sim down
+
+## Local de_servers credentials
+
+The user-run server stack (`./sim servers` — auth :19408, comm :9966,
+file_db account store) has: units `unit` / `unit`, GCS `gcs` / `gcs`
+(same team, TeamID 1). sim.local.env needs `SIM_AUTH_USER=gcs` +
+`SIM_AUTH_CODE=gcs` for `server.type: external` sims; units already
+default to SIM_UNIT_AUTH_USER=unit / unit there.
