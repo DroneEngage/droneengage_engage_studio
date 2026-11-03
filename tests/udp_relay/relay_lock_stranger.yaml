@@ -1,0 +1,22 @@
+# SL-0180 case 1: the first GCS locks the tofu pair; a stranger gets no
+# telemetry and cannot arm the drone or write a mission.
+version: 1
+name: relay_lock_stranger
+tasks: [GL-0105, SL-0180]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 47, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 49, do: relay, cmd: "gcs start qgc2 --ip 127.0.0.2"}
+  - {t: 51, do: relay, cmd: "gcs cmd qgc2 stream"}
+  - {t: 55, do: relay, cmd: "gcs cmd qgc2 arm"}
+assert:
+  - relay_gcs_locked: {unit: copter1, gcs: qgc1}
+  - relay_gcs_telemetry: {gcs: qgc1, secs: 6, at_least: 3}
+  - relay_gcs_no_telemetry: {gcs: qgc2, secs: 5}
+  - udp_proxy_rejects: {unit: copter1, from_ip: "127.0.0.2", secs: 10}

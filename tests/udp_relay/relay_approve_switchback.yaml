@@ -1,0 +1,30 @@
+# SL-0180 case 3: a stranger knocks, the operator approves it - telemetry
+# moves and the old GCS is cut; the old GCS asks again and is approved
+# back.
+version: 1
+name: relay_approve_switchback
+tasks: [GL-0109, GL-0110, SL-0180]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 47, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 49, do: wait, seconds: 4}
+  - {t: 53, do: relay, cmd: "gcs start qgc2 --ip 127.0.0.2"}
+  - {t: 55, do: relay, cmd: "gcs cmd qgc2 stream"}
+assert:
+  # each approve lands while its attempt is live: waitattempt polls the
+  # request first, so neither approve races the auto-reject cycle
+  - relay_gcs_switched: {unit: copter1, secs: 15, reason: approved,
+      trigger: ["waitattempt copter1 127.0.0.2",
+                "approve copter1 --gcs qgc2"]}
+  - relay_gcs_switched: {unit: copter1, secs: 15, reason: approved,
+      trigger: ["waitattempt copter1 127.0.0.1",
+                "approve copter1 --gcs qgc1"]}
+  - relay_gcs_telemetry: {gcs: qgc1, secs: 8, at_least: 3}
+  - relay_gcs_no_telemetry: {gcs: qgc2, secs: 5}
+  - relay_gcs_locked: {unit: copter1, gcs: qgc1}

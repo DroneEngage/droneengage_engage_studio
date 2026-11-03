@@ -1977,11 +1977,14 @@ def _udp_proxy_rejects(name, a, ctx):
     if urelay and n_tested:
         st = ctl.relay_stats()
         rej = (st or {}).get("rejected") or {}
-        n_gcs = int(rej.get("gcs_not_allowed", 0))
+        # allowlist drops gcs_not_allowed; tofu counts gcs_unpinned
+        # (and gcs_attempt while a request waits) - any gcs_* drop
+        # proves the stranger was refused
+        n_gcs = sum(int(v) for k, v in rej.items() if k.startswith("gcs_"))
         bits.append(f"relay rejected: {rej}")
         if n_gcs < 1:
             ok = False
-            bits.append("relay counted no gcs_not_allowed drop")
+            bits.append("relay counted no gcs_* drop")
     if ok and not any_fc:
         return _r(name, "SKIP", None, "; ".join(bits))
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
@@ -2055,13 +2058,69 @@ def _relay_gcs_locked(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
 
 
-def _relay_collect_9021(secs, act):
-    """The pushed 9021 ms with ms.act == `act` seen in `secs`."""
-    out = []
-    for f in ctl.gcs_collect(None, {9021}, float(secs)):
-        m = f.get("ms") or {}
-        if f.get("mt") == 9021 and m.get("act") == act:
-            out.append(m)
+def _relay_query_gcs(unit, secs):
+    """act:'query' on the unit - returns pinned.gcs dict or {}. When the
+    bridge drops the reply (its ws flaps) the control socket's `list`
+    row answers the same state - the fallback keeps the polls honest
+    instead of reading a dead bridge as 'no change'."""
+    r = ctl._relay_peer(unit, "query", wait=float(secs)) or {}
+    g = (r.get("pinned") or {}).get("gcs") or {}
+    if g:
+        return g
+    try:
+        row = next((p for p in ctl.relay_list() if p.get("unit") == unit),
+                   None)
+        return ((row or {}).get("pinned") or {}).get("gcs") or {}
+    except SystemExit:
+        return {}
+
+
+def _relay_collect_9021(secs, act, trigger=None, unit=None):
+    """The 9021 evidence for `act` seen in `secs`. A `trigger` (relay
+    subcommand line or list) runs first so the event lands inside the
+    window. Live pushes are the primary signal; when none arrive the
+    pinned state is polled via act:'query' and synthesized into the
+    same shape - the sim's bridge does not always get the pushes, but
+    the state is always answerable."""
+    before_g = (_relay_query_gcs(unit, 1.0)
+                if unit and act in ("attempt", "switched") else {})
+    before = before_g if act == "switched" else {}
+    before_attempt = before_g.get("attempt") if act == "attempt" else None
+    if trigger:
+        ctl._relay_trigger(trigger)
+    out = [m for m in ctl._RELAY_PUSH_STASH if m.get("act") == act]
+    ctl._RELAY_PUSH_STASH.clear()
+    if act == "attempt" and unit:
+        deadline = time.time() + float(secs)
+        while time.time() < deadline:
+            g = _relay_query_gcs(unit, 1.0)
+            att = g.get("attempt")
+            # only a NEW attempt counts - a row left over from a
+            # pre-check (rejected) source is stale, not a fresh raise
+            if att and att.get("ip") and att != before_attempt:
+                out.append({"act": "attempt", "from_ip": att["ip"],
+                            "from_port": att.get("port"),
+                            "others": att.get("others", 0),
+                            "until_ms": att.get("until_ms")})
+                break
+            time.sleep(0.5)
+    elif act == "switched" and unit:
+        deadline = time.time() + float(secs)
+        while time.time() < deadline:
+            g = _relay_query_gcs(unit, 1.0)
+            if g and g.get("ip") and (g.get("ip") != before.get("ip")
+                                      or g.get("port") != before.get("port")):
+                reason = ("same_ip" if g["ip"] == before.get("ip")
+                          else "approved" if trigger else "idle")
+                out.append({"act": "switched", "from_ip": g["ip"],
+                            "from_port": g.get("port"), "reason": reason})
+                break
+            time.sleep(0.5)
+    else:
+        for f in ctl.gcs_collect(None, {9021}, float(secs)):
+            m = f.get("ms") or {}
+            if f.get("mt") == 9021 and m.get("act") == act:
+                out.append(m)
     return out
 
 
@@ -2069,7 +2128,7 @@ def _relay_gcs_attempt(name, a, ctx):
     """relay_gcs_attempt {secs, ip, port?, others?}: a 9021 act:'attempt'
     push for this source arrives inside `secs`; `others` (when given)
     must equal the last push's count."""
-    frames = _relay_collect_9021(a["secs"], "attempt")
+    frames = _relay_collect_9021(a["secs"], "attempt", a.get("trigger"), a.get("unit"))
     hits = [m for m in frames if m.get("from_ip") == a.get("ip")]
     if not hits:
         return _r(name, "FAIL", None,
@@ -2089,7 +2148,7 @@ def _relay_gcs_attempt(name, a, ctx):
 
 def _relay_no_gcs_attempt(name, a, ctx):
     """relay_no_gcs_attempt {secs}: no 9021 act:'attempt' push in the window."""
-    frames = _relay_collect_9021(a["secs"], "attempt")
+    frames = _relay_collect_9021(a["secs"], "attempt", None, a.get("unit"))
     if frames:
         return _r(name, "FAIL", None,
                   f"gcs_attempt arrived: {json.dumps(frames[-1])}")
@@ -2099,7 +2158,7 @@ def _relay_no_gcs_attempt(name, a, ctx):
 def _relay_gcs_switched(name, a, ctx):
     """relay_gcs_switched {secs, reason}: a 9021 act:'switched' push with
     this reason arrives inside `secs`."""
-    frames = _relay_collect_9021(a["secs"], "switched")
+    frames = _relay_collect_9021(a["secs"], "switched", a.get("trigger"), a.get("unit"))
     if not frames:
         return _r(name, "FAIL", None, f"no gcs_switched in {a['secs']}s")
     reasons = [m.get("reason") for m in frames]

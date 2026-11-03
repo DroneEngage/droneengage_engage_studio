@@ -135,3 +135,35 @@ credential — a follow-up task to add one is proposed (see the task
 notes).
 - `relay_gcs_locked {unit, gcs}` — PASS when the pair's `list` row
   `pinned.gcs {ip,port}` equals the named fake GCS's own source address.
+- `relay_gcs_attempt {unit, secs, ip, port?, others?, trigger?}` — a
+  gcs_attempt for this source is raised inside `secs`; when pushes do
+  not reach the sim's GCS bridge the check polls `act:'query'` (a stale
+  row left by a rejected source does not count).
+- `relay_no_gcs_attempt {unit, secs, trigger?}` — no attempt raised in
+  the window.
+- `relay_gcs_switched {unit, secs, reason?, trigger?}` — the pin moves;
+  reason is `same_ip`/`approved`/`idle` (synthesized from the move when
+  pushes are unavailable).
+
+`trigger` is a relay subcommand line (or a list) run first inside the
+check window - e.g. `trigger: "reject c1 --gcs q2"` or
+`["waitattempt c1 127.0.0.2", "approve c1 --gcs q2"]`. `waitattempt`
+blocks until the request is live so the approve cannot race the
+auto-reject cycle. `relay resume <unit>` un-pauses the unit's udp
+proxy (it boots paused) - send it before expecting telemetry.
+
+## tests/udp_relay scenarios (SL-0180, tofu policy, real time)
+
+- `relay_lock_stranger.yaml` — case 1: the first GCS locks the pair; a
+  stranger gets no telemetry and its ARM/mission write never reach the
+  FC (`udp_proxy_rejects`).
+- `relay_same_ip_return.yaml` — case 2: same-IP return on a new source
+  port takes the lock (`gcs_switched reason same_ip`), telemetry resumes.
+- `relay_approve_switchback.yaml` — case 3: approve moves telemetry to
+  the waiting source, the old GCS is cut and is approved back.
+- `relay_attempt_timeout.yaml` — case 4: an unanswered request keeps the
+  locked GCS in place and the stranger gets nothing during the wait.
+- `relay_reject_10s.yaml` — case 5: reject for 10s raises no attempt
+  during the block; a fresh attempt appears after it lapses.
+- `relay_reject_long.yaml` — case 6: 'reject longer' raises no attempt
+  for the configured duration, including from a new port on the same IP.

@@ -1,0 +1,23 @@
+# SL-0180 case 2: the locked GCS restarts on the same IP and a new
+# source port - the lock moves to it at once (reason same_ip) and
+# telemetry resumes without an operator.
+version: 1
+name: relay_same_ip_return
+tasks: [GL-0105, SL-0180]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 47, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 49, do: wait, seconds: 4}
+  - {t: 53, do: relay, cmd: "gcs stop qgc1"}
+assert:
+  # the check itself starts the returning GCS, so the same_ip switch
+  # push lands inside its collect window
+  - relay_gcs_switched: {unit: copter1, secs: 10, reason: same_ip, trigger: ["gcs start qgc1b --ip 127.0.0.1", "gcs cmd qgc1b stream"]}
+  - relay_gcs_telemetry: {gcs: qgc1b, secs: 8, at_least: 3}
+  - relay_gcs_locked: {unit: copter1, gcs: qgc1b}

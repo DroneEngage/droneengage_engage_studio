@@ -96,6 +96,7 @@ are reported, and the run exits non-zero.
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -278,8 +279,13 @@ def run_step(step, t, marks, log_events=None):
     if name == "relay":
         # SL-0179: 9021 operator acts as the sim's GCS -
         # {do: relay, act: approve|reject|kick|change_port|query,
-        #  unit, ip?, port?, secs?}
+        #  unit, ip?, port?, secs?}; `cmd` passes any relay subcommand
+        # through verbatim (relay gcs start/stop/silence/...)
+        if arg.get("cmd"):
+            return run_ctl("relay", *shlex.split(str(arg["cmd"])))
         args = [arg["act"], arg["unit"]]
+        if arg.get("gcs"):
+            args += ["--gcs", arg["gcs"]]
         if arg.get("ip"):
             args.append(arg["ip"])
         if arg.get("port"):
