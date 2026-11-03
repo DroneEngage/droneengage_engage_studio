@@ -1,7 +1,8 @@
 # relay_single — how to run
 
-One quad copter on a spawned real `droneengage_server` (local mode, no
-authenticator) **plus the standalone `droneengage_udp_proxy` relay**.
+One quad copter on a spawned real `droneengage_server` **with the
+authenticator** (`auth: true`, account `sim@sim.droneengage.com`) **plus
+the standalone `droneengage_udp_proxy` relay**.
 The comm server config carries `udp_relay: [R1]`, so the unit's 9008
 pair opens land on the relay's UDP sockets.
 
