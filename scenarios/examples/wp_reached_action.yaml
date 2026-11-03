@@ -1,0 +1,53 @@
+# Runbook: scenarios/examples/wp_reached_action.md
+#
+# examples/wp_reached_action - MP-0412 proof: a nav wp step's
+# on:'reached' action fires when its waypoint is reached and not
+# earlier. The p2_10_handlers package anchors camera.capture on
+# 'reached' at w1..w4 (seqs 2,3,4,8); the gate after w3 waits on
+# clear.zone, which is never fired, so it times out -> rtl and w4 is
+# never reached. On a bare copter (no de_camera) each capture still
+# dispatches - through the Phase-2 legacy bridge. The journal shows
+# captures landing one per reached seq, the fourth never firing.
+version: 1
+name: wp_reached_action
+transport: fake
+operation: ../../packages/p2_10_handlers.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0,  do: mode, unit: c1, mode: GUIDED}
+  - {t: 2,  do: deploy}
+  - {t: 6,  do: arm, unit: c1}
+  - {t: 9,  do: start}
+  # w3's capture (manifest row 6) is the last one before the gate
+  - {t: 12, do: wait_journal, unit: c1,
+     re: "action camera\\.capture id=\\S+:1:6", timeout: 300}
+  # clear.zone is never fired: the hold gate times out -> rtl
+  - {t: 15, do: wait_journal, unit: c1, re: "gate g timed out -> rtl",
+     timeout: 120}
+  - {t: 20, do: wait_journal, unit: c1, re: "run .* completed",
+     timeout: 300}
+assert:
+  # w1, w2, w3 each dispatched their anchored capture exactly once
+  - journal_count: {unit: c1, re: "action camera\\.capture id=",
+                    equals: 3}
+  # each dispatch went through the legacy bridge on the bare copter
+  - journal_count: {unit: c1, re: "via legacy bridge", equals: 3}
+  # the first capture lands well after the run starts - at the
+  # waypoint, not at deploy/start time
+  - journal_time_delta: {u1: c1, re1: "RUN run .* started",
+                         u2: c1, re2: "action camera\\.capture id=\\S+:1:2",
+                         ordered: true, min_s: 3, max_s: 120}
+  # the captures fire in waypoint order, spread across the flight
+  - journal_order: {unit: c1,
+                    first: "action camera\\.capture id=\\S+:1:2",
+                    then: "action camera\\.capture id=\\S+:1:4"}
+  - journal_order: {unit: c1,
+                    first: "action camera\\.capture id=\\S+:1:4",
+                    then: "action camera\\.capture id=\\S+:1:6"}
+  # w4's capture (manifest row 11) never fires - w4 sits behind the
+  # gate and is never reached, so 'reached' means reached
+  - no_journal: {unit: c1, re: "action camera\\.capture id=\\S+:1:11"}
+teardown: land           # always bring the fleet down
