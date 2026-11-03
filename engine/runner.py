@@ -275,6 +275,18 @@ def run_step(step, t, marks, log_events=None):
     if name in ("start", "stop", "resume", "pause", "clear"):
         extra = [arg["mission"]] if isinstance(arg, dict) and arg.get("mission") else []
         return run_ctl(name, *extra)
+    if name == "relay":
+        # SL-0179: 9021 operator acts as the sim's GCS -
+        # {do: relay, act: approve|reject|kick|change_port|query,
+        #  unit, ip?, port?, secs?}
+        args = [arg["act"], arg["unit"]]
+        if arg.get("ip"):
+            args.append(arg["ip"])
+        if arg.get("port"):
+            args.append(arg["port"])
+        if arg.get("secs") is not None:
+            args += ["--secs", arg["secs"]]
+        return run_ctl("relay", *args)
     if name == "wait":
         time.sleep(float(arg if isinstance(arg, (int, float)) else arg.get("seconds", 0)))
         return True

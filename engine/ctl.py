@@ -88,6 +88,12 @@ Link faults (server type fake, or real with `link_proxy: true`):
                                     counting / send again
   relay gcs cmd <name> <arm|disarm> a one-shot COMMAND_LONG from its source
   relay gcs status [name]           the fake GCSs' counters/state
+  relay approve <unit> <ip> <port>  9021 act:'switch' - approve the waiting GCS
+  relay reject <unit> <ip> [--secs n]  9021 act:'reject' (default 10s)
+  relay kick <unit> [--secs n]      9021 act:'kick' - drop the current GCS
+  relay change-port <unit>          9021 act:'change_port' - fresh socket2 port
+  relay query <unit>                9021 act:'query' - the pinned state
+  relay attempts [secs]             dump incoming 9021 pushes for <secs>
                                     (SL-0178; `./sim down` kills them)
 
 Vehicle faults:
@@ -1576,6 +1582,69 @@ def relay_list():
 # (pids/relay_gcs.<name>.pid) makes `./sim down` reap it.
 # ----------------------------------------------------------------------
 
+# SL-0179: pretend-operator 9021 actions through the sim's GCS bridge
+# (gcs_collect path - the bridge is a full-control GCS of the sim's
+# account+group). `relay approve|reject|kick|change-port|query` sends the
+# act and returns the reply; `relay attempts <secs>` dumps the pushes.
+def _relay_peer(unit, act, extra=None, wait=3.0):
+    """One 9021 act on tg_unit, then the reply ms (the frame without
+    'act' - pushes carry it). None when nothing came back."""
+    ms = {"tg_unit": unit, "act": act}
+    if extra:
+        ms.update(extra)
+    for f in gcs_collect({"ty": "s", "mt": 9021, "ms": ms}, {9021}, wait):
+        m = f.get("ms") or {}
+        if f.get("mt") == 9021 and "act" not in m:
+            return m
+    return None
+
+
+def _relay_peer_cmd(a):
+    """relay approve|reject|kick|change-port|query|attempts — 9021 acts
+    against the comm server as the sim's GCS."""
+    act = a[0]
+    if act == "attempts":
+        secs = float(a[1]) if len(a) > 1 else 5.0
+        for f in gcs_collect(None, {9021}, secs):
+            print(json.dumps(f.get("ms")))
+        return
+    rep = None
+    if act == "approve":
+        if len(a) < 4:
+            sys.exit("usage: relay approve <unit> <ip> <port>")
+        rep = _relay_peer(a[1], "switch", {"ip": a[2], "port": int(a[3])})
+    elif act == "reject":
+        if len(a) < 3:
+            sys.exit("usage: relay reject <unit> <ip> [--secs n]")
+        extra = {"ip": a[2]}
+        if "--secs" in a:
+            extra["secs"] = int(a[a.index("--secs") + 1])
+        rep = _relay_peer(a[1], "reject", extra)
+    elif act == "kick":
+        if len(a) < 2:
+            sys.exit("usage: relay kick <unit> [--secs n]")
+        extra = {}
+        if "--secs" in a:
+            extra["secs"] = int(a[a.index("--secs") + 1])
+        rep = _relay_peer(a[1], "kick", extra)
+    elif act == "change-port":
+        if len(a) < 2:
+            sys.exit("usage: relay change-port <unit>")
+        rep = _relay_peer(a[1], "change_port")
+    elif act == "query":
+        if len(a) < 2:
+            sys.exit("usage: relay query <unit>")
+        rep = _relay_peer(a[1], "query")
+    else:
+        sys.exit("usage: relay stats | relay gcs ... | relay "
+                 "approve|reject|kick|change-port|query|attempts ...")
+    if rep is None:
+        sys.exit("no 9021 reply")
+    print(json.dumps(rep))
+    if rep.get("error"):
+        sys.exit(1)
+
+
 def _relay_gcs_dir(sim=None):
     d = os.path.join(simlib.run_dir(sim or _ctx_name()), "relay_gcs")
     os.makedirs(d, exist_ok=True)
@@ -2755,8 +2824,10 @@ def main(argv):
             print(json.dumps(relay_stats(), indent=1))
         elif a[0] == "gcs":
             _relay_gcs_cmd(a[1:])
+        elif a[0] in ("approve", "reject", "kick", "change-port", "query", "attempts"):
+            _relay_peer_cmd(a)
         else:
-            sys.exit("usage: relay stats | relay gcs ...")
+            sys.exit("usage: relay stats | relay gcs ... | relay approve|reject|kick|change-port|query|attempts ...")
     elif c == "clock":
         ctrl(f"clock offset {a[1]}")
     elif c == "noclock":

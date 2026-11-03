@@ -530,6 +530,22 @@ VERBS = [
       opt=["secs"],
       doc="the named fake GCS receives no telemetry for the window",
       eg="{relay_gcs_no_telemetry: {gcs: qgc2, secs: 5}}"),
+    V("relay", "step", req=["act", "unit"], opt=["ip", "port", "secs"],
+      doc="9021 operator act as the sim's GCS: approve|reject|kick|"
+          "change_port|query (SL-0179)",
+      eg="{t: 10, do: relay, act: approve, unit: c1, ip: 127.0.0.2, port: 50001}"),
+    V("relay_gcs_attempt", "check", req=["secs", "ip"],
+      opt=["port", "others"],
+      doc="a 9021 gcs_attempt push for this source arrives in secs; "
+          "port/others pin it down (SL-0179)",
+      eg="{relay_gcs_attempt: {secs: 5, ip: '127.0.0.2', others: 0}}"),
+    V("relay_no_gcs_attempt", "check", req=["secs"],
+      doc="no 9021 gcs_attempt push arrives in the window (SL-0179)",
+      eg="{relay_no_gcs_attempt: {secs: 5}}"),
+    V("relay_gcs_switched", "check", req=["secs"], opt=["reason"],
+      doc="a 9021 gcs_switched push arrives in secs, reason when given "
+          "(SL-0179)",
+      eg="{relay_gcs_switched: {secs: 5, reason: idle}}"),
     V("relay_gcs_locked", "check", req=["unit", "gcs"],
       doc="the relay pair's pinned GCS address is the named fake GCS",
       eg="{relay_gcs_locked: {unit: c1, gcs: qgc1}}"),

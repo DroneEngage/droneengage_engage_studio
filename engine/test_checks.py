@@ -1981,3 +1981,61 @@ class TestUdpProxyRejects(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestRelayPeerChecks(unittest.TestCase):
+    """SL-0179: the 9021 push checks - frames come from ctl.gcs_collect."""
+
+    @staticmethod
+    def _ctx():
+        return {"manifest": {"name": "t", "units": [], "server": {"type": "real"}},
+                "marks": {}, "file": "/x/s.yaml", "results_dir": None}
+
+    @staticmethod
+    def _f(act, ms):
+        return {"ty": "i", "mt": 9021, "ms": dict(ms, act=act)}
+
+    def test_attempt_pass_and_fail(self):
+        c = self._ctx()
+        frames = [self._f("attempt", {"from_ip": "127.0.0.2", "from_port": 50001, "others": 3})]
+        with mock.patch.object(checks.ctl, "gcs_collect", return_value=frames):
+            r = checks.check_assertion(
+                {"relay_gcs_attempt": {"secs": 1, "ip": "127.0.0.2", "others": 3}}, c)
+        self.assertEqual(r["status"], "PASS")
+
+        with mock.patch.object(checks.ctl, "gcs_collect", return_value=frames):
+            r = checks.check_assertion(
+                {"relay_gcs_attempt": {"secs": 1, "ip": "127.0.0.9"}}, c)
+        self.assertEqual(r["status"], "FAIL")
+        with mock.patch.object(checks.ctl, "gcs_collect", return_value=frames):
+            r = checks.check_assertion(
+                {"relay_gcs_attempt": {"secs": 1, "ip": "127.0.0.2", "others": 5}}, c)
+        self.assertEqual(r["status"], "FAIL")
+        with mock.patch.object(checks.ctl, "gcs_collect", return_value=frames):
+            r = checks.check_assertion(
+                {"relay_gcs_attempt": {"secs": 1, "ip": "127.0.0.2", "port": 1}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_no_attempt_pass_and_fail(self):
+        c = self._ctx()
+        with mock.patch.object(checks.ctl, "gcs_collect", return_value=[]):
+            r = checks.check_assertion({"relay_no_gcs_attempt": {"secs": 1}}, c)
+        self.assertEqual(r["status"], "PASS")
+        frames = [self._f("attempt", {"from_ip": "127.0.0.2", "from_port": 1, "others": 0})]
+        with mock.patch.object(checks.ctl, "gcs_collect", return_value=frames):
+            r = checks.check_assertion({"relay_no_gcs_attempt": {"secs": 1}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_switched_pass_and_fail(self):
+        c = self._ctx()
+        frames = [self._f("switched", {"from_ip": "127.0.0.2", "from_port": 9, "reason": "idle"})]
+        with mock.patch.object(checks.ctl, "gcs_collect", return_value=frames):
+            r = checks.check_assertion(
+                {"relay_gcs_switched": {"secs": 1, "reason": "idle"}}, c)
+        self.assertEqual(r["status"], "PASS")
+        with mock.patch.object(checks.ctl, "gcs_collect", return_value=frames):
+            r = checks.check_assertion(
+                {"relay_gcs_switched": {"secs": 1, "reason": "kicked"}}, c)
+        self.assertEqual(r["status"], "FAIL")
+        with mock.patch.object(checks.ctl, "gcs_collect", return_value=[]):
+            r = checks.check_assertion({"relay_gcs_switched": {"secs": 1}}, c)
+        self.assertEqual(r["status"], "FAIL")

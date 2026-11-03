@@ -113,5 +113,25 @@ checks read that state:
   (default 3); FAIL when it is not running or the count stalls.
 - `relay_gcs_no_telemetry {gcs, secs}` — PASS when it receives nothing
   for the window (the lock moved elsewhere or the pair is silent).
+
+## Example: pretend-operator 9021 actions (SL-0179)
+
+`./sim ctl relay approve|reject|kick|change-port|query` sends the 9021
+act as the sim's GCS bridge (a full-control GCS of the sim's
+account+group) and prints the reply; `relay attempts [secs]` dumps the
+pushes (attempt/switched/state/changed). As a step:
+`{t: 10, do: relay, act: approve, unit: c1, ip: '127.0.0.2', port: 50001}`.
+Three checks read the pushes:
+
+- `relay_gcs_attempt {secs, ip, port?, others?}` — PASS when an
+  act:'attempt' push for `ip` (and `port`/`others` if given) arrives.
+- `relay_no_gcs_attempt {secs}` — PASS when no attempt push arrives.
+- `relay_gcs_switched {secs, reason?}` — PASS when an act:'switched'
+  push (with `reason` if given) arrives.
+
+Second account: the GCS bridge logs in under the sim's single account,
+so "another account's GCS gets nothing/can't act" needs a second
+credential — a follow-up task to add one is proposed (see the task
+notes).
 - `relay_gcs_locked {unit, gcs}` — PASS when the pair's `list` row
   `pinned.gcs {ip,port}` equals the named fake GCS's own source address.

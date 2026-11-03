@@ -2055,6 +2055,60 @@ def _relay_gcs_locked(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
 
 
+def _relay_collect_9021(secs, act):
+    """The pushed 9021 ms with ms.act == `act` seen in `secs`."""
+    out = []
+    for f in ctl.gcs_collect(None, {9021}, float(secs)):
+        m = f.get("ms") or {}
+        if f.get("mt") == 9021 and m.get("act") == act:
+            out.append(m)
+    return out
+
+
+def _relay_gcs_attempt(name, a, ctx):
+    """relay_gcs_attempt {secs, ip, port?, others?}: a 9021 act:'attempt'
+    push for this source arrives inside `secs`; `others` (when given)
+    must equal the last push's count."""
+    frames = _relay_collect_9021(a["secs"], "attempt")
+    hits = [m for m in frames if m.get("from_ip") == a.get("ip")]
+    if not hits:
+        return _r(name, "FAIL", None,
+                  f"no gcs_attempt from {a.get('ip')} in {a['secs']}s "
+                  f"(saw {len(frames)} attempt(s))")
+    m = hits[-1]
+    if "port" in a and int(m.get("from_port") or -1) != int(a["port"]):
+        return _r(name, "FAIL", None,
+                  f"gcs_attempt port {m.get('from_port')} != {a['port']}")
+    if "others" in a and m.get("others") != a["others"]:
+        return _r(name, "FAIL", None,
+                  f"gcs_attempt others {m.get('others')} != {a['others']}")
+    return _r(name, "PASS", None,
+              f"gcs_attempt {m.get('from_ip')}:{m.get('from_port')} "
+              f"others={m.get('others', 0)}")
+
+
+def _relay_no_gcs_attempt(name, a, ctx):
+    """relay_no_gcs_attempt {secs}: no 9021 act:'attempt' push in the window."""
+    frames = _relay_collect_9021(a["secs"], "attempt")
+    if frames:
+        return _r(name, "FAIL", None,
+                  f"gcs_attempt arrived: {json.dumps(frames[-1])}")
+    return _r(name, "PASS", None, f"quiet {a['secs']}s")
+
+
+def _relay_gcs_switched(name, a, ctx):
+    """relay_gcs_switched {secs, reason}: a 9021 act:'switched' push with
+    this reason arrives inside `secs`."""
+    frames = _relay_collect_9021(a["secs"], "switched")
+    if not frames:
+        return _r(name, "FAIL", None, f"no gcs_switched in {a['secs']}s")
+    reasons = [m.get("reason") for m in frames]
+    if a.get("reason") and a["reason"] not in reasons:
+        return _r(name, "FAIL", None,
+                  f"gcs_switched reasons {reasons}, want {a['reason']}")
+    return _r(name, "PASS", None, f"gcs_switched {reasons}")
+
+
 def _no_fc_command_to_static(name, a, ctx):
     ok, bits, n_all = True, [], 0
     for u in _units(a, ctx):
@@ -2780,6 +2834,9 @@ DISPATCH = {
     "relay_gcs_telemetry": _relay_gcs_telemetry,
     "relay_gcs_no_telemetry": _relay_gcs_no_telemetry,
     "relay_gcs_locked": _relay_gcs_locked,
+    "relay_gcs_attempt": _relay_gcs_attempt,
+    "relay_no_gcs_attempt": _relay_no_gcs_attempt,
+    "relay_gcs_switched": _relay_gcs_switched,
     "no_fc_command_to_static": _no_fc_command_to_static,
     "max_latency": lambda n, a, c: _journal_delta(n, a, c, ms=True),
     "proc_alive": lambda n, a, c: _proc_state(n, a, c, True),
