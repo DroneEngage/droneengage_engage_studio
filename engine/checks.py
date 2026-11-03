@@ -1977,11 +1977,14 @@ def _udp_proxy_rejects(name, a, ctx):
     if urelay and n_tested:
         st = ctl.relay_stats()
         rej = (st or {}).get("rejected") or {}
-        n_gcs = int(rej.get("gcs_not_allowed", 0))
+        # allowlist drops gcs_not_allowed; tofu counts gcs_unpinned
+        # (and gcs_attempt while a request waits) - any gcs_* drop
+        # proves the stranger was refused
+        n_gcs = sum(int(v) for k, v in rej.items() if k.startswith("gcs_"))
         bits.append(f"relay rejected: {rej}")
         if n_gcs < 1:
             ok = False
-            bits.append("relay counted no gcs_not_allowed drop")
+            bits.append("relay counted no gcs_* drop")
     if ok and not any_fc:
         return _r(name, "SKIP", None, "; ".join(bits))
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))

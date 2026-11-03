@@ -86,7 +86,7 @@ Link faults (server type fake, or real with `link_proxy: true`):
   relay gcs stop|silence|resume <name>
                                     kill it / hold the heartbeat but keep
                                     counting / send again
-  relay gcs cmd <name> <arm|disarm> a one-shot COMMAND_LONG from its source
+  relay gcs cmd <name> <arm|disarm|stream> a one-shot COMMAND_LONG from its source
   relay gcs status [name]           the fake GCSs' counters/state
   relay approve <unit> <ip> <port>  9021 act:'switch' - approve the waiting GCS
   relay reject <unit> <ip> [--secs n]  9021 act:'reject' (default 10s)
@@ -1599,6 +1599,18 @@ def _relay_peer(unit, act, extra=None, wait=3.0):
     return None
 
 
+def _relay_gcs_peer(a):
+    """'--gcs <name>' resolves to the fake's {ip, port} from its status
+    file, so approve/reject need no hardcoded source port."""
+    if "--gcs" not in a:
+        return None
+    name = a[a.index("--gcs") + 1]
+    st = relay_gcs_status(name).get(name)
+    if not st:
+        sys.exit(f"relay gcs {name!r}: not running")
+    return {"ip": st["ip"], "port": int(st["port"])}
+
+
 def _relay_peer_cmd(a):
     """relay approve|reject|kick|change-port|query|attempts — 9021 acts
     against the comm server as the sim's GCS."""
@@ -1610,13 +1622,16 @@ def _relay_peer_cmd(a):
         return
     rep = None
     if act == "approve":
-        if len(a) < 4:
-            sys.exit("usage: relay approve <unit> <ip> <port>")
-        rep = _relay_peer(a[1], "switch", {"ip": a[2], "port": int(a[3])})
+        src = _relay_gcs_peer(a)
+        if src is None and len(a) < 4:
+            sys.exit("usage: relay approve <unit> <ip> <port> | --gcs <name>")
+        rep = _relay_peer(a[1], "switch",
+                          src or {"ip": a[2], "port": int(a[3])})
     elif act == "reject":
-        if len(a) < 3:
-            sys.exit("usage: relay reject <unit> <ip> [--secs n]")
-        extra = {"ip": a[2]}
+        src = _relay_gcs_peer(a)
+        if src is None and len(a) < 3:
+            sys.exit("usage: relay reject <unit> <ip> | --gcs <name> [--secs n]")
+        extra = src or {"ip": a[2]}
         if "--secs" in a:
             extra["secs"] = int(a[a.index("--secs") + 1])
         rep = _relay_peer(a[1], "reject", extra)
@@ -1696,7 +1711,9 @@ def _relay_gcs_default_port():
 
 def _relay_gcs_start(name, ip, port):
     if _gcs_running(name):
-        sys.exit(f"relay gcs {name!r}: already running")
+        # a leftover fake binds a stale socket2 port - restart it so
+        # re-runs point at the pair that is live now
+        _relay_gcs_stop(name)
     target = port or _relay_gcs_default_port()
     paths = _gcs_paths(name)
     for k in ("state", "ctl", "cmd"):
@@ -1752,8 +1769,8 @@ def _relay_gcs_ctl(name, what):
 
 
 def _relay_gcs_cmd_file(name, what):
-    if what not in ("arm", "disarm"):
-        sys.exit("usage: relay gcs cmd <name> <arm|disarm>")
+    if what not in ("arm", "disarm", "stream"):
+        sys.exit("usage: relay gcs cmd <name> <arm|disarm|stream>")
     if not _gcs_running(name):
         sys.exit(f"relay gcs {name!r}: not running")
     simlib.write_text(_gcs_paths(name)["cmd"], what)
@@ -1779,7 +1796,7 @@ def _relay_gcs_cmd(a):
         _relay_gcs_ctl(rest[0], op)
     elif op == "cmd":
         if len(rest) < 2:
-            sys.exit("usage: relay gcs cmd <name> <arm|disarm>")
+            sys.exit("usage: relay gcs cmd <name> <arm|disarm|stream>")
         _relay_gcs_cmd_file(rest[0], rest[1])
     elif op == "start":
         if not rest:
@@ -1829,6 +1846,10 @@ def _relay_gcs_proc(name, ip, target_port, sim):
             1, 1, mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
             0, p1, 0, 0, 0, 0, 0, 0).pack(mav)
 
+    def stream_cmd():
+        # a real QGC asks the FC for its telemetry streams
+        return mav.request_data_stream_encode(1, 1, 0, 4, 1).pack(mav)
+
     def dump():
         simlib.write_text(paths["state"], json.dumps(st))
 
@@ -1849,6 +1870,9 @@ def _relay_gcs_proc(name, ip, target_port, sim):
         if what in ("arm", "disarm"):
             s.sendto(arm_cmd(1 if what == "arm" else 0),
                      ("127.0.0.1", target_port))
+            st["cmds_sent"] += 1
+        elif what == "stream":
+            s.sendto(stream_cmd(), ("127.0.0.1", target_port))
             st["cmds_sent"] += 1
         now = time.time()
         if not st["silenced"] and now >= next_send:

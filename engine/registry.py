@@ -530,7 +530,8 @@ VERBS = [
       opt=["secs"],
       doc="the named fake GCS receives no telemetry for the window",
       eg="{relay_gcs_no_telemetry: {gcs: qgc2, secs: 5}}"),
-    V("relay", "step", req=["act", "unit"], opt=["ip", "port", "secs"],
+    V("relay", "step", opt=["act", "unit", "gcs", "ip", "port", "secs",
+                           "cmd"],
       doc="9021 operator act as the sim's GCS: approve|reject|kick|"
           "change_port|query (SL-0179)",
       eg="{t: 10, do: relay, act: approve, unit: c1, ip: 127.0.0.2, port: 50001}"),

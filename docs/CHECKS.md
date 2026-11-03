@@ -135,3 +135,19 @@ credential — a follow-up task to add one is proposed (see the task
 notes).
 - `relay_gcs_locked {unit, gcs}` — PASS when the pair's `list` row
   `pinned.gcs {ip,port}` equals the named fake GCS's own source address.
+
+## tests/udp_relay scenarios (SL-0180, tofu policy, real time)
+
+- `relay_lock_stranger.yaml` — case 1: the first GCS locks the pair; a
+  stranger gets no telemetry and its ARM/mission write never reach the
+  FC (`udp_proxy_rejects`).
+- `relay_same_ip_return.yaml` — case 2: same-IP return on a new source
+  port takes the lock (`gcs_switched reason same_ip`), telemetry resumes.
+- `relay_approve_switchback.yaml` — case 3: approve moves telemetry to
+  the waiting source, the old GCS is cut and is approved back.
+- `relay_attempt_timeout.yaml` — case 4: an unanswered request keeps the
+  locked GCS in place and the stranger gets nothing during the wait.
+- `relay_reject_10s.yaml` — case 5: reject for 10s raises no attempt
+  during the block; a fresh attempt appears after it lapses.
+- `relay_reject_long.yaml` — case 6: 'reject longer' raises no attempt
+  for the configured duration, including from a new port on the same IP.

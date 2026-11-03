@@ -1,0 +1,26 @@
+# SL-0180 case 5: the operator rejects the stranger for 10s - no new
+# attempt is raised during the block, and one appears once it lapses.
+version: 1
+name: relay_reject_10s
+tasks: [GL-0106, GL-0110, SL-0180]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+timeline:
+  - {t: 0, do: wait, seconds: 15}
+  - {t: 15, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 17, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 15, do: wait, seconds: 4}
+  - {t: 19, do: relay, cmd: "gcs start qgc2 --ip 127.0.0.2"}
+  - {t: 21, do: relay, cmd: "gcs cmd qgc2 stream"}
+  - {t: 19, do: wait, seconds: 3}
+  - {t: 22, do: relay, act: reject, unit: copter1, gcs: qgc2, secs: 10}
+  - {t: 22, do: relay, cmd: "gcs stop qgc2"}
+  - {t: 22, do: relay, cmd: "gcs start qgc2b --ip 127.0.0.2"}
+  - {t: 24, do: relay, cmd: "gcs cmd qgc2b stream"}
+  - {t: 22, do: wait, seconds: 12}
+assert:
+  - relay_gcs_attempt: {secs: 15, ip: "127.0.0.2"}
+  - relay_gcs_telemetry: {gcs: qgc1, secs: 6, at_least: 3}
+  - relay_gcs_no_telemetry: {gcs: qgc2b, secs: 5}

@@ -1967,13 +1967,26 @@ class TestUdpProxyRejects(unittest.TestCase):
         self.assertEqual(r["status"], "FAIL")
         inj.assert_not_called()
 
-    def test_unpinned_alone_does_not_pass(self):
+    def test_unpinned_alone_passes_on_tofu(self):
+        # SL-0180: on a tofu pair gcs_unpinned IS the stranger-drop
+        # counter, so it counts just like gcs_not_allowed on allowlist
         c = self._ctx(relay=True)
         with contextlib.ExitStack() as st:
             for m_ in self._patched(
                     c, [False, False], ["s", "s"], 0,
                     {"rejected": {"gcs_unpinned": 5,
                                   "gcs_not_allowed": 0}}):
+                st.enter_context(m_)
+            r = checks.check_assertion(
+                {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
+        self.assertEqual(r["status"], "PASS")
+
+    def test_no_gcs_drop_fails(self):
+        c = self._ctx(relay=True)
+        with contextlib.ExitStack() as st:
+            for m_ in self._patched(
+                    c, [False, False], ["s", "s"], 0,
+                    {"rejected": {"drop": 5, "policy": 2}}):
                 st.enter_context(m_)
             r = checks.check_assertion(
                 {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
