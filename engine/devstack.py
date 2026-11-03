@@ -446,7 +446,7 @@ def up(stack="de_servers", fresh=False):
     live = pids(stack)
     if len(live) == len(procs_):
         print(f"{stack} already up - `./sim servers` for status, "
-              "--fresh to restart")
+              "--fresh|--restart to restart")
         return
     for p in procs_:
         proc = p["name"]

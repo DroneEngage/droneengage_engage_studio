@@ -90,6 +90,7 @@ class RegistryTest(unittest.TestCase):
     def test_command_help_up(self):
         text = sim_commands.command_help("up")
         self.assertIn("--fresh", text)
+        self.assertIn("--restart", text)
         self.assertIn("--open-web", text)
 
     def test_command_help_colored_on_tty(self):
@@ -99,9 +100,10 @@ class RegistryTest(unittest.TestCase):
         out = _print_usage_captured(doc, tty=True)
         self.assertIn("\x1b[32m./sim up \x1b[33m"
                       "<sim.yaml|de_servers|de_webclient>", out)
-        self.assertIn("\x1b[33m[--fresh]", out)
+        self.assertIn("\x1b[33m[--fresh|--restart]", out)
         # flag rows are parameters: yellow, not command green
         self.assertIn("\x1b[33m  --fresh", out)
+        self.assertIn("\x1b[33m  --restart", out)
         self.assertEqual(_print_usage_captured(doc, tty=False),
                          doc + "\n")
 
@@ -131,7 +133,8 @@ class RegistryTest(unittest.TestCase):
 
     def test_allowed_flags_up_includes_shared(self):
         flags = sim_commands.allowed_flags("up")
-        for f in ("--fresh", "--open-web", "--user", "--password",
+        for f in ("--fresh", "--restart", "--open-web", "--user",
+                  "--password",
                   "--auth-server", "--slot-base", "--with", "--shared",
                   "--force"):
             self.assertIn(f, flags)

@@ -117,8 +117,8 @@ COMMANDS = {
     "up": {
         "group": "LIVE",
         "summary": "start a sim (restarts the same-named one)",
-        "usage": ["./sim up <sim.yaml|de_servers|de_webclient> [--fresh] "
-                  "[--open-web] [--cam dev]"],
+        "usage": ["./sim up <sim.yaml|de_servers|de_webclient> "
+                  "[--fresh|--restart] [--open-web] [--cam dev]"],
         "description": "Start a sim. Restarts the same-named sim; refuses "
                        "ports of a live sim - sims run in parallel; unit "
                        "names may repeat on per-sim servers but stay unique "
@@ -128,7 +128,9 @@ COMMANDS = {
                        "real servers/webclient, not sims (only `./sim "
                        "down <stack>` stops them).",
         "flags": {
-            "--fresh": "fresh bring-up (tear down any same-named sim first)",
+            "--fresh": "fresh bring-up (tear down any same-named sim "
+                       "first; on a sim also wipes var/run/<sim>)",
+            "--restart": "same as --fresh",
             "--open-web": "xdg-open the webclient link once the sim is up",
             "--cam": "pin THE camera of a single-camera sim: --cam 0 "
                     "(or video0, /dev/video0) binds /dev/video0, --cam "

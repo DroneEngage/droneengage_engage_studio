@@ -104,6 +104,7 @@ class TestRenderHelp(unittest.TestCase):
         self.assertIn("how the phone reaches this host", out)
         self.assertIn("Common flags:", out)
         self.assertIn("--fresh", out)
+        self.assertIn("--restart", out)
         self.assertIn("--slot-base", out)
         self.assertIn("--force", out)
         self.assertIn("./sim up helptest --set serial=66d0200f "
@@ -144,6 +145,7 @@ class TestRenderHelp(unittest.TestCase):
         # flag and params: rows are parameters: yellow, not command green
         self.assertIn("\x1b[33m  serial", out)
         self.assertIn("\x1b[33m  --fresh", out)
+        self.assertIn("\x1b[33m  --restart", out)
         self.assertEqual(_print_usage_captured(doc, tty=False),
                          doc + "\n")
 

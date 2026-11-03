@@ -417,13 +417,14 @@ def main(argv):
                 url = devstack.open_url(files[0])
                 if "--open-web" in a and not url:
                     sys.exit(f"{files[0]} has no webclient link")
-                devstack.up(files[0], fresh="--fresh" in a)
+                devstack.up(files[0], fresh="--fresh" in a
+                                        or "--restart" in a)
                 if "--open-web" in a:
                     import ctl
                     ctl.xdg_open(url)
                 return
             launcher.up(simlib.resolve_sim_arg(files[0], choose=True),
-                        fresh="--fresh" in a,
+                        fresh="--fresh" in a or "--restart" in a,
                         open_web="--open-web" in a)
         elif c == "vcam":
             # DE-0050: create the v4l2loopback devices a camera sim's
