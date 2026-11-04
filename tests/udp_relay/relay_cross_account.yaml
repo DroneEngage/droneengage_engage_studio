@@ -1,0 +1,25 @@
+# SL-0184: a GCS of another account is outside the operator story -
+# it never hears attempt/switch pushes, and its approve lands
+# not_allowed while the real account's stays locked.
+version: 1
+name: relay_cross_account
+tasks: [GL-0109, SL-0184]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234},
+            account2: {user: sim2@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 47, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 49, do: wait, seconds: 4}
+  - {t: 53, do: relay, cmd: "gcs start qgc2 --ip 127.0.0.2"}
+assert:
+  # the attempt is live while the foreign act fires
+  - relay_acct2_denied: {unit: copter1, act: switch,
+      trigger: "waitattempt copter1 127.0.0.2"}
+  - relay_acct2_quiet: {unit: copter1, secs: 10,
+      trigger: "approve copter1 --gcs qgc2"}
+  - relay_gcs_locked: {unit: copter1, gcs: qgc2}

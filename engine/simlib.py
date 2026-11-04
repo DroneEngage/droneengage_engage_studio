@@ -1234,7 +1234,8 @@ def load_server(srv, slot_base=None):
       sim. --auth-server <host[:port]> overrides auth_ip/auth_port on
       external sims."""
     bad = set(srv) - {"type", "ip", "port", "auth", "account",
-                      "unit_account", "seed", "clock_offset_ms", "noclock",
+                      "account2", "unit_account",
+                      "seed", "clock_offset_ms", "noclock",
                       "auth_ip", "auth_port", "auth_verify_ssl",
                       "control_port", "gcs_party", "link_proxy",
                       "udp_relay"}
@@ -1294,6 +1295,16 @@ def load_server(srv, slot_base=None):
             check_account(unit_user, unit_code, "server.unit_account")
         unit_login = {"user": unit_user, "code": unit_code} \
             if unit_user else None
+    # SL-0184: an optional second credential for cross-account tests
+    acc2 = srv.get("account2") or {}
+    account2 = None
+    if acc2:
+        u2 = acc2.get("user")
+        c2 = str(acc2.get("code") or "")
+        if not u2 or not c2:
+            raise SimError("server.account2: needs both user and code")
+        check_account(u2, c2, "server.account2")
+        account2 = {"user": u2, "code": c2}
     if t == "external":
         return {
             "type": t,
@@ -1308,6 +1319,7 @@ def load_server(srv, slot_base=None):
                              srv.get("auth_port", 19408)),
             "auth_verify_ssl": bool(srv.get("auth_verify_ssl", False)),
             "account": {"user": user, "code": code},
+            "account2": account2,
             "unit_account": unit_login,
             "gcs_party": srv.get("gcs_party"),
             "seed": 0, "clock_offset_ms": 0, "noclock": [],
@@ -1343,6 +1355,7 @@ def load_server(srv, slot_base=None):
         "auth_s2s_port": port + 11,
         "auth_verify_ssl": False,
         "account": {"user": user, "code": code},
+        "account2": account2,
         "gcs_party": srv.get("gcs_party") or GCS_PARTY,
         "seed": int(srv.get("seed", 1337)),
         "clock_offset_ms": int(srv.get("clock_offset_ms", 0)),
@@ -3195,7 +3208,8 @@ def gen_server(sim):
         acfg.update({
             "server_ip": "0.0.0.0" if has_remote else "127.0.0.1",
             "server_port": srv["auth_port"],
-            "account_storage_type": "single",
+            "account_storage_type": "file" if srv.get("account2")
+                                    else "single",
             "single_account_user_name": srv["account"]["user"],
             "single_account_access_code": srv["account"]["code"],
             "s2s_ws_listening_ip": "127.0.0.1",
@@ -3208,6 +3222,22 @@ def gen_server(sim):
             "dbdatabase": os.path.join(sdir, "auth.db"),
             "file_db": os.path.join(sdir, "auth_file_db.json"),
         })
+        if srv.get("account2"):
+            # SL-0184: a second credential for cross-account relay tests -
+            # the file store carries both logins; distinct `sid` keeps
+            # them on different accounts so relay acts are refused
+            accs = [srv["account"], srv["account2"]]
+            write_json(os.path.join(sdir, "auth_file_db.json"), {
+                "db_info": {},
+                "users": {
+                    a["user"]: {
+                        "AccessCode": a["code"],
+                        "prm": "0xffffffff",
+                        "sid": f"{i + 1}xx",
+                        "isadmin": False,
+                        "enabled": True,
+                    } for i, a in enumerate(accs)
+                }})
         cfg = os.path.join(sdir, "de_auth.config")
         write_json(cfg, acfg)
         _server_script(sim, AUTH_REPO, "de_auth", cfg)

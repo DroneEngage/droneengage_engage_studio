@@ -1635,6 +1635,65 @@ def _relay_resume(unit):
     print(f"{unit}: telemetry resumed")
 
 
+def _acct2_srv():
+    """The manifest's server dict with the login swapped to the second
+    credential (SL-0184). Exits when the sim has no server.account2."""
+    srv = dict(server())
+    acct = srv.get("account2")
+    if not acct:
+        sys.exit("this sim has no server.account2 - add it to the "
+                 "transport block")
+    srv["account"] = acct
+    return srv
+
+
+async def _acct2_session(srv2, first, mts, secs, out):
+    """One second-account GCS session: log in, send `first` (or just
+    listen), and collect wire frames whose `mt` is in `mts` until `secs`
+    runs out. Push frames get stashed like the bridge path does."""
+    import gcs_client
+    cli = gcs_client.GCSClient(srv2, srv2["gcs_party"],
+                               on_frame=lambda m: out.append(m))
+    task = asyncio.ensure_future(cli.run())
+    try:
+        await asyncio.wait_for(cli.connected.wait(), 20)
+        if first is not None:
+            await cli.send(first)
+        await asyncio.sleep(secs)
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        await cli.close()
+
+
+def _acct2_collect(first, mts, secs):
+    """Frames the second account sees - pushes it gets (should be none
+    for a foreign account) or replies to a sent `first`."""
+    out = []
+    asyncio.run(_acct2_session(_acct2_srv(), first, set(mts), float(secs),
+                               out))
+    return [m for m in out if m.get("mt") in mts]
+
+
+def _relay_peer_acct(unit, act, extra=None, wait=6.0):
+    """The same 9021 peer act the bridge sends, but under the second
+    account - a foreign account should get not_allowed, never applied."""
+    ms = {"tg_unit": unit, "act": act}
+    ms.update(extra or {})
+    reply = None
+    for f in _acct2_collect({"ty": "s", "mt": 9021, "ms": ms}, {9021},
+                            wait):
+        m = f.get("ms") or {}
+        if m.get("act"):
+            _RELAY_PUSH_STASH.append(m)   # a push, not the reply
+        elif reply is None:
+            reply = m
+    return reply
+
+
 def _relay_wait_attempt(unit, ip, secs=25.0):
     """Block until pinned.gcs.attempt carries `ip` (or `secs` runs out):
     the approve that follows must land while the request is live - an
@@ -1683,6 +1742,28 @@ def _relay_peer_cmd(a):
     """relay approve|reject|kick|change-port|query|attempts|resume —
     9021 acts against the comm server as the sim's GCS (resume is a
     TELEMETRYCTRL RemoteExecute to the unit, same bridge path)."""
+    if a[0] == "acct2":
+        # relay acct2 <act> <unit> [--gcs <name>|--ip <ip> --port <n>
+        # |--secs <n>] - the peer act under the second credential
+        act = a[1].replace("_", "-") if len(a) > 1 else ""
+        extra = {}
+        src = _relay_gcs_peer(a[2:])
+        if src:
+            extra = src
+        elif len(a) > 3:
+            extra = {"ip": a[3]}
+            if len(a) > 4 and not a[4].startswith("--"):
+                extra["port"] = int(a[4])
+        if "--secs" in a:
+            extra["secs"] = int(a[a.index("--secs") + 1])
+        if act in ("approve", "switch", "reject", "kick", "change-port",
+                   "query"):
+            rep = _relay_peer_acct(a[2], "switch" if act == "approve"
+                                   else act.replace("-", "_"), extra)
+            print(json.dumps(rep))
+            return
+        sys.exit("usage: relay acct2 approve|reject|kick|change-port|"
+                 "query <unit> [--gcs <name>|<ip> [port]] [--secs n]")
     act = a[0].replace("_", "-")  # accept change_port and change-port
     if act == "attempts":
         secs = float(a[1]) if len(a) > 1 else 5.0

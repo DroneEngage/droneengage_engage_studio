@@ -2072,6 +2072,38 @@ def _relay_reject_bound(name, a, ctx):
               f"(at_most {a['at_most']})")
 
 
+def _relay_acct2_denied(name, a, ctx):
+    """relay_acct2_denied {unit, act}: the peer act under the sim's
+    second account must be refused - a foreign account never gets
+    applied:true, it gets not_allowed or an error. `trigger` runs
+    first so the checked act lands while the story is live."""
+    if a.get("trigger"):
+        ctl._relay_trigger(a["trigger"])
+    rep = ctl._relay_peer_acct(a["unit"], a.get("act", "switch"))
+    if rep is None:
+        return _r(name, "FAIL", None, "no 9021 reply")
+    applied = rep.get("applied")
+    err = rep.get("error") or rep.get("em") or ""
+    ok = applied is not True
+    return _r(name, "PASS" if ok else "FAIL", None,
+              f"acct2 {a.get('act', 'switch')}: {err or 'applied='+str(applied)}")
+
+
+def _relay_acct2_quiet(name, a, ctx):
+    """relay_acct2_quiet {unit, secs}: while the sim's own GCS sees the
+    relay story, the second account must hear nothing - no attempt or
+    switch pushes reach a foreign account."""
+    if a.get("trigger"):
+        ctl._relay_trigger(a["trigger"])
+    frames = [m for m in ctl._acct2_collect(None, {9021},
+                                          float(a["secs"]))
+              if (m.get("ms") or {}).get("act")]
+    ok = not frames
+    det = (f"quiet {a['secs']}s" if ok
+           else f"foreign push: {json.dumps(frames[0].get('ms'))}")
+    return _r(name, "PASS" if ok else "FAIL", len(frames), det)
+
+
 def _relay_gcs_locked(name, a, ctx):
     """relay_gcs_locked {unit, gcs}: the unit's relay pair is pinned to
     the named fake GCS - its `list` pinned.gcs {ip,port} equals the
@@ -2934,6 +2966,8 @@ DISPATCH = {
     "relay_gcs_locked": _relay_gcs_locked,
     "relay_gcs_attempt": _relay_gcs_attempt,
     "relay_flood_msgs": _relay_flood_msgs,
+    "relay_acct2_denied": _relay_acct2_denied,
+    "relay_acct2_quiet": _relay_acct2_quiet,
     "relay_reject_bound": _relay_reject_bound,
     "relay_no_gcs_attempt": _relay_no_gcs_attempt,
     "relay_gcs_switched": _relay_gcs_switched,

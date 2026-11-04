@@ -56,6 +56,10 @@
            "clock_offset_ms": {"type": "integer"},
            "account": {"type": "object", "additionalProperties": false,
              "properties": {"user": {"type": "string"},
+                            "code": {"type": ["string", "integer"]}}},
+           "account2": {"type": "object", "additionalProperties": false,
+             "description": "SL-0184: a second credential so a GCS of a foreign account can be exercised (cross-account relay tests)",
+             "properties": {"user": {"type": "string"},
                             "code": {"type": ["string", "integer"]}}}}
         }
       ]
