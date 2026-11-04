@@ -218,6 +218,26 @@ chooses one: `./sim ctl -s quadcopter status`.
 
 ---
 
+## 7b. The public UDP relay — drive it with a real GCS
+
+`scenarios/demos/udp_relay_tofu.yaml` brings one copter up with the
+real servers and the public UDP relay in **tofu** mode and then just
+stays up, so you can plug a real QGC or Mission Planner into the
+relay's GCS port and walk the whole operator story: first lock, the
+flickering badge, approve, switch back, reject, reject longer, a GCS
+restart, the 30-second idle takeover, kick, and change port.
+
+```bash
+./sim run scenarios/demos/udp_relay_tofu.yaml
+./sim ctl -s udp_relay_tofu relay list     # the socket2 port to point QGC at
+```
+
+The runbook `scenarios/demos/udp_relay_tofu.md` is the step-by-step
+checklist (what to connect, what you should see, where screenshots
+go, and the notes to fill in on real heartbeat rates and restart
+behaviour). The same flows are automated in
+`tests/udp_relay/relay_*.yaml`.
+
 ## 8. Simulating on your own DroneEngage server
 
 By default a sim spawns its own private server — perfect for tests,

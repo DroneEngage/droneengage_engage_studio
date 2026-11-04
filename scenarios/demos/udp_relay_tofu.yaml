@@ -1,0 +1,19 @@
+# DroneEngage public UDP relay - the TOFU walkthrough for a real GCS.
+# Brings one copter SITL up with the real servers and the relay in
+# tofu mode, un-pauses the unit's udp proxy, then parks for two hours
+# so a person can drive a real QGC / Mission Planner through the lock,
+# attempt, approve, reject, takeover, kick and change-port flows.
+# Runbook: udp_relay_tofu.md
+version: 1
+name: udp_relay_tofu
+tasks: [GL-0104, SL-0183]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+allow_all_skip: true
+fleet:
+  - {id: copter1, cls: copter}
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: wait, seconds: 7200}
+assert: []
