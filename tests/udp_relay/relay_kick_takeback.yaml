@@ -1,0 +1,25 @@
+version: 1
+name: relay_kick_takeback
+tasks: [GL-0105, GL-0107, SL-0181]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+# SL-0181 case 4: after a takeover a kick frees the lock and the
+# original QGC takes it back.
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 47, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 49, do: wait, seconds: 4}
+  - {t: 53, do: relay, cmd: "gcs start qgc2 --ip 127.0.0.2"}
+  - {t: 55, do: relay, cmd: "gcs cmd qgc2 stream"}
+assert:
+  - relay_gcs_switched: {unit: copter1, secs: 15, reason: approved,
+      trigger: ["waitattempt copter1 127.0.0.2",
+                "approve copter1 --gcs qgc2"]}
+  - relay_gcs_switched: {unit: copter1, secs: 15,
+      trigger: ["gcs silence qgc2", "kick copter1"]}
+  - relay_gcs_telemetry: {gcs: qgc1, secs: 8, at_least: 3}
+  - relay_gcs_locked: {unit: copter1, gcs: qgc1}

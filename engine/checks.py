@@ -2111,7 +2111,9 @@ def _relay_collect_9021(secs, act, trigger=None, unit=None):
             if g and g.get("ip") and (g.get("ip") != before.get("ip")
                                       or g.get("port") != before.get("port")):
                 reason = ("same_ip" if g["ip"] == before.get("ip")
-                          else "approved" if trigger else "idle")
+                          else "approved"
+                          if trigger and "approve" in str(trigger)
+                          else "idle")
                 out.append({"act": "switched", "from_ip": g["ip"],
                             "from_port": g.get("port"), "reason": reason})
                 break

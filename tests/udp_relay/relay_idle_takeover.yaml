@@ -1,0 +1,23 @@
+version: 1
+name: relay_idle_takeover
+tasks: [GL-0105, GL-0107, SL-0181]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+# SL-0181 case 1: a locked GCS gone quiet for the idle-release window
+# loses the lock to the next knock - reason idle - and telemetry moves.
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 47, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 49, do: wait, seconds: 4}
+assert:
+  # the check itself silences the locked GCS and starts the knocker, so
+  # the idle takeover always lands inside its window
+  - relay_gcs_switched: {unit: copter1, secs: 60, reason: idle,
+      trigger: ["gcs silence qgc1", "gcs start qgc2 --ip 127.0.0.2",
+                "gcs cmd qgc2 stream"]}
+  - relay_gcs_telemetry: {gcs: qgc2, secs: 8, at_least: 3}
+  - relay_gcs_locked: {unit: copter1, gcs: qgc2}

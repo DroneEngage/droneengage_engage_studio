@@ -1,0 +1,24 @@
+version: 1
+name: relay_restart_locked
+tasks: [GL-0105, GL-0107, SL-0181]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+# SL-0181 case 5: the relay restarts with a live GCS - the lock
+# survives, a stranger sending straight after gets nothing, and
+# telemetry resumes.
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 47, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 49, do: wait, seconds: 4}
+  - {t: 53, do: restart, unit: server, proc: udp_relay}
+  - {t: 54, do: wait, seconds: 6}
+  - {t: 60, do: relay, cmd: "gcs start qgc2 --ip 127.0.0.2"}
+assert:
+  - relay_gcs_attempt: {unit: copter1, secs: 30, ip: "127.0.0.2"}
+  - relay_gcs_no_telemetry: {gcs: qgc2, secs: 5}
+  - relay_gcs_telemetry: {gcs: qgc1, secs: 10, at_least: 3}
+  - relay_gcs_locked: {unit: copter1, gcs: qgc1}

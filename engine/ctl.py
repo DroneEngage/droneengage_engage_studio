@@ -1643,8 +1643,12 @@ def _relay_wait_attempt(unit, ip, secs=25.0):
     deadline = time.time() + secs
     while time.time() < deadline:
         r = _relay_peer(unit, "query", wait=1.0) or {}
-        att = ((r.get("pinned") or {}).get("gcs") or {}).get("attempt")
-        if att and att.get("ip") == ip:
+        g = (r.get("pinned") or {}).get("gcs") or {}
+        att = g.get("attempt")
+        # a row left behind by a rejected source is stale - approving it
+        # lands applied:false, so only a live attempt unlocks the wait
+        rejected = any(x.get("ip") == ip for x in (g.get("rejected") or []))
+        if att and att.get("ip") == ip and not rejected:
             return True
         time.sleep(0.4)
     return False
@@ -1663,6 +1667,11 @@ def _relay_trigger(cmdline):
                 _relay_wait_attempt(a[1], a[2])
             elif a and a[0] == "gcs":
                 _relay_gcs_cmd(a[1:])
+            elif a and a[0] == "ctl":
+                # any other ctl command, e.g. `ctl restart server udp_relay`
+                subprocess.run([sys.executable, os.path.abspath(__file__),
+                                "-s", _ctx_name()] + a[1:],
+                               capture_output=True)
             else:
                 _relay_peer_cmd(a)
     except SystemExit:
