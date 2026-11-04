@@ -2993,6 +2993,8 @@ def gen_unit(u, sim, catalog):
             # connected UDP socket and pipes the client's replies back
             # into the proxy. Its UDP source port is ephemeral, so a
             # replug just starts it again on the same peer. The
+            # -b 1400: one read is one datagram, and socat's 8192 default
+            # needs IP fragments, which a phone hotspot drops whole.
             # wrapper waits for the proxy's ctrl port first - socat
             # must not dial a proxy that is not up yet.
             pdir = os.path.join(udir, "fcb_udp")
@@ -3001,7 +3003,7 @@ def gen_unit(u, sim, catalog):
                 u, "fcb_udp", pdir,
                 "bash -c \": '%s'; while true; do until (exec 3<>/dev/tcp/"
                 "127.0.0.1/%d && exec 3>&-) 2>/dev/null; do sleep 1; "
-                "done; socat -d -d UDP4:%s tcp:127.0.0.1:%d; "
+                "done; socat -d -d -b 1400 UDP4:%s tcp:127.0.0.1:%d; "
                 "sleep 1; done\""
                 % (pdir, px["ctrl"], fl["peer"], px["port"]))
     # the resolved config stays on the manifest unit - camera bindings,
