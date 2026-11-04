@@ -520,6 +520,42 @@ def apply_cam_override(sim, dev):
     camcfg["camera_list"] = [e]
 
 
+def apply_out_override(sim, value):
+    """./sim up --out <ip[:port]> (SIM_FCB_UDP_PEER): repoint the peer of
+    every `fcb_link` kind udp unit (SL-0106) - the address the fcb_udp
+    bridge pushes to. A bare ip keeps the yaml's port. Applied inside
+    load_sim like the --cam/slot overrides so the value feeds sim_hash -
+    a different --out never silently reuses the live sim."""
+    v = str(value).strip()
+    if ":" in v:
+        host, _, p = v.rpartition(":")
+        try:
+            port = int(p)
+        except ValueError:
+            port = 0
+        if not host or not 1 <= port <= 65535:
+            raise SimError(f"--out wants <ip> or <ip>:<port>, "
+                           f"got {value!r}")
+        port = str(port)
+    else:
+        host, port = v, None
+    if not host:
+        raise SimError(f"--out wants <ip> or <ip>:<port>, got {value!r}")
+    hit = False
+    for u in sim["units"]:
+        fl = (u.get("fc") or {}).get("fcb_link") or {}
+        if fl.get("kind") != "udp":
+            continue
+        if port is None:
+            _, _, keep = fl["peer"].rpartition(":")
+            fl["peer"] = f"{host}:{keep}"
+        else:
+            fl["peer"] = f"{host}:{port}"
+        hit = True
+    if not hit:
+        raise SimError("--out: the sim runs no fcb_link kind udp unit")
+
+
 def set_module_overrides(overrides):
     """Install {module: abs bin path} for this process. Called by the
     sim CLI before load_sim; {} clears."""
@@ -936,6 +972,12 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
             sim["units"].append(_expand_unit(sim, b, uname, entry, at, catalog))
     if _CAM_OVERRIDE is not None:
         apply_cam_override(sim, _CAM_OVERRIDE)
+    # ./sim up --out <ip[:port]> (SIM_FCB_UDP_PEER env, like the slot
+    # override): repoint every udp fcb_link's peer before the hash - a
+    # different peer is a different fleet
+    out_peer = setting("SIM_FCB_UDP_PEER")
+    if out_peer:
+        apply_out_override(sim, out_peer)
     sim.pop("_cam_alloc", None)
     sim.pop("_cam_taken", None)
     seen = set()

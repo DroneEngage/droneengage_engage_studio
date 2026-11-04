@@ -1,0 +1,18 @@
+# Runbook: sims/sitl_udp.md
+#
+# One quad copter SITL whose FCB stream is pushed over UDP to a remote
+# listener at 10.1.72.253:14550 - the SL-0106 `fcb_link: {kind: udp}`
+# path. The unit runs SITL + fcb_proxy + the fcb_udp socat bridge only
+# (`fc_client: external` strips de_comm/de_mavlink); the FC client -
+# an Andruav phone, a remote de_mavlink, any UDP MAVLink listener -
+# lives off-host and learns its peer from the first inbound datagram.
+description: |
+  One quad copter (SITL only, no local de modules). The fcb_proxy's
+  MAVLink byte stream is pushed over UDP to a remote listener at
+  10.1.72.253:14550 by the fcb_udp socat bridge; the client's replies
+  are piped back into the proxy. Edit `peer:` or pass
+  `--out <ip[:port]>` on `sim up` to repoint the listener.
+version: 1
+units:
+  - {block: copter, name: copter1, fc_client: external,
+     fcb_link: {kind: udp, peer: "10.1.72.253:14550"}}

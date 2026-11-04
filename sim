@@ -273,7 +273,7 @@ def main(argv):
                  "validate", "record", "studio"):
             a, flags = _cli_flags(a)
             if flags.get("out") is not None and c != "up":
-                sys.exit("--out only works with ./sim up <stack>")
+                sys.exit("--out only works with ./sim up")
             # SL-0121: `./sim <verb> <sim> help|--help|-h` -> per-sim help,
             # exit 0 without starting anything. Bare `./sim <verb> help`
             # was already routed to command help above.
@@ -436,8 +436,11 @@ def main(argv):
                     ctl.xdg_open(url)
                 return
             if flags.get("out") is not None:
-                sys.exit("--out only works with a stack, such as "
-                         "./sim up de_servers --out <host>")
+                # a sim's --out <ip[:port]> repoints the peer of every
+                # udp fcb_link unit (a stack's --out above is the
+                # announced host instead); load_sim reads it through
+                # setting() like the slot override so it feeds sim_hash
+                os.environ["SIM_FCB_UDP_PEER"] = str(flags["out"])
             launcher.up(simlib.resolve_sim_arg(files[0], choose=True),
                         fresh="--fresh" in a or "--restart" in a,
                         open_web="--open-web" in a)

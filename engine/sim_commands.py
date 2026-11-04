@@ -137,13 +137,18 @@ COMMANDS = {
             "--cam": "pin THE camera of a single-camera sim: --cam 0 "
                     "(or video0, /dev/video0) binds /dev/video0, --cam "
                     "DE-CAM3 binds that card label",
-            "--out": "de_servers only: make the servers reachable from "
-                     "other machines, announced at this host or IP",
+            "--out": "on a stack: make the servers reachable from other "
+                     "machines, announced at this host or IP; on a sim: "
+                     "repoint the peer of every `fcb_link` kind udp "
+                     "unit to <ip[:port]> - the remote UDP listener the "
+                     "fcb_udp bridge pushes to (bare ip keeps the "
+                     "yaml's port; = SIM_FCB_UDP_PEER)",
         },
         "shared_flags": True,
         "examples": ["./sim up copters3", "./sim up copters3 --fresh",
                      "./sim up de_servers",
-                     "./sim up de_servers --out 192.168.1.20"],
+                     "./sim up de_servers --out 192.168.1.20",
+                     "./sim up sitl_udp --out 10.1.72.253"],
         "takes_sim": True,
     },
     "vcam": {
