@@ -1657,10 +1657,10 @@ def _relay_wait_attempt(unit, ip, secs=25.0):
 def _relay_trigger(cmdline):
     """Run a `relay` subcommand line (gcs ... | approve|reject|...), as a
     check trigger - errors print, never sys.exit."""
-    try:
-        lines = cmdline if isinstance(cmdline, list) else [cmdline]
-        for ln in lines:
-            a = str(ln).split()
+    lines = cmdline if isinstance(cmdline, list) else [cmdline]
+    for ln in lines:
+        a = str(ln).split()
+        try:
             if a and a[0] == "sleep":
                 time.sleep(float(a[1]))
             elif a and a[0] == "waitattempt":
@@ -1674,8 +1674,9 @@ def _relay_trigger(cmdline):
                                capture_output=True)
             else:
                 _relay_peer_cmd(a)
-    except SystemExit:
-        pass
+        except SystemExit:
+            # a failed line must not eat the rest of the trigger
+            pass
 
 
 def _relay_peer_cmd(a):
@@ -1773,13 +1774,21 @@ def _gcs_running(name):
 
 
 def _relay_gcs_default_port():
-    pairs = relay_list()
-    if len(pairs) != 1:
-        sys.exit(f"{len(pairs)} relay pairs - pass --port <socket2 port>")
-    port = (pairs[0].get("socket2") or {}).get("port")
-    if not port:
-        sys.exit("the relay pair has no socket2 port")
-    return int(port)
+    # the list call can come back empty while the relay churns (a
+    # change_port rebind or an owner-conn flap) - retry briefly before
+    # giving up so trigger-time starts/retargets land
+    for _ in range(6):
+        try:
+            pairs = relay_list()
+        except SystemExit:
+            pairs = []
+        if len(pairs) == 1:
+            port = (pairs[0].get("socket2") or {}).get("port")
+            if port:
+                return int(port)
+        time.sleep(0.5)
+    sys.exit("the relay pair has no socket2 port "
+             "(list failed or the rebind has not settled)")
 
 
 def _relay_gcs_start(name, ip, port):
@@ -1842,8 +1851,9 @@ def _relay_gcs_ctl(name, what):
 
 
 def _relay_gcs_cmd_file(name, what):
-    if what not in ("arm", "disarm", "stream"):
-        sys.exit("usage: relay gcs cmd <name> <arm|disarm|stream>")
+    if what not in ("arm", "disarm", "stream") \
+            and not what.startswith("target "):
+        sys.exit("usage: relay gcs cmd <name> <arm|disarm|stream|target N>")
     if not _gcs_running(name):
         sys.exit(f"relay gcs {name!r}: not running")
     simlib.write_text(_gcs_paths(name)["cmd"], what)
@@ -1867,6 +1877,20 @@ def _relay_gcs_cmd(a):
         if not rest:
             sys.exit(f"usage: relay gcs {op} <name>")
         _relay_gcs_ctl(rest[0], op)
+    elif op == "flood":
+        # start <n> fakes knocking from 127.0.0.10+i - the flood test's
+        # crowd of strangers (SL-0182)
+        n = int(rest[0]) if rest else 6
+        port = _relay_gcs_default_port()
+        for i in range(n):
+            _relay_gcs_start(f"f{i + 1}", f"127.0.0.{10 + i}", port)
+        print(f"{n} fakes started on 127.0.0.10..{9 + n}")
+    elif op == "retarget":
+        # point a fake at the pair's current socket2 port - the move a
+        # GCS makes after act:'change_port' hands out the new port
+        if not rest:
+            sys.exit("usage: relay gcs retarget <name>")
+        _relay_gcs_cmd_file(rest[0], f"target {_relay_gcs_default_port()}")
     elif op == "cmd":
         if len(rest) < 2:
             sys.exit("usage: relay gcs cmd <name> <arm|disarm|stream>")
@@ -1946,6 +1970,8 @@ def _relay_gcs_proc(name, ip, target_port, sim):
             s.sendto(arm_cmd(1 if what == "arm" else 0),
                      ("127.0.0.1", target_port))
             st["cmds_sent"] += 1
+        elif what.startswith("target "):
+            target_port = int(what.split()[1])
         elif what == "stream":
             # one REQUEST_DATA_STREAM can be lost while SITL is still
             # booting - a real GCS keeps asking, so repeat for a while

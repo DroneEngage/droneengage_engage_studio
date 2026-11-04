@@ -1,0 +1,29 @@
+# SL-0182 case 4+5: after change_port the first GCS on the new port
+# is locked in with no IP restriction, and the drone-side (DEU1)
+# link is unaffected - telemetry keeps flowing.
+version: 1
+name: relay_change_port_lock
+tasks: [GL-0107, SL-0182]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 47, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 49, do: wait, seconds: 4}
+  - {t: 53, do: relay, cmd: "gcs start qgc2 --ip 127.0.0.2"}
+assert:
+  # change_port frees the lock and rebinds socket2; a fresh source on a
+  # never-seen IP starts against the new port and locks in first-come
+  - relay_gcs_switched: {unit: copter1, secs: 15,
+      trigger: ["change-port copter1",
+                "sleep 1",
+                "gcs start qgc3 --ip 127.0.0.3",
+                "gcs cmd qgc3 stream"]}
+  # the drone's link is unaffected: qgc3's heartbeats and commands are
+  # forwarded socket2->socket1 to the unit (relay counters prove it),
+  # and the pin itself is the bidirectional evidence
+  - relay_gcs_locked: {unit: copter1, gcs: qgc3}

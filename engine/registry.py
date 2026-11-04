@@ -535,6 +535,9 @@ VERBS = [
       doc="9021 operator act as the sim's GCS: approve|reject|kick|"
           "change_port|query (SL-0179)",
       eg="{t: 10, do: relay, act: approve, unit: c1, ip: 127.0.0.2, port: 50001}"),
+    V("relay_flood_msgs", "check", req=["unit", "secs"],
+      opt=["at_most"]),
+    V("relay_reject_bound", "check", req=["unit", "at_most"], opt=[]),
     V("relay_gcs_attempt", "check", req=["secs", "ip"],
       opt=["port", "others", "trigger", "unit"],
       doc="a 9021 gcs_attempt push for this source arrives in secs; "

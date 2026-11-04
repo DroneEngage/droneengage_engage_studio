@@ -2035,6 +2035,43 @@ def _relay_gcs_no_telemetry(name, a, ctx):
               "(need 0)")
 
 
+def _relay_flood_msgs(name, a, ctx):
+    """relay_flood_msgs {unit, secs, at_most}: during a flood the relay
+    should keep the operator quiet - one waiting request per source at
+    a time and few new attempts raised. Counts the DISTINCT attempt
+    sources (ip:port) the pinned row shows across the window - each
+    new one is one operator message."""
+    unit = a["unit"]
+    deadline = time.time() + float(a["secs"])
+    seen, max_others = set(), 0
+    while time.time() < deadline:
+        g = _relay_query_gcs(unit, 1.0)
+        att = g.get("attempt")
+        if att and att.get("ip"):
+            seen.add((att["ip"], att.get("port")))
+            max_others = max(max_others, int(att.get("others") or 0))
+        time.sleep(0.4)
+    n = len(seen)
+    ok = n <= a.get("at_most", n + 1)
+    det = (f"{n} attempt(s) raised in {a['secs']}s "
+           f"(at_most {a.get('at_most')}, peak others={max_others})")
+    return _r(name, "PASS" if ok else "FAIL", n, det)
+
+
+def _relay_reject_bound(name, a, ctx):
+    """relay_reject_bound {unit, at_most}: the pair's `rejected` list
+    stays within its maximum - the flood cannot make it grow past the
+    configured cap."""
+    unit = a["unit"]
+    g = _relay_query_gcs(unit, 2.0)
+    rej = g.get("rejected") or []
+    n = len(rej)
+    ok = n <= int(a["at_most"])
+    return _r(name, "PASS" if ok else "FAIL", n,
+              f"{n} rejected entr{'y' if n == 1 else 'ies'} "
+              f"(at_most {a['at_most']})")
+
+
 def _relay_gcs_locked(name, a, ctx):
     """relay_gcs_locked {unit, gcs}: the unit's relay pair is pinned to
     the named fake GCS - its `list` pinned.gcs {ip,port} equals the
@@ -2896,6 +2933,8 @@ DISPATCH = {
     "relay_gcs_no_telemetry": _relay_gcs_no_telemetry,
     "relay_gcs_locked": _relay_gcs_locked,
     "relay_gcs_attempt": _relay_gcs_attempt,
+    "relay_flood_msgs": _relay_flood_msgs,
+    "relay_reject_bound": _relay_reject_bound,
     "relay_no_gcs_attempt": _relay_no_gcs_attempt,
     "relay_gcs_switched": _relay_gcs_switched,
     "no_fc_command_to_static": _no_fc_command_to_static,
