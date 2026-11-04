@@ -1,24 +1,37 @@
+# relay_takeover_in_flight - an idle takeover of the UDP relay lock while a
+# mission flies: the mission starts before the switch and finishes after it.
 version: 1
 name: relay_takeover_in_flight
 tasks: [GL-0105, GL-0107, SL-0181]
+operation: ../../packages/copter_square.json
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
             account: {user: sim@sim.droneengage.com, code: sim1234}}
 fleet:
   - {id: copter1, cls: copter}
 # SL-0181 case 3: the same idle takeover while the copter is armed -
 # the switch is automatic and the flight is unaffected (telemetry
-# keeps flowing to the new lock).
+# keeps flowing to the new lock). SL-0186: a mission runs across the
+# switch and keeps making progress after it.
 timeline:
   - {t: 0, do: wait, seconds: 90}
   - {t: 85, do: relay, cmd: "resume copter1"}
   - {t: 86, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
   - {t: 88, do: relay, cmd: "gcs cmd qgc1 stream"}
   - {t: 90, do: wait, seconds: 4}
+  - {t: 94, do: mode, unit: copter1, mode: GUIDED}
+  - {t: 94, do: deploy}
   - {t: 94, do: arm, unit: copter1}
+  # qgc1 goes quiet well before the mission starts, so the 30 s idle
+  # window ends while the mission is still running (it lasts ~15 s)
+  - {t: 100, do: relay, cmd: "gcs silence qgc1"}
+  - {t: 135, do: start}
+settle_s: 0
 assert:
   - relay_gcs_switched: {unit: copter1, secs: 60, reason: idle,
       trigger: ["gcs silence qgc1", "gcs start qgc2 --ip 127.0.0.2",
                 "gcs cmd qgc2 stream"]}
   - relay_gcs_telemetry: {gcs: qgc2, secs: 8, at_least: 3}
-  - fc_mode: {unit: copter1, mode: guided}
+  - journal_count: {unit: copter1, re: "RUN run .* started", equals: 1}
+  - journal_count: {unit: copter1, re: "mission main completed", equals: 1}
+  - fc_mode: {unit: copter1, mode: auto}
   - relay_gcs_locked: {unit: copter1, gcs: qgc2}
