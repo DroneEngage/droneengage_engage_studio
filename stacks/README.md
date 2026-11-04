@@ -45,7 +45,17 @@ procs:                      # launch order - first entry starts first
                             # kind node: argv after the script; {port}
                             # substitutes the resolved port
     port: 8070              # kind node: the port (port_env overrides)
+    out: {public_host: "{host}"}
+                            # kind exec: config keys applied by `./sim up
+                            # <stack> --out <host>` ({host} substituted)
 ```
+
+`./sim up de_servers --out <host>` makes the servers reachable from other
+machines: each proc with `out:` loads a generated `--config` copy under
+`var/<stack minus any de_ prefix>/out/`, so the repo configs stay untouched.
+`<host>` is the address clients connect to (`ip -br addr`). A running stack
+with a different host restarts; `--restart` without `--out` returns to local
+only. Open the server ports and the relay's `udp_port_range` in any firewall.
 
 Stacks are deliberately NOT sims: procs carry a `--<stack>` argv marker
 so `simlib.pid_is_ours` stays False — `sim down`, `sim down --all`,

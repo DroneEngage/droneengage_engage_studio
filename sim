@@ -191,7 +191,7 @@ def _cli_flags(argv):
     while i < len(argv):
         a = argv[i]
         if a in ("--user", "--password", "--auth-server", "--slot-base",
-                 "--with", "--cam"):
+                 "--with", "--cam", "--out"):
             if i + 1 >= len(argv):
                 sys.exit(f"{a} needs a value")
             kw[a[2:].replace("-", "_")] = argv[i + 1]
@@ -244,6 +244,10 @@ def main(argv):
         if argv[1] in sim_commands.COMMANDS:
             simlib.print_usage(sim_commands.command_help(argv[1]))
             return 0
+        import devstack
+        if argv[1] in devstack.stack_names():
+            simlib.print_usage(devstack.render_help(argv[1]))
+            return 0
         # `./sim help <sim-or-test>` -> the full per-sim help (SL-0121)
         simlib.print_usage(sim_help.render_help(simlib.resolve_sim_arg(
             argv[1], ("sims", "tests", "scenarios"), choose=True)))
@@ -268,13 +272,20 @@ def main(argv):
         if c in ("show", "up", "run", "try", "view", "suite",
                  "validate", "record", "studio"):
             a, flags = _cli_flags(a)
+            if flags.get("out") is not None and c != "up":
+                sys.exit("--out only works with ./sim up <stack>")
             # SL-0121: `./sim <verb> <sim> help|--help|-h` -> per-sim help,
             # exit 0 without starting anything. Bare `./sim <verb> help`
             # was already routed to command help above.
             if sim_help.wants_sim_help(c, a):
                 pos = next(x for x in a if not x.startswith("-")
                            and x not in ("help", "--help", "-h"))
-                kinds = ("sims", "tests", "scenarios") \
+                if c == "up":
+                    import devstack
+                    if pos in devstack.stack_names():
+                        simlib.print_usage(devstack.render_help(pos))
+                        return 0
+                kinds =("sims", "tests", "scenarios") \
                     if c in ("run", "try", "view") else ("sims",)
                 simlib.print_usage(sim_help.render_help(
                     simlib.resolve_sim_arg(pos, kinds, choose=True), c))
@@ -418,11 +429,15 @@ def main(argv):
                 if "--open-web" in a and not url:
                     sys.exit(f"{files[0]} has no webclient link")
                 devstack.up(files[0], fresh="--fresh" in a
-                                        or "--restart" in a)
+                                        or "--restart" in a,
+                            out=flags.get("out"))
                 if "--open-web" in a:
                     import ctl
                     ctl.xdg_open(url)
                 return
+            if flags.get("out") is not None:
+                sys.exit("--out only works with a stack, such as "
+                         "./sim up de_servers --out <host>")
             launcher.up(simlib.resolve_sim_arg(files[0], choose=True),
                         fresh="--fresh" in a or "--restart" in a,
                         open_web="--open-web" in a)

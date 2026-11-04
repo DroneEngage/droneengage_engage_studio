@@ -13,19 +13,23 @@ procs:
     repo: droneengage_authenticator
     kind: exec
     bin: target/release/andruavauth
+    out: {server_ip: "0.0.0.0"}
   - name: de_server
     repo_env: DE_SERVER_DIR
     repo: droneengage_server
     kind: exec
     bin: target/release/andruavmainserver
+    out: {server_ip: "::", public_host: "{host}"}
   - name: de_storage
     repo_env: DE_STORAGE_DIR
     repo: droneengage_storage_server
     port_env: de_storage_server_port
     kind: exec
     bin: target/release/de_storage_server
+    out: {server_ip: "0.0.0.0", public_host: "{host}"}
   - name: de_udp_proxy
     repo_env: DE_UDP_RELAY_DIR
     repo: droneengage_udp_proxy
     kind: exec
     bin: target/release/droneengage-udp-proxy
+    out: {udp_bind_ip: "0.0.0.0", public_host: "{host}"}

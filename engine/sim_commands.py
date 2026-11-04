@@ -118,7 +118,8 @@ COMMANDS = {
         "group": "LIVE",
         "summary": "start a sim (restarts the same-named one)",
         "usage": ["./sim up <sim.yaml|de_servers|de_webclient> "
-                  "[--fresh|--restart] [--open-web] [--cam dev]"],
+                  "[--fresh|--restart] [--open-web] [--cam dev] "
+                  "[--out host]"],
         "description": "Start a sim. Restarts the same-named sim; refuses "
                        "ports of a live sim - sims run in parallel; unit "
                        "names may repeat on per-sim servers but stay unique "
@@ -126,7 +127,8 @@ COMMANDS = {
                        "--open-web xdg-opens the webclient link. "
                        "de_servers and de_webclient are the developer's "
                        "real servers/webclient, not sims (only `./sim "
-                       "down <stack>` stops them).",
+                       "down <stack>` stops them); `./sim up <stack> --help` "
+                       "shows a stack's own flags.",
         "flags": {
             "--fresh": "fresh bring-up (tear down any same-named sim "
                        "first; on a sim also wipes var/run/<sim>)",
@@ -135,10 +137,13 @@ COMMANDS = {
             "--cam": "pin THE camera of a single-camera sim: --cam 0 "
                     "(or video0, /dev/video0) binds /dev/video0, --cam "
                     "DE-CAM3 binds that card label",
+            "--out": "de_servers only: make the servers reachable from "
+                     "other machines, announced at this host or IP",
         },
         "shared_flags": True,
         "examples": ["./sim up copters3", "./sim up copters3 --fresh",
-                     "./sim up de_servers"],
+                     "./sim up de_servers",
+                     "./sim up de_servers --out 192.168.1.20"],
         "takes_sim": True,
     },
     "vcam": {

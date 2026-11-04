@@ -15,6 +15,7 @@
     python3 engine/test_devstack.py
 """
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -64,6 +65,97 @@ procs:
     args: ["--port", "{port}"]
     port: 8070
 """
+
+
+class Out(unittest.TestCase):
+    """./sim up <stack> --out <host>: generated configs, repo untouched."""
+
+    def _proc(self, repo, out):
+        return {"name": "srv", "repo": repo, "repo_env": None,
+                "bin": "bin/srv", "port_env": None, "kind": "exec",
+                "cwd": None, "script": None, "args": None, "port": None,
+                "out": out}
+
+    def _repo(self, local='{"keep": 1, "public_host": "127.0.0.1"}'):
+        repo = tempfile.mkdtemp()
+        with open(os.path.join(repo, "server.config"), "w") as f:
+            f.write('{"server_port": 9, // comment\n "ssl": "./ssl/a"}')
+        if local is not None:
+            with open(os.path.join(repo, "server.config.local"), "w") as f:
+                f.write(local)
+        return repo
+
+    def _script(self, repo, p, host):
+        var = tempfile.mkdtemp()
+        with mock.patch.object(simlib, "VAR_DIR", var):
+            path = devstack._launch_script("st", p, host)
+            return var, open(path).read()
+
+    def test_config_overrides_on_a_copy(self):
+        repo = self._repo()
+        p = self._proc(repo, {"public_host": "{host}", "server_ip": "::"})
+        var, text = self._script(repo, p, "10.0.0.5")
+        cfg = os.path.join(var, "st", "out", "srv", "server.config")
+        self.assertIn(f"'--config={cfg}'", text)
+        self.assertIn("--st", text)
+        self.assertIn(f"cd '{repo}'", text)
+        self.assertEqual(simlib.load_config(cfg + ".local"),
+                         {"keep": 1, "public_host": "10.0.0.5",
+                          "server_ip": "::"})
+        self.assertEqual(simlib.load_config(cfg)["server_port"], 9)
+        self.assertEqual(os.stat(cfg + ".local").st_mode & 0o777, 0o600)
+        self.assertEqual(
+            simlib.load_config(os.path.join(repo, "server.config.local"))
+            ["public_host"], "127.0.0.1")
+
+    def test_repo_without_local(self):
+        repo = self._repo(local=None)
+        var, _ = self._script(repo, self._proc(repo, {"a": "{host}"}), "h1")
+        self.assertEqual(simlib.load_config(os.path.join(
+            var, "st", "out", "srv", "server.config.local")), {"a": "h1"})
+
+    def test_no_config_without_host_or_out(self):
+        repo = self._repo()
+        _, text = self._script(repo, self._proc(repo, {"a": 1}), None)
+        self.assertNotIn("--config", text)
+        _, text = self._script(repo, self._proc(repo, None), "h1")
+        self.assertNotIn("--config", text)
+
+    def test_rejects_hosts_clients_cannot_use(self):
+        for host in ("127.0.0.1", "localhost", "0.0.0.0", "::", "a b",
+                     "x';rm", "::1"):
+            with self.assertRaises(simlib.SimError, msg=host):
+                devstack._check_out_host(host)
+        devstack._check_out_host("10.220.158.31")
+        devstack._check_out_host("drone.example.com")
+
+    def test_shipped_de_servers_announce_the_host(self):
+        by = {p["name"]: p["out"] for p in devstack.procs("de_servers")}
+        for proc in ("de_server", "de_udp_proxy", "de_storage"):
+            self.assertEqual(by[proc]["public_host"], "{host}")
+        self.assertEqual(by["de_auth"]["server_ip"], "0.0.0.0")
+
+    def test_help_lists_out_only_where_supported(self):
+        text = devstack.render_help("de_servers")
+        self.assertIn("usage: ./sim up de_servers", text)
+        self.assertIn("--out <host>", text)
+        self.assertIn("de_udp_proxy", text)
+        self.assertNotIn("--out", devstack.render_help(STACK))
+
+    def test_help_prints_from_the_command_line_with_colors(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = subprocess.run(
+            ["script", "-qec", "./sim up de_servers --help", "/dev/null"],
+            cwd=root, capture_output=True, text=True).stdout
+        self.assertIn("--out", out)
+        self.assertIn("\033[32m./sim up de_servers", out)
+        self.assertIn("\033[33m", out)
+
+    def test_out_rejected_on_other_kinds(self):
+        d = _stacks_dir(NODE_YAML + '    out: {a: 1}\n')
+        with mock.patch.object(devstack, "STACKS_DIR", d):
+            with self.assertRaises(simlib.SimError):
+                devstack._load_stacks()
 
 
 class T(unittest.TestCase):

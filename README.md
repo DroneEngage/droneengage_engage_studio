@@ -57,6 +57,7 @@ the noun diagram and glossary is [docs/MAP.md](docs/MAP.md).
 |---|---|
 | run one copter | `./sim up quadcopter` (or `./sim studio quadcopter`) |
 | run the real servers | `./sim up de_servers` |
+| reach the real servers from other machines | `./sim up de_servers --out <host>` |
 | run the webclient dev server | `./sim up de_webclient` |
 | run copters on their own sim server | `./sim studio copters3` |
 | join my own running stack | `./sim up de_servers`, then a sim with `server: {type: external}` (e.g. `sims/plane.yaml`) |
@@ -269,7 +270,9 @@ it with `./sim up de_servers` - the headless
 `servers/sh_start_servers.sh`: auth, comm, storage and udp_proxy run
 from their repos' own `server.config(.local)` on the real ports; it is
 infrastructure, not a sim, so `down`/`run`/`clean` never touch it and
-only `./sim down de_servers` stops it). `./sim up de_webclient`
+only `./sim down de_servers` stops it; add `--out <host>` to make it
+reachable from other machines such as a phone, see `stacks/README.md`).
+`./sim up de_webclient`
 starts the webclient dev server the same way (`npm start` in
 `DE_WEBCLIENT_DIR`, https on `SIM_WEBCLIENT_URL` - :3000 default;
 `--open-web` opens it): no server processes are

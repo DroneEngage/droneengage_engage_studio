@@ -33,6 +33,7 @@ under var/<stack minus any de_ prefix>/: launch.<proc>.sh, pids/, logs/.
 import glob
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -53,6 +54,7 @@ STACKS_DIR = os.path.join(simlib.SIM_ROOT, "stacks")
 # --<stack>) on an explicit `port:`/`port_env:` port, with `cwd:` a dir
 # inside the repo and `{port}` substituted in `args:`
 _KINDS = ("npm", "exec", "node")
+OUT_HOST_RX = re.compile(r"^[A-Za-z0-9.:-]+$")
 
 
 def _load_stacks():
@@ -157,11 +159,19 @@ def _load_stacks():
                     if p.get(extra) is not None:
                         raise simlib.SimError(
                             f"{where}: `{extra}:` only with kind node")
+            out_cfg = p.get("out")
+            if out_cfg is not None:
+                if kind != "exec":
+                    raise simlib.SimError(
+                        f"{where}: `out:` only with kind exec")
+                if not isinstance(out_cfg, dict) or not out_cfg:
+                    raise simlib.SimError(
+                        f"{where}: out must map config keys to values")
             out.append({"name": pname, "repo": repo,
                         "repo_env": repo_env, "bin": bin_,
                         "port_env": port_env, "kind": kind,
                         "cwd": cwd, "script": script, "args": args,
-                        "port": port})
+                        "port": port, "out": out_cfg})
         prov = spec.get("provides")
         if prov is not None:
             if not isinstance(prov, dict) or not all(
@@ -376,14 +386,65 @@ def _node_script(repo, p):
     return None
 
 
-def _launch_script(stack, p):
+def _out_dir(stack):
+    return os.path.join(_stack_dir(stack), "out")
+
+
+def _out_hostfile(stack):
+    return os.path.join(_out_dir(stack), "host")
+
+
+def out_host(stack="de_servers"):
+    """The --out host of the stack's last bring-up, None when local."""
+    try:
+        return open(_out_hostfile(stack)).read().strip() or None
+    except OSError:
+        return None
+
+
+def _check_out_host(host):
+    if not OUT_HOST_RX.match(host):
+        raise simlib.SimError(f"--out {host!r}: not a host name or IP")
+    if host == "localhost" or host.startswith("127.") or host == "::1":
+        raise simlib.SimError(
+            f"--out {host}: that is this laptop only - give the address "
+            "other machines reach it at (`ip -br addr`)")
+    if host in ("0.0.0.0", "::"):
+        raise simlib.SimError(
+            f"--out {host}: this address is announced to clients, so it "
+            "must be one they can connect to")
+
+
+def _write_out_config(stack, p, host):
+    """A --config copy of the repo's server.config whose .local is the
+    repo's .local plus the proc's `out:` keys ({host} substituted), so
+    each server applies its own merge rules and the repo stays untouched.
+    Relative paths inside still resolve against the repo (the cwd). The
+    copies may hold secrets - owner-only. @returns the config's path."""
+    repo = _repo(p)
+    loc = os.path.join(repo, "server.config.local")
+    local = simlib.load_config(loc) if os.path.isfile(loc) else {}
+    for k, v in p["out"].items():
+        local[k] = v.replace("{host}", host) if isinstance(v, str) else v
+    d = os.path.join(_out_dir(stack), p["name"])
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, "server.config")
+    simlib.write_text(path, open(os.path.join(repo, "server.config")).read(),
+                      0o600)
+    simlib.write_text(path + ".local", json.dumps(local, indent=1) + "\n",
+                      0o600)
+    return path
+
+
+def _launch_script(stack, p, host=None):
     """Run in the repo (its own server.config(.local) and relative
     paths resolve there); the --<stack> marker is ignored by the
     launched program but identifies the pid as this stack's. npm procs
     ride `npm start -- <marker>` so the npm pid carries it (and
     react-scripts ignores it); exec procs pass it straight to the
     binary (the Rust servers ignore unknown args); node procs preload
-    _marker_cjs and substitute {port} in their args."""
+    _marker_cjs and substitute {port} in their args. With a --out host,
+    exec procs declaring `out:` load _write_out_config instead."""
     repo, proc = _repo(p), p["name"]
     cwd = repo
     if p["kind"] == "npm":
@@ -403,6 +464,8 @@ def _launch_script(stack, p):
     else:
         cmd = "exec '%s' %s" % (os.path.join(repo, p["bin"]),
                                 _marker(stack))
+        if host and p["out"]:
+            cmd += " '--config=%s'" % _write_out_config(stack, p, host)
     path = os.path.join(_stack_dir(stack), f"launch.{proc}.sh")
     simlib.write_text(path,
                       "#!/bin/bash\ncd '%s'\necho $$ > '%s'\n%s\n"
@@ -436,9 +499,17 @@ def _check_repo(stack, p):
                 f"cd {repo} && cargo build --release (or {hint})")
 
 
-def up(stack="de_servers", fresh=False):
-    """Start the stack's procs in order, waiting on each one's port."""
+def up(stack="de_servers", fresh=False, out=None):
+    """Start the stack's procs in order, waiting on each one's port.
+    `out` announces them to other machines at that host; a running stack
+    with a different host restarts, since config is read at startup."""
     procs_ = procs(stack)
+    if out is not None:
+        _check_out_host(out)
+        if not any(p["out"] for p in procs_):
+            raise simlib.SimError(f"{stack} does not support --out")
+        if pids(stack) and out_host(stack) != out:
+            fresh = True
     if fresh:
         down(stack, quiet=True)
     os.makedirs(_pids_dir(stack), exist_ok=True)
@@ -448,6 +519,14 @@ def up(stack="de_servers", fresh=False):
         print(f"{stack} already up - `./sim servers` for status, "
               "--fresh|--restart to restart")
         return
+    if not live:
+        # nothing running, so the recorded host is stale
+        if os.path.isfile(_out_hostfile(stack)):
+            os.unlink(_out_hostfile(stack))
+        if out is not None:
+            simlib.write_text(_out_hostfile(stack), out + "\n")
+    # a partial bring-up keeps the running procs' host
+    host = out if out is not None else out_host(stack)
     for p in procs_:
         proc = p["name"]
         if proc in live:
@@ -455,7 +534,7 @@ def up(stack="de_servers", fresh=False):
                   f"already running pid {live[proc]}")
             continue
         _check_repo(stack, p)
-        script = _launch_script(stack, p)
+        script = _launch_script(stack, p, host)
         log = os.path.join(_logs_dir(stack), proc + ".log")
         subprocess.Popen(["setsid", "nohup", "bash", script],
                          stdout=open(log, "a"), stderr=subprocess.STDOUT,
@@ -475,6 +554,54 @@ def up(stack="de_servers", fresh=False):
     note = STACKS[stack]["up_note"]
     if note:
         print(note.replace("{webclient_url}", simlib.WEBCLIENT_URL))
+    if host:
+        print(simlib.col_yellow(
+            f"{stack} is reachable from outside this machine at {host} - "
+            "`./sim up " + stack + " --restart` returns to local only"))
+
+
+def render_help(stack):
+    """`./sim up <stack> --help` text for simlib.print_usage, which adds
+    the colors. Reads the stack's yaml, so its flags and procs stay true."""
+    procs_ = procs(stack)
+    spec = STACKS[stack]
+    has_out = any(p["out"] for p in procs_)
+    usage = f"./sim up {stack} [--fresh|--restart]"
+    flags = [("--fresh", "stop the stack first, then start it again"),
+             ("--restart", "same as --fresh")]
+    if spec["open_url"]:
+        usage += " [--open-web]"
+        flags.append(("--open-web", "xdg-open the webclient link once it "
+                                    "is up"))
+    if has_out:
+        usage += " [--out <host>]"
+        flags.append(("--out <host>", "make the servers reachable from other "
+                                      "machines, announced at this host or "
+                                      "IP (`ip -br addr`)"))
+    out = [f"usage: {usage}", "",
+           f"Start the {stack} stack in the background. It is not a sim: only "
+           f"`./sim down {stack}` stops it.", "", "flags:"]
+    width = max(len(f) for f, _ in flags)
+    out += [f"  {f:<{width}}  {h}" for f, h in flags]
+    out += ["", "processes, in start order:"]
+    for p in procs_:
+        try:
+            port = _port(stack, p)
+        except (simlib.SimError, ValueError, OSError):
+            port = "?"
+        out.append(f"  {p['name']:<{width}}  port {port}, repo {p['repo']}")
+    if has_out:
+        out += ["", "--out loads a generated config copy from "
+                    f"var/{os.path.basename(_stack_dir(stack))}/out/, so the "
+                    "repo configs stay untouched. A running stack with a "
+                    "different host restarts, and --restart without --out "
+                    "returns to local only. Open the server ports and the "
+                    "relay's udp_port_range in any firewall."]
+    out += ["", "examples:", f"  ./sim up {stack}",
+            f"  ./sim up {stack} --restart"]
+    if has_out:
+        out.append(f"  ./sim up {stack} --out 192.168.1.20")
+    return "\n".join(out)
 
 
 def _kill_tree(pid, stack, sig):
@@ -573,9 +700,11 @@ def _rows(stack):
 def status(stack="de_servers"):
     rows = _rows(stack)
     bound = sum(1 for r in rows if r["bound"])
+    host = out_host(stack) if pids(stack) else None
     print(stack + " " + simlib.col_dim(
         f"({bound}/{len(rows)} bound, "
-        f"{len(pids(stack))} stack-owned)"))
+        f"{len(pids(stack))} stack-owned"
+        + (f", out {host}" if host else "") + ")"))
     for r in rows:
         pid = r["pid"] or r["foreign"]
         tag = " (foreign)" if (r["foreign"] and not r["pid"]) else ""

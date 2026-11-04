@@ -252,6 +252,17 @@ vehicles to show up in **your real WebClient**, use a sim with
 ./sim up sims/quadcopter.yaml --user me@example.com --password secret
 ```
 
+To reach the servers from another machine, such as a phone running the
+Andruav app, start them with the address that machine can connect to:
+
+```bash
+./sim up de_servers --out 192.168.1.20
+```
+
+Your `server.config` files stay untouched, and `./sim up de_servers
+--restart` returns to local only. `./sim up de_servers --help` lists the
+flags.
+
 - `--user` / `--password` make every unit (and the sim's control
   bridge) log in with that account. The account must exist on your
   authenticator.
