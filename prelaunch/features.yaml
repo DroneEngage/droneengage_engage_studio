@@ -191,7 +191,7 @@ checks:
   turn.allocate:
     stage: 2
     kind: probe
-    impl: prelaunch_checks.turn:allocate
+    impl: prelaunch_checks.turn:allocate_probe
     title: STUN binding and TURN allocate with data through the relay
 
   # ---- stage 3: end to end media ----
