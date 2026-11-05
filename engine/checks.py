@@ -692,7 +692,11 @@ def _clock_spread(name, a, ctx):
         hits = [ln for ln in simlib.journal_lines(u, marks.get(u["name"]))
                 if ln[4] == "CLOCK" and rx.search(ln[5])]
         if hits:
-            vals[u["name"]] = int(rx.search(hits[-1][5]).group(1))
+            # DE-0034: a phone-side de_comm stamps CLOCK on the device
+            # clock - normalize by the offset measured at up
+            # (device_ms - host_ms) so it spreads against host units.
+            vals[u["name"]] = int(rx.search(hits[-1][5]).group(1)) \
+                + int((u.get("android") or {}).get("clock_offset_ms") or 0)
     if not vals:
         return _r(name, "FAIL", None, "no CLOCK lines")
     if len(vals) < 2:

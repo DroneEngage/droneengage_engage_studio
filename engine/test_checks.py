@@ -106,6 +106,18 @@ class T(unittest.TestCase):
         r = run({"clock_spread": {"unit": "all"}}, j)
         self.assertEqual(r["status"], "FAIL")
 
+    def test_clock_spread_normalizes_android_offset(self):
+        # DE-0034: the phone's device clock sits 500 ms behind the host,
+        # so its stamped value reads +500 - the measured offset pulls it
+        # back inside the bound instead of failing the whole check
+        phone = dict(U1, android={"clock_offset_ms": -500})
+        j = {"u1": [line(1, "CLOCK", "fleet_minus_unix_ms=505")],
+             "u2": [line(1, "CLOCK", "fleet_minus_unix_ms=5")]}
+        r = run({"clock_spread": {"unit": "all", "max_ms": 100}}, j,
+                manifest={"name": "t", "units": [phone, U2],
+                          "server_procs": []})
+        self.assertEqual(r["status"], "PASS")
+
     def test_journal_consistent(self):
         j = {"u1": [line(1, "WM", "WM_STATE t1 confirmed")],
              "u2": [line(1, "WM", "WM_STATE t2 confirmed")]}
