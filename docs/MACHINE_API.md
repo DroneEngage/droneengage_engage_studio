@@ -195,3 +195,39 @@ That file is the full run report:
   `RESULT` - run `./sim validate --json` first.
 - `./sim suite` writes the same `summary.json` per run plus a junit
   report under `var/results/nightly/`.
+
+## `./sim prelaunch` — `report.json`
+
+`./sim prelaunch --target <t> [--stage 0,2] [--version <v>]` writes
+`var/results/prelaunch/<version>/<target>/report.json` and `report.md`.
+With `--json` it also prints `report.json` on stdout. `--list --json`
+prints the feature register and has no side effects.
+
+```json
+{
+  "version": "1.2.0",
+  "target": "airgap",
+  "role": "airgap",
+  "required_stages": ["0", "1", "install", "2", "3", "4"],
+  "updated": "2026-11-05T13:00:00Z",
+  "verdict": "NO-GO",
+  "override": null,
+  "features": [{"id": "udp_proxy_qgc", "title": "...", "severity": "P0",
+                "status": "FAIL", "checks": {"relay.range_edges": "FAIL"}}],
+  "checks": {"relay.range_edges": {"status": "FAIL", "detail": "...",
+             "stage": "3", "kind": "probe", "title": "...",
+             "at": "2026-11-05T13:00:00Z", "wall_s": 12.1}},
+  "versions": {"de_comm": "abc1234", "de_udp": "def5678+dirty"}
+}
+```
+
+`verdict` is `GO` (every P0 row in the required stages is PASS), `NO-GO`
+(a P0 FAIL or SKIP) or `INCOMPLETE` (a required P0 check has not run).
+`override` is `{reason, at}` when a human accepted a no-go; `verdict` keeps
+its real value. Results of the same version and target merge between runs,
+so a later `--stage 4` or `--signoff` adds to the report; `--fresh` starts
+again.
+
+Exit code: `0` when every P0 row of the stages this run covered is PASS, or
+when an override exists. `1` otherwise. With only `--signoff` or
+`--override`, `0` means the verdict is `GO`.

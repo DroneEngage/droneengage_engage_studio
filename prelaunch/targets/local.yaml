@@ -1,0 +1,13 @@
+# The developer's own stack (./sim up de_servers) on this host, for work on
+# the gate itself. It cannot prove a firewall, so it never makes a release
+# GO: use the airgap and mirror targets for that.
+name: local
+role: local
+stages: ["0", "2"]
+services:
+  auth:     {host: 127.0.0.1, port: 19408, s2s_port: 19001}
+  webclient: {url: "https://127.0.0.1:3000"}
+  comm:     {host: 127.0.0.1, port: 9966}
+  storage:  {host: 127.0.0.1, port: 9000}
+  relay:    {host: 127.0.0.1, control_port: 9100, udp_range: [40000, 40999]}
+account: {user_env: PRELAUNCH_LOCAL_USER, code_env: PRELAUNCH_LOCAL_CODE}

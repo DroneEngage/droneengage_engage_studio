@@ -645,6 +645,10 @@ def main(argv):
                                                  & set(a)), seed=seed,
                                        record=record,
                                        open_web="--open-web" in a)
+        elif c == "prelaunch":
+            # the gate driver lives in engine/prelaunch.py (docs/PRELAUNCH.md)
+            import prelaunch
+            return prelaunch.main(a)
         elif c == "suite":
             # the full suite driver (verdicts, flaky rerun, junit) lives
             # in ci/run_suite.py - forward everything after `--seeds`
