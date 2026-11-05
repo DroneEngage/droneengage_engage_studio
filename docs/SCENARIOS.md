@@ -497,6 +497,21 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `time_to_detect` | `max_s` | first find latency |
 | `clock_spread` / `mission_current` / `journal_consistent` / `final_state` / `fc_items_unchanged_without_cause` / `no_fc_command_to_static` / `max_latency` / `stub_deterministic` / `signals_in_range` / `visible_px` / `render_latency` / `no_sep_violation` / `detection_precision_render` | see `engine/checks.py` `DISPATCH` |
 
+The udp_relay scenarios under `tests/udp_relay/` (full index with every
+file in `docs/udp_relay_scenarios.md`); the SL-0182 flood/change-port
+set and the case each one proves:
+
+- `relay_flood_msgs.yaml` — many 127.0.0.x sources raise one waiting
+  request, a growing `others` count and few operator messages.
+- `relay_flood_reject_bound.yaml` — the reject list stays within its
+  maximum under a flood.
+- `relay_change_port_stray.yaml` — after `change_port` the stray source
+  hits a dead port: no attempts, no rejected-counter growth.
+- `relay_change_port_lock.yaml` — after `change_port` the first GCS on
+  the new port locks in with no IP restriction.
+- `relay_deu1_token.yaml` — the DEU1 drone-side token still pins the
+  unit side after the flood and after `change_port` (DE-0067).
+
 An unknown assertion or fault name fails **validation**, not the run —
 `./sim validate` catches it before anything is launched.
 

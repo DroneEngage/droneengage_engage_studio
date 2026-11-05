@@ -1849,6 +1849,70 @@ class TestRelayGcsChecks(unittest.TestCase):
                 {"relay_acct2_quiet": {"unit": "u1", "secs": 0.05}}, c)
         self.assertEqual(r["status"], "PASS")
 
+    def test_rejected_frozen_fails_when_a_counter_grows(self):
+        """DE-0067: after change_port the stray must not reach the
+        relay - any rejected.<reason> growth fails the check."""
+        c = self._ctx()
+        stats = iter([{"rejected": {"gcs_unpinned": 3}},
+                      {"rejected": {"gcs_unpinned": 5}}])
+        with mock.patch.object(checks.ctl, "relay_stats",
+                               side_effect=lambda: next(stats)):
+            r = checks.check_assertion(
+                {"relay_rejected_frozen": {"unit": "u1", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+        stats = iter([{"rejected": {"gcs_unpinned": 5}},
+                      {"rejected": {"gcs_unpinned": 5}}])
+        with mock.patch.object(checks.ctl, "relay_stats",
+                               side_effect=lambda: next(stats)):
+            r = checks.check_assertion(
+                {"relay_rejected_frozen": {"unit": "u1", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "PASS")
+
+        # a brand-new gcs_* reason appearing in the window counts as growth
+        stats = iter([{"rejected": {}},
+                      {"rejected": {"gcs_rejected": 1}}])
+        with mock.patch.object(checks.ctl, "relay_stats",
+                               side_effect=lambda: next(stats)):
+            r = checks.check_assertion(
+                {"relay_rejected_frozen": {"unit": "u1", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+        # non-gcs growth is out of scope: unit telemetry drops as
+        # no_peer while the fresh socket2 has no pin yet (the
+        # change-port gap) - that is not the stray leaking
+        stats = iter([{"rejected": {"no_peer": 4}},
+                      {"rejected": {"no_peer": 141}}])
+        with mock.patch.object(checks.ctl, "relay_stats",
+                               side_effect=lambda: next(stats)):
+            r = checks.check_assertion(
+                {"relay_rejected_frozen": {"unit": "u1", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "PASS")
+
+    def test_unit_locked_wants_the_token_pin(self):
+        """DE-0067 case 5: pinned.unit must show mode token + ip:port."""
+        c = self._ctx()
+        pairs = [{"unit": "u1",
+                  "pinned": {"unit": {"mode": "token",
+                                      "ip": "127.0.0.1", "port": 40501},
+                             "gcs": {}}}]
+
+        def run(p):
+            with mock.patch.object(
+                    checks.ctl, "resolve",
+                    lambda tok, m=None: c["manifest"]["units"]), \
+                 mock.patch.object(checks.ctl, "relay_list",
+                                   return_value=p):
+                return checks.check_assertion(
+                    {"relay_unit_locked": {"unit": "u1"}}, c)
+
+        self.assertEqual(run(pairs)["status"], "PASS")
+        pairs[0]["pinned"]["unit"] = {"mode": "open", "ip": "127.0.0.1",
+                                      "port": 40501}
+        self.assertEqual(run(pairs)["status"], "FAIL")
+        pairs[0]["pinned"]["unit"] = {"mode": "token"}
+        self.assertEqual(run(pairs)["status"], "FAIL")
+
 
 class TestUdpProxyRejects(unittest.TestCase):
     """TASK-84: udp_proxy_rejects - the stranger-injection grader and

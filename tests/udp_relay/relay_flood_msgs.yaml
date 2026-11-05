@@ -1,3 +1,6 @@
+# SL-0182 case 1: a flood of sources from many 127.0.0.x IPs raises
+# one waiting request with a growing `others` count and few operator
+# messages, while the locked GCS keeps its telemetry.
 version: 1
 name: relay_flood_msgs
 tasks: [GL-0107, SL-0182]
@@ -5,9 +8,6 @@ transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
             account: {user: sim@sim.droneengage.com, code: sim1234}}
 fleet:
   - {id: copter1, cls: copter}
-# SL-0182 case 1: a flood of sources from many 127.0.0.x IPs raises
-# one waiting request with a growing `others` count and few operator
-# messages, while the locked GCS keeps its telemetry.
 timeline:
   - {t: 0, do: wait, seconds: 45}
   - {t: 44, do: relay, cmd: "resume copter1"}

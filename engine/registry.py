@@ -538,6 +538,15 @@ VERBS = [
     V("relay_flood_msgs", "check", req=["unit", "secs"],
       opt=["at_most"]),
     V("relay_reject_bound", "check", req=["unit", "at_most"], opt=[]),
+    V("relay_rejected_frozen", "check", req=["unit", "secs"],
+      opt=["trigger"],
+      doc="the relay's gcs_* rejected counters do not grow in the "
+          "window - the stray source cannot reach the relay (DE-0067)",
+      eg="{relay_rejected_frozen: {unit: c1, secs: 8}}"),
+    V("relay_unit_locked", "check", req=["unit"],
+      doc="the pair's unit side is pinned through its DEU1 token "
+          "(pinned.unit mode token with ip/port) (DE-0067)",
+      eg="{relay_unit_locked: {unit: c1}}"),
     V("relay_acct2_denied", "check", req=["unit"],
       opt=["act", "trigger"]),
     V("relay_acct2_quiet", "check", req=["unit", "secs"],

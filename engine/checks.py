@@ -2082,6 +2082,48 @@ def _relay_reject_bound(name, a, ctx):
               f"(at_most {a['at_most']})")
 
 
+def _relay_rejected_frozen(name, a, ctx):
+    """relay_rejected_frozen {unit, secs}: the relay's GCS-side rejected
+    counters (`stats` rejected.gcs_*, relay-wide) must not grow across
+    the window. After change_port the stray source talks to a dead port
+    - any gcs_* growth means it still reaches the relay (DE-0067).
+    no_peer/unit_* are out of scope: unit telemetry drops as no_peer
+    while the fresh socket2 has no pin yet, and that is the move
+    working as designed, not the stray leaking."""
+    def gcs_rej():
+        return {k: int(v) for k, v in
+                (ctl.relay_stats().get("rejected") or {}).items()
+                if k.startswith("gcs_")}
+    before = gcs_rej()
+    if a.get("trigger"):
+        ctl._relay_trigger(a["trigger"])
+    time.sleep(float(a["secs"]))
+    after = gcs_rej()
+    grew = {k: f"{before.get(k, 0)}->{v}"
+            for k, v in after.items() if v > before.get(k, 0)}
+    ok = not grew
+    return _r(name, "PASS" if ok else "FAIL", len(grew),
+              f"gcs rejected frozen over {a['secs']}s" if ok
+              else f"gcs rejected grew: {grew}")
+
+
+def _relay_unit_locked(name, a, ctx):
+    """relay_unit_locked {unit}: the pair's unit side stays pinned
+    through its DEU1 token - the `list` row pinned.unit is
+    {mode: token, ip, port}. The drone-side link survives the flood and
+    change_port (DE-0067 case 5)."""
+    pairs = ctl.relay_list()
+    ok, bits = True, []
+    for u in _units(a, ctx):
+        row = next((p for p in pairs if p.get("unit") == u["name"]), None)
+        un = ((row or {}).get("pinned") or {}).get("unit") or {}
+        good = un.get("mode") == "token" and bool(un.get("ip"))
+        ok &= good
+        bits.append(f"{u['name']}: unit {un.get('ip')}:{un.get('port')} "
+                    f"mode={un.get('mode')}")
+    return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
+
+
 def _relay_acct2_denied(name, a, ctx):
     """relay_acct2_denied {unit, act}: the peer act under the sim's
     second account must be refused - a foreign account never gets
@@ -2959,6 +3001,8 @@ DISPATCH = {
     "relay_acct2_denied": _relay_acct2_denied,
     "relay_acct2_quiet": _relay_acct2_quiet,
     "relay_reject_bound": _relay_reject_bound,
+    "relay_rejected_frozen": _relay_rejected_frozen,
+    "relay_unit_locked": _relay_unit_locked,
     "relay_no_gcs_attempt": _relay_no_gcs_attempt,
     "relay_gcs_switched": _relay_gcs_switched,
     "no_fc_command_to_static": _no_fc_command_to_static,

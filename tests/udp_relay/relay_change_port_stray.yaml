@@ -1,3 +1,6 @@
+# SL-0182 case 3: after change_port the stray source is left talking
+# to a dead port - it raises no more attempts, and the relay's
+# rejected counters do not grow for it (DE-0067).
 version: 1
 name: relay_change_port_stray
 tasks: [GL-0107, SL-0182]
@@ -5,8 +8,6 @@ transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
             account: {user: sim@sim.droneengage.com, code: sim1234}}
 fleet:
   - {id: copter1, cls: copter}
-# SL-0182 case 3: after change_port the stray source is left talking
-# to a dead port - it raises no more attempts.
 timeline:
   - {t: 0, do: wait, seconds: 45}
   - {t: 44, do: relay, cmd: "resume copter1"}
@@ -19,5 +20,8 @@ assert:
       # change_port resets the pin, so qgc1 retargets the new socket2
       # right away - only the stray qgc2 keeps hitting the dead port
       trigger: ["change-port copter1", "gcs retarget qgc1"]}
+  # DE-0067: the stray's datagrams must not reach the relay either -
+  # the rejected counters stay frozen while it knocks on the dead port
+  - relay_rejected_frozen: {unit: copter1, secs: 8}
   - relay_gcs_telemetry: {gcs: qgc1, secs: 8, at_least: 3}
   - relay_gcs_locked: {unit: copter1, gcs: qgc1}

@@ -1,0 +1,27 @@
+# SL-0182 case 5 (DE-0067): the DEU1 drone-side token still works after
+# the flood and after change_port - the unit pin stays {mode: token}
+# and telemetry keeps crossing the pair.
+version: 1
+name: relay_deu1_token
+tasks: [GL-0107, DE-0067]
+transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
+            account: {user: sim@sim.droneengage.com, code: sim1234}}
+fleet:
+  - {id: copter1, cls: copter}
+timeline:
+  - {t: 0, do: wait, seconds: 45}
+  - {t: 44, do: relay, cmd: "resume copter1"}
+  - {t: 45, do: relay, cmd: "gcs start qgc1 --ip 127.0.0.1"}
+  - {t: 47, do: relay, cmd: "gcs cmd qgc1 stream"}
+  - {t: 49, do: wait, seconds: 4}
+  - {t: 53, do: relay, cmd: "gcs flood 6"}
+assert:
+  # the flood is still running: the unit pin never left its token
+  - relay_unit_locked: {unit: copter1}
+  # change_port shakes the stray GCS sources off; socket1 (the unit)
+  # stays put, so the DEU1 pin must survive untouched
+  - relay_rejected_frozen: {unit: copter1, secs: 8,
+      trigger: ["change-port copter1", "gcs retarget qgc1"]}
+  - relay_unit_locked: {unit: copter1}
+  - relay_gcs_telemetry: {gcs: qgc1, secs: 8, at_least: 3}
+  - relay_gcs_locked: {unit: copter1, gcs: qgc1}

@@ -135,6 +135,24 @@ credential — a follow-up task to add one is proposed (see the task
 notes).
 - `relay_gcs_locked {unit, gcs}` — PASS when the pair's `list` row
   `pinned.gcs {ip,port}` equals the named fake GCS's own source address.
+- `relay_unit_locked {unit}` — PASS when the pair's `list` row
+  `pinned.unit` is `{mode: token, ip, port}` - the drone's DEU1 hello
+  pin is alive (SL-0182 case 5, DE-0067).
+- `relay_flood_msgs {unit, secs, at_most}` — PASS when the distinct
+  attempt sources the pinned row shows during a flood stay within
+  `at_most` (SL-0182 case 1).
+- `relay_reject_bound {unit, at_most}` — PASS when the pair's rejected
+  list has at most `at_most` entries (SL-0182 case 2).
+- `relay_rejected_frozen {unit, secs, trigger?}` — PASS when the
+  relay's `stats` `rejected.gcs_*` counters do not grow in the window;
+  after `change_port` any gcs_* growth means the stray still reaches
+  the relay (DE-0067).
+- `relay_acct2_denied {unit, act, trigger?}` — PASS when a peer act
+  under the sim's second account gets `not_allowed`, never
+  `applied: true` (SL-0184).
+- `relay_acct2_quiet {unit, secs, trigger?}` — PASS when the second
+  account hears no attempt/switch pushes; the session logs in first and
+  the trigger runs inside the listen window (DE-0066).
 - `relay_gcs_attempt {unit, secs, ip, port?, others?, trigger?}` — a
   gcs_attempt for this source is raised inside `secs`; when pushes do
   not reach the sim's GCS bridge the check polls `act:'query'` (a stale
@@ -167,3 +185,23 @@ proxy (it boots paused) - send it before expecting telemetry.
   during the block; a fresh attempt appears after it lapses.
 - `relay_reject_long.yaml` — case 6: 'reject longer' raises no attempt
   for the configured duration, including from a new port on the same IP.
+
+## tests/udp_relay scenarios (SL-0182: flood and change port)
+
+- `relay_flood_msgs.yaml` — case 1: a flood of 127.0.0.x sources raises
+  one waiting request with a growing `others` count and few operator
+  messages; the locked GCS keeps telemetry.
+- `relay_flood_reject_bound.yaml` — case 2: the reject list stays
+  within its maximum while a flood keeps the pair rejecting expired
+  attempts.
+- `relay_change_port_stray.yaml` — case 3: after `change_port` the
+  stray source talks to a dead port - no new attempts, and the relay's
+  rejected counters do not grow for it.
+- `relay_change_port_lock.yaml` — case 4: after `change_port` the first
+  GCS on the new port is locked in with no IP restriction.
+- `relay_deu1_token.yaml` — case 5: the DEU1 drone-side token still
+  pins the unit side after the flood and after `change_port`
+  (`relay_unit_locked`), and telemetry keeps flowing (DE-0067).
+- `relay_cross_account.yaml` — a second-account GCS hears no
+  attempt/switch pushes and its approve returns `not_allowed`
+  (SL-0184).

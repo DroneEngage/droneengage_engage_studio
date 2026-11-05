@@ -34,6 +34,7 @@ Each entry names the case that the scenario proves.
 | `relay_flood_reject_bound.yaml` | The reject list stays within its maximum while a flood keeps the pair rejecting expired attempts. |
 | `relay_change_port_stray.yaml` | After `change_port`, the stray source talks to a dead port and raises no more attempts. |
 | `relay_change_port_lock.yaml` | After `change_port`, the first GCS on the new port is locked with no IP restriction. The drone-side link is not affected and telemetry keeps flowing. |
+| `relay_deu1_token.yaml` | The DEU1 drone-side token still pins the unit side after the flood and after `change_port` (DE-0067). |
 
 ## Cross account (SL-0184)
 

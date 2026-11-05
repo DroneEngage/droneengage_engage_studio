@@ -1,3 +1,5 @@
+# SL-0182 case 2: the reject list stays within its maximum even while
+# a flood keeps the pair busy rejecting expired attempts.
 version: 1
 name: relay_flood_reject_bound
 tasks: [GL-0107, SL-0182]
@@ -5,8 +7,6 @@ transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
             account: {user: sim@sim.droneengage.com, code: sim1234}}
 fleet:
   - {id: copter1, cls: copter}
-# SL-0182 case 2: the reject list stays within its maximum even while
-# a flood keeps the pair busy rejecting expired attempts.
 timeline:
   - {t: 0, do: wait, seconds: 45}
   - {t: 44, do: relay, cmd: "resume copter1"}
