@@ -17,9 +17,11 @@ timeline:
   - {t: 53, do: relay, cmd: "gcs start qgc2 --ip 127.0.0.2"}
 assert:
   # the check itself rejects 127.0.0.2, so the block always covers its
-  # window no matter when the assert phase begins
+  # window no matter when the assert phase begins. The trigger needs
+  # ~12s (6s req collect + tail + setup) before the 6s window starts,
+  # so the reject must outlast ~18s - 25 keeps real margin.
   - relay_no_gcs_attempt: {unit: copter1, secs: 6,
-      trigger: "reject copter1 --gcs qgc2 --secs 15"}
+      trigger: "reject copter1 --gcs qgc2 --secs 25"}
   - relay_gcs_attempt: {unit: copter1, secs: 25, ip: "127.0.0.2"}
   - relay_gcs_telemetry: {gcs: qgc1, secs: 6, at_least: 3}
   - relay_gcs_locked: {unit: copter1, gcs: qgc1}
