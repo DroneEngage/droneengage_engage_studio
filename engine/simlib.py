@@ -2793,7 +2793,7 @@ def gen_unit(u, sim, catalog):
         # servers over the LAN, and listens on the phone for any
         # host-side modules of the same unit
         import android as _android
-        hip = _android.host_ip()
+        hip = _android.host_ip(u)
         if hip:
             if srv["auth"]:
                 cfg["auth_ip"] = hip
@@ -3066,9 +3066,9 @@ def gen_module(u, sim, m, catalog):
         # the LAN (SITL already binds INADDR_ANY - HIL.md Q1)
         if u.get("android") and "de_mavlink" in u["android"]["remote_modules"]:
             import android as _android
-            if _android.host_ip():
+            if _android.host_ip(u):
                 ctx["fcb_connection_uri"] = {
-                    "ip": _android.host_ip(),
+                    "ip": _android.host_ip(u),
                     "port": ctx["fcb_connect_port"], "type": "tcp"}
     spec = catalog[module_base(m, catalog)]
     # normpath: DE_CODE ends with "/" so $DE_CODE/<repo> renders
@@ -3118,7 +3118,7 @@ def gen_module(u, sim, m, catalog):
                 target_ip = "127.0.0.1"
             else:
                 # phone-side module -> host-side de_comm over LAN
-                target_ip = _android.host_ip() or target_ip
+                target_ip = _android.host_ip(u) or target_ip
             listen_ip = "0.0.0.0"
         elif "de_comm" in remote and u["android"].get("device_ip"):
             # de_comm is on the phone - a host-side module of the
@@ -3264,7 +3264,11 @@ def gen_server(sim):
     # servers must bind all interfaces and advertise the host IP
     import android as _android
     has_remote = any(u.get("android") for u in sim["units"])
-    host_ip = _android.host_ip() if has_remote else None
+    # probe the first remote-capable unit's device subnet (SL-0158)
+    remote_u = next((u for u in sim["units"]
+                     if (u.get("android") or {})
+                     .get("remote_modules")), None)
+    host_ip = _android.host_ip(remote_u) if has_remote else None
 
     if srv["auth"]:
         acfg = load_config(os.path.join(AUTH_REPO, "server.config"))

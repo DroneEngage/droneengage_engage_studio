@@ -70,13 +70,14 @@ def uses_adb_reverse(u):
 def host_ip(u=None):
     """The host address the phone can reach. ANDROID_HOST_IP wins; else
     probe the phone's own LAN IP and take the host address on its subnet
-    (USB-tether rndis hands out a different /24 address each time)."""
+    (USB-tether rndis hands out a different /24 address each time).
+    `u` should always be the unit - its android.serial picks the device
+    on multi-device hosts. The no-arg form stays for fleet-wide callers
+    (doctor) and probes through ANDROID_SERIAL (SL-0158)."""
     ip = simlib.setting("ANDROID_HOST_IP")
     if ip:
         return ip
-    if u is None:
-        return None
-    dev = device_ip(u)
+    dev = device_ip(u or {"android": {}})
     if not dev:
         return None
     try:
@@ -391,6 +392,7 @@ def spawn_mirror(u, run_dir):
 def doctor_rows(d, required=False, probe=False):
     """./sim doctor rows for Android units (mirrors esp32.doctor_rows)."""
     adb = simlib.setting("ANDROID_SERIAL")
+    # no unit in doctor scope - the no-arg form probes via ANDROID_SERIAL
     host = host_ip()
     adb_bin = shutil_which("adb")
     if not adb_bin:
