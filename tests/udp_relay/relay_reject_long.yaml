@@ -19,7 +19,9 @@ timeline:
   - {t: 55, do: relay, cmd: "gcs start qgc2b --ip 127.0.0.2"}
 assert:
   - relay_no_gcs_attempt: {unit: copter1, secs: 8,
-      trigger: "reject copter1 --gcs qgc2 --secs 20"}
+      # DE-0077: the trigger takes ~12s to land before the 8s window
+      # starts - 20s could expire inside it; 30s covers both with slack
+      trigger: "reject copter1 --gcs qgc2 --secs 30"}
   - relay_gcs_no_telemetry: {gcs: qgc2b, secs: 5}
   - relay_gcs_telemetry: {gcs: qgc1, secs: 6, at_least: 3}
   - relay_gcs_locked: {unit: copter1, gcs: qgc1}
