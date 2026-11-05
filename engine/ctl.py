@@ -205,6 +205,7 @@ import signal
 import socket
 import ssl
 import subprocess
+import threading
 import sys
 import time
 import uuid
@@ -1713,9 +1714,81 @@ def _relay_wait_attempt(unit, ip, secs=25.0):
     return False
 
 
+class _PushListener:
+    """DE-0064: hold a bridge `listen` stream open while a trigger runs.
+    The bridge only forwards a frame to a stream that is open when the
+    frame arrives, so a 9021 push (gcs_attempt/gcs_switched) that lands
+    while no stream is open is lost. This keeps one open for the whole
+    trigger and stashes each 9021 push in _RELAY_PUSH_STASH, so a check
+    reads live pushes and needs no act:query poll. Fake servers keep the
+    old path (no stream here)."""
+
+    def __init__(self, max_secs=120.0):
+        self.max_secs = max_secs
+        self._stop = threading.Event()
+        self._thread = None
+
+    def start(self):
+        try:
+            if server()["type"] == "fake":
+                return self
+            port = manifest()["server"]["control_port"]
+            sock = socket.create_connection(("127.0.0.1", port), 3)
+            sock.sendall(f"listen {int(self.max_secs)} 9021\n".encode())
+        except (OSError, SystemExit, KeyError):
+            return self
+        sock.settimeout(0.25)
+        self._thread = threading.Thread(target=self._run, args=(sock,),
+                                        daemon=True)
+        self._thread.start()
+        return self
+
+    def _run(self, sock):
+        buf = b""
+        end = time.time() + self.max_secs
+        try:
+            while not self._stop.is_set() and time.time() < end:
+                try:
+                    chunk = sock.recv(65536)
+                except socket.timeout:
+                    continue
+                if not chunk:
+                    break
+                buf += chunk
+                while b"\n" in buf:
+                    ln, buf = buf.split(b"\n", 1)
+                    try:
+                        f = json.loads(ln.decode(errors="replace"))
+                    except ValueError:
+                        continue
+                    m = f.get("ms") or {}
+                    if f.get("mt") == 9021 and "act" in m:
+                        _RELAY_PUSH_STASH.append(m)
+        except OSError:
+            pass
+        finally:
+            sock.close()
+
+    def stop(self, tail=1.0):
+        """Let a push that is still in flight land, then close."""
+        if self._thread:
+            time.sleep(tail)
+            self._stop.set()
+            self._thread.join(2)
+
+
 def _relay_trigger(cmdline):
     """Run a `relay` subcommand line (gcs ... | approve|reject|...), as a
-    check trigger - errors print, never sys.exit."""
+    check trigger - errors print, never sys.exit. A push listener stays
+    open meanwhile (DE-0064) so live 9021 pushes reach the stash."""
+    lis = _PushListener().start()
+    try:
+        _relay_trigger_lines(cmdline)
+    finally:
+        lis.stop()
+
+
+def _relay_trigger_lines(cmdline):
     lines = cmdline if isinstance(cmdline, list) else [cmdline]
     for ln in lines:
         a = str(ln).split()
