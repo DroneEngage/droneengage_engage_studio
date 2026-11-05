@@ -19,13 +19,16 @@ features:
     title: User logs in, and the unit comes online for the GCS
     severity: P0
     components: [de_auth, de_comm_server, de_comm, webclient]
-    checks: [config.public_host, unit.servers, sim.login_auth, reach.ports,
-             reach.tls, reach.login, reach.public_host]
+    checks: [config.public_host, unit.servers, unit.auth, unit.webclient,
+             sim.login_auth, sim.mixed_bringup, reach.ports,
+             reach.tls, reach.login, reach.public_host, slots.ports,
+             slots.comm_auth, slots.unit_config]
   - id: udp_proxy_qgc
     title: QGroundControl or Mission Planner reaches the FC through the UDP proxy
     severity: P0
     components: [de_udp, de_comm_server, de_mavlink, firewall]
-    checks: [config.udp_relay, config.port_overlap, sim.relay_telemetry,
+    checks: [config.udp_relay, config.port_overlap, unit.relay,
+             sim.relay_telemetry, sim.relay_lock_stranger, sim.relay_same_ip,
              relay.mavlink_both_ways, relay.range_edges, human.qgc]
   - id: video_camera_webclient
     title: de_camera video shows in the webclient
@@ -47,22 +50,25 @@ features:
     title: Arm, takeoff and guided flight work
     severity: P0
     components: [de_comm, de_mavlink, webclient]
-    checks: [sim.guided, human.fly_webclient]
+    checks: [sim.guided, sim.mode_change, human.fly_webclient]
   - id: mission_upload_run
     title: A mission uploads and runs to the end
     severity: P0
     components: [de_comm, de_mavlink, de_comm_server]
-    checks: [sim.mission_reference, sim.mission_auth]
+    checks: [sim.mission_reference, sim.mission_three_copters, sim.mission_gate,
+             sim.reboot_resync]
   - id: unit_restart_recovery
     title: A unit returns to service after a module restart
     severity: P0
     components: [de_comm, de_mavlink]
-    checks: [sim.module_restart, sim.mavlink_relink]
+    checks: [sim.module_restart, sim.mavlink_relink, sim.module_kill,
+             sim.restart]
   - id: server_restart_recovery
     title: Units reconnect after a server restart
     severity: P0
     components: [de_comm_server, de_comm]
-    checks: [sim.server_down, sim.relay_restart]
+    checks: [unit.storage, sim.server_down, sim.relay_restart, sim.link_loss,
+             sim.gcs_disconnect]
   - id: ota_update
     title: The release installs and upgrades through the real scripts
     severity: P0
@@ -104,6 +110,30 @@ checks:
     repo: servers/droneengage_server
     run: cargo test --release
     title: Comm server unit tests
+  unit.auth:
+    stage: 1
+    kind: command
+    repo: servers/droneengage_authenticator
+    run: cargo test --release
+    title: Authenticator unit tests
+  unit.relay:
+    stage: 1
+    kind: command
+    repo: servers/droneengage_udp_proxy
+    run: cargo test --release
+    title: UDP relay unit tests
+  unit.storage:
+    stage: 1
+    kind: command
+    repo: servers/droneengage_storage_server
+    run: cargo test --release
+    title: Storage server unit tests
+  unit.webclient:
+    stage: 1
+    kind: command
+    repo: droneengage_webclient_react
+    run: CI=true npx react-scripts test --watchAll=false
+    title: Webclient unit tests
   sim.login_auth:
     stage: 1
     kind: scenario
@@ -129,7 +159,7 @@ checks:
     kind: scenario
     file: tests/missions/v1_reference.yaml
     title: The reference mission runs to the end
-  sim.mission_auth:
+  sim.mission_three_copters:
     stage: 1
     kind: scenario
     file: tests/smoke_copters.yaml
@@ -150,16 +180,67 @@ checks:
     file: tests/faults/server_down.yaml
     title: Server outage during a mission
 
+  sim.mixed_bringup:
+    stage: 1
+    kind: scenario
+    file: tests/mixed_bringup.yaml
+    title: Mixed vehicle types come online
+  sim.relay_lock_stranger:
+    stage: 1
+    kind: scenario
+    file: tests/udp_relay/relay_lock_stranger.yaml
+    title: The relay keeps a stranger out of a locked pair
+  sim.relay_same_ip:
+    stage: 1
+    kind: scenario
+    file: tests/udp_relay/relay_same_ip_return.yaml
+    title: A GCS on the same IP returns to its pair
+  sim.mode_change:
+    stage: 1
+    kind: scenario
+    file: tests/faults/mode.yaml
+    title: A mode change during a mission
+  sim.mission_gate:
+    stage: 1
+    kind: scenario
+    file: tests/missions/p2_gate.yaml
+    title: A mission gate holds and then releases
+  sim.reboot_resync:
+    stage: 1
+    kind: scenario
+    file: tests/missions/p2_reboot_resync.yaml
+    title: A mission survives an FC reboot
+  sim.module_kill:
+    stage: 1
+    kind: scenario
+    file: tests/faults/module_kill.yaml
+    title: A killed module returns
+  sim.restart:
+    stage: 1
+    kind: scenario
+    file: tests/faults/restart.yaml
+    title: de_comm returns after a restart
+  sim.link_loss:
+    stage: 1
+    kind: scenario
+    file: tests/fault_link_loss.yaml
+    title: Units survive a link loss
+  sim.gcs_disconnect:
+    stage: 1
+    kind: scenario
+    file: tests/faults/gcs_disconnect.yaml
+    title: Units survive a GCS disconnect
+
   # ---- install: the real artifacts on the real hosts ----
   install.release:
     stage: install
     kind: probe
-    impl: prelaunch_checks.install:release
+    impl: prelaunch_install:release
     title: The release version is installed through the real scripts
   install.services:
     stage: install
     kind: probe
-    impl: prelaunch_checks.install:services
+    impl: prelaunch_install:services
     title: Each server service runs after the install
 
   # ---- stage 2: reachability from a host that is not the server ----
@@ -193,6 +274,25 @@ checks:
     kind: probe
     impl: prelaunch_checks.turn:allocate_probe
     title: STUN binding and TURN allocate with data through the relay
+
+  slots.ports:
+    stage: 2
+    kind: probe
+    impl: prelaunch_checks.slots:ports
+    roles: [mirror]
+    title: The two production slots share no port or relay range
+  slots.comm_auth:
+    stage: 2
+    kind: probe
+    impl: prelaunch_checks.slots:comm_auth
+    roles: [mirror]
+    title: The mirror auth sends clients to the mirror comm
+  slots.unit_config:
+    stage: 2
+    kind: probe
+    impl: prelaunch_checks.slots:unit_config
+    roles: [mirror]
+    title: The test unit differs from production only in auth_port
 
   # ---- stage 3: end to end media ----
   relay.mavlink_both_ways:
