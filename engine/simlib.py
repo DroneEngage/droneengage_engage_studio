@@ -1131,7 +1131,8 @@ def _load_sim_free_slot(spec, base_dir, exclusive=False):
                 if ports & used_ports(m):
                     clash = True
                     break
-            if clash or ports_held(ports - own):
+            if clash or ports_held(ports - own
+                                   - remote_bound_ports(sim)):
                 continue
             return sim
     finally:
@@ -2422,13 +2423,31 @@ def port_bound(port, proto):
         s.close()
 
 
+def remote_bound_ports(sim):
+    """Unit ports that bind on an android remote device, not this host.
+    A remote_modules entry's s2s_udp_listening_port lives on the phone
+    (listen ip 0.0.0.0 there), so a host bind-probe can neither see it
+    held nor prove it free - ports_held callers must drop these from
+    their inputs (SL-0110). Everything else used_ports() reports is
+    host-bound: the phone dials the host ports, it does not own them.
+    Kept in used_ports() itself so sim-vs-sim clash checks still catch
+    two fleets claiming the same port on one device."""
+    out = set()
+    for u in sim["units"]:
+        remote = (u.get("android") or {}).get("remote_modules") or []
+        out.update(u["ports"][m] for m in remote if m in u["ports"])
+    return out
+
+
 def ports_held(ports):
     """The ports some other process already binds on this host (TCP or
     UDP, any address). The stub/module blocks (54000-60999) sit inside
     Linux's ephemeral range, so a long-lived OS socket (wsdd, a browser)
     can own one - the module then dies on bind and the run fails far
     from the cause. Ports of live sims are the caller's business
-    (check_conflicts / the exclusive down)."""
+    (check_conflicts / the exclusive down), and ports that bind on an
+    android remote device are the caller's too - they are not this
+    host's to probe (remote_bound_ports)."""
     held = []
     for p in sorted(ports):
         for kind in (socket.SOCK_STREAM, socket.SOCK_DGRAM):
