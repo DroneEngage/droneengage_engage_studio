@@ -132,3 +132,28 @@ clients to the mirror comm and not to live, and the test unit differs from
 production only in `auth_port`. The mirror shares CPU and bandwidth with live,
 so keep video tests short and run no load test. Never add a firewall rule on
 these machines for a negative control: run those on the airgap Pi.
+
+## The switch
+
+`engine/prelaunch_promote.py` moves the public de_auth port between the slots.
+It reads a plan file: the header of the script shows the format. Write that
+file on your own machine, because it names your paths and commands.
+
+    python3 engine/prelaunch_promote.py --plan <plan> --version <v>
+
+This is a dry run. It prints each step and each config change, and changes
+nothing. Then send the global message to users, and run:
+
+    python3 engine/prelaunch_promote.py --plan <plan> --version <v> --message-sent --execute
+
+To roll back:
+
+    python3 engine/prelaunch_promote.py --plan <plan> --rollback --execute
+
+The script stops when no GO report or override exists for the version. Armed
+units do not stop it: it shows the count, because the human warns users first.
+During the swap, logins fail for a short time, because the port has one owner.
+Units on the old comm drop when it restarts, and they reconnect to the new slot.
+
+Each machine holds a live-slot file. Deploy skills read it, and they deploy only
+to the other slot. A deploy to a fixed path can overwrite live.
