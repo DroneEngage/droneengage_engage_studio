@@ -1780,7 +1780,10 @@ class _PushListener:
 def _relay_trigger(cmdline):
     """Run a `relay` subcommand line (gcs ... | approve|reject|...), as a
     check trigger - errors print, never sys.exit. A push listener stays
-    open meanwhile (DE-0064) so live 9021 pushes reach the stash."""
+    open meanwhile (DE-0064) so live 9021 pushes reach the stash. The
+    stash is cleared first (DE-0070) so a push an earlier check left
+    behind cannot leak into this one."""
+    _RELAY_PUSH_STASH.clear()
     lis = _PushListener().start()
     try:
         _relay_trigger_lines(cmdline)
