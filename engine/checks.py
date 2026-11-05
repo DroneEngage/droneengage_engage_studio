@@ -2083,28 +2083,123 @@ def _relay_reject_bound(name, a, ctx):
 
 
 def _relay_rejected_frozen(name, a, ctx):
-    """relay_rejected_frozen {unit, secs}: the relay's GCS-side rejected
-    counters (`stats` rejected.gcs_*, relay-wide) must not grow across
-    the window. After change_port the stray source talks to a dead port
-    - any gcs_* growth means it still reaches the relay (DE-0067).
-    no_peer/unit_* are out of scope: unit telemetry drops as no_peer
-    while the fresh socket2 has no pin yet, and that is the move
-    working as designed, not the stray leaking."""
-    def gcs_rej():
+    """relay_rejected_frozen {unit, secs, stray?, trigger?}: after
+    change_port the stray source(s) keep talking to the dead port -
+    nothing they send may reach the relay (DE-0067, SL-0188).
+
+    Per-source, not relay-wide: `stats` rejected counters are summed
+    over every pair and carry no source, so growth from another pair's
+    GCS must not fail this unit's window, and a stray whose datagrams
+    die as no_peer (it took the pin and forwards into a peerless
+    socket1) must not pass. The pair row's pinned.gcs state gives the
+    source identity the counters lack: a GCS-side stray that reaches
+    socket2 always shows there - an attempt source, a rejected ip, or
+    the pin itself.
+
+    The strays are the fake GCSs named by `stray` (name or list); with
+    no `stray` every live fake GCS that is not the pinned source counts
+    as a stray. When no stray can be identified at all the check falls
+    back to the old rule: any gcs_* growth fails.
+
+    Fails when, in the window:
+      - the gcs pin moves to a source other than the first settled pin
+        (a stray took the lock), or
+      - a stray ip shows as pinned.gcs.attempt source or as a
+        new/extended pinned.gcs.rejected entry, or
+      - the rejected counters (gcs_* AND no_peer) grew while a stray ip
+        sits in the pair's gcs state - growth with no stray evidence
+        belongs to another source (another pair's GCS, the locked GCS
+        itself, or unit telemetry dropping on the pin gap) and passes.
+    """
+    unit = a["unit"]
+    secs = float(a["secs"])
+
+    def rej_totals():
         return {k: int(v) for k, v in
-                (ctl.relay_stats().get("rejected") or {}).items()
-                if k.startswith("gcs_")}
-    before = gcs_rej()
+                (ctl.relay_stats().get("rejected") or {}).items()}
+
+    def gcs_state():
+        try:
+            row = next((p for p in ctl.relay_list()
+                        if p.get("unit") == unit), None)
+        except SystemExit:
+            row = None
+        return ((row or {}).get("pinned") or {}).get("gcs") or {}
+
+    def fakes():
+        try:
+            return {n: (st["ip"], int(st["port"]))
+                    for n, st in ctl.relay_gcs_status().items()
+                    if st.get("ip") and st.get("port") and not st.get("dead")}
+        except (OSError, SystemExit, KeyError, ValueError):
+            return {}
+
     if a.get("trigger"):
         ctl._relay_trigger(a["trigger"])
-    time.sleep(float(a["secs"]))
-    after = gcs_rej()
+    before = rej_totals()
+    pre = gcs_state()
+    pre_rej = {e.get("ip"): e.get("until_ms") or 0
+               for e in (pre.get("rejected") or [])}
+    want = a.get("stray")
+    names = {want} if isinstance(want, str) else set(want or [])
+
+    deadline = time.time() + secs
+    locked = None            # first settled pin {ip, port}
+    stray_ips = set()        # resolved once the pin is known
+    hits = set()             # stray-source evidence lines
+    armed_ips = set(pre_rej) & set()   # filled once strays resolve
+    while time.time() < deadline:
+        g = gcs_state()
+        pin = (g.get("ip"), g.get("port"))
+        if locked is None and pin != (None, None):
+            locked = pin
+            # resolve the strays against the settled pin
+            all_f = fakes()
+            if names:
+                stray_ips = {ip for n, (ip, _p) in all_f.items()
+                             if n in names}
+            else:
+                stray_ips = {ip for ip, _p in all_f.values()
+                             if (ip, _p) != pin}
+            armed_ips = {ip for ip in stray_ips if ip in pre_rej}
+        if locked is not None:
+            if pin != locked:
+                hits.add(f"pin moved to {pin[0]}:{pin[1]}")
+            att = g.get("attempt") or {}
+            att_ip = att.get("ip")
+            if att_ip and (att_ip in stray_ips
+                           or (not stray_ips and att_ip != locked[0])):
+                hits.add(f"attempt from {att_ip}:{att.get('port')}")
+            if att.get("others"):
+                hits.add(f"attempt others={att['others']}")
+            for e in (g.get("rejected") or []):
+                ip, until = e.get("ip"), e.get("until_ms") or 0
+                if not ip:
+                    continue
+                is_stray = ip in stray_ips \
+                    or (not stray_ips and ip != locked[0])
+                if is_stray and (ip not in pre_rej
+                                 or until > pre_rej[ip]):
+                    hits.add(f"rejected ip {ip}")
+        time.sleep(0.4)
+    after = rej_totals()
     grew = {k: f"{before.get(k, 0)}->{v}"
             for k, v in after.items() if v > before.get(k, 0)}
-    ok = not grew
-    return _r(name, "PASS" if ok else "FAIL", len(grew),
-              f"gcs rejected frozen over {a['secs']}s" if ok
-              else f"gcs rejected grew: {grew}")
+    # no_peer joins gcs_*: it counts only while a stray ip sits in the
+    # pair's gcs state - unit telemetry's gap drops carry no stray ip
+    seen = stray_ips & {e.get("ip")
+                        for e in (gcs_state().get("rejected") or [])} \
+        | armed_ips
+    if not stray_ips:
+        # no stray identity resolved: any gcs_* growth is unexplained
+        if any(k.startswith("gcs_") for k in grew):
+            hits.add(f"unattributed gcs_* growth: {grew}")
+    elif grew and (hits or seen):
+        hits.add(f"counters grew: {grew}")
+    ok = not hits
+    return _r(name, "PASS" if ok else "FAIL", len(hits),
+              f"no stray reached the relay over {a['secs']}s" if ok
+              else "; ".join(sorted(hits)))
 
 
 def _relay_unit_locked(name, a, ctx):

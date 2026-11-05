@@ -1889,6 +1889,78 @@ class TestRelayGcsChecks(unittest.TestCase):
                 {"relay_rejected_frozen": {"unit": "u1", "secs": 0.05}}, c)
         self.assertEqual(r["status"], "PASS")
 
+    @staticmethod
+    def _relay_row(gcs):
+        return [{"unit": "u1", "pinned": {"gcs": gcs}}]
+
+    def _frozen_fakes(self):
+        """qgc1 holds the lock on 10.0.0.1:5001; qgc2 is the stray on
+        10.0.0.2:5002, still knocking on the dead port."""
+        return {"qgc1": {"ip": "10.0.0.1", "port": 5001},
+                "qgc2": {"ip": "10.0.0.2", "port": 5002}}
+
+    def test_rejected_frozen_ignores_another_gcs_growth(self):
+        """SL-0188: the counters are relay-wide - a reject a different
+        GCS source caused (another pair's traffic) grows them, but no
+        stray ip shows in this pair's pinned.gcs state, so the check
+        stays green."""
+        c = self._ctx()
+        stats = iter([{"rejected": {"gcs_rejected": 1}},
+                      {"rejected": {"gcs_rejected": 3}}])
+        row = self._relay_row({"ip": "10.0.0.1", "port": 5001})
+        with mock.patch.object(checks.ctl, "relay_stats",
+                               side_effect=lambda: next(stats)), \
+             mock.patch.object(checks.ctl, "relay_list",
+                               return_value=row), \
+             mock.patch.object(checks.ctl, "relay_gcs_status",
+                               return_value=self._frozen_fakes()):
+            r = checks.check_assertion(
+                {"relay_rejected_frozen": {"unit": "u1", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "PASS")
+
+    def test_rejected_frozen_fails_on_stray_no_peer(self):
+        """SL-0188: no_peer growth counts when the stray's ip sits in
+        the pair's rejected state - the stray reached the relay and its
+        datagrams die there."""
+        c = self._ctx()
+        stats = iter([{"rejected": {"no_peer": 4}},
+                      {"rejected": {"no_peer": 10}}])
+        row = self._relay_row({"ip": "10.0.0.1", "port": 5001,
+                               "rejected": [{"ip": "10.0.0.2",
+                                             "until_ms": 999}]})
+        with mock.patch.object(checks.ctl, "relay_stats",
+                               side_effect=lambda: next(stats)), \
+             mock.patch.object(checks.ctl, "relay_list",
+                               return_value=row), \
+             mock.patch.object(checks.ctl, "relay_gcs_status",
+                               return_value=self._frozen_fakes()):
+            r = checks.check_assertion(
+                {"relay_rejected_frozen": {"unit": "u1", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_rejected_frozen_fails_when_stray_takes_pin(self):
+        """SL-0188: the worst stray case - it became the gcs pin, so
+        its datagrams forward (silently, or as no_peer when socket1 is
+        peerless). The pin move alone must fail."""
+        c = self._ctx()
+        stats = iter([{"rejected": {}}, {"rejected": {}}])
+        calls = [0]
+
+        def rows():
+            calls[0] += 1
+            return self._relay_row(
+                {"ip": "10.0.0.1", "port": 5001} if calls[0] <= 2
+                else {"ip": "10.0.0.2", "port": 5002})
+        with mock.patch.object(checks.ctl, "relay_stats",
+                               side_effect=lambda: next(stats)), \
+             mock.patch.object(checks.ctl, "relay_list",
+                               side_effect=rows), \
+             mock.patch.object(checks.ctl, "relay_gcs_status",
+                               return_value=self._frozen_fakes()):
+            r = checks.check_assertion(
+                {"relay_rejected_frozen": {"unit": "u1", "secs": 0.6}}, c)
+        self.assertEqual(r["status"], "FAIL")
+
     def test_unit_locked_wants_the_token_pin(self):
         """DE-0067 case 5: pinned.unit must show mode token + ip:port."""
         c = self._ctx()
