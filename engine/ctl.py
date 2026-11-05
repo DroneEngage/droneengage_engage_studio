@@ -1695,21 +1695,36 @@ def _relay_peer_acct(unit, act, extra=None, wait=6.0):
     return reply
 
 
+# DE-0075: an attempt must have this much life left (ms) for the
+# approve that follows the wait to land before the auto-reject cycle
+ATTEMPT_MIN_LEFT_MS = 4000
+
+
 def _relay_wait_attempt(unit, ip, secs=25.0):
     """Block until pinned.gcs.attempt carries `ip` (or `secs` runs out):
     the approve that follows must land while the request is live - an
     expired attempt auto-rejects the source, so a blind approve races
-    that cycle and loses."""
+    that cycle and loses. An attempt with less than
+    ATTEMPT_MIN_LEFT_MS left is dying: the approve would land after the
+    auto-reject anyway, so the wait holds out for the next one
+    (DE-0075)."""
     deadline = time.time() + secs
     while time.time() < deadline:
         r = _relay_peer(unit, "query", wait=1.0) or {}
         g = (r.get("pinned") or {}).get("gcs") or {}
         att = g.get("attempt")
         # a row left behind by a rejected source is stale - approving it
-        # lands applied:false, so only a live attempt unlocks the wait
-        rejected = any(x.get("ip") == ip for x in (g.get("rejected") or []))
+        # lands applied:false, so only a live attempt unlocks the wait.
+        # Only ACTIVE rejects count: expired entries linger in the list
+        # until the next reject_ip prunes them (DE-0075).
+        now_ms = time.time() * 1000
+        rejected = any(x.get("ip") == ip
+                       and (x.get("until_ms") or 0) > now_ms
+                       for x in (g.get("rejected") or []))
         if att and att.get("ip") == ip and not rejected:
-            return True
+            until = att.get("until_ms")
+            if until is None or until - now_ms > ATTEMPT_MIN_LEFT_MS:
+                return True
         time.sleep(0.4)
     return False
 
