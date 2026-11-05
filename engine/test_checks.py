@@ -1816,6 +1816,39 @@ class TestRelayGcsChecks(unittest.TestCase):
         pairs[0]["pinned"]["gcs"] = {"policy": "tofu", "mode": "tofu"}
         self.assertEqual(run()["status"], "FAIL")
 
+    def test_acct2_quiet_fails_on_a_push_after_the_approve(self):
+        """DE-0066: the foreign session is open before the trigger fires,
+        so a push the approve leaks lands inside the listen window and
+        fails the check (the old order ran the approve first and could
+        pass on a leak)."""
+        events = []
+
+        def fake_collect(first, mts, secs, during=None):
+            events.append("listen")
+            if during:
+                during()           # the approve, inside the window
+            events.append("collected")
+            return [{"mt": 9021, "ms": {"act": "gcs_switched"}}]
+
+        c = self._ctx()
+        with mock.patch.object(checks.ctl, "_acct2_collect",
+                               side_effect=fake_collect), \
+             mock.patch.object(checks.ctl, "_relay_trigger",
+                               lambda cmd: events.append("trigger")):
+            r = checks.check_assertion(
+                {"relay_acct2_quiet": {"unit": "u1", "secs": 0.05,
+                                       "trigger": "approve u1"}}, c)
+        self.assertEqual(r["status"], "FAIL")
+        self.assertEqual(events, ["listen", "trigger", "collected"])
+
+    def test_acct2_quiet_passes_when_no_push(self):
+        c = self._ctx()
+        with mock.patch.object(checks.ctl, "_acct2_collect",
+                               return_value=[]):
+            r = checks.check_assertion(
+                {"relay_acct2_quiet": {"unit": "u1", "secs": 0.05}}, c)
+        self.assertEqual(r["status"], "PASS")
+
 
 class TestUdpProxyRejects(unittest.TestCase):
     """TASK-84: udp_proxy_rejects - the stranger-injection grader and

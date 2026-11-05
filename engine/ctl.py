@@ -1648,19 +1648,28 @@ def _acct2_srv():
     return srv
 
 
-async def _acct2_session(srv2, first, mts, secs, out):
+async def _acct2_session(srv2, first, mts, secs, out, during=None):
     """One second-account GCS session: log in, send `first` (or just
     listen), and collect wire frames whose `mt` is in `mts` until `secs`
-    runs out. Push frames get stashed like the bridge path does."""
+    runs out. Push frames get stashed like the bridge path does.
+    `during` is a sync callable started in a thread once the session is
+    connected - the login is already up when the act it drives fires, so
+    a push that act emits reaches this session (DE-0066)."""
     import gcs_client
     cli = gcs_client.GCSClient(srv2, srv2["gcs_party"],
                                on_frame=lambda m: out.append(m))
     task = asyncio.ensure_future(cli.run())
+    dt = None
     try:
         await asyncio.wait_for(cli.connected.wait(), 20)
         if first is not None:
             await cli.send(first)
+        if during is not None:
+            dt = threading.Thread(target=during, daemon=True)
+            dt.start()
         await asyncio.sleep(secs)
+        if dt is not None:
+            dt.join()
     finally:
         task.cancel()
         try:
@@ -1670,12 +1679,13 @@ async def _acct2_session(srv2, first, mts, secs, out):
         await cli.close()
 
 
-def _acct2_collect(first, mts, secs):
+def _acct2_collect(first, mts, secs, during=None):
     """Frames the second account sees - pushes it gets (should be none
-    for a foreign account) or replies to a sent `first`."""
+    for a foreign account) or replies to a sent `first`. `during` runs
+    inside the listen window (DE-0066)."""
     out = []
     asyncio.run(_acct2_session(_acct2_srv(), first, set(mts), float(secs),
-                               out))
+                               out, during))
     return [m for m in out if m.get("mt") in mts]
 
 

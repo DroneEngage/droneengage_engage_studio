@@ -2092,11 +2092,15 @@ def _relay_acct2_denied(name, a, ctx):
 def _relay_acct2_quiet(name, a, ctx):
     """relay_acct2_quiet {unit, secs}: while the sim's own GCS sees the
     relay story, the second account must hear nothing - no attempt or
-    switch pushes reach a foreign account."""
-    if a.get("trigger"):
-        ctl._relay_trigger(a["trigger"])
-    frames = [m for m in ctl._acct2_collect(None, {9021},
-                                          float(a["secs"]))
+    switch pushes reach a foreign account. The session logs in first;
+    `trigger` (the approve) runs inside the listen window, so a push it
+    leaks reaches this session (DE-0066 - the old order ran the approve
+    before the login and could pass on a leak)."""
+    trig = a.get("trigger")
+    frames = [m for m in ctl._acct2_collect(
+                  None, {9021}, float(a["secs"]),
+                  during=(lambda: ctl._relay_trigger(trig))
+                  if trig else None)
               if (m.get("ms") or {}).get("act")]
     ok = not frames
     det = (f"quiet {a['secs']}s" if ok
