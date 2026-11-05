@@ -16,6 +16,8 @@ timeline:
   - {t: 53, do: relay, cmd: "gcs start qgc2 --ip 127.0.0.2"}
 assert:
   - relay_no_gcs_attempt: {unit: copter1, secs: 8,
-      trigger: "change-port copter1"}
+      # change_port resets the pin, so qgc1 retargets the new socket2
+      # right away - only the stray qgc2 keeps hitting the dead port
+      trigger: ["change-port copter1", "gcs retarget qgc1"]}
   - relay_gcs_telemetry: {gcs: qgc1, secs: 8, at_least: 3}
   - relay_gcs_locked: {unit: copter1, gcs: qgc1}
