@@ -18,7 +18,8 @@ timeline:
 assert:
   # change_port frees the lock and rebinds socket2; a fresh source on a
   # never-seen IP starts against the new port and locks in first-come
-  - relay_gcs_switched: {unit: copter1, secs: 15,
+  # (SL-0187: the relay pushes gcs_switched reason first_come for it)
+  - relay_gcs_switched: {unit: copter1, secs: 15, reason: first_come,
       trigger: ["change-port copter1",
                 "sleep 1",
                 "gcs start qgc3 --ip 127.0.0.3",
