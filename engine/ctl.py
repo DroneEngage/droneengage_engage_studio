@@ -1282,6 +1282,12 @@ def start_proc(owner, proc):
         if _android.android_mode(u) != "app":
             _android.push_module_config(
                 u, proc, os.path.join(owner_dir(owner), proc))
+        # DE-0032: a running module keeps its old workdir config even
+        # when the START intent re-triggers the service - stop it first
+        # so the pushed de_override actually applies
+        if _android.module_alive(u, proc):
+            _android.stop_module(u, proc)
+            _android.wait_module_down(u, proc)
         _android.start_module(u, proc)
         print(f"{simlib.col_green(f'{owner}.{proc}')}: "
               f"started on device {_android.serial_of(u) or 'default'}")
