@@ -151,6 +151,10 @@ def load_target(name_or_path):
     if not isinstance(t.get("services"), dict):
         sys.exit(f"{path}: a target needs a services map with a host for "
                  f"each service")
+    unset = [f"services.{n}.{k}" for n, sv in t["services"].items()
+             for k, v in (sv or {}).items() if v is None]
+    if unset:
+        sys.exit(f"{path}: set these values first: {', '.join(unset)}")
     bad = list(_forbidden_keys(t))
     if bad:
         sys.exit(f"{path}: {', '.join(bad)}: a target file must not hold "
@@ -167,6 +171,13 @@ def load_register(path=None):
     if problems:
         sys.exit("feature register is not valid:\n  " + "\n  ".join(problems))
     return reg
+
+
+def check_applies(check, role):
+    """A check may name the target roles it is for (the slot checks exist
+    only on a mirror). With no `roles:` it runs everywhere."""
+    roles = check.get("roles")
+    return not roles or role in roles
 
 
 def stage_of(reg, cid):
@@ -315,13 +326,15 @@ def collect_versions():
 
 # ---- report ---------------------------------------------------------
 
-def feature_rows(reg, results, stages=None):
+def feature_rows(reg, results, stages=None, role=None):
     """Each feature's status from its checks. With `stages`, only checks
-    of those stages count, and a row with none of them is left out."""
+    of those stages count, and a row with none of them is left out. With
+    `role`, a check for other roles does not count."""
     rows = []
     for f in reg["features"]:
         cids = [c for c in f["checks"]
-                if stages is None or stage_of(reg, c) in stages]
+                if (stages is None or stage_of(reg, c) in stages)
+                and (role is None or check_applies(reg["checks"][c], role))]
         if not cids:
             continue
         stat = [(results.get(c) or {}).get("status", "NOT RUN") for c in cids]
@@ -405,7 +418,7 @@ def write_report(out, rep):
 
 def build_report(reg, target, version, results, versions, override=None):
     required = [str(s) for s in target.get("stages") or STAGES]
-    rows = feature_rows(reg, results, required)
+    rows = feature_rows(reg, results, required, target.get("role", "airgap"))
     return {"version": version, "target": target["name"],
             "role": target.get("role", "airgap"),
             "required_stages": required, "updated": _now(),
@@ -446,6 +459,9 @@ def main(argv=None):
                     help="<check>=pass|fail: record a human result")
     ap.add_argument("--override", metavar="REASON",
                     help="a human accepts a no-go: stored in the report")
+    ap.add_argument("--canary", action="store_true",
+                    help="read-only probes for a live target; see "
+                         "engine/prelaunch_canary.py")
     ap.add_argument("--fresh", action="store_true",
                     help="drop earlier results of this version and target")
     a = ap.parse_args(argv)
@@ -461,6 +477,12 @@ def main(argv=None):
         ap.error("--target is required (or use --list)")
 
     target = load_target(a.target)
+    if a.canary:
+        import prelaunch_canary
+        return prelaunch_canary.run(target, as_json=a.json)
+    if target.get("role") == "live":
+        sys.exit("a live target takes only --canary: the other stages can "
+                 "change state")
     version = a.version or "dev-" + datetime.date.today().isoformat()
     out = out_dir_for(version, target["name"])
     old = {} if a.fresh else _read_json(os.path.join(out, "report.json"), {})
@@ -497,7 +519,8 @@ def main(argv=None):
         for st in stages:
             for cid in used_check_ids(reg):
                 ch = reg["checks"][cid]
-                if str(ch["stage"]) != st:
+                if str(ch["stage"]) != st or \
+                        not check_applies(ch, target.get("role", "airgap")):
                     continue
                 r = run_check(cid, ch, ctx, signoffs)
                 results[cid] = r
@@ -522,7 +545,7 @@ def main(argv=None):
         return 0
     if only_record:
         return 0 if rep["verdict"] == "GO" else 1
-    rows = feature_rows(reg, results, stages)
+    rows = feature_rows(reg, results, stages, target.get("role", "airgap"))
     bad = [r for r in rows if r["severity"] == "P0" and r["status"] != PASS]
     return 1 if bad else 0
 

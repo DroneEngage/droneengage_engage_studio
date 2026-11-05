@@ -158,8 +158,32 @@ class Safety(Base):
 
     def test_real_targets_load(self):
         for f in os.listdir(prelaunch.TARGETS_DIR):
-            if f.endswith(".yaml"):
+            if f.endswith(".yaml") and f not in ("mirror.yaml",):
                 prelaunch.load_target(os.path.join(prelaunch.TARGETS_DIR, f))
+
+    def test_unset_port_is_refused_by_name(self):
+        with open(self.target, "w") as fh:
+            yaml.safe_dump({"name": "t", "services": {
+                "comm": {"host": "h", "port": None}}}, fh)
+        with self.assertRaises(SystemExit) as e:
+            prelaunch.load_target(self.target)
+        self.assertIn("services.comm.port", str(e.exception))
+
+    def test_check_for_another_role_does_not_count(self):
+        reg = _reg()
+        reg["checks"]["c.m"] = {"stage": 0, "kind": "probe", "title": "m",
+                                "impl": "prelaunch_stubs:bad",
+                                "roles": ["mirror"]}
+        reg["features"][0]["checks"].append("c.m")
+        self.assertEqual(self.run_gate(reg, "--stage", "0"), 0)
+        self.assertNotIn("c.m", self.report()["checks"])
+
+    def test_live_target_refuses_normal_stages(self):
+        with open(self.target, "w") as fh:
+            yaml.safe_dump({"name": "t", "role": "live",
+                            "services": {"a": {"host": "h"}}}, fh)
+        with self.assertRaises(SystemExit):
+            self.run_gate(_reg(), "--stage", "0")
 
     def test_list_has_no_side_effects(self):
         before = set(os.listdir(self.tmp))

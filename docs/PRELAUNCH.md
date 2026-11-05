@@ -109,3 +109,26 @@ Record each result:
 5. **Credentials stay out of reports.**
 6. **Production probes do not change state.** They never arm a vehicle and
    never write config.
+
+## The checks on live
+
+Run `./sim prelaunch --target live --canary` after each deploy and on a timer,
+from a host outside the server network:
+
+    */15 * * * * cd ~/de_code/droneengage_studio && ./sim prelaunch --target live --canary
+
+A firewall or a certificate can change with no release. Only `--canary` runs
+on a live target, and the runner refuses other stages there. It uses only the
+canary account. On the machines it runs only `ss -ltn` and `cat` of named
+config files. A change from PASS to FAIL makes one notice, through
+`canary.notify_cmd` in the target. A repeated FAIL makes no new notice. A
+certificate with less than 14 days left makes a warning.
+
+## The checks on the mirror
+
+Set every null value in `prelaunch/targets/mirror.yaml` first. The mirror adds
+three checks: the slots share no port or relay range, the mirror auth sends
+clients to the mirror comm and not to live, and the test unit differs from
+production only in `auth_port`. The mirror shares CPU and bandwidth with live,
+so keep video tests short and run no load test. Never add a firewall rule on
+these machines for a negative control: run those on the airgap Pi.
