@@ -27,3 +27,6 @@ assert:
   # forwarded socket2->socket1 to the unit (relay counters prove it),
   # and the pin itself is the bidirectional evidence
   - relay_gcs_locked: {unit: copter1, gcs: qgc3}
+  # DE-0068: telemetry must restart for the new pin - the unit side
+  # never moved, so DEU1 still pins it and socket1->socket2 forwards
+  - relay_gcs_telemetry: {gcs: qgc3, secs: 10, at_least: 3}
