@@ -418,7 +418,8 @@ def gather(sim=None, esp32=False):
 
     # ports: the sim's own set, else the default server pair
     if sim:
-        held = simlib.ports_held(simlib.used_ports(sim))
+        held = simlib.ports_held(simlib.used_ports(sim)
+                                 - simlib.remote_bound_ports(sim))
         d.check("ports", not held,
                 f"{len(simlib.used_ports(sim))} ports",
                 f"ports {held} already bound - ./sim status, down the "

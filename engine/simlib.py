@@ -2433,7 +2433,7 @@ def remote_bound_ports(sim):
     Kept in used_ports() itself so sim-vs-sim clash checks still catch
     two fleets claiming the same port on one device."""
     out = set()
-    for u in sim["units"]:
+    for u in sim.get("units") or []:
         remote = (u.get("android") or {}).get("remote_modules") or []
         out.update(u["ports"][m] for m in remote if m in u["ports"])
     return out

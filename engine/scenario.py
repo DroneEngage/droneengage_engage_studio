@@ -885,8 +885,10 @@ def _host_free_sim(sim_at, bases):
         live |= simlib.used_ports(simlib.load_manifest(n))
     for sb in bases:
         spec = sim_at(sb)
+        cand = simlib.load_sim(spec)
         held = simlib.ports_held(
-            simlib.used_ports(simlib.load_sim(spec)) - live)
+            simlib.used_ports(cand) - live
+            - simlib.remote_bound_ports(cand))
         if not held:
             return spec
         print(f"slot_base {sb}: port(s) {held} held by another process "
