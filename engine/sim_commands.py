@@ -371,6 +371,35 @@ COMMANDS = {
         "examples": ["./sim suite", "./sim suite --seeds 1,2,3 --tier smoke"],
         "takes_sim": False,
     },
+    "prelaunch": {
+        "group": "EXECUTE",
+        "summary": "the pre-launch gate: prove critical features on real hosts",
+        "usage": ["./sim prelaunch --target <t> [--stage 0,1,install,2,3,4] "
+                  "[--version <v>] [--fresh] [--json]",
+                  "./sim prelaunch --target <t> --signoff <check>=pass|fail",
+                  "./sim prelaunch --target <t> --override <reason>",
+                  "./sim prelaunch --list [--json]"],
+        "description": "Run the checks in prelaunch/features.yaml against a "
+                       "target in prelaunch/targets/, and write report.md "
+                       "and report.json under var/results/prelaunch/. Any "
+                       "P0 FAIL or SKIP is a no-go. See docs/PRELAUNCH.md.",
+        "flags": {
+            "--target": "prelaunch/targets/<name>.yaml, or a path",
+            "--stage": "comma-separated stages (default: the target's)",
+            "--version": "release version (default dev-<date>)",
+            "--features": "feature register path",
+            "--list": "print features and checks; no side effects",
+            "--json": "print report.json, or the register with --list",
+            "--signoff": "<check>=pass|fail: record a human result",
+            "--override": "a human accepts a no-go: stored in the report",
+            "--fresh": "drop earlier results of this version and target",
+        },
+        "shared_flags": False,
+        "examples": ["./sim prelaunch --list",
+                     "./sim prelaunch --target airgap --version 1.2.0",
+                     "./sim prelaunch --target airgap --stage 0"],
+        "takes_sim": False,
+    },
     "list": {
         "group": "DISCOVER",
         "summary": "catalog: files + one-line descriptions",

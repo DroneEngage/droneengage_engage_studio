@@ -88,6 +88,16 @@ for f in yamls:
     except Exception as e:
         fail("schema", f, str(e))
 
+# ---- pre-launch feature register (SL-0190) -------------------------
+sys.path.insert(0, os.path.join(ROOT, "prelaunch"))
+import check_features  # noqa: E402
+_reg_path = os.environ.get("PRELAUNCH_FEATURES", check_features.DEFAULT_PATH)
+try:
+    for _p in check_features.validate(check_features.load(_reg_path)):
+        fail("prelaunch", _reg_path, _p)
+except Exception as e:
+    fail("prelaunch", _reg_path, str(e))
+
 # ---- package / deploy-spec / op json ---------------------------------
 for f in sorted(glob.glob(os.path.join(ROOT, "packages", "*.json")) +
                 glob.glob(os.path.join(ROOT, "tests", "**", "*.json"),
