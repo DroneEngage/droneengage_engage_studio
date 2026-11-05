@@ -2047,8 +2047,8 @@ class TestUdpProxyRejects(unittest.TestCase):
         self.assertEqual(r["status"], "FAIL")
 
     def test_off_relay_range_fails(self):
-        # server without udp_relay support: the 1071 port is outside the
-        # relay range -> SKIP like udp_proxy_mavlink, nothing injected
+        # on a relay sim a pair whose 1071 port is outside udp_port_range
+        # did not come from the relay -> FAIL, nothing injected
         c = self._ctx(relay=True)
         inj = mock.Mock(return_value=0)
         with contextlib.ExitStack() as st:
