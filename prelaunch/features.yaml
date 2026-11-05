@@ -1,0 +1,249 @@
+# Critical feature register for the pre-launch gate (SL-0189).
+# One row per feature that must not break in a release. Every incident
+# adds a row or a check: see docs/PRELAUNCH.md.
+#
+# features[].severity: P0 (a FAIL or a SKIP means no-go) or P1 (shown in
+#   the report, does not block).
+# features[].checks: ids from the checks: map below.
+# checks.<id>.stage: 0 | 1 | install | 2 | 3 | 4
+# checks.<id>.kind:
+#   probe    - impl: <module>:<function> under engine/
+#   scenario - file: a de.scenario/1 test, run through ci/run_suite.py
+#   command  - repo: <repo dir> and run: <shell command>
+#   manual   - text: what the human does; only --signoff can pass it
+# A probe whose module does not exist yet gives SKIP: never a pass.
+version: 1
+
+features:
+  - id: login_unit_online
+    title: User logs in, and the unit comes online for the GCS
+    severity: P0
+    components: [de_auth, de_comm_server, de_comm, webclient]
+    checks: [config.public_host, unit.servers, sim.login_auth, reach.ports,
+             reach.tls, reach.login, reach.public_host]
+  - id: udp_proxy_qgc
+    title: QGroundControl or Mission Planner reaches the FC through the UDP proxy
+    severity: P0
+    components: [de_udp, de_comm_server, de_mavlink, firewall]
+    checks: [config.udp_relay, config.port_overlap, sim.relay_telemetry,
+             relay.mavlink_both_ways, relay.range_edges, human.qgc]
+  - id: video_camera_webclient
+    title: de_camera video shows in the webclient
+    severity: P0
+    components: [de_camera, webclient, de_comm_server, ice]
+    checks: [config.ice, video.camera_normal, video.camera_relay]
+  - id: video_andruav_webclient
+    title: Andruav video shows in the webclient
+    severity: P0
+    components: [andruav, webclient, de_comm_server, ice]
+    checks: [config.ice, andruav.video_normal, andruav.video_relay,
+             human.andruav_video]
+  - id: turn_relay_path
+    title: Every TURN and STUN server in the shipped ICE lists works
+    severity: P0
+    components: [coturn, firewall, ice]
+    checks: [config.ice, turn.allocate]
+  - id: arm_takeoff_guided
+    title: Arm, takeoff and guided flight work
+    severity: P0
+    components: [de_comm, de_mavlink, webclient]
+    checks: [sim.guided, human.fly_webclient]
+  - id: mission_upload_run
+    title: A mission uploads and runs to the end
+    severity: P0
+    components: [de_comm, de_mavlink, de_comm_server]
+    checks: [sim.mission_reference, sim.mission_auth]
+  - id: unit_restart_recovery
+    title: A unit returns to service after a module restart
+    severity: P0
+    components: [de_comm, de_mavlink]
+    checks: [sim.module_restart, sim.mavlink_relink]
+  - id: server_restart_recovery
+    title: Units reconnect after a server restart
+    severity: P0
+    components: [de_comm_server, de_comm]
+    checks: [sim.server_down, sim.relay_restart]
+  - id: ota_update
+    title: The release installs and upgrades through the real scripts
+    severity: P0
+    components: [de_comm, de_mavlink, servers]
+    checks: [install.release, install.services]
+  - id: andruav_udp_proxy
+    title: An Andruav phone unit gets a working UDP proxy
+    severity: P1
+    components: [andruav, de_udp]
+    checks: [andruav.relay]
+
+checks:
+  # ---- stage 0: config lint, seconds, no network ----
+  config.ice:
+    stage: 0
+    kind: probe
+    impl: prelaunch_checks.config:ice
+    title: ICE lists are not empty, reachable from the target, and match coturn
+  config.public_host:
+    stage: 0
+    kind: probe
+    impl: prelaunch_checks.config:public_host
+    title: public_host is not loopback and is not a stale address
+  config.udp_relay:
+    stage: 0
+    kind: probe
+    impl: prelaunch_checks.config:udp_relay
+    title: The comm server has a udp_relay entry
+  config.port_overlap:
+    stage: 0
+    kind: probe
+    impl: prelaunch_checks.config:port_overlap
+    title: The coturn range and the relay ranges do not overlap
+
+  # ---- stage 1: code ----
+  unit.servers:
+    stage: 1
+    kind: command
+    repo: servers/droneengage_server
+    run: cargo test --release
+    title: Comm server unit tests
+  sim.login_auth:
+    stage: 1
+    kind: scenario
+    file: tests/smoke_copters_auth.yaml
+    title: Login through the authenticator, and units run
+  sim.relay_telemetry:
+    stage: 1
+    kind: scenario
+    file: tests/udp_relay/relay_telemetry.yaml
+    title: MAVLink through the spawned relay on one host
+  sim.relay_restart:
+    stage: 1
+    kind: scenario
+    file: tests/udp_relay/relay_restart_locked.yaml
+    title: The relay keeps its lock after a restart
+  sim.guided:
+    stage: 1
+    kind: scenario
+    file: tests/missions/p2_guided.yaml
+    title: Guided flight on SITL
+  sim.mission_reference:
+    stage: 1
+    kind: scenario
+    file: tests/missions/v1_reference.yaml
+    title: The reference mission runs to the end
+  sim.mission_auth:
+    stage: 1
+    kind: scenario
+    file: tests/smoke_copters.yaml
+    title: A mission runs on three copters
+  sim.module_restart:
+    stage: 1
+    kind: scenario
+    file: tests/faults/decomm_restart_midop.yaml
+    title: de_comm restart during an operation
+  sim.mavlink_relink:
+    stage: 1
+    kind: scenario
+    file: tests/missions/p2_mavlink_relink.yaml
+    title: de_mavlink restart and relink
+  sim.server_down:
+    stage: 1
+    kind: scenario
+    file: tests/faults/server_down.yaml
+    title: Server outage during a mission
+
+  # ---- install: the real artifacts on the real hosts ----
+  install.release:
+    stage: install
+    kind: probe
+    impl: prelaunch_checks.install:release
+    title: The release version is installed through the real scripts
+  install.services:
+    stage: install
+    kind: probe
+    impl: prelaunch_checks.install:services
+    title: Each server service runs after the install
+
+  # ---- stage 2: reachability from a host that is not the server ----
+  reach.ports:
+    stage: 2
+    kind: probe
+    impl: prelaunch_checks.reach:ports
+    title: TCP ports of auth, comm and storage are reachable
+  reach.tls:
+    stage: 2
+    kind: probe
+    impl: prelaunch_checks.reach:tls
+    title: TLS certificates are valid and not near expiry
+  reach.login:
+    stage: 2
+    kind: probe
+    impl: prelaunch_checks.reach:login
+    title: The test account logs in and opens a GCS session
+  reach.public_host:
+    stage: 2
+    kind: probe
+    impl: prelaunch_checks.reach:public_host
+    title: The announced public_host is reachable from the probe
+  reach.relay_control_closed:
+    stage: 2
+    kind: probe
+    impl: prelaunch_checks.reach:relay_control_closed
+    title: The relay control port is closed to other hosts
+  turn.allocate:
+    stage: 2
+    kind: probe
+    impl: prelaunch_checks.turn:allocate
+    title: STUN binding and TURN allocate with data through the relay
+
+  # ---- stage 3: end to end media ----
+  relay.mavlink_both_ways:
+    stage: 3
+    kind: probe
+    impl: prelaunch_checks.relay:mavlink_both_ways
+    title: HEARTBEATs reach the GCS and a GCS command reaches the FC
+  relay.range_edges:
+    stage: 3
+    kind: probe
+    impl: prelaunch_checks.relay:range_edges
+    title: The first and last ports of udp_port_range are open
+  video.camera_normal:
+    stage: 3
+    kind: probe
+    impl: prelaunch_checks.video:camera_normal
+    title: Frames from de_camera decode in a real browser
+  video.camera_relay:
+    stage: 3
+    kind: probe
+    impl: prelaunch_checks.video:camera_relay
+    title: Frames from de_camera decode with relay-only ICE
+  andruav.video_normal:
+    stage: 3
+    kind: probe
+    impl: prelaunch_checks.andruav:video_normal
+    title: Frames from the Andruav phone decode in a real browser
+  andruav.video_relay:
+    stage: 3
+    kind: probe
+    impl: prelaunch_checks.andruav:video_relay
+    title: Frames from the Andruav phone decode with relay-only ICE
+  andruav.relay:
+    stage: 3
+    kind: probe
+    impl: prelaunch_checks.andruav:relay
+    title: The phone unit gets a relay pair and HEARTBEATs reach the GCS
+
+  # ---- stage 4: the human checklist (docs/PRELAUNCH.md) ----
+  human.qgc:
+    stage: 4
+    kind: manual
+    text: Connect a real QGroundControl to the UDP proxy port of a unit. See telemetry and change a mode.
+    title: Real QGroundControl through the UDP proxy
+  human.andruav_video:
+    stage: 4
+    kind: manual
+    text: Open the video of a real Andruav phone in the webclient, from a phone hotspot network.
+    title: Real Andruav video from another network
+  human.fly_webclient:
+    stage: 4
+    kind: manual
+    text: On SITL or on a bench unit, arm, take off and land from the webclient. Read the map, HUD and video.
+    title: Fly from the real webclient
