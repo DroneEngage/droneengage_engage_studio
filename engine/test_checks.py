@@ -2025,9 +2025,6 @@ class TestUdpProxyRejects(unittest.TestCase):
                 {"udp_proxy_rejects": {"unit": "u1", "secs": 0.1}}, c)
         self.assertEqual(r["status"], "FAIL")
 
-if __name__ == "__main__":
-    unittest.main()
-
 class TestRelayPeerChecks(unittest.TestCase):
     """SL-0179: the 9021 push checks - frames come from ctl.gcs_collect."""
 
@@ -2085,3 +2082,50 @@ class TestRelayPeerChecks(unittest.TestCase):
         with mock.patch.object(checks.ctl, "gcs_collect", return_value=[]):
             r = checks.check_assertion({"relay_gcs_switched": {"secs": 1}}, c)
         self.assertEqual(r["status"], "FAIL")
+
+
+class TestMissionCurrent(unittest.TestCase):
+    """DE-0069: mission_current honours every _cmp bound - the registry
+    always documented seq/equals/at_least, the code only read seq."""
+
+    @staticmethod
+    def _ctx():
+        return {"manifest": {
+                    "name": "t",
+                    "units": [{"name": "u1", "party_id": "p1",
+                               "fc": {"sysid": 42}}],
+                    "server": {"type": "real"}},
+                "marks": {}, "file": "/x/s.yaml", "results_dir": None}
+
+    def _run(self, spec, seq):
+        c = self._ctx()
+        with mock.patch.object(
+                checks.ctl, "resolve",
+                lambda tok, m=None: c["manifest"]["units"]), \
+             mock.patch.object(checks.ctl, "mission_current",
+                               return_value=seq):
+            return checks.check_assertion({"mission_current": spec}, c)
+
+    def test_at_least_no_keyerror(self):
+        r = self._run({"unit": "u1", "at_least": 2}, 3)
+        self.assertEqual(r["status"], "PASS")
+        r = self._run({"unit": "u1", "at_least": 2}, 1)
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_equals_and_legacy_seq(self):
+        self.assertEqual(
+            self._run({"unit": "u1", "equals": 2}, 2)["status"], "PASS")
+        self.assertEqual(
+            self._run({"unit": "u1", "equals": 2}, 3)["status"], "FAIL")
+        self.assertEqual(
+            self._run({"unit": "u1", "seq": 2}, 2)["status"], "PASS")
+        self.assertEqual(
+            self._run({"unit": "u1", "seq": 2}, 5)["status"], "FAIL")
+
+    def test_no_mission_current_fails_not_crashes(self):
+        r = self._run({"unit": "u1", "at_least": 1}, None)
+        self.assertEqual(r["status"], "FAIL")
+
+
+if __name__ == "__main__":
+    unittest.main()

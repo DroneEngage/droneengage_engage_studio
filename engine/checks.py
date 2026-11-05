@@ -713,13 +713,23 @@ def _clock_spread(name, a, ctx):
 
 
 def _mission_current(name, a, ctx):
+    """mission_current {unit, seq|equals|at_least|at_most}: the FC's
+    current mission seq. `seq` is the legacy equals form; every _cmp
+    bound applies (DE-0069 - the code read only a["seq"], so a bare
+    {at_least: n} raised KeyError)."""
+    b = dict(a)
+    if "seq" in b:
+        b.setdefault("equals", b.pop("seq"))
     ok, bits, seqs = True, [], []
     for u in ctl.with_fc(_units(a, ctx)):
         seq = ctl.mission_current(u)
         seqs.append(seq)
-        good = seq == a["seq"]
+        if seq is None:
+            good, txt = False, "no MISSION_CURRENT"
+        else:
+            good, txt = _cmp(b, seq)
         ok &= good
-        bits.append(f"{u['name']}: seq={seq} (want {a['seq']})")
+        bits.append(f"{u['name']}: seq={seq} ({txt})")
     if not seqs:
         return _r(name, "SKIP", None, "no FC units resolved")
     return _r(name, "PASS" if ok else "FAIL",
