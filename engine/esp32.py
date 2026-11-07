@@ -2,9 +2,12 @@
 [--no-check] - the ESP32 HIL firmwares under tools/hil/.
 
 A firmware is tools/hil/<name>/<name>.ino (+ an optional check_*.py that
-verifies the flashed board from the host over --device). Default
+verifies the flashed board from the host over --device, and an optional
+`fqbn` file whose first line overrides SIM_ESP32_FQBN - e.g. a firmware
+that links Bluedroid needs a bigger app partition like
+esp32:esp32:esp32:PartitionScheme=min_spiffs). Default
 firmware: esp32_fake_fc - the fake ArduCopter used to prove a phone's
-USB (OTG) FCB link without a real flight controller.
+USB (OTG) and Bluetooth FCB links without a real flight controller.
 
   list                 firmwares found under tools/hil/
   build  [fw]          compile into var/esp32/<fw>/ (arduino-cli, else
@@ -179,10 +182,15 @@ def build(name):
     bpath, cache = os.path.join(out, "build"), os.path.join(out, "cache")
     os.makedirs(bpath, exist_ok=True)
     os.makedirs(cache, exist_ok=True)
+    fqbn = FQBN
+    fqbn_file = os.path.join(src, "fqbn")
+    if os.path.isfile(fqbn_file):
+        with open(fqbn_file) as f:
+            fqbn = f.read().splitlines()[0].strip() or fqbn
     defines = f"build.defines=-I{MAVLINK_C_LIB} -Wno-address-of-packed-member"
     ino = os.path.join(src, name + ".ino")
     if tc[0] == "arduino-cli":
-        cmd = [tc[1], "compile", "--fqbn", FQBN, "--build-path", bpath,
+        cmd = [tc[1], "compile", "--fqbn", fqbn, "--build-path", bpath,
                "--build-property", defines, src]
     else:
         ide = tc[1]
@@ -192,9 +200,9 @@ def build(name):
                "-tools", os.path.join(ide, "tools-builder"),
                "-tools", os.path.join(ARDUINO15, "packages"),
                "-built-in-libraries", os.path.join(ide, "libraries"),
-               "-fqbn", FQBN, "-build-path", bpath, "-build-cache", cache,
+               "-fqbn", fqbn, "-build-path", bpath, "-build-cache", cache,
                "-prefs", defines, ino]
-    print(simlib.col_dim(f"esp32: building {name} with {tc[0]} ({FQBN})"))
+    print(simlib.col_dim(f"esp32: building {name} with {tc[0]} ({fqbn})"))
     r = subprocess.run(cmd, capture_output=True, text=True)
     noise = ("Using ", "Detecting ", "Generating ", "Compiling core",
              "Compiling libraries", "Linking everything")
