@@ -312,11 +312,11 @@ class T(unittest.TestCase):
             "de_camera": {"camera": {"camera_list": [
                 {"name": "A", "device_name": "DE-CAM3"},
                 {"name": "B", "device_num": 7}]}}})
-        # label resolves through the map; the block's 2-3 scan range
-        # unions in as before
+        # label resolves through the map; the block ships no scan range
+        # since SL-0166, so only the camera_list entries count
         self.assertEqual(
             simlib.camera_video_indices(sim["units"][0], lmap),
-            [2, 3, 4, 7])
+            [4, 7])
         self.assertEqual(simlib.camera_missing_labels(sim, lmap), [])
         sim2 = self._cam_sim(unit_cfg={
             "de_camera": {"camera": {"camera_list": [
@@ -425,7 +425,10 @@ class T(unittest.TestCase):
         self.assertEqual(len(cl), 1)
         self.assertEqual(cl[0]["device_name"], "DE-CAM1")
         # legacy scan config stays a single proc with range intact
-        sim2 = self._cam_sim()
+        # (the block ships no scan range since SL-0166: set it in the unit)
+        sim2 = self._cam_sim(unit_cfg={
+            "de_camera": {"camera": {"camera_start_index": 2,
+                                     "camera_end_index": 3}}})
         u2 = sim2["units"][0]
         self.assertEqual(u2["modules"], ["de_comm", "de_camera"])
         self.assertEqual(u2["config"]["de_camera"]["camera"]
