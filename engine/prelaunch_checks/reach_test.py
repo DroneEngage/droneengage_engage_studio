@@ -102,6 +102,16 @@ class RelayControl(unittest.TestCase):
         self.assertEqual(st, "FAIL")
         self.assertIn("comm servers", d)
 
+    def test_no_relay_is_skip(self):
+        ctx = _ctx({})
+        st, d = reach.relay_control_closed(ctx)
+        self.assertEqual(st, "SKIP")
+
+    def test_relay_without_host_is_skip(self):
+        ctx = _ctx({"relay": {"control_port": 1}}, role="mirror")
+        st, d = reach.relay_control_closed(ctx)
+        self.assertEqual(st, "SKIP")
+
 
 if __name__ == "__main__":
     unittest.main()

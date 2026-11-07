@@ -236,8 +236,14 @@ def public_host(ctx):
 
 
 def relay_control_closed(ctx):
-    r = ctx.service("relay")
-    if r.get("host") and ctx.role == "local":
+    from prelaunch import Skip
+    try:
+        r = ctx.service("relay")
+    except Skip as e:
+        return "SKIP", str(e)
+    if not r or not r.get("host") or not r.get("control_port"):
+        return "SKIP", f"target {ctx.name} has no relay host or control_port"
+    if ctx.role == "local":
         return "SKIP", "on the local target the probe is on the server"
     wrong = _wrong_vantage(ctx, r["host"])
     if wrong:
