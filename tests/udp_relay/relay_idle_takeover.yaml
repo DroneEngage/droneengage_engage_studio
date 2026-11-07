@@ -1,3 +1,5 @@
+# SL-0181 case 1: a locked GCS gone quiet for the idle-release window
+# loses the lock to the next knock - reason idle - and telemetry moves.
 version: 1
 name: relay_idle_takeover
 tasks: [GL-0105, GL-0107, SL-0181]
@@ -5,8 +7,6 @@ transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
             account: {user: sim@sim.droneengage.com, code: sim1234}}
 fleet:
   - {id: copter1, cls: copter}
-# SL-0181 case 1: a locked GCS gone quiet for the idle-release window
-# loses the lock to the next knock - reason idle - and telemetry moves.
 timeline:
   - {t: 0, do: wait, seconds: 45}
   - {t: 44, do: relay, cmd: "resume copter1"}

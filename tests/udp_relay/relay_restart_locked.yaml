@@ -1,3 +1,6 @@
+# SL-0181 case 5: the relay restarts with a live GCS - the lock
+# survives, a stranger sending straight after gets nothing, and
+# telemetry resumes.
 version: 1
 name: relay_restart_locked
 tasks: [GL-0105, GL-0107, SL-0181]
@@ -5,9 +8,6 @@ transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},
             account: {user: sim@sim.droneengage.com, code: sim1234}}
 fleet:
   - {id: copter1, cls: copter}
-# SL-0181 case 5: the relay restarts with a live GCS - the lock
-# survives, a stranger sending straight after gets nothing, and
-# telemetry resumes.
 timeline:
   - {t: 0, do: wait, seconds: 45}
   - {t: 44, do: relay, cmd: "resume copter1"}
