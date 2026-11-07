@@ -230,6 +230,7 @@ def col_red(s):    return col("1;31", s)   # failures
 def col_cyan(s):   return col("36", s)     # hosts, ports, URLs
 def col_bold(s):   return col("1", s)      # key values: names, pids
 def col_dim(s):    return col("2", s)      # progress noise
+def col_white(s):  return col("37", s)     # informational / plain rows
 
 
 def print_usage(doc):

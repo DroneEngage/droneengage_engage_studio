@@ -474,16 +474,18 @@ def main(argv):
     if json_out:
         print(json.dumps(d.rows, indent=1))
     else:
+        # the print_usage palette: green ok, yellow the parts to act on
+        # (the item, MISSING, every fix), white informational rows
         tags = {"ok": ("OK", simlib.col_green),
-                "missing": ("MISSING", simlib.col_red),
-                "optional": ("OPTIONAL", simlib.col_yellow)}
+                "missing": ("MISSING", simlib.col_yellow),
+                "optional": ("OPTIONAL", simlib.col_white)}
         for r in d.rows:
             tag, c = tags[r["status"]]
-            line = f"{c(tag.ljust(8))} {r['item']}"
+            line = f"{c(tag.ljust(8))} {simlib.col_yellow(r['item'])}"
             if r["detail"]:
                 line += f"  {r['detail']}"
             if r["fix"]:
-                line += f" - fix: {r['fix']}"
+                line += " - fix: " + simlib.col_yellow(r["fix"])
             print(line)
     return 1 if d.failed else 0
 
