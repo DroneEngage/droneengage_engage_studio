@@ -1,0 +1,29 @@
+{
+  "schema": "de.package/2",
+  "op": "sitl_boat_run",
+  "role": "solo",
+  "vehicle": { "type": "rover" },
+  "requires": [],
+  "fc_items": [
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.362900,149.165900,0] },
+    { "c": 16, "ft": 3, "mv": [0,5,0,0,-35.362600,149.166100,0] },
+    { "c": 93, "ft": 2, "mv": [86400,0,0,0,0,0,0] }
+  ],
+  "missions": {
+    "main": {
+      "trigger": { "type": "op.start" },
+      "priority": 0,
+      "segment": { "start": 1, "end": 3 },
+      "end_state": "hold",
+      "end_backstop": { "timeout": 300, "then": "rtl" }
+    }
+  },
+  "manifest": [
+    { "seq": 1, "mission": "main", "step": "w1", "kind": "nav.wp" },
+    { "seq": 2, "mission": "main", "step": "w2", "kind": "nav.wp" },
+    { "seq": 3, "mission": "main", "step": "end", "kind": "end.hold" }
+  ],
+  "events": {},
+  "handlers": {},
+  "hash": "sha256:0000"
+}

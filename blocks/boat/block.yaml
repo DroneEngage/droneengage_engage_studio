@@ -1,0 +1,11 @@
+description: |
+  Motor boat: ArduRover SITL (motorboat frame) + de_comm + de_mavlink.
+  The MAVLink heartbeat type is MAV_TYPE_SURFACE_BOAT, so GCS clients
+  show a boat. `land` = HOLD + disarm.
+modules: [de_comm, de_mavlink]
+fc:
+  vehicle: rover         # rover kind: ardurover binary, rover modes
+  model: motorboat       # SITL -M
+  defaults:
+    - Tools/autotest/default_params/rover.parm
+    - Tools/autotest/default_params/motorboat.parm

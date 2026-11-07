@@ -1,0 +1,26 @@
+# The boat block drives: one motorboat (ArduRover SITL -M motorboat) on
+# the REAL comm server arms, runs a 2-waypoint AUTO mission and holds.
+# Completion of the mission is the movement check - the FC only reaches
+# "mission main completed" after it physically drives both waypoints.
+version: 1
+name: smoke_boat
+tier: smoke
+realtime: true
+transport: real
+operation: ../packages/boat_run.json
+fleet:
+  - {id: boat1, cls: boat}
+timeline:
+  - {t: 0, do: stop}    # reset leftover runs when the sim is reused
+  - {t: 0, do: clear}
+  - {t: 0, do: mode, unit: all, mode: GUIDED} # de_mavlink refuses nav loads in AUTO
+  - {t: 0, do: deploy}
+  - {t: 0, do: arm, unit: all}
+  - {t: 0, do: start}
+  - {t: 0, do: wait_journal, unit: 1, re: "mission main completed", timeout: 300}
+settle_s: 0
+assert:
+  - journal_count: {unit: all, re: "RUN run .* started", equals: 1}
+  - journal_count: {unit: all, re: "mission main completed", equals: 1}
+  - journal_count: {unit: all, re: "comm line offline", equals: 0}
+  - fc_mode: {unit: all, mode: "HOLD"}
