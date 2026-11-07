@@ -1,19 +1,29 @@
-// esp32_fake_fc: a fake ArduCopter on an ESP32's USB-serial (UART0 behind
-// the board's CP2102/CH340). Lets a phone running Andruav prove its USB
-// (OTG) FCB link without a real flight controller: heartbeats + a parked
-// position stream out, SET_MODE / DO_SET_MODE / ARM are accepted and acked,
-// and the new mode/armed state shows up in the next HEARTBEAT.
+// esp32_fake_fc: a fake ArduCopter an ESP32 serves on three links at once:
+//   - USB-serial (UART0 behind the board's CP2102/CH340) - the OTG link
+//   - UART2 pins  (RX=GPIO16 TX=GPIO17, 115200 8N1) - wire to an RPi or a
+//     USB-serial adapter
+//   - Bluetooth Classic SPP ("DE-FakeFC") - the BT telemetry-radio link
+// Lets a phone running Andruav prove its USB (OTG) and Bluetooth FCB links
+// without a real flight controller: heartbeats + a parked position stream
+// go out on every link; SET_MODE / DO_SET_MODE / ARM arriving on any link
+// are accepted and acked on all of them, and the new mode/armed state shows
+// up in the next HEARTBEAT.
 //
-// Build: needs droneengage_mavlink/c_library_v2 on the include path
-// (see README.md). Baud must match the app's USB baud selector.
+// Build: needs droneengage_mavlink/c_library_v2 on the include path and a
+// partition scheme that fits Bluedroid (see the fqbn file / README.md).
+// Baud must match the app's USB baud selector.
 
 #include <Arduino.h>
+#include <BluetoothSerial.h>
 #include "ardupilotmega/mavlink.h"
 
 #define FC_BAUD      115200
 #define FC_SYSID     1
 #define FC_COMPID    MAV_COMP_ID_AUTOPILOT1
 #define LED_PIN      2
+#define UART2_RX_PIN 16
+#define UART2_TX_PIN 17
+#define BT_NAME      "DE-FakeFC"
 
 // parked at a fixed spot (lat/lon in degE7, alt in mm)
 static const int32_t HOME_LAT = 300444000;
@@ -37,6 +47,8 @@ static uint8_t  gcs_sysid = 255;
 static uint8_t  gcs_compid = MAV_COMP_ID_MISSIONPLANNER;
 static uint32_t rx_packets = 0;
 
+static BluetoothSerial SerialBT;
+
 static const char *mode_name(uint32_t m) {
   switch (m) {
     case COPTER_MODE_STABILIZE: return "STABILIZE";
@@ -58,6 +70,18 @@ static void send_msg(const mavlink_message_t &msg) {
   uint8_t buf[MAVLINK_MAX_PACKET_LEN];
   uint16_t len = mavlink_msg_to_send_buffer(buf, &msg);
   Serial.write(buf, len);
+  Serial2.write(buf, len);
+  if (SerialBT.hasClient()) SerialBT.write(buf, len);
+}
+
+// drain one link's bytes into the shared packet handler; each link keeps
+// its own mavlink_status_t so interleaved links don't confuse the parser
+static void read_link(Stream &link, mavlink_channel_t channel,
+                      mavlink_status_t *status) {
+  mavlink_message_t msg;
+  while (link.available())
+    if (mavlink_parse_char(channel, (uint8_t)link.read(), &msg, status))
+      handle_message(msg);
 }
 
 static void send_heartbeat() {
@@ -213,19 +237,19 @@ static void handle_message(const mavlink_message_t &msg) {
 void setup() {
   pinMode(LED_PIN, OUTPUT);
   Serial.begin(FC_BAUD);
+  Serial2.begin(FC_BAUD, SERIAL_8N1, UART2_RX_PIN, UART2_TX_PIN);
+  SerialBT.begin(BT_NAME, false, true);   // SPP slave, BLE left off
   delay(200);
   send_statustext(MAV_SEVERITY_INFO, "Fake FC: ESP32 ArduCopter ready");
 }
 
 void loop() {
   static uint32_t last_1hz = 0, last_5hz = 0;
-  static mavlink_message_t rx_msg;
-  static mavlink_status_t rx_status;
+  static mavlink_status_t rx_status[3];
 
-  while (Serial.available()) {
-    if (mavlink_parse_char(MAVLINK_COMM_0, (uint8_t)Serial.read(), &rx_msg, &rx_status))
-      handle_message(rx_msg);
-  }
+  read_link(Serial,   MAVLINK_COMM_0, &rx_status[0]);   // USB-serial
+  read_link(Serial2,  MAVLINK_COMM_1, &rx_status[1]);   // GPIO16/17
+  read_link(SerialBT, MAVLINK_COMM_2, &rx_status[2]);   // Bluetooth SPP
 
   uint32_t now = millis();
   if (now - last_1hz >= 1000) {
