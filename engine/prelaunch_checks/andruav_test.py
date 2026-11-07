@@ -63,5 +63,39 @@ class Adb(unittest.TestCase):
             self.assertEqual(andruav.phones_attached(), ["AAA"])
 
 
+class StaleIce(unittest.TestCase):
+    def _run(self, entries, target=None):
+        ctx = _ctx(test_phone={"name": "p"}, role="airgap",
+                   services={"turn": {"host": "10.0.0.5"}})
+        with mock.patch.object(andruav, "phones_attached", return_value=["s"]), \
+                mock.patch.object(andruav, "phone_ice",
+                                  return_value=(entries, None)):
+            return andruav.stale_ice(ctx)
+
+    def test_stale_host_is_fail_naming_ice(self):
+        st, d = self._run([{"urls": "turn:old.example.com:3478"}])
+        self.assertEqual(st, "FAIL")
+        self.assertIn("ICE", d)
+        self.assertIn("old.example.com", d)
+
+    def test_empty_list_is_fail(self):
+        st, d = self._run([])
+        self.assertEqual((st, "ICE" in d), ("FAIL", True))
+
+    def test_good_list_passes(self):
+        self.assertEqual(self._run([{"urls": "turn:10.0.0.5:3478"}])[0], "PASS")
+
+    def test_no_phone_is_skip(self):
+        with mock.patch.object(andruav, "phones_attached", return_value=[]):
+            self.assertEqual(andruav.stale_ice(
+                _ctx(test_phone={"name": "p"}))[0], "SKIP")
+
+    def test_fake_adb_reads_file(self):
+        out = mock.Mock(returncode=0, stdout='{"iceServers":[{"urls":"stun:a:1"}]}',
+                        stderr="")
+        with mock.patch("subprocess.run", return_value=out):
+            self.assertEqual(andruav.phone_ice("s")[0], [{"urls": "stun:a:1"}])
+
+
 if __name__ == "__main__":
     unittest.main()

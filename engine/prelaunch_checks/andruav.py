@@ -10,9 +10,11 @@ adb_serial: <optional>}.
 """
 
 import copy
+import json
 import shutil
 import subprocess
 
+from prelaunch_checks import config as cfg
 from prelaunch_checks import relay as relay_probe
 from prelaunch_checks import video
 
@@ -72,3 +74,54 @@ def relay(ctx):
     if not phone:
         return "SKIP", why
     return relay_probe.mavlink_both_ways(_for_phone(ctx, phone))
+
+
+# where the app keeps an ICE list that overrides its built-in one (DE-0083)
+PHONE_ICE_FILE = "/sdcard/Android/data/ardupilot.andruav/files/de_override/ice_servers.json"
+
+
+def phone_ice(serial=None, path=PHONE_ICE_FILE, adb="adb"):
+    """(entries, None) from the ICE file on the phone, (None, None) when the
+    file is absent (the app then uses its built-in list), or (None, error)."""
+    cmd = [adb] + (["-s", serial] if serial else []) + ["shell", "cat", path]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return None, f"adb could not read the phone ICE file: {e}"
+    if r.returncode != 0 or "No such file" in (r.stdout + r.stderr):
+        return None, None
+    try:
+        data = json.loads(cfg.strip_json_comments(r.stdout))
+    except ValueError as e:
+        return None, f"the phone ICE file {path} is not valid JSON: {e}"
+    if isinstance(data, dict):
+        data = data.get("iceServers")
+    return (data or []), None
+
+
+def stale_ice(ctx):
+    """FAIL when the ICE list set on the phone points at a host the target
+    cannot reach, or is empty."""
+    phone, why = _phone(ctx)
+    if not phone:
+        return "SKIP", why
+    entries, err = phone_ice(phone.get("adb_serial") or None,
+                             phone.get("ice_file") or PHONE_ICE_FILE)
+    if err:
+        return "FAIL", f"ICE on the phone: {err}"
+    if entries is None:
+        return "PASS", ("the phone has no ICE override, so it uses the "
+                        "built-in list that config.ice checks")
+    if not entries:
+        return "FAIL", ("the ICE list on the phone is empty, so a call "
+                        "across a NAT has no STUN or TURN server")
+    allowed = cfg._allowed_hosts(ctx)
+    stale = []
+    for e in entries:
+        for url in cfg._entry_urls(e):
+            host = cfg.ice_host(url)
+            if allowed is not None and host not in allowed:
+                stale.append(f"{url} (target {ctx.name} cannot reach {host})")
+    if stale:
+        return "FAIL", "stale ICE setting on the phone: " + "; ".join(stale)
+    return "PASS", f"the phone ICE list has {len(entries)} entries, all reachable"

@@ -39,8 +39,8 @@ features:
     title: Andruav video shows in the webclient
     severity: P0
     components: [andruav, webclient, de_comm_server, ice]
-    checks: [config.ice, andruav.video_normal, andruav.video_relay,
-             human.andruav_video]
+    checks: [config.ice, andruav.stale_ice, andruav.video_normal,
+             andruav.video_relay, human.andruav_video]
   - id: turn_relay_path
     title: Every TURN and STUN server in the shipped ICE lists works
     severity: P0
@@ -319,6 +319,11 @@ checks:
     stage: 3
     kind: probe
     impl: prelaunch_checks.andruav:video_normal
+  andruav.stale_ice:
+    stage: 3
+    kind: probe
+    impl: prelaunch_checks.andruav:stale_ice
+    title: The ICE list set on the Andruav phone is not stale
     title: Frames from the Andruav phone decode in a real browser
   andruav.video_relay:
     stage: 3
