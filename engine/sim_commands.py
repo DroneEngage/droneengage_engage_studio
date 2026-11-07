@@ -119,11 +119,16 @@ COMMANDS = {
         "summary": "start a sim (restarts the same-named one)",
         "usage": ["./sim up <sim.yaml|de_servers|de_webclient> "
                   "[--fresh|--restart] [--open-web] [--cam dev] "
-                  "[--out host]"],
+                  "[--out host] [--name id]"],
         "description": "Start a sim. Restarts the same-named sim; refuses "
                        "ports of a live sim - sims run in parallel; unit "
                        "names may repeat on per-sim servers but stay unique "
                        "on a shared external stack or rendered cameras. "
+                       "--name <id> starts a second copy of the same yaml "
+                       "as a named instance (sim and unit names take a "
+                       "_<id> suffix); with --shared and no --name a live "
+                       "same-named sim gets the automatic s<slot> suffix "
+                       "instead of a restart. "
                        "--open-web xdg-opens the webclient link. "
                        "de_servers and de_webclient are the developer's "
                        "real servers/webclient, not sims (only `./sim "
@@ -143,12 +148,23 @@ COMMANDS = {
                      "unit to <ip[:port]> - the remote UDP listener the "
                      "fcb_udp bridge pushes to (bare ip keeps the "
                      "yaml's port; = SIM_FCB_UDP_PEER)",
+            "--name": "SL-0210 instance id: a second `up` of the same "
+                      "yaml starts a parallel instance - --name copter2 "
+                      "gives sim quadcopter_copter2 with units "
+                      "quad1_copter2 (the id is lowercased; letters, "
+                      "digits and _ only). Pair it with --shared "
+                      "--slot-base any so ports stay free. Without "
+                      "--name a --shared re-up of a live sim gets the "
+                      "automatic s<slot> suffix. `down`/`ctl -s` take "
+                      "the instance name",
         },
         "shared_flags": True,
         "examples": ["./sim up copters3", "./sim up copters3 --fresh",
                      "./sim up de_servers",
                      "./sim up de_servers --out 192.168.1.20",
-                     "./sim up sitl_udp --out 10.1.72.253"],
+                     "./sim up sitl_udp --out 10.1.72.253",
+                     "./sim up quadcopter --shared --slot-base any "
+                     "--name copter2"],
         "takes_sim": True,
     },
     "vcam": {

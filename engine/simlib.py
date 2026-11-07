@@ -895,6 +895,16 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         return _load_sim_free_slot(dict(spec, name=name), base_dir,
                                    exclusive)
     slot_base = int(ov or spec.get("slot_base", SLOT_BASE))
+    # SL-0210: `sim up --name <id>` / a --shared re-up of a live sim make
+    # this load a named instance - sim and unit names take a _<id> suffix
+    # (down/ctl key off the manifest name, so instances stay independent).
+    # Inside a --slot-base any scan this runs per candidate with that
+    # candidate's slot, so the automatic s<slot> suffix always matches
+    # the slot that wins.
+    inst = _instance_suffix(name, slot_base)
+    if inst:
+        name += "_" + inst
+    unit_suffix = "_" + inst if inst else ""
     srv_spec = spec.get("server") or {}
     # a server port derived from the spec's own slot (the scenario loader
     # writes SERVER_PORT + slot_base) follows an overridden slot like
@@ -969,7 +979,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
             at = dict(entry.get("at") or {})
             if count is not None and "at" in entry:
                 at["north_m"] = at.get("north_m", 0) + SPACING_M * i
-            sim["units"].append(_expand_unit(sim, b, uname, entry, at, catalog))
+            sim["units"].append(_expand_unit(sim, b, uname + unit_suffix,
+                                             entry, at, catalog))
     if _CAM_OVERRIDE is not None:
         apply_cam_override(sim, _CAM_OVERRIDE)
     # ./sim up --out <ip[:port]> (SIM_FCB_UDP_PEER env, like the slot
@@ -2462,6 +2473,28 @@ def ports_held(ports):
             finally:
                 s.close()
     return held
+
+
+def _instance_suffix(base_name, slot_base):
+    """SL-0210 instance id for `sim up --name <id>`: SIM_NAME_INSTANCE is
+    the explicit id (lowercased - case is never a fault; a space, a
+    non-alnum first character or anything outside [a-z0-9_] is). Unit
+    names allow no '-', so the id cannot carry one. SIM_NAME_AUTO marks a
+    --shared re-up with no --name: a live base-named sim gets an
+    automatic s<slot> suffix (quadcopter -> quadcopter_s60) so the new
+    copy parks beside it instead of restarting it. None keeps the base
+    name."""
+    inst = setting("SIM_NAME_INSTANCE")
+    if inst is not None:
+        inst = inst.lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_]*", inst):
+            raise SimError(
+                f"--name {inst!r}: start with a letter or digit; "
+                "letters, digits and _ only")
+        return inst
+    if setting("SIM_NAME_AUTO") and base_name in live_sim_names():
+        return f"s{slot_base}"
+    return None
 
 
 def _names_must_be_unique(sim, other):
