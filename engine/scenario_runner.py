@@ -1048,6 +1048,81 @@ def _hold(m, ctx, world_stream=False, open_web=False):
 
 # ---------------------------------------------------------------- results
 
+# ---------------------------------------------------------------- lab (SL-0223)
+#
+# The lab contract: a test with audience: lab measures the user's own
+# hardware. --target user@host (or SIM_TARGET) names the machine under
+# test; requires: [rpi_target] makes a missing/unreachable target SKIP
+# the run, and the preflight below fails clearly when the target lacks
+# the modules the test drives. Pass/fail means only "the test ran to
+# the end" - the evidence is the report, written to var/reports/ as a
+# JSON + text pair. A lab test must leave the target as it found it.
+
+def lab_preflight(target, commands=("de_comm",)):
+    """Probe the lab target before a run: SSH reachable, then each
+    required command resolvable on it. (ok, reason) - a False reason
+    names the missing item."""
+    ok, why = capabilities.probe_rpi_target(target)
+    if not ok:
+        return False, why
+    for cmd in commands:
+        rc, out = capabilities._run(
+            ["ssh", "-o", "BatchMode=yes",
+             "-o", "ConnectTimeout=3", target,
+             f"command -v {cmd} || "
+             f"test -x $HOME/de_code/droneengage_communication/bin/{cmd}"],
+            timeout=capabilities.PROBE_TIMEOUT + 2)
+        if rc != 0:
+            return False, (f"{target}: {cmd} not found (PATH or the "
+                           "de_code build tree) - build it on the target")
+    return True, "preflight ok"
+
+
+def write_lab_report(scn, target, metrics, limits, extra=None):
+    """The standard lab report pair in var/reports/<name>-<utc>.{json,txt}:
+    host, hardware, versions, the measured metrics and the limits the
+    test found. Returns the json path."""
+    ts = time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
+    rep_dir = os.path.join(simlib.VAR_DIR, "reports")
+    base = os.path.join(rep_dir, f"{scn['name']}-{ts}")
+    host = {}
+    if target:
+        rc, out = capabilities._run(
+            ["ssh", "-o", "BatchMode=yes",
+             "-o", "ConnectTimeout=3", target,
+             "uname -m; cat /proc/device-tree/model 2>/dev/null | "
+             "tr -d '\\0'; nproc; free -m | awk 'NR==2{print $2}'"],
+            timeout=capabilities.PROBE_TIMEOUT + 2)
+        if rc == 0:
+            lines = [l.strip() for l in out.splitlines() if l.strip()]
+            host = {"target": target, "machine": lines[0] if lines else "",
+                    "model": lines[1] if len(lines) > 1 else "",
+                    "cpus": lines[2] if len(lines) > 2 else "",
+                    "mem_mb": lines[3] if len(lines) > 3 else ""}
+        else:
+            host = {"target": target}
+    doc = {"test": scn["name"], "file": scn["file"],
+           "seed": scn["seed"], "utc": ts,
+           "host": host or {"local": True},
+           "versions": _commits(), "metrics": metrics,
+           "limits": limits}
+    if extra:
+        doc.update(extra)
+    simlib.write_json(base + ".json", doc, indent=2)
+    lines = [f"lab report: {scn['name']} ({ts})",
+             f"target: {host.get('target', 'local SITL host')}"]
+    if host.get("model") or host.get("machine"):
+        lines.append(f"hardware: {host.get('model', host['machine'])} "
+                     f"({host.get('cpus', '?')} cpu, "
+                     f"{host.get('mem_mb', '?')} MB)")
+    lines.append("metrics:")
+    lines += [f"  {k}: {v}" for k, v in metrics.items()] or ["  (none)"]
+    lines.append("limits found:")
+    lines += [f"  {k}: {v}" for k, v in limits.items()] or ["  (none)"]
+    simlib.write_text(base + ".txt", "\n".join(lines) + "\n")
+    return base + ".json"
+
+
 def _results_dir(scn):
     ts = time.strftime("%Y-%m-%dT%H-%M-%SZ", time.gmtime())
     return os.path.join(simlib.RESULTS_DIR, ts, scn["name"])
@@ -1187,6 +1262,9 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
     ends."""
     t_file = os.path.abspath(t_file)
     scn = scenario.load_scenario(t_file, seed=seed)
+    # SL-0223: the lab contract - --target (or SIM_TARGET) names the
+    # machine a lab test measures
+    scn["target"] = target or simlib.setting("SIM_TARGET")
     if (scn.get("operation") or "").endswith(".deop"):
         # TASK-23: compile the source on demand BEFORE the first step -
         # scn["operation"] stays the .deop (verify:/send {PKG:} use it)
@@ -1259,12 +1337,19 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
     # SL-0213/SL-0216: the file's requires: names host capabilities -
     # a missing one skips the run with the probe's reason. SKIP is not
     # FAIL: exit 0 and the suite counts it apart.
-    miss = capabilities.missing(scn["requires"], target=target)
+    miss = capabilities.missing(scn["requires"], target=scn["target"])
     if miss:
         return _skipped_result(
             scn, t_file, out, t0_wall,
             f"{scn['name']}: needs " + ", ".join(
                 f"{cap} ({reason})" for cap, reason in miss))
+    # SL-0223: lab tests against a target get a preflight - SSH plus the
+    # modules the test drives; a missing item stops the test clearly
+    if scn["audience"] == "lab" and scn["target"]:
+        ok_pf, why_pf = lab_preflight(scn["target"])
+        if not ok_pf:
+            return _early_result(scn, t_file, out, t0_wall,
+                                 f"lab preflight failed: {why_pf}")
 
     # P5-08: load the world and inject it into the sim spec BEFORE the
     # fleet is ensured - the stub config blocks (world path, seed, unit,
@@ -1560,6 +1645,17 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
         "exit": 0 if ok and n_fail == 0 else 1,
     }, indent=2)
     _junit(scn["name"], results, wall, os.path.join(out, "junit.xml"))
+    if scn["audience"] == "lab":
+        # SL-0223: every lab run leaves the standard report pair in
+        # var/reports/ - metrics are the run's own results; a test may
+        # write a richer report itself with write_lab_report()
+        rep = write_lab_report(
+            scn, scn["target"],
+            {"wall_s": round(wall, 1), "pass": n_pass,
+             "fail": n_fail, "skip": n_skip},
+            {"exit": "pass" if ok and n_fail == 0 else "fail"},
+            {"results_dir": out})
+        print(f"  lab report: {rep}", flush=True)
     print(f"\n{n_pass} PASS, {n_fail} FAIL, {n_skip} SKIP"
           + ("" if ok else " (a step or the teardown failed)")
           + f"\nresults: {out}"

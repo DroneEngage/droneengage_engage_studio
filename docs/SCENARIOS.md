@@ -751,3 +751,23 @@ Limits: `server: {type: fake}` is refused (no plugin seam);
 own stack's `command_plugin`. Frames sent by the engine itself (the
 ctl bridge `GCS_FLEET`, the operator bot `GCS_OPERATOR`) are filtered
 out — a recorded run captures only the human's GCS sessions.
+
+### The lab contract (SL-0223)
+
+A test with `audience: lab` measures the user's own hardware. It runs
+only under `./sim suite --tier lab` and never in the default core suite.
+
+- `--target user@host` (or `SIM_TARGET` in sim.local.env) names the
+  machine under test - no lab test hard-codes a host.
+- `requires: [rpi_target]` makes a missing or unreachable target SKIP
+  the run with a reason instead of failing.
+- The preflight (SSH reachable + the modules the test drives present on
+  the target) runs before bring-up; a missing item stops the test with
+  a message naming it.
+- Pass/fail means only "the test ran to the end". The evidence is the
+  report: `var/reports/<name>-<utc>.json` and `.txt`, holding the host,
+  hardware, versions, measured metrics and the limits found
+  (`write_lab_report` in engine/scenario_runner.py - a test may write a
+  richer report itself; the runner always writes a base one).
+- A lab test must leave the target as it found it: no leftover
+  processes or files.

@@ -192,7 +192,7 @@ def _cli_flags(argv):
     while i < len(argv):
         a = argv[i]
         if a in ("--user", "--password", "--auth-server", "--slot-base",
-                 "--with", "--cam", "--out", "--name"):
+                 "--with", "--cam", "--out", "--name", "--target"):
             if i + 1 >= len(argv):
                 if a == "--slot-base":
                     sys.exit("--slot-base needs a value: an integer "
@@ -679,12 +679,17 @@ def main(argv):
             # feeds the hash (same fleet + different bins = swap, not
             # a silent reuse)
             simlib.set_module_overrides(mods)
+            if flags.get("target") is not None:
+                # SL-0223: lab tests run against this host (= SIM_TARGET);
+                # env propagation covers the suite's subprocesses too
+                os.environ["SIM_TARGET"] = str(flags["target"])
             # every test/scenario file is de.scenario/1 -> the P5-07 engine
             return scenario_runner.run(files[0], keep=keep,
                                        hold=bool({"--hold", "--view"}
                                                  & set(a)), seed=seed,
                                        record=record,
-                                       open_web="--open-web" in a)
+                                       open_web="--open-web" in a,
+                                       target=flags.get("target"))
         elif c == "prelaunch":
             # the gate driver lives in engine/prelaunch.py (docs/PRELAUNCH.md)
             import prelaunch
@@ -721,12 +726,17 @@ def main(argv):
             bad = _bad_flags(a, sim_commands.allowed_flags("suite"))
             if bad:
                 simlib.usage_error_exit(f"unknown {' '.join(bad)} - ./sim suite help")
+            if flags.get("target") is not None:
+                # SL-0223: lab target for the rpi_target probe/report
+                os.environ["SIM_TARGET"] = str(flags["target"])
             cmd = [sys.executable,
                    os.path.join(simlib.SIM_ROOT, "ci", "run_suite.py"),
                    "--roots"] + dirs + ["--seeds", seeds] \
                   + (["--keep"] if keep else []) \
                   + [x for t in tiers for x in ("--tier", t)] \
-                  + (["--task", task] if task else [])
+                  + (["--task", task] if task else []) \
+                  + (["--target", str(flags["target"])]
+                     if flags.get("target") is not None else [])
             return subprocess.call(cmd, cwd=simlib.SIM_ROOT)
         elif c == "list":
             json_out = "--json" in a
