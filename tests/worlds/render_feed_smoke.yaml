@@ -19,6 +19,8 @@
 #     -> the event lands in results/.../truth.jsonl with src render
 #   a UDP listener on <mav_port> counts HEARTBEATs from both sysids
 version: 1
+audience: extended
+requires: [mavlink3dmap]
 name: render_feed_smoke
 speedup: 1                   # world tick + render feed are wall-clock
 seed: 7

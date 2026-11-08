@@ -16,6 +16,8 @@
 # explicitly with `./sim run tests/worlds/experimental/render_canopy_sweep.yaml`
 # or `./sim suite tests/worlds/experimental`.
 version: 1
+audience: extended
+requires: [camera, v4l2loopback, mavlink3dmap]
 name: render_canopy_sweep
 tasks: [SL-0050]
 speedup: 1                   # render farm + de_yolo + de_camera run wall-clock

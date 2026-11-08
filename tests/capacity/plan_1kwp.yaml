@@ -25,6 +25,8 @@
 # `render: {mode: viewer, headless: false}` and `./sim view` this file;
 # what those draw is exactly the 1027 stream mission_pull verifies.
 version: 1
+audience: lab
+requires: [mavlink3dmap]
 name: plan_1kwp
 realtime: true
 transport: real

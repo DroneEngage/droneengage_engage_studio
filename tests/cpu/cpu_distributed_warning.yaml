@@ -10,6 +10,7 @@
 #   assert: exactly one busy then one free warning in de_comm's log, and
 #        the GCS-side 1008 MI=3 summary lists BOTH boards in CP.b
 version: 1
+audience: lab
 name: cpu_distributed_warning
 tasks: [SL-0067, GL-0041]
 transport: real

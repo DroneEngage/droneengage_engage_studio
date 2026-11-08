@@ -6,6 +6,7 @@
 # gate. signals_in_range proves every emitted signal was stamped while
 # the truth put phone_1 within range of the mast.
 version: 1
+audience: extended
 name: world_sdr_mast
 seed: 7
 transport: fake

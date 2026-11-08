@@ -10,6 +10,7 @@
 # control). Recall lower in the crossover leg than in the night leg
 # is the property under test.
 version: 1
+audience: extended
 name: world_thermal_crossover
 realtime: true
 seed: 7

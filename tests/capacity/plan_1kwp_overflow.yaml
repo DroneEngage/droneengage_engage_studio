@@ -11,6 +11,7 @@
 # this scenario correctly fails - the plan then FITS and its premise is
 # gone; regenerate a bigger fixture with tools/gen_bigplan.py --count.
 version: 1
+audience: lab
 name: plan_1kwp_overflow
 realtime: true
 transport: real

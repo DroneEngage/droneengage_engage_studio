@@ -12,6 +12,8 @@
 # fall_s vs the Node model: engine/physics_model_check (selftest numbers
 # for the same conditions: 30 m, 1 kg sphere, cd 0.47 -> ~2.6 s).
 version: 1
+audience: extended
+requires: [mavlink3dmap]
 name: drop_on_person
 speedup: 1                   # the physics rig steps on scenario wall time
 seed: 1

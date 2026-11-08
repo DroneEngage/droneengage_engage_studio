@@ -11,6 +11,7 @@
 # while the phone is 31 m away - the oversized radius the allocator
 # must cope with.
 version: 1
+audience: extended
 name: world_sdr_canopy
 seed: 7
 transport: fake

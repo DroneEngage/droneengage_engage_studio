@@ -6,6 +6,8 @@
 # scenario passes only when the roof WAS hit (drop expect_collision to
 # see the raw FAIL a real plan gets).
 version: 1
+audience: extended
+requires: [mavlink3dmap]
 name: collision_roof
 speedup: 1                   # the physics rig steps on scenario wall time
 seed: 1

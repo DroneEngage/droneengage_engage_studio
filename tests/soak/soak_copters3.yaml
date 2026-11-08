@@ -12,6 +12,7 @@
 # - the unit stays connected-but-unauthenticated until a restart (a real
 # chaos finding on de_comm's auth-retry, not a soak assertion).
 version: 1
+audience: lab
 name: soak_copters3
 tasks: [SL-0011]
 seed: 1

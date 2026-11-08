@@ -4,6 +4,7 @@
 # (--selftest <poses>) against the unit's generated config and
 # byte-compares stubs/<unit>.log.
 version: 1
+audience: extended
 name: world_determinism
 seed: 7
 transport: fake

@@ -7,6 +7,7 @@
 # truth (distance_to detected_cls) and the emitted detections must be
 # >=80% true entities (detection_precision).
 version: 1
+audience: extended
 name: world_detect_person
 tier: smoke
 speedup: 1                   # the world truth tick is wall-clock

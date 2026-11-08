@@ -12,6 +12,7 @@
 # the rectilinear model, so a reported position carries no systematic
 # projector error - comfortably inside the 25 m budget.
 version: 1
+audience: extended
 name: world_canopy_sweep
 realtime: true
 seed: 7

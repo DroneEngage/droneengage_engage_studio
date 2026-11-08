@@ -10,6 +10,7 @@
 # a position within 50 m of the world truth. Nothing beyond the GCS
 # display path consumes ADS-B, so bridging the frame is the whole proof.
 version: 1
+audience: extended
 name: world_adsb_intruder
 tasks: [SL-0016, SL-0008]
 speedup: 1                   # the world truth tick is wall-clock

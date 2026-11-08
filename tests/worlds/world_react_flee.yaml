@@ -12,6 +12,7 @@
 # world.reacted event off the world_event row (journal evidence:
 # "event world.reacted latched").
 version: 1
+audience: extended
 name: world_react_flee
 tasks: [SL-0013]
 speedup: 1                   # the world truth tick is wall-clock
