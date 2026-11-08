@@ -238,7 +238,22 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   Serial.begin(FC_BAUD);
   Serial2.begin(FC_BAUD, SERIAL_8N1, UART2_RX_PIN, UART2_TX_PIN);
+  SerialBT.enableSSP(false, false);  // Just Works pairing - no PIN prompt
+  // auto-accept the SSP confirm step - headless, nothing to display; the
+  // lib refuses pairing otherwise (Android shows a confirm dialog and
+  // fails)
+  SerialBT.onConfirmRequest([](uint32_t) { SerialBT.confirmReply(true); });
   SerialBT.begin(BT_NAME, false, true);   // SPP slave, BLE left off
+  // the Arduino lib hard-codes a "computer" class of device - report as
+  // uncategorized, like HC-05-style serial radios
+  esp_bt_cod_t cod;
+  cod.major = 0b11111;
+  cod.minor = 0;
+  cod.service = 0;
+  esp_bt_gap_set_cod(cod, ESP_BT_INIT_COD);
+  // Bluedroid keeps link keys in NVS, so bonds survive a reset. A full
+  // merged-image flash (sim esp32 upload) erases NVS: forget DE-FakeFC on
+  // the phone/PC after a reflash, or SSP auth fails on every connect.
   delay(200);
   send_statustext(MAV_SEVERITY_INFO, "Fake FC: ESP32 ArduCopter ready");
 }

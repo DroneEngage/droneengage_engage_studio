@@ -73,7 +73,9 @@ reflected in the heartbeat. The same check works on the other links: point
 ## Use with Andruav — Bluetooth
 
 1. Pair the phone with `DE-FakeFC` (Android BT settings, or the app's BT
-   picker).
+   picker). Pairing is Just Works — no PIN prompt. The device advertises
+   an uncategorized class, so it shows as a generic BT device, not a
+   "computer".
 2. Andruav → **FCB** tile → **Bluetooth** → pick `DE-FakeFC`.
 3. Same behaviour as USB: ArduCopter in STABILIZE, modes/arm acked.
 
