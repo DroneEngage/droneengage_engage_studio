@@ -9,7 +9,7 @@ from whatever flies the aircraft. That surface is the **adapter seam**.
 `engine/adapter.py` defines `VehicleAdapter`. The DroneEngage path is
 one implementation (`DEAdapter`). It is not hard-coded into the runner.
 
-## What the core gives the adapter
+## What the core hands the adapter
 
 `ctx` is the run context dict. `run_scenario` builds it:
 
@@ -59,7 +59,7 @@ An adapter may implement a verb as a no-op *only* where the semantics
 do not exist. Example: `deploy` under a stack with no package format.
 Scenarios that use `deploy` then cannot run.
 
-## Required inputs (data the core uses)
+## Required inputs (data the core consumes)
 
 | input | shape | producer |
 |---|---|---|
