@@ -13,7 +13,7 @@
 # collide anyway - the base just keeps sysids distinct.
 description: |
   Sim: one quadcopter box (ArduCopter SITL + de_comm + de_mavlink)
-  on your own external server stack (auth on, slot_base 50). Includes
+  on your own external server stack (auth on, slot_base 50).
   Add `--with viewer` for the Mavlink3DMap mav_bridge + vite page.
 version: 1
 audience: core
