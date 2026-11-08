@@ -14,10 +14,9 @@
 description: |
   Sim: one quadcopter box (ArduCopter SITL + de_comm + de_mavlink)
   on your own external server stack (auth on, slot_base 50). Includes
-  render: {mode: viewer} for the Mavlink3DMap mav_bridge + vite page.
+  Add `--with viewer` for the Mavlink3DMap mav_bridge + vite page.
 version: 1
 audience: core
-requires: [mavlink3dmap]
 slot_base: 50                 # identity only: SITL -I/sysid base; the
                               # allocator leases every port (`./sim ports`)
 server:
@@ -32,8 +31,6 @@ server:
   #                                        # cannot login as GCS)
   # else SIM_AUTH_* / SIM_UNIT_AUTH_* from sim.local.env (out of git),
   # or ./sim --user/--password/--auth-server on the command line
-render: {mode: viewer}          # Mavlink3DMap: mav_bridge + vite dev page;
-                                # needs MAVLINK3DMAP_DIR in sim.local.env
 units:
   - {block: copter, name: quad1, add_modules: [stub_ai_box]}
     # account: {user: quad1, code: ...}

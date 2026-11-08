@@ -19,11 +19,11 @@
 description: |
   Sim: one quadcopter box with an onboard camera (ArduCopter
   SITL + de_comm + de_mavlink + de_camera) on your own external server
-  stack (auth on, slot_base 80). Includes render: {mode: viewer} for the
+  stack (auth on, slot_base 80). Add `--with viewer` for the
   Mavlink3DMap mav_bridge + vite page.
 version: 1
 audience: extended
-requires: [camera, v4l2loopback, mavlink3dmap]
+requires: [camera, v4l2loopback]
 slot_base: 80                 # camquad: pilot 6560, fcb 8460, de_comm 62800,
                               # de_mavlink s2s 63800, de_camera s2s 64800,
                               # ctl 62089, sysid 80
@@ -39,8 +39,6 @@ server:
   #                                        # cannot login as GCS)
   # else SIM_AUTH_* / SIM_UNIT_AUTH_* from sim.local.env (out of git),
   # or ./sim --user/--password/--auth-server on the command line
-render: {mode: viewer}          # Mavlink3DMap: mav_bridge + vite dev page;
-                                # needs MAVLINK3DMAP_DIR in sim.local.env
 # DE-0050: ffmpeg testsrc producers on the camera unit's configured
 # /dev/videoN before de_camera scans (exclusive_caps needs a producer
 # for CAPTURE to enumerate). Create the devices first: ./sim vcam

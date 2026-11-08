@@ -1338,6 +1338,11 @@ def _apply_overlay(spec, name, applied, _chain=()):
     units_extra = o.pop("units", None)
     cfg = o.pop("config", None)
     fc = o.pop("fc", None)
+    # SL-0213: an overlay's requires: UNIONs into the spec's (a plain
+    # deep_merge would replace it and drop the sim's own needs)
+    o["requires"] = norm_requires(
+        list(spec.get("requires") or [])
+        + list(o.pop("requires", None) or []), f"overlay {name!r}")
     unknown = set(o) - {"server", "home", "slot_base", "render",
                         "speedup", "fcb_proxy", "fcb_link",
                         "audience", "requires"}

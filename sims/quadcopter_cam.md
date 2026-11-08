@@ -3,7 +3,7 @@
 Sim: ONE quad box with an onboard camera — ArduCopter SITL
 (raw binary over TCP, like sitl_tcp.sh) + de_comm + de_mavlink +
 de_camera — on **your own** server stack. Includes
-`render: {mode: viewer}`: a Mavlink3DMap mav_bridge + vite dev page
+add `--with viewer` for the Mavlink3DMap mav_bridge + vite dev page
 comes up with the sim.
 
 ## Setup

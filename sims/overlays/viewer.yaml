@@ -1,0 +1,5 @@
+# viewer - the Mavlink3DMap render feed on top of any sim
+# (SL-0222): mav_bridge + the vite dev page. Needs MAVLINK3DMAP_DIR in
+# sim.local.env. Add it with `./sim up <sim> --with viewer`.
+render: {mode: viewer}
+requires: [mavlink3dmap]
