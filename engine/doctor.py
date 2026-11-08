@@ -463,13 +463,36 @@ def main(argv):
     a = list(argv)
     json_out = "--json" in a
     esp32 = "--esp32" in a
-    a = [x for x in a if x not in ("--json", "--esp32")]
+    caps = "--caps" in a
+    a = [x for x in a if x not in ("--json", "--esp32", "--caps")]
+    target = None
+    if "--target" in a:
+        i = a.index("--target")
+        if i + 1 >= len(a):
+            sys.exit("--target needs user@host")
+        target = a[i + 1]
+        del a[i:i + 2]
     files = [x for x in a if not x.startswith("-")]
     bad = [x for x in a if x.startswith("-")]
     if bad or len(files) > 1:
         sys.exit("usage: ./sim doctor [sim.yaml|test.yaml] [--json] "
-                 "[--esp32]"
+                 "[--esp32] [--caps [--target user@host]]"
                  + (f" - unknown {' '.join(bad)}" if bad else ""))
+    if caps:
+        # SL-0215: the capability table only - what each requires:
+        # name resolves to on this host. Informational: always exit 0.
+        import capabilities
+        res = capabilities.probe(target=target)
+        if json_out:
+            print(json.dumps(res, indent=1))
+        else:
+            w = max(len(n) for n in res)
+            for name, r in res.items():
+                tag = (simlib.col_green("OK      ") if r["ok"]
+                       else simlib.col_yellow("MISSING "))
+                print(f"{tag} {simlib.col_yellow(name.ljust(w))}  "
+                      f"{r['reason']}")
+        return 0
     sim, load_err = None, None
     if files:
         try:

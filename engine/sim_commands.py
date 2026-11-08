@@ -561,14 +561,23 @@ COMMANDS = {
     "doctor": {
         "group": "DISCOVER",
         "summary": "machine-readiness check",
-        "usage": ["./sim doctor [sim.yaml] [--json] [--esp32]"],
+        "usage": ["./sim doctor [sim.yaml] [--json] [--esp32] "
+                 "[--caps [--target user@host]]"],
         "description": "Machine-readiness check: one OK/MISSING/OPTIONAL line "
                        "per item with a fix line; a sim file scopes what is "
                        "required to what that sim needs; --esp32 makes the "
-                       "ESP32 HIL rows required and probes the board.",
+                       "ESP32 HIL rows required and probes the board. "
+                       "--caps prints the capability table instead - what "
+                       "each requires: capability name resolves to on this "
+                       "host (engine/capabilities.py); --target feeds the "
+                       "rpi_target probe.",
         "flags": {
             "--json": "machine-readable json",
             "--esp32": "make ESP32 HIL rows required and probe the board",
+            "--caps": "print the capability table (requires: names -> "
+                      "ok/missing + reason)",
+            "--target": "lab target user@host for the rpi_target probe "
+                        "(with --caps; = SIM_TARGET)",
         },
         "shared_flags": False,
         "examples": ["./sim doctor", "./sim doctor copters3.yaml --json"],
