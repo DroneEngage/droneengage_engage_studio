@@ -2271,7 +2271,7 @@ def roster(secs):
         last[src] = ms
     for p, e in last.items():
         print(f"  {p}: st={e.get('st')} mis={e.get('mis') or '-'} "
-              f"bat={e.get('bat')} tq={e.get('tq')}")
+              f"bat={e.get('bat')} tq={e.get('tq')} pa={e.get('pa')}")
     return heard
 
 

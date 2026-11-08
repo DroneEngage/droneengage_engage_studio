@@ -485,6 +485,8 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `udp_proxy_mavlink` | `unit`, `secs`, `at_least` | FC HEARTBEATs (matching sysid) counted for `secs` on a datagram to the unit's latest 1071 `{a,p}` — end-to-end GCS→UDP proxy→unit. On a `server: {udp_relay}` sim an endpoint outside the relay's `udp_port_range` fails. |
 | `udp_proxy_rejects` | `unit`, `from_ip` (127.0.0.2), `secs` | a stranger's ARM + one-item mission upload sent to the unit's 1071 endpoint from `from_ip` must not land: FC stays disarmed, mission signature unchanged, and on a relay sim `./sim ctl relay stats` counts ≥ 1 gcs_not_allowed drop. |
 | `roster_value` | `unit`, `key`, `equals`/`…` | roster field |
+| `roster_pos_near` | `unit`, `lat`, `lng`, `max_m` | last roster `pos` within `max_m` of a reference point (a held position never jumped) |
+| `roster_field_absent` | `unit`, `field` | last roster frame omits the field entirely (compact-form rule); `roster_value` SKIPs a missing field, this one requires it |
 | `operator_log_count` | `re`, bounds | the bot's decisions |
 | `clock_spread` | `unit`, `max_ms` (100) or `min_ms` | spread of the units' latest CLOCK `fleet_minus_unix_ms`; `min_ms` proves a `clock_step` landed |
 | `distance_to` | `unit`, `re`, `truth`, `min_m`/`max_m` | world truth geometry |
@@ -660,6 +662,11 @@ stress the GCS display path with uncontrolled traffic.
 - SITL needs ~1–2 min for GPS/EKF; `arm` waits for it, but plan the
   timeline (`deploy` before `arm`, `mode: GUIDED` before a nav deploy).
 - `on:` is a YAML 1.1 boolean key — write it bare, the loader fixes it.
+- Journal `re:` patterns (wait_journal, on:, journal_count, ...) match
+  only the `<KIND> <msg>` text — the `<ts> <engine> <mission> <seq>`
+  header fields are never searched. To wait on mission progress use a
+  msg-level anchor (an `ACTION`/`EMIT`/`fc` line at that seq), not a
+  header shape like `RUNNING <mission> <seq>` — that can never match.
 - Each run writes `var/results/<utc>/<name>/`: journals, logs, tlog,
   operator.log, truth.jsonl, samples.jsonl, verify.json, summary.json,
   junit.xml.

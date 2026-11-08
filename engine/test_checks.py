@@ -968,6 +968,70 @@ def run_module_log(a, u, marks):
         return checks.check_assertion(a, c)
 
 
+class FakeBot:
+    """just the roster_of() surface the roster_* assertions read"""
+    def __init__(self, rosters):
+        self._rosters = rosters     # {party_id: ms dict}
+
+    def roster_of(self, party):
+        return dict(self._rosters.get(party) or {})
+
+
+def run_roster(a, rosters, **kw):
+    c, j = ctx({}, bot=FakeBot(rosters), **kw)
+    with mock.patch.object(checks.ctl, "resolve",
+                           lambda tok, m=None: _resolve(tok, c)):
+        return checks.check_assertion(a, c)
+
+
+class TRoster(unittest.TestCase):
+    """roster_pos_near / roster_field_absent (TASK-SU-06): a flyable
+    unit's frozen last fix is near home and carries pa; it never jumps
+    to the configured location."""
+
+    HOME = (-35.34, 149.15)            # ~2 km from CFG
+    CFG = (-35.36, 149.16)
+
+    def test_pos_near_passes_and_fails_on_distance(self):
+        rosters = {"p1": {"pos": [self.HOME[0], self.HOME[1], 30.0]}}
+        a = {"roster_pos_near": {"unit": "u1", "lat": self.HOME[0],
+                                 "lng": self.HOME[1], "max_m": 50}}
+        self.assertEqual(run_roster(a, rosters)["status"], "PASS")
+        # at the configured site instead of home -> FAIL (the bug this
+        # check exists to catch)
+        rosters = {"p1": {"pos": [self.CFG[0], self.CFG[1], 30.0]}}
+        self.assertEqual(run_roster(a, rosters)["status"], "FAIL")
+
+    def test_pos_near_skips_without_pos(self):
+        a = {"roster_pos_near": {"unit": "u1", "lat": 0, "lng": 0,
+                                 "max_m": 10}}
+        self.assertEqual(run_roster(a, {"p1": {}})["status"], "SKIP")
+        self.assertEqual(run_roster(a, {"p1": {"pa": 5}})["status"],
+                         "SKIP")
+
+    def test_field_absent(self):
+        a = {"roster_field_absent": {"unit": "u1", "field": "pa"}}
+        self.assertEqual(run_roster(a, {"p1": {"pos": [0, 0, 0]}})["status"],
+                         "PASS")
+        self.assertEqual(
+            run_roster(a, {"p1": {"pos": [0, 0, 0], "pa": 4}})["status"],
+            "FAIL")
+        # no roster frame at all -> SKIP (a dead unit proves nothing)
+        self.assertEqual(run_roster(a, {})["status"], "SKIP")
+
+    def test_no_units_never_passes(self):
+        c, _ = ctx({}, bot=FakeBot({"p1": {"pos": [0, 0, 0]}}))
+        c["manifest"]["units"] = []
+        with mock.patch.object(checks.ctl, "resolve",
+                               lambda tok, m=None: []):
+            self.assertEqual(checks.check_assertion(
+                {"roster_pos_near": {"unit": "all", "lat": 0, "lng": 0,
+                                     "max_m": 10}}, c)["status"], "FAIL")
+            self.assertEqual(checks.check_assertion(
+                {"roster_field_absent": {"unit": "all", "field": "pa"}},
+                c)["status"], "FAIL")
+
+
 class TNoSep(unittest.TestCase):
     """no_sep_violation: an unmeasured separation never passes."""
 

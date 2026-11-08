@@ -1,0 +1,61 @@
+# su/su_fcb_loss_no_jump - TASK-SU-06 acceptance (MP-0177 owner decision:
+# Option A). copter1 carries a configured `location` ~2.6 km from home
+# that is NOT declared static, so it must never be used as the unit's
+# position. Killing de_mavlink silences its 9102 feed:
+#   - de_comm journals POS_SOURCE_LOST (age=<s>) once, holds the last fix,
+#     and adds roster field `pa` (position age) while the source is dead;
+#   - the roster `pos` stays at the last fix (home) - it never jumps to
+#     the configured site;
+#   - restarting de_mavlink journals POS_SOURCE_BACK and `pa` disappears.
+# mast1 (FC-less, sim writes location.static:true) proves the declared
+# path is unchanged: roster stc:true and pos at its configured site.
+# The copter is never armed on purpose: the op deploys (both packages
+# READY), rosters flow on the supervisor heartbeat, and the unit stays
+# parked at home so the frozen position has one deterministic reference.
+version: 1
+name: su_fcb_loss_no_jump
+transport: fake
+operation: ../../packages/p4a11_static.deploy.json
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 20
+fleet:
+  # FS_OPTIONS bit 2 like module_crash_midop: losing de_mavlink must not
+  # fail-safe the SITL copter (it never arms anyway - belt and braces).
+  - {id: copter1, cls: copter, params: {FS_OPTIONS: 18},
+     config: {de_comm: {location: {lat: -353400000, lng: 1491500000,
+                                   alt_abs: 584000, alt_rel: 0}}}}  # ~2.6 km from home, NOT declared
+  - {id: mast1, cls: static, at: {north_m: 0, east_m: 0}}           # parked on home
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 2, do: deploy}
+  - {t: 12, do: wait_journal, unit: copter1, re: "package READY",
+     timeout: 60}
+  - {t: 15, do: wait_journal, unit: mast1, re: "package READY",
+     timeout: 60}
+  # silence the position feed: 9102s stop at t~20, source_lost fires ~t23
+  - {t: 20, fault: module_kill, unit: copter1, module: de_mavlink}
+  - {t: 30, do: wait_journal, unit: copter1, re: "POS_SOURCE_LOST",
+     timeout: 60}
+  # let the frozen position ride a few roster periods (0.2 Hz)
+  - {t: 35, do: roster_peers, seconds: 10, count: 2}
+  - {t: 46, fault: restart, unit: copter1, proc: de_mavlink}
+  - {t: 55, do: wait_journal, unit: copter1, re: "POS_SOURCE_BACK",
+     timeout: 60}
+assert:
+  - journal_count: {unit: copter1, re: "POS_SOURCE_LOST", equals: 1}
+  - journal_count: {unit: copter1, re: "POS_SOURCE_LOST age=[0-9]+",
+                    equals: 1}
+  - journal_count: {unit: copter1, re: "POS_SOURCE_BACK", equals: 1}
+  # the held position is the last fix (home), never the configured site
+  - roster_pos_near: {unit: copter1, lat: -35.363262, lng: 149.165237,
+                      max_m: 50}
+  # pa rode the roster only while the source was dead; it is gone now
+  - roster_field_absent: {unit: copter1, field: pa}
+  # no static geo-projector advert on an undeclared unit
+  - module_log_count: {unit: copter1, module: de_comm,
+                       re: "detect \\(static geo projector\\)", equals: 0}
+  # the declared mast is unaffected: static class + configured position
+  - roster_value: {unit: mast1, field: stc, equals: true}
+  - roster_pos_near: {unit: mast1, lat: -35.363262, lng: 149.165237,
+                      max_m: 5}
+teardown: none

@@ -82,7 +82,8 @@ UNIT_ASSERTS = {"journal_count", "module_log_count", "journal_consistent",
                 "fc_items_unchanged_without_cause", "mission_current",
                 "mission_items", "mission_pull", "udp_proxy_mavlink",
                 "udp_proxy_rejects", "relay_gcs_locked",
-                "proc_alive", "proc_dead", "roster_value", "fc_mode",
+                "proc_alive", "proc_dead", "roster_value",
+                "roster_pos_near", "roster_field_absent", "fc_mode",
                 "telemetry_value", "link_offline", "signals_in_range",
                 "log_match_delta", "bt_no_squatters",
                 "detection_recall", "status_field", "obs_frames"}
@@ -2728,6 +2729,48 @@ def _roster_value(name, a, ctx):
     return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
 
 
+def _roster_pos_near(name, a, ctx):
+    """The unit's last 1092 roster pos [lat,lng,alt] lies within max_m of
+    {lat,lng}. TASK-SU-06: proves a flyable unit's roster position never
+    jumps to its configured location when its position source dies."""
+    bot = ctx.get("bot")
+    if not bot:
+        return _r(name, "SKIP", None, "no operator session")
+    ok, bits = True, []
+    for u in _units(a, ctx):
+        pos = bot.roster_of(u["party_id"]).get("pos")
+        if pos is None:
+            return _r(name, "SKIP", None,
+                      f"{u['name']}: no roster pos yet")
+        d = _haversine(pos[0], pos[1], float(a["lat"]), float(a["lng"]))
+        good = d <= float(a["max_m"])
+        ok &= good
+        bits.append(f"{u['name']}: pos {d:.1f} m from reference "
+                    f"(max {a['max_m']} m)")
+    return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
+
+
+def _roster_field_absent(name, a, ctx):
+    """The unit's last 1092 roster frame omits the field entirely
+    (compact-form rule). The complement of roster_value, which SKIPs a
+    missing field - here a missing field is the pass condition."""
+    bot = ctx.get("bot")
+    if not bot:
+        return _r(name, "SKIP", None, "no operator session")
+    ok, bits = True, []
+    for u in _units(a, ctx):
+        rost = bot.roster_of(u["party_id"])
+        if not rost:
+            return _r(name, "SKIP", None,
+                      f"{u['name']}: no roster frame yet")
+        present = a["field"] in rost
+        ok &= not present
+        bits.append(f"{u['name']}: {a['field']}"
+                    + (f"={rost[a['field']]!r}" if present else "")
+                    + (" present" if present else " absent"))
+    return _r(name, "PASS" if ok else "FAIL", None, "; ".join(bits))
+
+
 def _telemetry_value(name, a, ctx):
     tele = ctx.get("telemetry")
     if not tele:
@@ -3117,6 +3160,8 @@ DISPATCH = {
     "recovers_after_fault": _recovers_after_fault,
     "no_stuck_state": _no_stuck_state,
     "roster_value": _roster_value,
+    "roster_pos_near": _roster_pos_near,
+    "roster_field_absent": _roster_field_absent,
     "telemetry_value": _telemetry_value,
     "fc_mode": _fc_mode,
     "status_field": _status_field,
