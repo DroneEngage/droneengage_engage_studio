@@ -64,6 +64,7 @@ import telemetry as telemetry_mod
 import operator_bot
 import adapter
 import world as world_mod
+import capabilities
 
 VERIFY_CLI = os.path.join("scripts", "verify-op.js")
 
@@ -1176,7 +1177,7 @@ def _early_result(scn, t_file, out, t0_wall, why):
 
 
 def run_scenario(t_file, seed=None, keep=False, hold=False,
-                 record=None, open_web=False):
+                 record=None, open_web=False, target=None):
     """One de.scenario/1 run -> exit code (0 = every non-SKIP assertion
     passed and no step failed). hold parks the run after the timeline
     (the world stream and the render procs stay live) until Ctrl-C.
@@ -1254,6 +1255,16 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
         return _skipped_result(
             scn, t_file, out, t0_wall,
             "serial link hardware not usable: " + ", ".join(missing))
+
+    # SL-0213/SL-0216: the file's requires: names host capabilities -
+    # a missing one skips the run with the probe's reason. SKIP is not
+    # FAIL: exit 0 and the suite counts it apart.
+    miss = capabilities.missing(scn["requires"], target=target)
+    if miss:
+        return _skipped_result(
+            scn, t_file, out, t0_wall,
+            f"{scn['name']}: needs " + ", ".join(
+                f"{cap} ({reason})" for cap, reason in miss))
 
     # P5-08: load the world and inject it into the sim spec BEFORE the
     # fleet is ensured - the stub config blocks (world path, seed, unit,
@@ -1559,7 +1570,7 @@ def run_scenario(t_file, seed=None, keep=False, hold=False,
 
 
 def run(t_file, keep=False, hold=False, seed=None, record=None,
-        open_web=False):
+        open_web=False, target=None):
     """`./sim run` dispatcher: scenarios -> the de.scenario/1 engine (a
     bare sims/*.yaml file has no steps - it is just ensured up, additive
     like ./sim up but hash-reused, it leaves the other live sims
@@ -1593,7 +1604,7 @@ def run(t_file, keep=False, hold=False, seed=None, record=None,
             "--open-web ignored without --hold - the sim is torn down "
             "when the run ends"), flush=True)
     return run_scenario(t_file, seed=seed, keep=keep, hold=hold,
-                        record=record, open_web=open_web)
+                        record=record, open_web=open_web, target=target)
 
 
 def run_suite(suite_dir, seeds, keep=False):

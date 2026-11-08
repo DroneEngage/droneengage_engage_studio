@@ -13,6 +13,9 @@ serially - a run owns the machine. Verdicts:
   GATE-PASS  exit !=0 AND the file's verify: declares expected findings
              AND verify.json's recorded rules match them - the deploy
              gate blocked by design (tests/verify/*)
+  SKIP       the file's requires: names a capability this host lacks
+             (SL-0216) - it never ran; SKIP is not FAIL and does not
+             make the suite exit non-zero
   FAIL       anything else
   FLAKY      first attempt FAILed, the single permitted rerun produced
              PASS or GATE-PASS - reported with BOTH attempts, never
@@ -55,6 +58,7 @@ sys.path.insert(0, os.path.join(ROOT, "engine"))
 import simlib          # noqa: E402
 import launcher        # noqa: E402
 import scenario        # noqa: E402
+import capabilities    # noqa: E402
 
 RESULTS = simlib.RESULTS_DIR
 
@@ -145,6 +149,18 @@ def gate_check(path, results_dir):
     return True, f"gate blocked: {errs} error(s) rules {rules}"
 
 
+def _missing_requires(yaml_path, target=None):
+    """The file's requires: entries this host lacks, or [] - probed
+    through capabilities.missing (SL-0216). A file that fails to load
+    reports no requires - run_once surfaces the load error itself."""
+    try:
+        reqs = scenario.load_scenario(yaml_path,
+                                      probe_ports=False)["requires"]
+    except Exception:
+        return []
+    return capabilities.missing(reqs, target=target)
+
+
 def _sim_name(yaml_path):
     """The sim a scenario spawns: its top-level yaml `name:` else the
     file stem."""
@@ -206,6 +222,9 @@ def main():
                     help="SITL --speedup for every unpinned scenario "
                          "(default 3; realtime:/speedup:-pinned files "
                          "keep theirs - rerun at 1 for evidence)")
+    ap.add_argument("--target", default=None,
+                    help="lab target user@host - feeds the rpi_target "
+                         "capability probe (= SIM_TARGET)")
     a = ap.parse_args()
     if a.speedup:
         os.environ["SIM_SPEEDUP"] = f"{a.speedup:g}"
@@ -219,7 +238,19 @@ def main():
     rows = []
     for f in files:
         rel = os.path.relpath(f, ROOT)
+        # SL-0216: a requires: the host cannot satisfy skips every seed
+        # of the file with the probe's reason - it never ran
+        miss = _missing_requires(f, a.target)
         for s in seeds:
+            if miss:
+                why = ("needs " + ", ".join(
+                    f"{cap} ({reason})" for cap, reason in miss))
+                rec = {"file": rel, "seed": s, "attempt1": "SKIP",
+                       "attempt2": "", "verdict": "SKIP", "wall_s": 0.0,
+                       "why": why, "results": None}
+                rows.append(rec)
+                print(f"[{'SKIP':>9}] {rel} seed={s}: {why}", flush=True)
+                continue
             v, wall, rd, why = run_once(f, s, a.keep, shared)
             rec = {"file": rel, "seed": s, "attempt1": v, "attempt2": "",
                    "verdict": v, "wall_s": wall, "why": why,
@@ -242,6 +273,7 @@ def main():
     # ---- summary.md ----
     n_pass = sum(1 for r in rows if r["verdict"] == "PASS")
     n_gate = sum(1 for r in rows if r["verdict"] == "GATE-PASS")
+    n_skip = sum(1 for r in rows if r["verdict"] == "SKIP")
     n_fail = sum(1 for r in rows if r["verdict"] == "FAIL")
     n_flaky = sum(1 for r in rows if r["verdict"] == "FLAKY")
     lines = [
@@ -249,8 +281,8 @@ def main():
         "",
         f"roots: {', '.join(a.roots)}   seeds: {a.seeds}   "
         f"runs: {len(rows)}",
-        f"**PASS {n_pass}  GATE-PASS {n_gate}  FLAKY {n_flaky}  "
-        f"FAIL {n_fail}**",
+        f"**PASS {n_pass}  GATE-PASS {n_gate}  SKIP {n_skip}  "
+        f"FLAKY {n_flaky}  FAIL {n_fail}**",
         "",
         "| verdict | scenario | seed | attempt1 | attempt2 | wall_s |",
         "|---|---|---|---|---|---|",
@@ -258,6 +290,10 @@ def main():
     lines += [f"| {r['verdict']} | {r['file']} | {r['seed']} | "
               f"{r['attempt1']} | {r['attempt2'] or '-'} | {r['wall_s']} |"
               for r in rows]
+    skips = [r for r in rows if r["verdict"] == "SKIP"]
+    if skips:
+        lines += ["", "## skipped (missing host capability - not failures)"]
+        lines += [f"- `{r['file']}`: {r['why']}" for r in skips]
     flaky = [r for r in rows if r["verdict"] == "FLAKY"]
     if flaky:
         lines += ["", "## flaky evidence (fail then pass - kept amber)"]
@@ -271,7 +307,8 @@ def main():
     open(os.path.join(a.out, "summary.md"), "w").write("\n".join(lines))
 
     # ---- junit.xml: FLAKY is a failure node so CI can never green it -
-    # the message carries both attempts; GATE-PASS is a clean pass. ----
+    # the message carries both attempts; GATE-PASS is a clean pass;
+    # SKIP is a skipped node (a missing capability, never a failure). ----
     cases = []
     for r in rows:
         tc = f'  <testcase classname="scenario" name="{sax.escape(r["file"])}#seed{r["seed"]}" time="{r["wall_s"]}">'
@@ -280,10 +317,12 @@ def main():
         elif r["verdict"] == "FLAKY":
             tc += ('<failure type="flaky" message=' +
                    f'"flaky: {sax.escape(r["why"])}"/>')
+        elif r["verdict"] == "SKIP":
+            tc += f'<skipped message="{sax.escape(r["why"])}"/>'
         tc += "</testcase>"
         cases.append(tc)
     suite = (f'<testsuite name="scenario-suite" tests="{len(rows)}" '
-             f'failures="{n_fail + n_flaky}" time='
+             f'failures="{n_fail + n_flaky}" skipped="{n_skip}" time='
              f'"{round(sum(r["wall_s"] for r in rows), 1)}">\n'
              + "\n".join(cases) + "\n</testsuite>\n")
     open(os.path.join(a.out, "junit.xml"), "w").write(
@@ -291,8 +330,9 @@ def main():
     open(os.path.join(a.out, "runs.json"), "w").write(
         json.dumps(rows, indent=1))
 
-    print(f"\n==== {n_pass} PASS {n_gate} GATE-PASS {n_flaky} FLAKY "
-          f"{n_fail} FAIL -> {a.out}")
+    print(f"\n==== {n_pass} PASS {n_gate} GATE-PASS {n_skip} SKIP "
+          f"{n_flaky} FLAKY {n_fail} FAIL -> {a.out}")
+    # SKIP does not fail the suite - missing hardware is not a fault
     return 1 if (n_fail or n_flaky) else 0
 
 
