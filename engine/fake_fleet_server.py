@@ -619,7 +619,8 @@ async def serve(port, ctrl_port, cert, key):
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(cert, key)
     async with websockets.serve(handler, BIND, port, ssl=ctx,
-                                compression=None, ping_interval=None):
+                                compression=None, ping_interval=None,
+                                max_size=None):
         # same 64 KiB readline cap as gcs_bridge: `send` lines carry
         # whole packages, give them real headroom
         ctl = await asyncio.start_server(control_reader, "127.0.0.1",

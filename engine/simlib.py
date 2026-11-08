@@ -164,7 +164,7 @@ MAVLINK3DMAP_DIR = setting("MAVLINK3DMAP_DIR",
 # package identity; a git tag of the same shape also matches). A
 # mismatch warns "expected X, found Y" at render gen and in `doctor` -
 # a warning, never a block: render modes degrade, they do not hard-fail.
-M3D_REQUIRED_VERSION = setting("SIM_M3D_VERSION", "1.4.0")
+M3D_REQUIRED_VERSION = setting("SIM_M3D_VERSION", "1.4.1")
 # P5-15: the headless render farm is a stock Chromium/Chrome plus the
 # sink's per-unit ffmpeg - both machine binaries
 CHROMIUM_BIN = setting("CHROMIUM_BIN", "google-chrome")
