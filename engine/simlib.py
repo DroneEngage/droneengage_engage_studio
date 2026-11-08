@@ -84,6 +84,25 @@ def setting(key, default=None):
 ENGINE_DIR = os.path.join(SIM_ROOT, "engine")
 BLOCKS_DIR = os.path.join(SIM_ROOT, "blocks")
 MODULES_DIR = os.path.join(SIM_ROOT, "modules")
+
+# SL-0226: SIM_LAB_DIR - the developer's private content tree (mylab
+# tier). Its sims/, tests/, overlays/ and worlds/ extend the search
+# paths after the repo's; a name clash with a repo file is an error
+# naming both. Absent or unset -> nothing changes.
+LAB_DIR = setting("SIM_LAB_DIR")
+
+
+def lab_dirs(kind):
+    """Search dirs for a content kind: the repo's first, then the lab
+    tree's (SIM_LAB_DIR/<kind>). kind: sims | tests | scenarios |
+    overlays | worlds."""
+    sub = {"overlays": os.path.join("sims", "overlays")}.get(kind, kind)
+    out = [os.path.join(SIM_ROOT, sub)]
+    if LAB_DIR:
+        out.append(os.path.join(LAB_DIR,
+                                "overlays" if kind == "overlays"
+                                else sub))
+    return out
 TEMPLATES_DIR = os.path.join(MODULES_DIR, "templates")
 VAR_DIR = os.path.abspath(setting("SIM_VAR_DIR", os.path.join(SIM_ROOT, "var")))
 RUN_DIR = os.path.abspath(setting("SIM_RUN_DIR", os.path.join(VAR_DIR, "run")))
@@ -1192,15 +1211,31 @@ def resolve_sim_arg(arg, kinds=("sims",), choose=False):
     name = arg[:-5] if arg.endswith(".yaml") else arg
     matches = []
     if "sims" in kinds:
-        p = os.path.join(SIM_ROOT, "sims", name + ".yaml")
-        if os.path.isfile(p):
-            matches.append(p)
+        for d in lab_dirs("sims"):
+            p = os.path.join(d, name + ".yaml")
+            if os.path.isfile(p):
+                matches.append(p)
     if "tests" in kinds:
-        matches.extend(sorted(glob.glob(os.path.join(
-            SIM_ROOT, "tests", "**", name + ".yaml"), recursive=True)))
+        for d in lab_dirs("tests"):
+            matches.extend(sorted(glob.glob(os.path.join(
+                d, "**", name + ".yaml"), recursive=True)))
     if "scenarios" in kinds:
-        matches.extend(sorted(glob.glob(os.path.join(
-            SIM_ROOT, "scenarios", "**", name + ".yaml"), recursive=True)))
+        for d in lab_dirs("scenarios"):
+            matches.extend(sorted(glob.glob(os.path.join(
+                d, "**", name + ".yaml"), recursive=True)))
+    # SL-0226: a repo/lab name clash is an error naming both files -
+    # never silently picks one
+    if LAB_DIR and len(matches) > 1:
+        repo_hit = [m for m in matches
+                    if os.path.realpath(m).startswith(
+                        os.path.realpath(SIM_ROOT))]
+        lab_hit = [m for m in matches
+                   if os.path.realpath(m).startswith(
+                       os.path.realpath(LAB_DIR))]
+        if repo_hit and lab_hit:
+            raise SimError(
+                f"name {arg!r} exists in the repo and in SIM_LAB_DIR: "
+                f"{repo_hit[0]} vs {lab_hit[0]} - rename one")
     if len(matches) == 1:
         return matches[0]
     if not matches:
@@ -1309,13 +1344,22 @@ OVERLAYS_DIR = os.path.join(SIM_ROOT, "sims", "overlays")
 
 
 def _overlay_path(name):
-    p = name if (os.sep in str(name)
-                 or str(name).endswith((".yaml", ".yml"))) \
-        else os.path.join(OVERLAYS_DIR, str(name) + ".yaml")
-    p = os.path.abspath(p)
-    if not os.path.isfile(p):
-        raise SimError(f"overlay {name!r}: no {p}")
-    return p
+    if os.sep in str(name) or str(name).endswith((".yaml", ".yml")):
+        p = os.path.abspath(name)
+        if not os.path.isfile(p):
+            raise SimError(f"overlay {name!r}: no {p}")
+        return p
+    # a bare name searches the repo overlays dir, then SIM_LAB_DIR's
+    hits = [os.path.join(d, str(name) + ".yaml")
+            for d in lab_dirs("overlays")]
+    found = [p for p in hits if os.path.isfile(p)]
+    if len(found) > 1:
+        raise SimError(
+            f"overlay {name!r} exists in the repo and in SIM_LAB_DIR: "
+            f"{found[0]} vs {found[1]} - rename one")
+    if not found:
+        raise SimError(f"overlay {name!r}: no {hits[0]}")
+    return found[0]
 
 
 def _apply_overlay(spec, name, applied, _chain=()):

@@ -772,25 +772,32 @@ def main(argv):
             def _list_files(root):
                 # (path, kind, tasks) per yaml under the root, with the
                 # SL-0137 filters applied; the spec is loaded only when
-                # a filter or the --json rows need it
-                d = os.path.join(simlib.SIM_ROOT, root)
+                # a filter or the --json rows need it. SL-0226: the lab
+                # tree (SIM_LAB_DIR) extends each root and its files are
+                # labelled [mylab]; repo files get their audience tag.
+                dirs = simlib.lab_dirs(root)
                 rows = []
-                for f in sorted(glob.glob(
-                        os.path.join(d, "**", "*.yaml"), recursive=True)):
-                    kind = simlib.kind_of(f)
-                    spec = {}
-                    if filt or json_out:
+                for d in dirs:
+                    mylab = os.path.realpath(d) != os.path.realpath(
+                        dirs[0])
+                    for f in sorted(glob.glob(
+                            os.path.join(d, "**", "*.yaml"),
+                            recursive=True)):
+                        kind = simlib.kind_of(f)
+                        spec = {}
                         spec = simlib.load_yaml(f) or {}
-                    tasks = spec.get("tasks")
-                    tasks = tasks if isinstance(tasks, list) else []
-                    tier = spec.get("tier", "regression")
-                    if filt.get("kind") and kind != filt["kind"]:
-                        continue
-                    if filt.get("tier") and tier != filt["tier"]:
-                        continue
-                    if filt.get("task") and filt["task"] not in tasks:
-                        continue
-                    rows.append((f, kind, tasks))
+                        tasks = spec.get("tasks")
+                        tasks = tasks if isinstance(tasks, list) else []
+                        tier = spec.get("tier", "regression")
+                        if filt.get("kind") and kind != filt["kind"]:
+                            continue
+                        if filt.get("tier") and tier != filt["tier"]:
+                            continue
+                        if filt.get("task") and filt["task"] not in tasks:
+                            continue
+                        aud = "mylab" if mylab else \
+                            str(spec.get("audience", "core")).lower()
+                        rows.append((f, kind, tasks, aud))
                 return rows
 
             if json_out:
@@ -801,10 +808,11 @@ def main(argv):
                          "files": [
                              {"file": os.path.relpath(f, simlib.SIM_ROOT),
                               "kind": kind, "tasks": tasks,
+                              "audience": aud,
                               "description":
                                   (_sim_one_liner(f) if root == "sims"
                                    else _one_liner(f))[:80]}
-                             for f, kind, tasks in _list_files(root)]}
+                             for f, kind, tasks, aud in _list_files(root)]}
                         for root in file_roots]
                 if "stacks" in roots:
                     import devstack
@@ -817,11 +825,13 @@ def main(argv):
                     rows = _list_files(root)
                     print(simlib.col_bold(f"{root}/")
                           + f"  ({len(rows)} files)")
-                    for f, kind, tasks in rows:
+                    for f, kind, tasks, aud in rows:
                         rel = os.path.relpath(f, simlib.SIM_ROOT)
                         one = _sim_one_liner(f) if root == "sims" \
                             else _one_liner(f)
+                        tag = {"extended": "ext"}.get(aud, aud)
                         print("  " + simlib.col_cyan(f"{rel:52s}")
+                              + simlib.col_yellow(f" [{tag:>5s}]")
                               + f" {one[:80]}")
                 if "stacks" in roots:
                     import devstack
