@@ -2,11 +2,11 @@
 
 > DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
 
-This file is the complete authoring reference for a scenario: one YAML
-file that describes a rehearsal — fleet, operation, scripted timeline,
-faults, assertions. It is written so a human **or an LLM** can produce a
-working file. Paste it whole into an LLM prompt together with what you
-want rehearsed.
+This file is the full authoring reference for a scenario. A scenario is
+one YAML file. It describes a rehearsal: fleet, operation, scripted
+timeline, faults, assertions. A human **or an LLM** can write a working
+file from this reference. Paste the whole file into an LLM prompt. Add
+what you want to rehearse.
 
 Where files live:
 
@@ -90,8 +90,8 @@ timeline: [...]                # required (may be [])
 assert:   [...]                # optional (may be [])
 ```
 
-`sim:` replaces `fleet:`+`transport:` when the fleet already lives in a
-`sims/` file:
+Use `sim:` instead of `fleet:`+`transport:` when the fleet is already
+defined in a `sims/` file:
 
 ```yaml
 sim: copters3                              # sims/copters3.yaml
@@ -99,14 +99,15 @@ sim: {base: copters3, with: [faults]}      # + overlays (see below)
 sim: ../../sims/copters3.yaml              # or a path relative to the file
 ```
 
-`with:` lists `sims/overlays/<name>.yaml` twists applied on top of the
-sim file (file order wins). An explicit `home:`/`render:` still
-overrides; `fleet:`/`transport:` together with `sim:` is an error.
+`with:` lists `sims/overlays/<name>.yaml` files applied on top of the
+sim file. File order wins. An explicit `home:` or `render:` still
+overrides the sim file. `fleet:` or `transport:` together with `sim:`
+is an error.
 
 ### Sim `params:` — a sim file's own knobs (SL-0116)
 
-A `sims/*.yaml` file may declare a top-level `params:` block; each entry
-is a knob the user can override from the command line:
+A `sims/*.yaml` file can declare a top-level `params:` block. Each
+entry is a value the user can override from the command line:
 
 ```yaml
 params:
@@ -121,28 +122,31 @@ units:
      android: {serial: "${serial}", net: "${net}"}}
 ```
 
-Every param needs a `default` and a one-line `help`; `type` is
-`str|int|float|bool` (default `str`), `choices` an optional list. After
-overlays are applied, `${name}` references anywhere in the spec are
-substituted — a whole-string `"${name}"` keeps the param's native type,
-one embedded in a longer string becomes text; a `${name}` with no
-declaration is an error. `./sim show` prints the resolved values as a
-`params: k=v ...` line (a `params` object under `--json`).
+Each param needs a `default` and a one-line `help`. `type` is
+`str|int|float|bool` (default `str`). `choices` is an optional list.
+The loader substitutes `${name}` references anywhere in the spec after
+it applies the overlays. A whole-string `"${name}"` keeps the param's
+native type. A `${name}` inside a longer string becomes text. A
+`${name}` with no declaration is an error. `./sim show` prints the
+resolved values as a `params: k=v ...` line. Under `--json` it prints
+a `params` object.
 
-`--set name=value` (repeatable, on show/up/run/try/view/studio and
-inherited by suite subprocesses through `SIM_PARAMS`) overrides a
-default: the value is coerced to the param's `type` (bool accepts
-`true/false/1/0/yes/no`) and checked against `choices`. `--set` of an
-undeclared name — or on a sim with no `params:` block — is an error.
-Because substitution happens before the fleet resolves, a different
-`--set` yields different ports/config and a different sim hash, so
-`./sim up` regenerates instead of reusing the warm sim.
+`--set name=value` overrides a default. It is repeatable on
+show/up/run/try/view/studio. Suite subprocesses inherit it through
+`SIM_PARAMS`. The value is converted to the param's `type`. A bool
+accepts `true/false/1/0/yes/no`. The value is checked against
+`choices`. `--set` of an undeclared name is an error. `--set` on a sim
+with no `params:` block is an error too. Substitution happens before
+the fleet resolves. So a different `--set` gives different ports/config
+and a different sim hash. `./sim up` then regenerates the sim instead
+of reusing the warm sim.
 
-Unknown top-level keys are rejected — the file is validated against
-`engine/de_scenario.schema.json` before anything starts.
+The loader rejects unknown top-level keys. It validates the file
+against `engine/de_scenario.schema.json` before anything starts.
 
-**All paths are relative to the scenario file.** `scenarios/x.yaml` uses
-`../packages/…`, `scenarios/examples/x.yaml` uses `../../packages/…`.
+**All paths are relative to the scenario file.** `scenarios/x.yaml`
+uses `../packages/…`. `scenarios/examples/x.yaml` uses
+`../../packages/…`.
 
 ## `fleet:` — the units
 
@@ -176,16 +180,17 @@ fleet:
 ```
 
 `cls` is `copter | plane | rover | static | comm_only` or a `blocks/`
-name. `static`/`comm_only` run no SITL. Unit `id` is the name used by
-`unit:` in steps and assertions.
+name. `static` and `comm_only` run no SITL. The unit `id` is the name
+that `unit:` uses in steps and assertions.
 
 ## `timeline:` — what happens when
 
 Every `do:` step, `fault:` kind and `assert:` check is declared once in
-`engine/registry.py` (name, args, doc, example) — `./sim verbs` prints
-the catalog, `./sim verbs --json` the machine form, and `./sim
-validate` refuses an unknown verb or a wrong arg naming the expected
-list. The tables below are the same verbs grouped for reading.
+`engine/registry.py`. Each declaration has a name, args, doc and an
+example. `./sim verbs` prints the catalog. `./sim verbs --json` prints
+the machine form. `./sim validate` refuses an unknown verb or a wrong
+arg. It names the expected list. The tables below show the same verbs,
+grouped for reading.
 
 Each step is exactly one of:
 
@@ -199,21 +204,22 @@ Each step is exactly one of:
    do: fire, event: world.reacted, unit: s1}
 ```
 
-- `t` is seconds from scenario start (after fleet bring-up + verify).
-- `on:` arms a watcher on `unit`'s de_comm journal; regex match
-  groups substitute into the step's string args as `{M1}`..`{M9}`.
-  `once` defaults to `true`. Watchers are polled between steps — a long
-  blocking `wait` starves them; prefer a `wait_journal` with timeout.
+- `t` is seconds from scenario start. The clock starts after fleet
+  bring-up + verify.
+- `on:` arms a watcher on `unit`'s de_comm journal. Regex match groups
+  substitute into the step's string args as `{M1}`..`{M9}`. `once`
+  defaults to `true`. Watchers are polled between steps. A long
+  blocking `wait` starves them. Prefer a `wait_journal` with a timeout.
 - `on: {world: <entity_id>, re: ...}` (SL-0013) watches `truth.jsonl`'s
-  `world_event` rows for that entity instead of a journal — e.g. the
+  `world_event` rows for that entity instead of a journal. Example: the
   `react` row the truth tick logs when a `react:` trigger latches. The
-  step's `unit:` is NOT defaulted from the trigger; name it yourself.
+  step's `unit:` is NOT set from the trigger. Name it yourself.
 - The run ends `settle_s` seconds after the last `t`.
 
 ### `do:` steps
 
-Operator actions (go through the GCS operator bot — the fleet sees one
-consistent operator):
+Operator actions go through the GCS operator bot. The fleet sees one
+consistent operator:
 
 | `do:` | args | meaning |
 |---|---|---|
@@ -224,13 +230,13 @@ consistent operator):
 | `revoke_launch` | `unit`, `timeout` | void the unit's launch grant (1094) |
 | `operator` | `act` | act as the operator (below) |
 
-`operator` acts: `approve`/`deny` (`unit`, optional `req`, `kind`),
+The `operator` acts are: `approve`/`deny` (`unit`, optional `req`, `kind`),
 `confirm`/`dismiss` (`tid`), `fire` (`event`, `payload`, `unit`),
 `activate`/`pause`/`resume`/`stop`/`clear` (mission control 1086),
 `deploy`, `start`, `abort`.
 
-All runner steps (every other name delegates to the test runner; `unit:`
-takes a name, `all`, a comma list, or `block:<name>`):
+All runner steps are below. Every other name delegates to the test
+runner. `unit:` takes a name, `all`, a comma list, or `block:<name>`:
 
 | step | args |
 |---|---|
@@ -301,17 +307,18 @@ takes a name, `all`, a comma list, or `block:<name>`):
 | `clock_step` | `unit`, `offset_s`, `dur_s` — SL-0014: step a `faketime: true` unit's de_comm clock by signed seconds via its `FAKETIME_TIMESTAMP_FILE` (per-process libfaketime, no adjtimex); `dur_s` steps back to `+0` |
 | `udp_chunks` | `unit`, `module`, `drop_pct`, `reorder`, `dup_pct`, `seed`, `dur_s` — seeded chunk faults on the module↔de_comm s2s proxy (any transport) |
 
-`dur_s` auto-restores where it applies: `link_cut` expires server-side;
-`loss`/`delay` run `link_clear`; `kill`/`module_kill` restart the proc;
-`fcb_unplug` replugs the serial bridge; `server_down` relaunches the
-server; `freeze`/`battery`/`gps_off`/`no_time_sync`/`server_clock`/
-`rc_override`/`gcs_disconnect` undo themselves. `unit` accepts `all`.
+`dur_s` auto-restores where it applies. `link_cut` expires server-side.
+`loss` and `delay` run `link_clear`. `kill` and `module_kill` restart
+the proc. `fcb_unplug` replugs the serial bridge. `server_down`
+relaunches the server. `freeze`, `battery`, `gps_off`, `no_time_sync`,
+`server_clock`, `rc_override` and `gcs_disconnect` undo themselves.
+`unit` accepts `all`.
 
 ## `chaos:` — a seeded fault schedule (optional)
 
-A `chaos:` block draws a fault schedule at **load time** and inlines it
-into the timeline as ordinary `fault:` steps — no RNG exists at run
-time, so the same seed always produces the same schedule:
+A `chaos:` block draws a fault schedule at **load time**. It inlines
+the schedule into the timeline as ordinary `fault:` steps. No RNG runs
+at run time. So the same seed always gives the same schedule:
 
 ```yaml
 chaos:
@@ -326,140 +333,140 @@ chaos:
   until_t: 1700                    # end (default: the timeline's last t)
 ```
 
-Rules the loader enforces at `validate` time:
+The loader enforces these rules at `validate` time:
 
-- Every kind must be one the **transport** serves — link/clock faults
-  (`link_cut`, `loss`, `delay`, `server_clock`, `no_time_sync`) only on
-  `transport: fake`.
+- Every kind must be one the **transport** serves. Link/clock faults
+  (`link_cut`, `loss`, `delay`, `server_clock`, `no_time_sync`) run
+  only on `transport: fake`.
 - FC faults (`battery`, `gps_off`, `rc_override`, `mode`) need at least
-  one FC unit in `units:`, and draw only from FC units.
-- Overlapping windows of the **same unit+kind** are never drawn (a
-  scripted `fault:` step's window counts too).
+  one FC unit in `units:`. They draw only from FC units.
+- Overlapping windows of the **same unit+kind** are never drawn. A
+  scripted `fault:` step's window counts too.
 - A chaos scenario must carry **at least one run-wide invariant
   assertion** (`no_unexpected_restart`, `rss_growth`, `fd_growth`,
-  `journal_size`, `recovers_after_fault`, `no_stuck_state`) — an
+  `journal_size`, `recovers_after_fault`, `no_stuck_state`). An
   unscripted run proves nothing without one.
-- `module_kill`/`freeze` without a `module:`/`proc:` pick a random module
-  of the drawn unit; `server_down`/`gcs_disconnect`/`server_clock` are
-  fleet-scoped and get no `unit:`.
+- `module_kill` and `freeze` without a `module:`/`proc:` pick a random
+  module of the drawn unit. `server_down`, `gcs_disconnect` and
+  `server_clock` are fleet-scoped. They get no `unit:`.
 
-The expansion is printed when the run starts and written to
-`var/results/<run>/expanded.yaml` — a valid de.scenario/1 file (chaos:
-removed, steps inlined, paths absolutized). `./sim expand <file>
-[--seed N]` prints the same file without running anything; a failing
-seed's `expanded.yaml` reruns as a fixed regression
-(`./sim run <out>/expanded.yaml`).
+The expansion is printed when the run starts. It is also written to
+`var/results/<run>/expanded.yaml`. That file is a valid de.scenario/1
+file: `chaos:` removed, steps inlined, paths absolutized. `./sim expand
+<file> [--seed N]` prints the same file and runs nothing. A failing
+seed's `expanded.yaml` reruns as a fixed regression with `./sim run
+<out>/expanded.yaml`.
 
-Long wall-clock soaks live in `tests/soak/` — the default `./sim suite`
-/ `ci/run_suite.py` roots skip them; run one explicitly with
-`./sim suite tests/soak` or `--roots tests/soak` (DE timers are
-wall-clock: soaks always run at speed-up 1, e.g.
-`tests/soak/soak_copters3.yaml`).
+Long wall-clock soaks live in `tests/soak/`. The default `./sim suite`
+and `ci/run_suite.py` roots skip them. Run one explicitly with `./sim
+suite tests/soak` or `--roots tests/soak`. DE timers are wall-clock. So
+soaks always run at speed-up 1. Example: `tests/soak/soak_copters3.yaml`.
 
-The `fcb_*` faults need `fcb_proxy: true` on the unit (or the sim) —
-they ride a per-unit MAVLink-aware TCP proxy (`engine/fcb_proxy.py`)
-inserted between `de_mavlink` and SITL's serial1 port:
+The `fcb_*` faults need `fcb_proxy: true` on the unit or on the sim.
+They ride a per-unit MAVLink-aware TCP proxy (`engine/fcb_proxy.py`).
+The proxy sits between `de_mavlink` and SITL's serial1 port:
 
     de_mavlink ──▶ proxy listen 7760+10k ──▶ SITL serial1 7660+10k
                         control 7860+10k (`./sim ctl fcb_*`, runner steps)
 
-The proxy is a pidfile'd unit proc (`proc_alive: {proc: fcb_proxy}`
-works; `sim down` kills it) and works on **any transport** — it is
-ours, not the server's, so `transport: real` is fine. Cut exercises
-de_mavlink's reconnect path (its log shows `TCP connection closed by
-remote` then `TCP Client connected`); stall keeps the sockets open so
-no close is logged — a frozen UART, not a cut; corrupt drops whole
-frames or flips one bit inside a frame (frame-aware, so the TCP stream
-never desyncs — a "dropped byte" kills its whole frame at
-`pct × frame_len` rate, matching the same byte-error channel). The
-same control port takes `do:`/`ctl` steps `fcb_drop` (one msgid only),
-`fcb_inject` (raw MAVLink hex towards de_mavlink — the TASK-14 ADS-B
-hook), `fcb_clear` and `fcb_stats`. The serial2 aux telemetry port and
-the GCS pilot port bypass the proxy, so `telemetry_*`/`mission_items`
-asserts keep working through a cut. Without `fcb_proxy` a unit is
-unchanged — same hash, `de_mavlink` dials SITL directly.
+The proxy is a pidfile'd unit proc. `proc_alive: {proc: fcb_proxy}`
+works on it. `sim down` kills it. It works on **any transport**. It is
+ours, not the server's. So `transport: real` is fine. Cut exercises
+de_mavlink's reconnect path. Its log shows `TCP connection closed by
+remote`, then `TCP Client connected`. Stall keeps the sockets open. No
+close is logged. A stall is a frozen UART, not a cut. Corrupt drops
+whole frames or flips one bit inside a frame. It is frame-aware, so the
+TCP stream never desyncs. A "dropped byte" kills its whole frame at a
+`pct × frame_len` rate. This matches the same byte-error channel. The
+same control port takes the `do:`/`ctl` steps `fcb_drop` (one msgid
+only), `fcb_inject` (raw MAVLink hex towards de_mavlink — the TASK-14
+ADS-B hook), `fcb_clear` and `fcb_stats`. The serial2 aux telemetry
+port and the GCS pilot port bypass the proxy. So `telemetry_*` and
+`mission_items` asserts keep working through a cut. Without `fcb_proxy`
+a unit is unchanged: same hash, `de_mavlink` dials SITL directly.
 
 `fcb_link: {kind: pty, baud: <N>}` (SL-0102, unit or sim level) puts a
-real serial device in front of that same proxy: a pidfile'd `fcb_tty`
-proc runs `socat` bridging `<run>/<unit>/fcb.tty` ↔ the proxy's listen
-port, arms the link baud as a proxy `rate` rule (SL-0101 — a real UART
-cannot move bytes faster than baud/10 B/s), and `de_mavlink` opens the
-pty like hardware (`connectSerial on .../fcb.tty baudrate <N>` in its
-log, `dynamic: false` — it must exist at start; the module's own
-launch script waits for it). Every `fcb_*` fault/stats/ctl command
-works on the link — it is the same proxy, just with a serial front:
+real serial device in front of that same proxy. A pidfile'd `fcb_tty`
+proc runs `socat`. The socat bridges `<run>/<unit>/fcb.tty` ↔ the
+proxy's listen port. It also arms the link baud as a proxy `rate` rule
+(SL-0101). A real UART cannot move bytes faster than baud/10 B/s.
+`de_mavlink` opens the pty like hardware. Its log shows `connectSerial
+on .../fcb.tty baudrate <N>` and `dynamic: false`. The pty must exist
+at start. The module's own launch script waits for it. Every `fcb_*`
+fault/stats/ctl command works on the link. It is the same proxy, only
+with a serial front:
 
     de_mavlink --/dev/fcb.tty--> socat --> proxy 7760+10k --> SITL serial1
 
-`kind: tcp` (the default) is today's wiring and records nothing for a
-local client — `fcb_link` with any other kind on a no-fc unit is a
-spec error, and a serial kind forces `fcb_proxy` on. `sim down` kills
-the socat (the pty and its link file die with it); `./sim doctor`
-requires `socat` only when a sim uses a serial kind.
+`kind: tcp` (the default) is today's wiring. It records nothing for a
+local client. `fcb_link` with any other kind on a no-fc unit is a spec
+error. A serial kind forces `fcb_proxy` on. `sim down` kills the socat.
+The pty and its link file die with it. `./sim doctor` requires `socat`
+only when a sim uses a serial kind.
 
 `kind: tcp` *with* `fc_client: external` (SL-0106) is the off-host
-twin: the unit runs SITL + the fcb proxy (forced on, bound to
-`0.0.0.0` — external units always bind the listen port on every
-interface) and the client dials `<host-LAN-ip>:7760+10k` like a FC
-TCP endpoint. No bridge proc exists (TCP needs no front), so
-`fcb_unplug` refuses — use `fault: fcb_cut` for the drop/redial
-cycle; `fcb_stats` proves the traffic
-(`tests/fcb_link/tcp_andruav.yaml`).
+twin. The unit runs SITL + the fcb proxy. The proxy is forced on and
+bound to `0.0.0.0`. External units always bind the listen port on every
+interface. The client dials `<host-LAN-ip>:7760+10k` like a FC TCP
+endpoint. No bridge proc exists. TCP needs no front. So `fcb_unplug`
+refuses. Use `fault: fcb_cut` for the drop/redial cycle. `fcb_stats`
+proves the traffic. See `tests/fcb_link/tcp_andruav.yaml`.
 
 `fcb_link: {kind: udp, peer: <client-ip>:<port>}` (SL-0106) is for a
-client that only listens — Andruav's UDP FCB connection learns its
-peer from the first inbound datagram and never sends first, so the
-sim must push. A pidfile'd `fcb_udp` socat proc pushes the proxy's
-byte stream to `peer` (the phone's LAN ip + its configured UDP port)
-and pipes replies back into the proxy; its own UDP source port is
-ephemeral. `fcb_unplug`/`fcb_plug` kill and restart the bridge —
-the client sees the stream stop and resume. `peer` is required and
-bench-specific, like `device:` on host_serial
-(`tests/fcb_link/udp_andruav.yaml`).
+client that only listens. Andruav's UDP FCB connection learns its peer
+from the first inbound datagram. It never sends first. So the sim must
+push. A pidfile'd `fcb_udp` socat proc pushes the proxy's byte stream
+to `peer`. `peer` is the phone's LAN ip + its configured UDP port. The
+proc pipes replies back into the proxy. Its own UDP source port is
+ephemeral. `fcb_unplug` and `fcb_plug` kill and restart the bridge. The
+client sees the stream stop and resume. `peer` is required and
+bench-specific, like `device:` on host_serial. See
+`tests/fcb_link/udp_andruav.yaml`.
 
 `fcb_link: {kind: host_serial, device: /dev/ttyUSBn, baud: <N>}`
-(SL-0104) swaps the virtual pty for a real host USB-serial adapter —
-the wire an `fc_client: external` device (a phone on USB-OTG, a Pi;
-wiring in docs/HIL.md) attaches to. The unit then starts SITL + the
-proxy + the bridge only: no local de_comm/de_mavlink, and `sim up`
-does not wait for it online (its party never joins the roster).
-`kind: host_serial` requires `fc_client: external` — a local
-de_mavlink opening the same adapter would fight the bridge for it.
-A scenario whose fleet wants a missing device SKIPs cleanly before
-bring-up (`tests/fcb_link/host_serial_external.yaml`).
+(SL-0104) swaps the virtual pty for a real host USB-serial adapter.
+That adapter is the wire an `fc_client: external` device attaches to.
+Examples: a phone on USB-OTG, a Pi. Wiring is in docs/HIL.md. The unit
+then starts SITL + the proxy + the bridge only. There is no local
+de_comm/de_mavlink. `sim up` does not wait for it online. Its party
+never joins the roster. `kind: host_serial` requires `fc_client:
+external`. A local de_mavlink opening the same adapter would fight the
+bridge for it. A scenario whose fleet wants a missing device SKIPs
+cleanly before bring-up. See `tests/fcb_link/host_serial_external.yaml`.
 
 `fcb_link: {kind: bt_spp, channel: <1-30>}` (SL-0105) is the wireless
-twin: instead of a socat bridge, the pidfile'd `bt_spp` proc runs
-`engine/bt_spp_bridge.py` — an RFCOMM SPP server on the host's
-Bluetooth adapter piped to the proxy's listen port, one client at a
-time. The `fc_client: external` device pairs with the host and dials
-the channel like a drone FC port (pairing in docs/HIL.md). `baud` is
-optional — when given it arms the same proxy `rate` rule the wired
-kinds use. `fcb_unplug`/`fcb_plug` kill and restart the bridge proc,
-`fcb_stats` proves the traffic. A run skips cleanly when the host has
-no UP Bluetooth controller
-(`tests/fcb_link/bt_spp_external.yaml`), and `./sim doctor` reports
-the adapter, a bluetooth-capable python, and the sdptool/`--compat`
-state SPP discovery needs.
+twin. It uses no socat bridge. The pidfile'd `bt_spp` proc runs
+`engine/bt_spp_bridge.py`. That is an RFCOMM SPP server on the host's
+Bluetooth adapter. It is piped to the proxy's listen port. It serves
+one client at a time. The `fc_client: external` device pairs with the
+host. It dials the channel like a drone FC port. Pairing is in
+docs/HIL.md. `baud` is optional. When given, it arms the same proxy
+`rate` rule the wired kinds use. `fcb_unplug` and `fcb_plug` kill and
+restart the bridge proc. `fcb_stats` proves the traffic. A run skips
+cleanly when the host has no UP Bluetooth controller. See
+`tests/fcb_link/bt_spp_external.yaml`. `./sim doctor` reports the
+adapter, a bluetooth-capable python, and the sdptool/`--compat` state
+SPP discovery needs.
 
-`clock_step` needs the unit's fleet entry to carry `faketime: true` —
-de_comm must launch under libfaketime (there is no retroactive
-LD_PRELOAD), and validation fails when libfaketime is not installed
-(`SIM_FAKETIME_LIB` in `sim.local.env` pins a non-standard `.so`).
+`clock_step` needs `faketime: true` on the unit's fleet entry. de_comm
+must launch under libfaketime. There is no retroactive LD_PRELOAD.
+Validation fails when libfaketime is not installed. `SIM_FAKETIME_LIB`
+in `sim.local.env` pins a non-standard `.so`.
 
-`udp_chunks` is the local-transport fault, not a server-link one, so it
+`udp_chunks` is a local-transport fault, not a server-link one. So it
 works on `transport: real` too. A `fault: udp_chunks` step makes the
 loader wire a `udp_proxy_<module>` process between that module and
-de_comm from sim-up (the unit `udp_proxy: [module]` opt-in is injected
-automatically; you may also write it on the fleet/sim entry yourself to
-get the proxy without a fault step — it then relays pass-through until
-a `do: udp_chunks` or `./sim ctl udp_chunks` flips knobs). The proxy is
-a pidfile-tracked unit proc (starts before its module, dies with the
-sim, shows in `proc_alive`), and the same `drop_pct`/`reorder`/`dup_pct`
-knobs are reachable live as `./sim ctl udp_chunks <unit> <module> ...`
-(`clear`/`stats` included). See `engine/udp_proxy.py` for the chunk
-semantics: drop is per-datagram, dup/reorder act on whole messages so a
-multi-chunk transfer is never corrupted by reordering.
+de_comm from sim-up. The unit `udp_proxy: [module]` opt-in is injected
+automatically. You can also write it on the fleet/sim entry yourself.
+That gives the proxy without a fault step. The proxy then relays
+pass-through until a `do: udp_chunks` or `./sim ctl udp_chunks` flips
+knobs. The proxy is a pidfile-tracked unit proc. It starts before its
+module. It dies with the sim. It shows in `proc_alive`. The same
+`drop_pct`/`reorder`/`dup_pct` knobs are reachable live as `./sim ctl
+udp_chunks <unit> <module> ...`. `clear` and `stats` are included. See
+`engine/udp_proxy.py` for the chunk semantics. Drop is per-datagram.
+Dup and reorder act on whole messages. So a multi-chunk transfer is
+never corrupted by reordering.
 
 ## `assert:` — what proves it
 
@@ -508,37 +515,39 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `time_to_detect` | `max_s` | first find latency |
 | `clock_spread` / `mission_current` / `journal_consistent` / `final_state` / `fc_items_unchanged_without_cause` / `no_fc_command_to_static` / `max_latency` / `stub_deterministic` / `signals_in_range` / `visible_px` / `render_latency` / `no_sep_violation` / `detection_precision_render` | see `engine/checks.py` `DISPATCH` |
 
-The udp_relay scenarios under `tests/udp_relay/` (full index with every
-file in `docs/udp_relay_scenarios.md`); the SL-0182 flood/change-port
-set and the case each one proves:
+The udp_relay scenarios live under `tests/udp_relay/`.
+`docs/udp_relay_scenarios.md` has the full index of every file. The
+SL-0182 flood/change-port set is below. Each entry names the case it
+proves:
 
 - `relay_flood_msgs.yaml` — many 127.0.0.x sources raise one waiting
   request, a growing `others` count and few operator messages.
 - `relay_flood_reject_bound.yaml` — the reject list stays within its
   maximum under a flood.
 - `relay_change_port_stray.yaml` — after `change_port` the stray source
-  hits a dead port: no attempts, no rejected-counter growth.
+  hits a dead port. There are no attempts and no rejected-counter
+  growth.
 - `relay_change_port_lock.yaml` — after `change_port` the first GCS on
   the new port locks in with no IP restriction.
 - `relay_deu1_token.yaml` — the DEU1 drone-side token still pins the
   unit side after the flood and after `change_port` (DE-0067).
 
-An unknown assertion or fault name fails **validation**, not the run —
+An unknown assertion or fault name fails **validation**, not the run.
 `./sim validate` catches it before anything is launched.
 
 **Run-wide invariants.** A 1 Hz sampler thread records every tracked
-process's pid / RSS / open-fd count into `results/samples.jsonl` for the
-whole run — one row per second per pidfile process, simulator-owned pids
-only. The invariant assertions above read that file (plus
-`links.jsonl`, the tlog and journals), so they work on chaos/soak runs
-with no per-step scripting. A pid change is *expected* only inside a
-fault window the runner recorded (`kill`, `restart`, `module_kill`,
-`server_down`, or the `do:` lifecycle steps `reset`/`server_up`/`land`);
-anything else fails `no_unexpected_restart` — a `do: kill` is *not* a
-fault window (see `scenarios/examples/unexpected_restart.yaml` for the
-negative case). `recovers_after_fault` needs `transport: fake` or
-`link_proxy` for the link evidence to be meaningful; on non-FC units it
-checks the link only.
+process's pid / RSS / open-fd count into `results/samples.jsonl` for
+the whole run. It writes one row per second per pidfile process. It
+records simulator-owned pids only. The invariant assertions above read
+that file. They also read `links.jsonl`, the tlog and the journals. So
+they work on chaos/soak runs with no per-step scripting. A pid change
+is *expected* only inside a fault window the runner recorded. Those
+windows are `kill`, `restart`, `module_kill`, `server_down`, or the
+`do:` lifecycle steps `reset`/`server_up`/`land`. Anything else fails
+`no_unexpected_restart`. A `do: kill` is *not* a fault window. See
+`scenarios/examples/unexpected_restart.yaml` for the negative case.
+`recovers_after_fault` needs `transport: fake` or `link_proxy` for the
+link evidence to be meaningful. On non-FC units it checks the link only.
 
 ## `operator:` — standing policy (optional)
 
@@ -548,11 +557,12 @@ operator:
   confirm: {person: {after_s: 10}}
 ```
 
-The bot auto-approves/-confirms matching requests after the delay, and
-re-sends its decisions (2–30 s backoff) while roster `wm` digests
-disagree — like the WebClient's 1093 resend. A rule value of `none`
-(`approve: {launch: none}`) is the explicit "the operator never
-answers" posture: the request stays pending and times out live.
+The bot auto-approves and auto-confirms matching requests after the
+delay. It re-sends its decisions with a 2–30 s backoff while roster
+`wm` digests disagree. This matches the WebClient's 1093 resend. A rule
+value of `none` (`approve: {launch: none}`) is the explicit "the
+operator never answers" posture. The request stays pending and times
+out live.
 
 ## `verify:` — the deploy gate (optional)
 
@@ -565,23 +575,25 @@ verify: {cli: ..., proceed_rules: [CAP-008]}                 # deploy anyway,
                                                             # exactly these
 ```
 
-Without `expect_*`/`proceed_rules` a clean verify is required. With
+Without `expect_*` or `proceed_rules` a clean verify is required. With
 `expect_*`, the run is a GATE-PASS only when the verifier blocks with
-exactly those findings (the scenario never deploys). `proceed_rules` is
-the negative-control opt-in: the findings are recorded in verify.json
-(`gate_proceed`) and the run proceeds to deploy only when the error set
-matches exactly - an extra or missing rule still stops the run at the
-gate.
+exactly those findings. The scenario never deploys then.
+`proceed_rules` is the negative-control opt-in. The findings are
+recorded in verify.json (`gate_proceed`). The run proceeds to deploy
+only when the error set matches exactly. An extra or missing rule still
+stops the run at the gate.
 
 ## `world:` — seeded truth (optional)
 
 `worlds/*.yaml` define entities, motion, obstacles, transmitters,
 clutter, environment (sun/wind/visibility/ambient temperature) and
-camera/SDR/precland sensor models — entities may carry `temp_c` for the
-thermal camera's contrast estimate (see `engine/world.py`'s header). A `world:` drives the `stub_*` modules (`modules:` entries on
-fleet units), feeds `truth.jsonl`, and powers the truth/coverage/
-detection assertions. `render:` (`viewer|cameras|physics|full`,
-`headless`) adds the world stream + Mavlink3DMap.
+camera/SDR/precland sensor models. Entities may carry `temp_c` for the
+thermal camera's contrast estimate. See `engine/world.py`'s header. A
+`world:` drives the `stub_*` modules. Those are the `modules:` entries
+on fleet units. It feeds `truth.jsonl`. It powers the
+truth/coverage/detection assertions. `render:`
+(`viewer|cameras|physics|full`, `headless`) adds the world stream +
+Mavlink3DMap.
 
 An entity may react to the fleet (SL-0013):
 
@@ -592,27 +604,28 @@ entities:
                     then: {kind: flee, speed_mps: 1.2}}}}
 ```
 
-`near.unit` names a fleet unit, `near.unit_cls` matches the fleet `cls`
-(exactly one required); `dist_m` is horizontal ground distance.
-`then.kind` is `flee` (walk straight away from the recorded threat
-pose at `speed_mps`), `freeze` (hold the trigger position) or `seek`
-(walk to the recorded pose). The reaction is evaluated by a SINGLE
-authority — the runner's 1 Hz truth tick — which latches one knot per
-entity into `var/run/<sim>/world_overrides.jsonl` and logs a
-`world_event` row to `truth.jsonl`; the stubs and the world stream
-read the same file, so truth, detections and the render feed agree.
-A reactive world is excluded from golden byte-identity (the authority
-is wall-clock — statistically reproducible only). See
+`near.unit` names a fleet unit. `near.unit_cls` matches the fleet
+`cls`. Exactly one of the two is required. `dist_m` is horizontal
+ground distance. `then.kind` is `flee`, `freeze` or `seek`. `flee`
+walks straight away from the recorded threat pose at `speed_mps`.
+`freeze` holds the trigger position. `seek` walks to the recorded pose.
+A SINGLE authority evaluates the reaction: the runner's 1 Hz truth
+tick. The tick latches one knot per entity into
+`var/run/<sim>/world_overrides.jsonl`. It also logs a `world_event` row
+to `truth.jsonl`. The stubs and the world stream read the same file. So
+truth, detections and the render feed agree. A reactive world is
+excluded from golden byte-identity. The authority is wall-clock. It is
+statistically reproducible only. See
 `tests/worlds/world_react_flee.yaml`.
 
 ### `cls: aircraft` — scripted ADS-B intruders
 
-An entity with `cls: aircraft` is an airborne intruder the runner feeds
-down the fcb proxy: once a second the scenario runner encodes the
-aircraft's truth position into a MAVLink `ADSB_VEHICLE` frame and
-`inject`s it through the control port of every `fcb_proxy: true` FC
-unit, so de_mavlink parses and forwards it exactly like SITL's own
-SIM_ADSB traffic — GCS-side, it is indistinguishable. See
+An entity with `cls: aircraft` is an airborne intruder. The runner
+feeds it down the fcb proxy. Once a second, the scenario runner encodes
+the aircraft's truth position into a MAVLink `ADSB_VEHICLE` frame. It
+`inject`s the frame through the control port of every `fcb_proxy: true`
+FC unit. de_mavlink parses and forwards it exactly like SITL's own
+SIM_ADSB traffic. GCS-side, it is indistinguishable. See
 `tests/worlds/world_adsb_intruder.yaml` + `worlds/airspace_intruder.yaml`.
 
 ```yaml
@@ -621,30 +634,30 @@ SIM_ADSB traffic — GCS-side, it is indistinguishable. See
    path: [[-35.3615, 149.1652], [-35.3615, 149.1696], ...]}
 ```
 
-- `icao` (required): ICAO-24 address — hex (`"0xAC0DE1"`, `"ac0de1"`,
-  `"AC:0D:E1"`) or decimal; asserted as `ADSB_VEHICLE.ICAO_address`.
+- `icao` (required): ICAO-24 address. Hex (`"0xAC0DE1"`, `"ac0de1"`,
+  `"AC:0D:E1"`) or decimal. It is asserted as `ADSB_VEHICLE.ICAO_address`.
 - `callsign`: ≤ 8 chars (default `ADRONE`), padded to the 9-byte field.
-- `alt_m`: metres **above home**; the frame carries
-  `altitude_type: 0` (baro) and `home_alt + alt_m` in the millimetre
-  AMSL field. A bare `alt_m` with no `pos`/`path` parks the aircraft
-  directly over the fleet's first home.
+- `alt_m`: metres **above home**. The frame carries `altitude_type: 0`
+  (baro) and `home_alt + alt_m` in the millimetre AMSL field. A bare
+  `alt_m` with no `pos` or `path` parks the aircraft directly over the
+  fleet's first home.
 - `heading`, `hor_velocity`, `ver_velocity`: cm-deg / cm/s / cm/s
-  values stamped into every frame (default heading follows the path).
+  values stamped into every frame. The default heading follows the path.
 - `emitter_type` (1 = light), `squawk` (1200), `tslc` (0): raw
-  `ADSB_VEHICLE` fields; `flags` always mark position/altitude/
+  `ADSB_VEHICLE` fields. `flags` always mark position/altitude/
   heading/callsign/ICAO valid.
 - `speed_mps` (10), `turn_rate`, `loop`, `attach`, `behaviour`: the
-  usual world motion machinery applies, so an intruder can patrol,
+  usual world motion machinery applies. So an intruder can patrol,
   follow a person, or run a swarm behaviour like any other entity.
 
 The feeder only runs when the scenario declares a `world:` **and** at
-least one fleet unit sets `fcb_proxy: true` — without a proxy there is
-no injection path. It needs no extra scenario keys; the `adsb_vehicle`
+least one fleet unit sets `fcb_proxy: true`. Without a proxy there is
+no injection path. It needs no extra scenario keys. The `adsb_vehicle`
 assertion reads the evidence the GCS bridge logs.
 
-SITL can also spawn **random** ADS-B traffic with no world and no
-code: `SIM_ADSB_COUNT` / `SIM_ADSB_RADIUS` / `SIM_ADSB_ALT` /
-`SIM_ADSB_TX_FAIL` are ordinary SITL params, so they go through fleet
+SITL can also spawn **random** ADS-B traffic with no world and no code.
+`SIM_ADSB_COUNT` / `SIM_ADSB_RADIUS` / `SIM_ADSB_ALT` /
+`SIM_ADSB_TX_FAIL` are ordinary SITL params. So they go through fleet
 `params:` like any other override:
 
 ```yaml
@@ -653,32 +666,36 @@ fleet:
        SIM_ADSB_RADIUS: 3000, SIM_ADSB_ALT: 200}}
 ```
 
-Those intruders are random per run — use a world aircraft when the
-assertion needs a known ICAO and position, SIM_ADSB when you want to
-stress the GCS display path with uncontrolled traffic.
+Those intruders are random per run. Use a world aircraft when the
+assertion needs a known ICAO and position. Use SIM_ADSB when you want
+to stress the GCS display path with uncontrolled traffic.
 
 ## Conventions & gotchas
 
-- First line must be a `#` comment — the "what it proves" paragraph.
-- Link faults refuse on bare `transport: real` — add `link_proxy: true`
-  to run the byte-level ones against the real server (`link_cut`,
-  `link_stall`, `link_profile`, `delay`, `kick`, `link` subs
-  stall/ge/bw/jitter/delay/profile/cut/clear). `loss`/`loss_tx`/`loss_rx`,
-  loss-knob profiles and all clock faults stay fake-only. Real transport
-  exercises the actual comm server (and optional authenticator).
-- `teardown: land` for anything that flies — a reused airborne fleet
+- The first line must be a `#` comment. It is the "what it proves"
+  paragraph.
+- Link faults refuse on bare `transport: real`. Add `link_proxy: true`
+  to run the byte-level ones against the real server. Those are
+  `link_cut`, `link_stall`, `link_profile`, `delay`, `kick`, and the
+  `link` subs stall/ge/bw/jitter/delay/profile/cut/clear.
+  `loss`/`loss_tx`/`loss_rx`, loss-knob profiles and all clock faults
+  stay fake-only. Real transport exercises the actual comm server and
+  the optional authenticator.
+- Use `teardown: land` for anything that flies. A reused airborne fleet
   drains batteries and fails the next run's `battery_low`.
-- SITL needs ~1–2 min for GPS/EKF; `arm` waits for it, but plan the
-  timeline (`deploy` before `arm`, `mode: GUIDED` before a nav deploy).
-- `on:` is a YAML 1.1 boolean key — write it bare, the loader fixes it.
+- SITL needs ~1–2 min for GPS/EKF. `arm` waits for it. Still plan the
+  timeline. Put `deploy` before `arm`. Put `mode: GUIDED` before a nav
+  deploy.
+- `on:` is a YAML 1.1 boolean key. Write it bare. The loader fixes it.
 - Journal `re:` patterns (wait_journal, on:, journal_count, ...) match
-  only the `<KIND> <msg>` text — the `<ts> <engine> <mission> <seq>`
-  header fields are never searched. To wait on mission progress use a
-  msg-level anchor (an `ACTION`/`EMIT`/`fc` line at that seq), not a
-  header shape like `RUNNING <mission> <seq>` — that can never match.
-- Each run writes `var/results/<utc>/<name>/`: journals, logs, tlog,
-  operator.log, truth.jsonl, samples.jsonl, verify.json, summary.json,
-  junit.xml.
+  only the `<KIND> <msg>` text. The `<ts> <engine> <mission> <seq>`
+  header fields are never searched. To wait on mission progress, use a
+  msg-level anchor. That is an `ACTION`/`EMIT`/`fc` line at that seq.
+  Do not use a header shape like `RUNNING <mission> <seq>`. It can
+  never match.
+- Each run writes `var/results/<utc>/<name>/`. Contents: journals,
+  logs, tlog, operator.log, truth.jsonl, samples.jsonl, verify.json,
+  summary.json, junit.xml.
   Exit 0 = every non-SKIP assertion passed.
 
 ## A complete example
@@ -712,7 +729,7 @@ teardown: land
 
 ## Recording a live session — `./sim record`
 
-Instead of writing the timeline by hand you can *capture* one:
+You can *capture* a timeline instead of writing it by hand:
 
 ```sh
 ./sim record sims/copters3.yaml -o scenarios/my_recording.yaml
@@ -721,9 +738,9 @@ Instead of writing the timeline by hand you can *capture* one:
 ```
 
 A generated `command_plugin` in the sim's comm server stamps every
-inbound frame pre-routing into `var/run/<sim>/session.jsonl` (the
-TASK-24 seam; `de_server` restarts once so the plugin loads). On
-Ctrl-C the GCS-sourced rows map onto registry verbs and land as the
+inbound frame pre-routing into `var/run/<sim>/session.jsonl`. This is
+the TASK-24 seam. `de_server` restarts once so the plugin loads. On
+Ctrl-C the GCS-sourced rows map onto registry verbs. They land as the
 scenario's timeline:
 
 | wire frame | step |
@@ -742,15 +759,16 @@ scenario's timeline:
 | anything else | `# unmapped: <mt> <json>` comment in the timeline — never silently dropped |
 
 `t` offsets are server-stamped seconds from record start. The fleet
-comes from `sim:` (the recorded sim's source file plus any `--with`
-overlays), `operation:` from the captured deploy, `assert:` is a TODO
-block, and a `<name>.md` runbook stub is written beside the yaml.
+comes from `sim:`. That is the recorded sim's source file plus any
+`--with` overlays. `operation:` comes from the captured deploy.
+`assert:` is a TODO block. A `<name>.md` runbook stub is written beside
+the yaml.
 
-Limits: `server: {type: fake}` is refused (no plugin seam);
+Limits: `server: {type: fake}` is refused. It has no plugin seam.
 `server: {type: external}` needs the printed plugin path added to your
-own stack's `command_plugin`. Frames sent by the engine itself (the
-ctl bridge `GCS_FLEET`, the operator bot `GCS_OPERATOR`) are filtered
-out — a recorded run captures only the human's GCS sessions.
+own stack's `command_plugin`. Frames sent by the engine itself are
+filtered out. Those are the ctl bridge `GCS_FLEET` and the operator bot
+`GCS_OPERATOR`. A recorded run captures only the human's GCS sessions.
 
 ### The lab contract (SL-0223)
 
@@ -758,16 +776,16 @@ A test with `audience: lab` measures the user's own hardware. It runs
 only under `./sim suite --tier lab` and never in the default core suite.
 
 - `--target user@host` (or `SIM_TARGET` in sim.local.env) names the
-  machine under test - no lab test hard-codes a host.
+  machine under test. No lab test hard-codes a host.
 - `requires: [rpi_target]` makes a missing or unreachable target SKIP
   the run with a reason instead of failing.
-- The preflight (SSH reachable + the modules the test drives present on
-  the target) runs before bring-up; a missing item stops the test with
-  a message naming it.
+- The preflight runs before bring-up. It checks SSH reachability and
+  the modules the test drives on the target. A missing item stops the
+  test with a message naming it.
 - Pass/fail means only "the test ran to the end". The evidence is the
-  report: `var/reports/<name>-<utc>.json` and `.txt`, holding the host,
-  hardware, versions, measured metrics and the limits found
-  (`write_lab_report` in engine/scenario_runner.py - a test may write a
-  richer report itself; the runner always writes a base one).
-- A lab test must leave the target as it found it: no leftover
+  report. The report is `var/reports/<name>-<utc>.json` and `.txt`. It
+  holds the host, hardware, versions, measured metrics and the limits
+  found. See `write_lab_report` in engine/scenario_runner.py. A test
+  may write a richer report itself. The runner always writes a base one.
+- A lab test must leave the target as it found it. No leftover
   processes or files.

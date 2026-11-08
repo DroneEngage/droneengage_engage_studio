@@ -21,9 +21,9 @@ exercises it end to end.
 
 ## The contract — `<stem>.sensor.yaml` beside the stub
 
-`stub_base.StubBase` loads the contract named after the stub file
-(`stub_sdr.py` -> `stub_sdr.sensor.yaml`; a block folder may use the
-plain `sensor.yaml` fallback). It declares three things:
+`stub_base.StubBase` loads the contract named after the stub file:
+`stub_sdr.py` -> `stub_sdr.sensor.yaml`. A block folder may use the
+plain `sensor.yaml` fallback. It declares three things:
 
 ```yaml
 sensor:
@@ -46,16 +46,16 @@ sensor:
 
 ### truth
 
-`truth:` is declarative — the stub reads it through
-`self.truth_entities()`, which returns the world entities matching
-`cls`/`field` (all entities when unset). `pose: true` just documents
-that the model needs `self.pose_feed`; the pose feed is always wired.
+`truth:` is declarative. The stub reads it through
+`self.truth_entities()`. It returns the world entities that match
+`cls`/`field` (all entities when unset). `pose: true` only documents
+that the model needs `self.pose_feed`. The pose feed is always wired.
 
 ### model
 
 `self.sensor_params()` returns `model:` merged under
-`world.sensors[<key>]`: the shipped defaults apply everywhere, and a
-world file can retune the sensor per scenario:
+`world.sensors[<key>]`. The shipped defaults apply everywhere. A world
+file can retune the sensor per scenario:
 
 ```yaml
 sensors:
@@ -63,7 +63,7 @@ sensors:
 ```
 
 `world.py` passes every `sensors.<key>` through to `world.sensors`
-unchanged — the engine does not know the sensor's parameter names.
+unchanged. The engine does not know the sensor's parameter names.
 
 ### output
 
@@ -86,16 +86,15 @@ assert:
 ```
 
 For each row it measures the distance from the reported `lat`/`lng` to
-the truth entity's position at that time, and reports `n` / `mean_m` /
-`p95_m` / `max_m` into `summary.json`; `mean_le` / `p95_le` / `max_le`
-bound them (each optional). Rows that can't be matched to a truth
-entity are skipped, not counted.
+the truth entity's position at that time. It reports `n` / `mean_m` /
+`p95_m` / `max_m` into `summary.json`. `mean_le` / `p95_le` / `max_le`
+bound them (each optional). Rows that cannot match a truth entity are
+skipped. They are not counted.
 
 ## The catalog fragment
 
-A block's own `catalog.yaml` registers its module — the block name is
-the fleet `cls:` and the module lands in `add_modules:` via
-`block.yaml`:
+A block's own `catalog.yaml` registers its module. The block name is
+the fleet `cls:`. The module lands in `add_modules:` via `block.yaml`:
 
 ```yaml
 stub_demo_range:
@@ -108,34 +107,35 @@ stub_demo_range:
   local: {file: stub_demo_range.local}
 ```
 
-`stub: true` replaces the old hardcoded stub list: on a `world:`
+`stub: true` replaces the old hardcoded stub list. On a `world:`
 scenario the runner injects `{world, seed, unit, pose_port}` into the
-module's config so the stub can read truth and write `truth.jsonl`.
-`pose: true` additionally requests the SITL serial5 pose port for FC
-units. Two modules must not define the same catalog name — a block
-fragment colliding with `modules/catalog.yaml` is a load error.
+module's config. The stub reads truth and writes `truth.jsonl` from it.
+`pose: true` also requests the SITL serial5 pose port for FC units. Two
+modules must not define the same catalog name. A block fragment that
+collides with `modules/catalog.yaml` is a load error.
 
 ## The model
 
 The stub subclasses `stub_base.StubBase` and implements
-`tick(t_s, frame)` (~20 Hz). Determinism is the same rule as every
-world consumer: draw from `self.rng(<parts...>)` — seeded by
-`stub.seed` — never `random.random()`. `--selftest <pose.jsonl>`
-replays scripted poses on the virtual clock; two same-seed selftest
-runs are byte-identical (`stub_deterministic` asserts it).
+`tick(t_s, frame)` (~20 Hz). Determinism follows the same rule as every
+world consumer. Draw from `self.rng(<parts...>)`, seeded by `stub.seed`.
+Never use `random.random()`. `--selftest <pose.jsonl>` replays scripted
+poses on the virtual clock. Two same-seed selftest runs are
+byte-identical. `stub_deterministic` asserts it.
 
-Per-run state goes in `reset_run()` — a reused sim keeps the process
-and re-runs with a new epoch.
+Per-run state goes in `reset_run()`. A reused sim keeps the process and
+re-runs with a new epoch.
 
 ## Reference: stub_sdr
 
 `stubs/stub_sdr.py` + `stubs/stub_sdr.sensor.yaml` are the worked
-example. The contract declares its inputs (`field: tx_dbm` emitters +
-pose), the full model surface (path-loss exponent, debounce/throttle,
-noise floor, sweep timing, radius clamps — all overridable via
-`world.sensors.sdr`) and the output seam (`sdr.signal` events +
-`signal` truth rows). `tests/worlds/world_sdr_mast.yaml` exercises it and
-asserts `signals_in_range`; `stubs/test_stubs.py` covers determinism.
+example. The contract declares its inputs: `field: tx_dbm` emitters +
+pose. It declares the full model surface: path-loss exponent,
+debounce/throttle, noise floor, sweep timing, radius clamps. All are
+overridable via `world.sensors.sdr`. It declares the output seam:
+`sdr.signal` events + `signal` truth rows.
+`tests/worlds/world_sdr_mast.yaml` exercises it and asserts
+`signals_in_range`. `stubs/test_stubs.py` covers determinism.
 
 ## Try it
 
@@ -146,6 +146,6 @@ asserts `signals_in_range`; `stubs/test_stubs.py` covers determinism.
 ./sim run scenarios/demo_range.yaml --seed 1
 ```
 
-The scaffolded scenario sits a static probe in `worlds/forest_a.yaml`
-and asserts `sensor_error` against the stub's own reports, so the
+The scaffolded scenario sits a static probe in `worlds/forest_a.yaml`.
+It asserts `sensor_error` against the stub's own reports. So the
 default model passes on first run.

@@ -2,11 +2,12 @@
 
 > DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
 
-Versioned schema for the per-run world feed a scenario runner serves to
-renderers (the Mavlink3DMap world scene, the render-camera farm, the
-physics loop). The runner is the server; renderers are WebSocket
-clients. One feed per run — the runner owns the truth, so every
-renderer sees the same world the assertions grade.
+This is the versioned schema for the per-run world feed. A scenario
+runner serves it to renderers (the Mavlink3DMap world scene, the
+render-camera farm, the physics loop). The runner is the server.
+Renderers are WebSocket clients. There is one feed per run. The runner
+owns the truth. So every renderer sees the same world the assertions
+grade.
 
 Implementations: `engine/world_stream.py` (server, this repo),
 `frontend/src/js/world/world_client.js` (client, Mavlink3DMap).
@@ -17,9 +18,9 @@ Implementations: `engine/world_stream.py` (server, this repo),
   run (the slot block allocates it).
 - Text frames, one complete JSON object per frame. Strict JSON only
   (see Rules).
-- On connect the server sends exactly one `hello`, then `tick`s at
-  10 Hz. A dropped client reconnects and gets a fresh `hello` — there
-  is no resume and no backlog beyond the one snapshot.
+- On connect the server sends exactly one `hello`. Then it sends
+  `tick`s at 10 Hz. A dropped client reconnects and gets a fresh
+  `hello`. There is no resume and no backlog beyond the one snapshot.
 
 ## Frame envelope
 
@@ -37,7 +38,7 @@ Every frame is a JSON object discriminated by `t`:
 
 - `t_s` — scenario seconds, float, `t = (t_unix_ms − epoch_unix_ms) / 1000`.
 - `t_unix_ms` — wall-clock epoch milliseconds of the sample the frame
-  was computed from. Ticks carry both; events stamp the pose sample,
+  was computed from. Ticks carry both. Events stamp the pose sample,
   not send time.
 - `epoch_unix_ms` — the run's epoch, sent once in `hello`.
 
@@ -108,8 +109,8 @@ Every frame is a JSON object discriminated by `t`:
 {"t":"cmd","cmd":"payload_release","unit":"cam1","t_unix_ms":0}
 ```
 
-Emitted when a `cls:"payload_drop"` row lands in `truth.jsonl` — a real
-release and a stubbed one look the same, so the renderer animates a
+Emitted when a `cls:"payload_drop"` row lands in `truth.jsonl`. A real
+release and a stubbed one look the same. So the renderer animates a
 drop on either. `t_unix_ms` is the truth row's `t_ms`.
 
 ## `event` — client → server
@@ -121,7 +122,7 @@ drop on either. `t_unix_ms` is the truth row's `t_ms`.
 
 A client observation the run grades. The server appends it to
 `truth.jsonl` as `{type:"event", src:"render" (or the given src),
-t_ms: t_unix_ms || now}` — assertions read the same file.
+t_ms: t_unix_ms || now}`. Assertions read the same file.
 
 Known `kind`s:
 
@@ -132,21 +133,21 @@ Known `kind`s:
 | `frame_meta` | render | `unit`, `frame_no`, `t_unix_ms` (pose sample), `render_t_ms` — joins `frame_seen` for the latency probe |
 | `visibility` | render_vis | `unit`, `frame_no`, `tid`, `px`, `box` (omitted when `px: 0`) |
 
-New kinds are additive: the truth row is stored verbatim, so checks
-can key on a kind the stream itself does not know.
+New kinds are additive. The truth row is stored verbatim. So checks can
+key on a kind the stream itself does not know.
 
 ## Rules
 
 1. **Strict JSON.** No `Infinity`, no `NaN` (browsers drop the whole
-   frame on `JSON.parse`). Non-finite values are serialized as `null`
-   — e.g. `environment.visibility_m = null` means unbounded.
+   frame on `JSON.parse`). Non-finite values are serialized as `null`.
+   For example, `environment.visibility_m = null` means unbounded.
 2. **Additive evolution.** Unknown `t` values and unknown fields are
    ignored on both sides. New frame types, fields and event kinds may
-   be added without a version bump as long as old consumers still
-   parse — a change that alters an existing field's meaning or shape
+   be added without a version bump, as long as old consumers still
+   parse. A change that alters an existing field's meaning or shape
    bumps the schema string (`de.worldstream/2`).
-3. **Check `schema` on hello.** A consumer should refuse (or warn)
-   on a `schema` it does not understand rather than half-parse it.
+3. **Check `schema` on hello.** A consumer should refuse (or warn) on a
+   `schema` it does not understand. Do not half-parse it.
 4. **Truth is append-only.** Events land in `truth.jsonl` in arrival
-   order; late or out-of-order `t_ms` values are legal — assertions
-   compare, they do not reorder.
+   order. Late or out-of-order `t_ms` values are legal. Assertions
+   compare. They do not reorder.

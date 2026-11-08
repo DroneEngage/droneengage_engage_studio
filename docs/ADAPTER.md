@@ -2,16 +2,16 @@
 
 > DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
 
-`de.scenario/1` — the scenario core — is deliberately vehicle-stack
-agnostic. The timeline, the world model, ground truth, and every
-grader in `engine/checks.py` only need a narrow surface from whatever
-flies the aircraft. That surface is the **adapter seam**:
-`engine/adapter.py` defines `VehicleAdapter`, and the DroneEngage path
-is one implementation (`DEAdapter`), not hard-coded into the runner.
+`de.scenario/1` is the scenario core. It is vehicle-stack agnostic by
+design. The timeline, the world model, ground truth, and every grader
+in `engine/checks.py` need only a narrow surface. The surface comes
+from whatever flies the aircraft. That surface is the **adapter seam**.
+`engine/adapter.py` defines `VehicleAdapter`. The DroneEngage path is
+one implementation (`DEAdapter`). It is not hard-coded into the runner.
 
-## What the core hands the adapter
+## What the core gives the adapter
 
-`ctx` — the run context dict built by `run_scenario`:
+`ctx` is the run context dict. `run_scenario` builds it:
 
 | key | contents |
 |---|---|
@@ -29,15 +29,16 @@ is one implementation (`DEAdapter`), not hard-coded into the runner.
 
 A `do:` step reaches the adapter as
 `adapter.do_step(name, args, step, scn, ctx) -> truthy`.
-`args` is the step minus `t/on/do/fault/once`; `step` is raw (an `on:`
-trigger's `unit:` default lives on it). Falsy return = step failure =
-run failure.
+`args` is the step minus `t/on/do/fault/once`. `step` is raw. An `on:`
+trigger's `unit:` default lives on `step`. A falsy return means step
+failure. Step failure means run failure.
 
 ## Required surface (what a non-DE adapter MUST implement)
 
-Every `do:` verb in the registry (`./sim verbs`, "do: steps" and
-"do: probes") reaches the adapter. The list below is exhaustive as of
-this document; `./sim verbs` is the authority if it drifts.
+Every `do:` verb in the registry reaches the adapter. `./sim verbs`
+lists them under "do: steps" and "do: probes". The list below is
+complete as of this document. `./sim verbs` is the authority if the
+list drifts.
 
 | verb family | verbs | required behavior |
 |---|---|---|
@@ -53,12 +54,12 @@ this document; `./sim verbs` is the authority if it drifts.
 | host faults | `cpu_starve`, `cpu_unstarve`, `journal_unwritable`, `journal_writable`, `write_file` | host-level fault injection |
 | events | `fire`, `event`, `send` | event fire / raw message send |
 
-Verb names are the public contract — `./sim verbs` lists the registry.
+Verb names are the public contract. `./sim verbs` lists the registry.
 An adapter may implement a verb as a no-op *only* where the semantics
-genuinely don't exist (e.g. `deploy` under a stack with no package
-format — but then scenarios using `deploy` can't run).
+do not exist. Example: `deploy` under a stack with no package format.
+Scenarios that use `deploy` then cannot run.
 
-## Required inputs (data the core consumes)
+## Required inputs (data the core uses)
 
 | input | shape | producer |
 |---|---|---|
@@ -69,21 +70,21 @@ format — but then scenarios using `deploy` can't run).
 
 ## Optional hooks
 
-- **faults** — `fault:` timeline entries land through
-  `_fc_param_fault` (param read-modify-write over the FC link) and the
-  server-side link model. An adapter without MAVLink params can
-  implement `battery`/param faults as its own hook or the scenario
-  simply can't use them; `link_*` faults ride the transport, not the
+- **faults** — `fault:` timeline entries go through `_fc_param_fault`
+  and the server-side link model. `_fc_param_fault` does a param
+  read-modify-write over the FC link. An adapter without MAVLink params
+  can implement `battery`/param faults as its own hook. Otherwise the
+  scenario cannot use them. `link_*` faults ride the transport, not the
   adapter.
 - **start/abort hooks** — `op_state.json` lets `start` carry overrides
-  (`lead_ms`, `targets`, `expect_fail`, `{role: mission}` map) when a
-  run is already live; absent the file, `start` is a plain fleet-wide
-  signal.
-- **operator bot** — `ctx["bot"]` is a GCS session that drives
-  approvals/denies/confirms/fires. A non-DE adapter supplies its own
-  bot object implementing `decide/confirm/fire/action/op_deploy/
-  op_start/op_abort/op_authorize/op_revoke_launch` — or leaves
-  `operator:` verbs unsupported.
+  when a run is already live. The overrides are `lead_ms`, `targets`,
+  `expect_fail`, and a `{role: mission}` map. Without the file,
+  `start` is a plain fleet-wide signal.
+- **operator bot** — `ctx["bot"]` is a GCS session. It sends
+  approvals, denies, confirms and fires. A non-DE adapter supplies its
+  own bot object. The bot implements
+  `decide/confirm/fire/action/op_deploy/op_start/op_abort/op_authorize/op_revoke_launch`.
+  Without a bot, the adapter leaves `operator:` verbs unsupported.
 
 ## The DEAdapter mapping (what the seam wraps today)
 
@@ -100,9 +101,10 @@ format — but then scenarios using `deploy` can't run).
 | everything else | `runner.run_step({name: args})` — the ctl verb set |
 | fleet bus (1090) | inside ctl `fire`/`deploy` — targets emit over the unit bus, no separate seam |
 
-## Verifying the seam
+## How to verify the seam
 
-Same code path either way — the refactor only moved the dispatch:
+The code path is the same in both cases. The refactor only moved the
+dispatch:
 
 ```bash
 ./sim run tests/smoke_copters.yaml              # real transport, 3 SITL

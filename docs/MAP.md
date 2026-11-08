@@ -1,9 +1,10 @@
 # MAP.md - the one-page model map
 
-Three axes, one tree. **COMPOSE** is what exists (things you build),
-**EXECUTE** is why you run it (run files), **SUBSTRATE** is where it
-runs (host, dev stacks, hardware). `./sim help` groups its commands by
-the same intents (DISCOVER / COMPOSE / LIVE / EXECUTE / CAPTURE /
+There are three axes and one tree. **COMPOSE** is what exists. These
+are the things you build. **EXECUTE** is why you run it. These are the
+run files. **SUBSTRATE** is where it runs. This is the host, the dev
+stacks and the hardware. `./sim help` groups its commands by the same
+intents (DISCOVER / COMPOSE / LIVE / EXECUTE / CAPTURE /
 HARDWARE / HOUSE).
 
 ## The noun diagram
@@ -40,9 +41,9 @@ HARDWARE / HOUSE).
                tools/rpi + tools/hil hardware - android phones
 ```
 
-A running fleet lives under `var/run/<sim>/` (generated: sim.json,
-configs, launch scripts, logs, pids); results land in `var/results/`.
-Neither is committed.
+A running fleet lives under `var/run/<sim>/`. The directory is
+generated. It holds sim.json, configs, launch scripts, logs and pids.
+Results land in `var/results/`. Neither directory is committed.
 
 ## Folder -> axis
 
@@ -65,34 +66,38 @@ Neither is committed.
 | `docs/` | meta | authoring references (SCENARIOS.md, SENSORS.md, this file) |
 | `wiki/` | meta | user docs (USER_GUIDE.md - the plain-English start) |
 
-Top-level files: `sim` (the CLI), `run_scenario.py` (compat shim ->
-`./sim run`), `sim.local.env.example`, `de_scenario.schema.json`-adjacent
-engine modules under `engine/`.
+Top-level files: `sim` (the CLI), `run_scenario.py` (compat shim to
+`./sim run`), `sim.local.env.example`. The
+`de_scenario.schema.json`-adjacent engine modules live under
+`engine/`.
 
 ## Glossary
 
-- **a block** (`blocks/<name>/`) - one unit *type*: which flight
-  controller (or none), which DE modules, which config overlays.
-  Composed via `extends:`. Compose axis.
-- **sims/** - the *files* defining fleets: which blocks, how many, where
-  placed, which server. Compose axis.
-- **a sim** - a *running* fleet: the live processes + `var/run/<sim>/`
-  manifest you get from `./sim up sims/x.yaml`. Distinct from the
-  sims/ file it was generated from.
-- **a run file** - one de.scenario/1 yaml under `tests/` (machine-checked,
-  CI) or `scenarios/` (human-run). Its kind is inferred from the path;
-  `tasks:`/`tier:` select it. Execute axis.
-- **a stack** - a developer server set, not a sim: `de_servers` (real
-  auth/comm/storage/udp-relay from their repos) or `de_webclient` (npm
-  dev server), started with `./sim up <stack>` for `server: {type:
-  external}` sims to join. Substrate axis.
-- **a world** (`worlds/<name>.yaml`) - seeded ground truth a run file
-  loads (moving targets, coverage, truth recorder). Compose axis.
-- **a package** (`packages/*.json`, `tests/packages/`) - a hand-written
-  DE operation a run file deploys; `.deop` sources compile on demand.
-  Compose axis.
-- **a module** - one DE process type (`de_comm`, `de_mavlink`, ...)
-  described in `modules/catalog.yaml`: how it launches, ports, readiness.
-- **an overlay** (`sims/overlays/<name>.yaml`) - a one-twist variant
-  applied with `--with <name>`; not a new fleet file.
+- **a block** (`blocks/<name>/`) - one unit *type*. It says which
+  flight controller (or none), which DE modules, and which config
+  overlays. Compose with `extends:`. Compose axis.
+- **sims/** - the *files* that define fleets. They say which blocks,
+  how many, where placed, and which server. Compose axis.
+- **a sim** - a *running* fleet. It is the live processes plus the
+  `var/run/<sim>/` manifest. You get it from `./sim up sims/x.yaml`.
+  It is not the same as the sims/ file it was generated from.
+- **a run file** - one de.scenario/1 yaml under `tests/`
+  (machine-checked, CI) or `scenarios/` (human-run). Its kind is
+  inferred from the path. `tasks:` and `tier:` select it. Execute axis.
+- **a stack** - a developer server set, not a sim. It is `de_servers`
+  or `de_webclient`. `de_servers` is the real auth, comm, storage and
+  udp-relay servers from their repos. `de_webclient` is an npm dev
+  server. Start a stack with `./sim up <stack>`. `server: {type:
+  external}` sims then join it. Substrate axis.
+- **a world** (`worlds/<name>.yaml`) - seeded ground truth that a run
+  file loads. It holds moving targets, coverage and the truth
+  recorder. Compose axis.
+- **a package** (`packages/*.json`, `tests/packages/`) - a
+  hand-written DE operation that a run file deploys. `.deop` sources
+  compile on demand. Compose axis.
+- **a module** - one DE process type (`de_comm`, `de_mavlink`, ...).
+  `modules/catalog.yaml` describes it: how it launches, its ports, its
+  readiness.
+- **an overlay** (`sims/overlays/<name>.yaml`) - a one-twist variant.
+  Apply it with `--with <name>`. It is not a new fleet file.
 ```

@@ -2,7 +2,7 @@
 
 > DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
 
-Status: **design only**, nothing here is implemented yet.
+Status: **design only**. Nothing here is implemented yet.
 Companion docs, written in parallel:
 
 - `droneengage_server/wiki/PluginEvents.md`: read-only server event hooks
@@ -10,43 +10,45 @@ Companion docs, written in parallel:
 - `droneengage_studio/docs/port_allocation.md`: the
   `port_allocation_management` registry and the per-sim manifest (task 2).
 
-This doc was first written against the interfaces sketched before
-either companion doc existed. It has since been reconciled with both
-final docs; section 10 lists each original assumption, how it was
-resolved, and the mismatches still open.
+This doc was first written against interfaces sketched before either
+companion doc existed. It is now reconciled with both final docs.
+Section 10 lists each original assumption, how it was resolved, and
+the mismatches still open.
 
 ## 1. Goal and principles
 
 1. **Real servers by default.** Every comm server, storage server and
-   authenticator the sim runs is the production code from its own repo,
-   started with a config the sim generates. Nothing is mocked unless the
-   test is specifically about a server misbehaving.
+   authenticator the sim runs is the production code from its own
+   repo. The sim starts each one with a config it generates. Nothing
+   is mocked unless the test is specifically about a server
+   misbehaving.
 2. **Faults live outside the servers.** Transport faults (stall, cut,
-   delay, bandwidth) come from `engine/link_proxy.py`, which can be
-   placed on any named connection. The servers themselves are never
+   delay, bandwidth) come from `engine/link_proxy.py`. A link_proxy
+   can sit on any named connection. The servers themselves are never
    patched for a test.
 3. **Observe through the product.** Assertions about server internals
-   (storage reconnected, child re-authenticated) come from the server's
-   own plugin events (task 1), never from scraping logs.
-4. **The fake server becomes a narrow tool.** `fake_fleet_server.py` is
-   kept only for things a real server can't be made to do: message-level
-   loss (dropping a whole ws frame), clock skew (`clock_offset_ms`), and
-   frames without timestamps (`noclock`).
-5. **Today's sims don't change.** `server: {type: real|fake|external}`
+   (storage reconnected, child re-authenticated) come from the
+   server's own plugin events (task 1), never from scraping logs.
+4. **The fake server becomes a narrow tool.** `fake_fleet_server.py`
+   is kept only for things a real server cannot be made to do:
+   message-level loss (dropping a whole ws frame), clock skew
+   (`clock_offset_ms`), and frames without timestamps (`noclock`).
+5. **Today's sims do not change.** `server: {type: real|fake|external}`
    keeps working exactly as now (section 7).
-6. **Mavlink3DMap stays optional.** Nothing here adds a dependency on it.
+6. **Mavlink3DMap stays optional.** Nothing here adds a dependency on
+   it.
 
 ## 2. What the server code actually supports (verified)
 
-These facts constrain the design. Each was checked against the code, not
-the README.
+These facts constrain the design. Each was checked against the code,
+not the README.
 
-> Since SL-0144 the servers are the Rust 1:1 ports — a node runs as its
-> repo's release binary, `./target/release/<name> --config=<file>`,
-> built with `cargo build --release` in the checkout. Code citations
-> below (`src/server.js`, `js_*.js`) refer to the Node originals, kept
-> on each repo's `pr_nodejs_last_version` branch for reference; the
-> behaviour they describe is unchanged.
+> Since SL-0144 the servers are the Rust 1:1 ports. A node runs as
+> its repo's release binary, `./target/release/<name> --config=<file>`,
+> built with `cargo build --release` in the checkout. The code
+> citations below (`src/server.js`, `js_*.js`) refer to the Node
+> originals. Those are kept on each repo's `pr_nodejs_last_version`
+> branch for reference. The behaviour they describe is unchanged.
 
 | Fact | Where | Consequence for the sim |
 |---|---|---|
@@ -66,25 +68,25 @@ the README.
 | The sim's spawned authenticator runs `s2s_auth_enabled: False`, account type `single` | `simlib.py:gen_server` | Unchanged; comm servers still try S2S auth and that passes |
 
 The shipped `deployment/server.s2s.super.config` and
-`deployment/server.s2s.drone.config` are the reference pair: a parent with
-auth, and a **child in local mode with `ignore_auth_server: true`**. The
-design follows that shape.
+`deployment/server.s2s.drone.config` are the reference pair: a parent
+with auth, and a **child in local mode with
+`ignore_auth_server: true`**. The design follows that shape.
 
 ### 2.1 The two-hop individual-message limitation
 
-`GCS@root → unit@grandchild` fails for one-to-one commands (`tg = <party
-id>`). The child receives the message from the root, finds no local party
-with that ID, and drops it. Broadcasts (`_AGN_`, `_GD_`, group) do get
-through.
+`GCS@root → unit@grandchild` fails for one-to-one commands
+(`tg = <party id>`). The child receives the message from the root.
+It finds no local party with that ID and drops it. Broadcasts
+(`_AGN_`, `_GD_`, group) do get through.
 
-The sim should **surface this, not hide it**:
+The sim must **surface this, not hide it**:
 
-- The loader **warns** when a unit sits two or more hops below the node
-  the GCS bridge connects to.
-- A scenario `tests/mesh/two_hop_individual.yaml` is checked in marked
-  `expect: fail`, to document the current behaviour. It turns into a
-  regression test if the server later relays individual messages along
-  `_path`.
+- The loader **warns** when a unit sits two or more hops below the
+  node the GCS bridge connects to.
+- A scenario `tests/mesh/two_hop_individual.yaml` is checked in
+  marked `expect: fail`, to document the current behaviour. It turns
+  into a regression test if the server later relays individual
+  messages along `_path`.
 - This is a server behaviour finding, filed as a follow-up for the
   server. It is out of scope for this design.
 
@@ -122,13 +124,14 @@ Node types:
 
 Validation rules (all checked at load time; errors name the node):
 
-- Exactly one node has `gcs: true`. If there's a single comm/fake/external
-  node, it's the default.
-- `relay_to` must name a `comm` node. No cycles. A parent and its child
-  can't be the same node.
-- `storage:` must name a `storage` node. `auth:` must name an `auth` node.
-- A child with `auth:` is **refused** in phase 3 (section 5). Children
-  run in local mode.
+- Exactly one node has `gcs: true`. If there is a single
+  comm/fake/external node, it is the default.
+- `relay_to` must name a `comm` node. No cycles. A parent and its
+  child cannot be the same node.
+- `storage:` must name a `storage` node. `auth:` must name an `auth`
+  node.
+- A child with `auth:` is **refused** in phase 3 (section 5).
+  Children run in local mode.
 - `fake` and `external` nodes take no `relay_to`, `storage` or `auth`
   edges.
 
@@ -140,11 +143,11 @@ units:
   - {name: c2, block: copter, via: edge1}
 ```
 
-- `via:` names the comm node this unit's de_comm connects to. If omitted,
-  it's the `gcs:` node, which reproduces today's behaviour.
-- `via:` an auth-mode node → de_comm logs in through that node's `auth:`
-  (`use_local_comm_server: false`, `auth_ip/auth_port` from the auth
-  node).
+- `via:` names the comm node this unit's de_comm connects to. If
+  omitted, it is the `gcs:` node. That reproduces today's behaviour.
+- `via:` an auth-mode node → de_comm logs in through that node's
+  `auth:` (`use_local_comm_server: false`, `auth_ip/auth_port` from
+  the auth node).
 - `via:` a local-mode node → `use_local_comm_server: true`,
   `local_comm_server_ip/port` = that node's wss port, or the
   connection's link_proxy port (section 6).
@@ -161,69 +164,71 @@ units:
   - {name: c4, block: copter, via: c3}   # c4 joins the mesh through c3's server
 ```
 
-- The node is named after the unit (`c3`) and is a `comm` node with
+- The node is named after the unit (`c3`). It is a `comm` node with
   `owner: c3`. It shows up in the topology like any other node, so
   `via: c3` and `relay_to: c3` work.
-- **Lifecycle follows the unit.** The node's process is launched under
-  the unit's owner (`var/run/<sim>/c3/server/`), started **before** the
-  unit's de_comm, and stopped and restarted with the unit
-  (`kill`/`restart unit: c3 proc: all` takes it down too). A new process
-  name, `de_server`, joins the unit's process list in `unit_procs()`,
-  ahead of `link_proxy`/`de_comm`.
-- c3's own de_comm connects to its own server in local mode (the onboard
-  path, `127.0.0.1`).
-- Taking c3 down takes c4 offline from the GCS's point of view, which is
-  the realistic onboard-relay failure.
+- **Lifecycle follows the unit.** The node's process is launched
+  under the unit's owner (`var/run/<sim>/c3/server/`). It starts
+  **before** the unit's de_comm. It stops and restarts with the unit
+  (`kill`/`restart unit: c3 proc: all` takes it down too). A new
+  process name, `de_server`, joins the unit's process list in
+  `unit_procs()`. It sits ahead of `link_proxy`/`de_comm`.
+- c3's own de_comm connects to its own server in local mode (the
+  onboard path, `127.0.0.1`).
+- Taking c3 down takes c4 offline from the GCS's point of view. That
+  is the realistic onboard-relay failure.
 
 ### 3.4 S2S keys and IDs, generated per run
 
-- `server_id` = `<sim>_<node>` (e.g. `copters2_hq`). Unique across
-  parallel sims, so logs and `_path` stay readable.
-- `var/run/<sim>/server/keys/<server_id>_{private,public}.pem`: Ed25519,
-  generated with `crypto.generateKeyPairSync('ed25519')` through a small
-  node helper (or `openssl genpkey -algorithm ed25519`), mode 0600. Never
-  the repo's `ssl_local/DE_ServerComm_*` pair, which leaks across sims
-  and into git.
+- `server_id` = `<sim>_<node>` (e.g. `copters2_hq`). It is unique
+  across parallel sims, so logs and `_path` stay readable.
+- `var/run/<sim>/server/keys/<server_id>_{private,public}.pem`:
+  Ed25519, generated with `crypto.generateKeyPairSync('ed25519')`
+  through a small node helper, or `openssl genpkey -algorithm ed25519`.
+  Mode 0600. Never the repo's `ssl_local/DE_ServerComm_*` pair. That pair leaks across sims and into git.
 - Each parent's `s2s_trusted_server_keys` = `{<child server_id>:
   <child public.pem>}` for its direct children.
-- Each storage node: `var/run/<sim>/server/<storage>/s2s_shared_secret.key`
-  (32 random bytes hex, 0600). Every attached comm server's
+- Each storage node:
+  `var/run/<sim>/server/<storage>/s2s_shared_secret.key` (32 random
+  bytes hex, 0600). Every attached comm server's
   `s2s_shared_secret_file` points at the same file.
-- `external` parent: not supported in phase 3. It would need the user to
-  add our public key to their server; a later `trust_key_out:` option
-  could print it.
+- `external` parent: not supported in phase 3. It would need the
+  user to add our public key to their server. A later
+  `trust_key_out:` option could print it.
 
 ## 4. Changes in `engine/simlib.py`
 
 ### 4.1 `load_sim` / `load_server`
 
 - `load_sim` accepts **either** `server:` (today) **or** `servers:`,
-  never both. `server:` is normalised into a one-node `servers:` (section
-  7), so everything downstream only ever sees the topology form.
+  never both. `server:` is normalised into a one-node `servers:`
+  (section 7). Everything downstream only ever sees the topology
+  form.
 - New `load_servers(spec, slot_base, sim_name) -> topo`:
   `{nodes: {name: node}, gcs: name, edges: [...]}`. Each node carries
   type, `server_id`, role flags, attachments, owner (`None` or unit
   name), and its **port lease names** (not numbers).
-- `load_server()` stays as the per-node validator for the keys it already
-  understands (`auth`, `account`, `unit_account`, `seed`,
+- `load_server()` stays as the per-node validator for the keys it
+  already understands (`auth`, `account`, `unit_account`, `seed`,
   `clock_offset_ms`, `noclock`, `control_port`, `gcs_party`,
-  `link_proxy`), so error messages for single-server sims don't change.
-- `sim["server"]` is kept as an **alias for the `gcs:` node**, with the
-  same dict shape as today. The GCS bridge, `ctl.py`, `launcher.up`,
-  checks and scenario runner keep reading it unchanged until each is
-  moved over.
+  `link_proxy`). Error messages for single-server sims do not change.
+- `sim["server"]` is kept as an **alias for the `gcs:` node**, with
+  the same dict shape as today. The GCS bridge, `ctl.py`,
+  `launcher.up`, checks and scenario runner keep reading it unchanged
+  until each is moved over.
 
 ### 4.2 Ports
 
-- Today: `port`, `port+1` (control), `port+10` (auth), `port+11` (auth
-  S2S), where `port = SERVER_PORT + slot_base`.
+- Today: `port`, `port+1` (control), `port+10` (auth), `port+11`
+  (auth S2S), where `port = SERVER_PORT + slot_base`.
 - New: every port is a named lease.
-  Per port_allocation.md (reconciled, section 10): the topology loader
-  builds `Request(name, proto, kind, prefer=, pin=)` objects and passes
-  them all to **one** `alloc.transaction(sim=...)`. The results land in
-  the flat `ports` map of `var/run/<sim>/sim.json`, and code reads them
-  with `simlib.port(sim, name)`. `alloc.release(sim)` runs on
-  `sim down`. Lease names (port_allocation.md's naming):
+  Per port_allocation.md (reconciled, section 10): the topology
+  loader builds `Request(name, proto, kind, prefer=, pin=)` objects
+  and passes them all to **one** `alloc.transaction(sim=...)`. The
+  results land in the flat `ports` map of
+  `var/run/<sim>/sim.json`. Code reads them with
+  `simlib.port(sim, name)`. `alloc.release(sim)` runs on `sim down`.
+  Lease names (port_allocation.md's naming):
 
   | Lease | Used by |
   |---|---|
@@ -236,14 +241,14 @@ units:
   | `link.<edge>.proxy.data`, `link.<edge>.proxy.ctrl` | a link_proxy on a named connection |
 
 - For a **single-server sim** the allocator must hand out the **same
-  numbers as today** (`62008+slot_base` etc.) during migration, so
-  `ctl`, studio and tests that still read `srv["port"]` don't break.
+  numbers as today** (`62008+slot_base` etc.) during migration. Then
+  `ctl`, studio and tests that still read `srv["port"]` do not break.
   port_allocation.md's phase 0 ("legacy-pin mode") does exactly this:
-  the old formulas are leased as `pin`, so the numbers can't move.
+  the old formulas are leased as `pin`, so the numbers cannot move.
 
 ### 4.3 `gen_server(sim)` → per-node generation
 
-`gen_server` becomes a loop over nodes in launch order, calling one
+`gen_server` becomes a loop over nodes in launch order. It calls one
 generator per type. Each writes `var/run/<sim>/server/<node>/` (or
 `var/run/<sim>/<unit>/server/` for a unit-owned node):
 
@@ -254,11 +259,11 @@ generator per type. Each writes `var/run/<sim>/server/<node>/` (or
   `dashboard_enable: false`, `s2s_cert_enabled: false`,
   `s2s_shared_secret_file`, ssl paths from the storage repo's
   `ssl_local/ssl_airgap`. New `sim.local.env` key: `DE_STORAGE_DIR` →
-  `$DE_CODE/droneengage_storage_server`, with `STORAGE_REPO` resolved
-  like `SERVER_REPO`/`AUTH_REPO`; `check_binaries` adds its release
+  `$DE_CODE/droneengage_storage_server`. `STORAGE_REPO` is resolved
+  like `SERVER_REPO`/`AUTH_REPO`. `check_binaries` adds its release
   binary (`target/release/de_storage_server`) when needed.
-- **`_gen_auth(node)`**: today's authenticator block, moved as is, ports
-  from leases.
+- **`_gen_auth(node)`**: today's authenticator block, moved as is,
+  ports from leases.
 - **`_gen_comm(node)`**: today's `scfg.update` block plus:
   - `server_id`, `s2s_my_private_key` = per-run key
   - `local_server_enabled = not node.auth`, `ignore_auth_server = not node.auth`
@@ -267,64 +272,66 @@ generator per type. Each writes `var/run/<sim>/server/<node>/` (or
     `s2s_super_server_ip: 127.0.0.1`, `s2s_super_server_port`,
     `s2s_trusted_server_keys`
   - if `relay_to`: `enable_persistant_relay: true`,
-    `s2s_relay_to_super_server_ip/port` = the parent's `s2s` port, or the
-    proxy port of that connection
+    `s2s_relay_to_super_server_ip/port` = the parent's `s2s` port, or
+    the proxy port of that connection
   - if `storage`: `enable_storage_server: true`,
-    `storage_server_host/port` (or the proxy port of that connection),
-    `s2s_shared_secret_file`
-  - `command_plugin: []` (as today), plus a `plugins:` entry for the sim
-    event plugin when events are enabled (section 6.3): `{path:
+    `storage_server_host/port` (or the proxy port of that
+    connection), `s2s_shared_secret_file`
+  - `command_plugin: []` (as today), plus a `plugins:` entry for the
+    sim event plugin when events are enabled (section 6.3): `{path:
     <abs path to engine/server_plugins/de_sim_events>, enabled: true,
     config: {file: <node dir>/events.jsonl, port: <node>.events}}`
     (PluginEvents.md §2.1, §5.1)
-  - **absolute** `ssl_key_file`/`ssl_cert_file`. The parent's S2S listener
-    resolves relative SSL paths from `src/comm_server/`, not the repo root
-    (PluginEvents.md §5.4/§8). Today's `gen_server` already writes
-    absolute paths; keep it that way.
+  - **absolute** `ssl_key_file`/`ssl_cert_file`. The parent's S2S
+    listener resolves relative SSL paths from `src/comm_server/`, not
+    the repo root (PluginEvents.md §5.4/§8). Today's `gen_server`
+    already writes absolute paths; keep it that way.
 - **`_gen_fake(node)`**: today's fake block, unchanged.
 - **`external`**: today's `_bridge_script` only.
 
-The GCS bridge script is generated once, for the `gcs:` node, exactly as
-today.
+The GCS bridge script is generated once, for the `gcs:` node, exactly
+as today.
 
 ### 4.4 `gen_unit`
 
-The de_comm target (around `simlib.py:1673-1692`) changes from the global
-`srv` to `node = topo.nodes[u.via]`:
+The de_comm target (around `simlib.py:1673-1692`) changes from the
+global `srv` to `node = topo.nodes[u.via]`:
 
 - auth mode: `auth_ip/auth_port` from `node.auth`'s node
-- local mode: `local_comm_server_port` = `edge.<u>-><via>.port` if that
-  connection is proxied, else `server.<via>.wss`
+- local mode: `local_comm_server_port` = `edge.<u>-><via>.port` if
+  that connection is proxied, else `server.<via>.wss`
 
-`u["link_proxy"]` (today a per-unit flag aimed at the one server) becomes
-the proxy on the `<unit>-><via>` connection. A unit-owned server
-(section 3.3) adds `de_server` to that unit's generated processes.
+`u["link_proxy"]` (today a per-unit flag aimed at the one server)
+becomes the proxy on the `<unit>-><via>` connection. A unit-owned
+server (section 3.3) adds `de_server` to that unit's generated
+processes.
 
 ### 4.5 Launch order, readiness, shutdown
 
 Launch order is a topological sort of the server graph:
 
 1. `storage` nodes: ready = wss port open **and** the
-   `storage`-readiness log line or event (the first `server.start` event
-   from storage needs the plugin host there too, so phase 1 uses the port
-   only)
+   `storage`-readiness log line or event. The first `server.start`
+   event from storage needs the plugin host there too, so phase 1
+   uses the port only.
 2. `auth` nodes: ready = `server_port` open (today's check)
-3. `comm` nodes, **parents before children** (root first), so a child's
-   first dial doesn't burn a 10 s retry. Ready =
+3. `comm` nodes, **parents before children** (root first). Then a
+   child's first dial does not burn a 10 s retry. Ready =
    - wss port open (today), and
    - parents: `s2s` port open
    - every comm node: `server.listening` event (port check until P6)
    - parents: `s2s.listen` event
-   - children: S2S link up = the **parent's** `s2s.child.auth_ok` with
-     `child_id` = the child's `server_id`. The child side only sees
-     `s2s.uplink.open` / `s2s.uplink.challenge_answered`; a child-side
-     `s2s.uplink.auth_ok` needs the parent → child "ok" notice that
-     PluginEvents.md proposes as a small server addition (its open
-     question 3). Until events exist: a 20 s grace, then a warning, not a
-     failure.
+   - children: S2S link up = the **parent's** `s2s.child.auth_ok`
+     with `child_id` = the child's `server_id`. The child side only
+     sees `s2s.uplink.open` / `s2s.uplink.challenge_answered`. A
+     child-side `s2s.uplink.auth_ok` needs the parent → child "ok"
+     notice that PluginEvents.md proposes as a small server addition
+     (its open question 3). Until events exist, the launcher waits a
+     20 s grace and then warns instead of failing.
    - with storage: `storage.auth.ok` on the comm node. Storage nodes
-     themselves have no plugin host (PluginEvents.md phase 6, "later"),
-     so the storage process's own readiness stays a port check.
+     themselves have no plugin host (PluginEvents.md phase 6,
+     "later"), so the storage process's own readiness stays a port
+     check.
    - with auth: `auth.link.open`.
 4. link_proxies on server ↔ server connections: they start **before**
    the node that dials through them
@@ -332,9 +339,9 @@ Launch order is a topological sort of the server graph:
 6. units: unit-owned `de_server` first, then (as today) fcb_proxy,
    link_proxy, de_comm, modules
 
-Shutdown is the reverse order: units, bridge, children, parents, auth,
-storage. `sim down` releases the sim's port leases
-(`alloc.release(sim)`), and the allocator's stale-lease sweep reclaims
+Shutdown is the reverse order: units, bridge, children, parents,
+auth, storage. `sim down` releases the sim's port leases
+(`alloc.release(sim)`). The allocator's stale-lease sweep reclaims
 leases left by a killed `up` (port_allocation.md §3).
 
 `launcher.up`'s single-server checks (`wait_port(srv["port"])`, the
@@ -345,12 +352,12 @@ leases left by a killed `up` (port_allocation.md §3).
 
 ### 5.1 The problem
 
-- One authenticator decides which comm server serves an account, and
-  sticks to the server already serving it (section 2). Units can't ask
-  for `edge1`.
-- `link_proxy` + `auth: true` is refused today for the same reason: the
-  authenticator gives de_comm the server address, so the sim can't put a
-  per-unit proxy in between.
+- One authenticator decides which comm server serves an account. It
+  sticks to the server already serving it (section 2). Units cannot
+  ask for `edge1`.
+- `link_proxy` + `auth: true` is refused today for the same reason.
+  The authenticator gives de_comm the server address, so the sim
+  cannot put a per-unit proxy in between.
 
 ### 5.2 Options
 
@@ -366,27 +373,27 @@ leases left by a killed `up` (port_allocation.md §3).
 **Option A** for phases 3–4, with two rules:
 
 1. **Matching account IDs.** Every local-mode node in a mesh gets
-   `local_server_account_id` = the root's account ID, so relayed
-   `_aid`/`_gid` scoping finds the account and doesn't fall back to
+   `local_server_account_id` = the root's account ID. Then relayed
+   `_aid`/`_gid` scoping finds the account and does not fall back to
    "everyone".
-   - Root in local mode: use a fixed sim value, `sim_acc`. The group is
-     `'1'` everywhere already.
+   - Root in local mode: use a fixed sim value, `sim_acc`. The group
+     is `'1'` everywhere already.
    - Root in auth mode: the ID is whatever the spawned `single`
-     authenticator assigns. **Open question:** read it from the root's
-     account list (`accountDetails` in the comm → auth server info) once
-     the GCS bridge is logged in, or pin it through an authenticator
-     config field if one exists. Until that's settled, phase 3 meshes
-     with an auth root are allowed but print a warning that relayed
-     scoping uses the fallback.
-2. **Per-unit proxies stay local-mode only.** With option A, every child
-   connection is local-mode and can be proxied. For the auth root, a
-   `link_proxy` on `unit -> hq` stays refused (today's rule), and option
-   D is offered as `servers.hq.advertise_proxy: true` for a single
-   server-wide proxy.
+     authenticator assigns. **Open question:** read it from the
+     root's account list (`accountDetails` in the comm → auth server
+     info) once the GCS bridge is logged in, or pin it through an
+     authenticator config field if one exists. Until that is settled,
+     phase 3 meshes with an auth root are allowed. They print a
+     warning that relayed scoping uses the fallback.
+2. **Per-unit proxies stay local-mode only.** With option A, every
+   child connection is local-mode and can be proxied. For the auth
+   root, a `link_proxy` on `unit -> hq` stays refused (today's
+   rule). Option D is offered as `servers.hq.advertise_proxy: true`
+   for a single server-wide proxy.
 
 Option C should be filed as a **follow-up for the server and
-authenticator**. It's the only path to "a unit logs in and is placed on
-child X", and real deployments may want it.
+authenticator**. It is the only path to "a unit logs in and is placed
+on child X". Real deployments may want it.
 
 ## 6. Faults and observability
 
@@ -412,18 +419,18 @@ units:
 ```
 
 (`proxy:` lists which of the node's outgoing connections get a proxy.
-The existing per-unit `link_proxy:` and `server.link_proxy:` keep their
-meaning for unit → server connections.)
+The existing per-unit `link_proxy:` and `server.link_proxy:` keep
+their meaning for unit → server connections.)
 
 `link_proxy.py` relays TLS bytes, so it works on the S2S and storage
-links unchanged. Its control protocol keys by **party**, and for
+links unchanged. Its control protocol keys by **party**. For
 server ↔ server connections the party is the connection name. The
 `list` command reports `d:<edge>` when the link is up.
 
 ### 6.2 Scenario syntax
 
-Today's link steps take `unit:`. They gain an `edge:` alternative (one
-or the other, never both):
+Today's link steps take `unit:`. They gain an `edge:` alternative
+(one or the other, never both):
 
 ```yaml
 timeline:
@@ -435,22 +442,25 @@ timeline:
 - `unit: c2` ≡ `edge: "c2-><c2.via>"`
 - The runner resolves `edge` to the proxy's control port from the
   manifest (`link.<edge>.proxy.ctrl`).
-- `./sim ctl link <party> ...` gains `./sim ctl edge <edge> ...`, which
+- `./sim ctl link <party> ...` gains `./sim ctl edge <edge> ...`. It
   sends the same sub-lines to that proxy.
 - `loss*` stays fake-only, exactly as today.
 
 ### 6.3 Server events as assertions
 
-Per PluginEvents.md §5: the `de_sim_events` plugin (in this repo, under
-`engine/server_plugins/de_sim_events/`) subscribes to `*` and appends one
-JSON line per event to `var/run/<sim>/server/<node>/events.jsonl`. It can
-also stream them live on `<node>.events`, used by the
-`wait_server_event` timeline step. Each line is the plugin envelope
+Per PluginEvents.md §5: the `de_sim_events` plugin (in this repo,
+under `engine/server_plugins/de_sim_events/`) subscribes to `*` and
+appends one JSON line per event to
+`var/run/<sim>/server/<node>/events.jsonl`. It can also stream them
+live on `<node>.events`. The `wait_server_event` timeline step uses
+that stream. Each line is the plugin envelope
 `{name, ts, seq, server_id, data}`. `match:` below filters on `data`
-fields. The runner loads the files into `ctx["server_events"]` keyed by
-node name.
+fields. The
+runner loads the files into `ctx["server_events"]` keyed by node
+name.
 
-The scenario runner tails those files. New checks in `engine/checks.py`:
+The scenario runner tails those files. New checks in
+`engine/checks.py`:
 
 | check | args | passes when |
 |---|---|---|
@@ -480,9 +490,9 @@ checks:
 
 Event names and fields here are PluginEvents.md's final catalog (§1).
 
-Without the event plugin (phase 2 and before), the runner falls back to
-link_proxy `stats`/`list` and the GCS bridge's view, and server-event
-checks are SKIPped with a reason, never failed.
+Without the event plugin (phase 2 and before), the runner falls back
+to link_proxy `stats`/`list` and the GCS bridge's view. Server-event
+checks are then SKIPped with a reason, never failed.
 
 ## 7. Backward compatibility
 
@@ -500,11 +510,12 @@ checks are SKIPped with a reason, never failed.
 Guarantees, each covered by a regression test:
 
 - Generated configs for every sim in `sims/` are **byte-identical**
-  before and after phases 1–3, except the deliberate storage change. Only
-  the node directory moves: `var/run/<sim>/server/` stays as the
-  single-node location, so logs and pid paths don't move either.
-- `srv["port"]`, `srv["control_port"]` and `srv["auth_port"]` have the
-  same values for single-server sims (pinned leases, section 4.2).
+  before and after phases 1–3, except the deliberate storage change.
+  Only the node directory moves: `var/run/<sim>/server/` stays as the
+  single-node location, so logs and pid paths do not move either.
+- `srv["port"]`, `srv["control_port"]` and `srv["auth_port"]` have
+  the same values for single-server sims (pinned leases, section
+  4.2).
 - `./sim ctl`, scenario `link_*` steps with `unit:`, studio and `sim
   status` work without edits.
 - `enable_storage_server` stays `False` unless the sim adds a storage
@@ -536,10 +547,10 @@ checks:
      match: {op: SaveMission, result: ok}, at_least: 1}
 ```
 
-This needs a new bridge verb (`mission_save` / `mission_load`), sending
-9011/9010 and waiting for the reply. That's a small `gcs_bridge.py` and
-`ctl` addition. `restart proc: server` must restart storage nodes too
-when `persist: true`.
+This needs a new bridge verb (`mission_save` / `mission_load`). It
+sends 9011/9010 and waits for the reply. That is a small
+`gcs_bridge.py` and `ctl` addition. `restart proc: server` must
+restart storage nodes too when `persist: true`.
 
 ### 8.2 Parent + child, GCS on the parent commands a unit on the child (`sims/mesh_two_tier.yaml`)
 
@@ -555,8 +566,8 @@ units:
 ```
 
 Scenario: `wait_online c2` (seen by the GCS on `hq`), then `arm`,
-`takeoff`, `mode GUIDED` on c2. All of these are one-to-one messages one
-hop away, so they're supported. Checks: `fc_mode c2 GUIDED`,
+`takeoff`, `mode GUIDED` on c2. All of these are one-to-one messages
+one hop away, so they are supported. Checks: `fc_mode c2 GUIDED`,
 `telemetry_value c2 alt ≥ 8`, `no_server_event hq s2s.child.auth_fail`.
 
 ### 8.3 A unit-attached server relays for a second unit (`sims/mesh_onboard.yaml`)
@@ -612,8 +623,8 @@ checks:
 | **P6 Server-event assertions** | `de_sim_events` plugin wired into `_gen_comm`, `ctx["server_events"]`, the checks and `wait_server_event`. This **is** PluginEvents.md's phase 4 ("part of task 3"); build it once, here | **Task 1**: PluginEvents.md phases 1–3 (host, client/auth events, storage/S2S/relay events) in the comm server; and P3 | 8.4's `server_event_within` checks pass; with the plugin disabled they SKIP with a reason; readiness in 4.5 switches from grace period to events |
 | P7 (optional) Auth-root account ID | resolves the open question in 5.3 | P3 | 8.2 with `hq.auth` delivers relayed messages without the scoping fallback (verified by a `server_event`/journal check, or a second account that must **not** receive them) |
 
-P1 is independent and gives you mission storage right away. P2 and P3 are
-the core. P6 is where task 1 pays off.
+P1 is independent and gives mission storage right away. P2 and P3
+are the core. Task 1 pays off in P6.
 
 Combined dependency order across the three docs:
 
@@ -628,7 +639,7 @@ PluginEvents P1 ─ P2 ─ P3 ────────────────�
 
 This doc was first written before either companion doc existed. Both
 were read afterwards (port_allocation.md and PluginEvents.md as of
-2026-10-21), and this doc was changed to match them. Every assumption is
+2026-10-21). This doc was changed to match them. Every assumption is
 now resolved:
 
 | # | Assumption (as first written) | Doc | Resolution |
@@ -645,36 +656,39 @@ now resolved:
 **Mismatches left between the docs (to settle when implementing):**
 
 1. **Child-side "authenticated" signal.** The parent emits
-   `s2s.child.auth_ok`, but the child can't tell it was accepted unless
+   `s2s.child.auth_ok`. The child cannot tell it was accepted unless
    the server adds a parent → child `{s2s_auth: 'ok'}` notice
    (PluginEvents.md open question 3). This doc only relies on the
-   parent-side event, so the mesh can be built without that addition.
+   parent-side event. The mesh can be built without that addition.
 2. **Check names.** PluginEvents.md §5.2 lists `server_event`,
-   `server_event_order`, `server_event_within`, `no_server_event`. This
-   doc uses the same names and adds `server_link_uptime`. Agree on that
-   one addition, or drop it.
-3. **Phase ownership.** PluginEvents.md phase 4 (sim plugin + graders) and
-   port_allocation.md phase 4 (topology requests) both say "with task 3".
-   They are this doc's P6 and P3. Track each as **one** task, not two.
+   `server_event_order`, `server_event_within`, `no_server_event`.
+   This doc uses the same names and adds `server_link_uptime`. Agree
+   on that one addition, or drop it.
+3. **Phase ownership.** PluginEvents.md phase 4 (sim plugin +
+   graders) and port_allocation.md phase 4 (topology requests) both
+   say "with task 3". They are this doc's P6 and P3. Track each as
+   **one** task, not two.
 4. **Party IDs in `match:`.** Events carry `party_id` (the de_comm
    senderID), not the sim unit name. The runner should accept
-   `match: {unit: c2}` and translate it to that unit's `party_id`, so
-   scenarios don't hard-code IDs.
-5. **Storage backoff.** PluginEvents.md §5.4 found the storage link backs
-   off 1 s → 60 s with ±25 % jitter. Any `within_s` after a storage fault
-   must be ≥ ~75 s, or the fault kept short (under ~10 s).
+   `match: {unit: c2}` and translate it to that unit's `party_id`.
+   Then scenarios do not hard-code IDs.
+5. **Storage backoff.** PluginEvents.md §5.4 found the storage link
+   backs off 1 s → 60 s with ±25 % jitter. Any `within_s` after a
+   storage fault must be ≥ ~75 s, or the fault kept short (under ~10
+   s).
 
 ## 11. Open questions
 
 1. **Auth-root account ID** for `local_server_account_id` on children
    (5.3): read at runtime, or pinned by authenticator config?
 2. **Two-hop one-to-one relay** (2.1): accept it as a documented
-   limitation, or file a server change so individual messages relay along
-   the tree toward a known party?
-3. **Option C** (authenticator login hint): is per-unit placement under
-   one authenticator something real deployments need? If so, it's a
-   product feature, not just sim plumbing.
+   limitation, or file a server change so individual messages relay
+   along the tree toward a known party?
+3. **Option C** (authenticator login hint): is per-unit placement
+   under one authenticator something real deployments need? If so, it
+   is a product feature, not just sim plumbing.
 4. Should a unit-owned server **always** get a storage link when the
-   parent has one (to mirror an onboard cache), or only when declared?
-5. `persist: true` storage: one `var/persist/<sim>/` per sim name, or per
-   scenario run, and who cleans it?
+   parent has one (to mirror an onboard cache), or only when
+   declared?
+5. `persist: true` storage: one `var/persist/<sim>/` per sim name, or
+   per scenario run, and who cleans it?

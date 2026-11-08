@@ -2,10 +2,10 @@
 
 > DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
 
-An `assert:` entry in a de.scenario/1 scenario is `{name: {args}}` —
-the runner calls it after the timeline and grades the run evidence.
-Adding one is three small edits; the heavy lifting (unit resolution,
-journal/truth readers, verdict shape) is shared.
+An `assert:` entry in a de.scenario/1 scenario is `{name: {args}}`.
+The runner calls it after the timeline and grades the run evidence.
+Adding one is three small edits. The shared code does the heavy work:
+unit resolution, journal/truth readers, verdict shape.
 
 ## Where the pieces live
 
@@ -29,8 +29,8 @@ def _my_check(name, a, ctx):
 
 - `_r(name, status, value, detail)` is the result shape —
   `{"name","status","value","detail"}`. `SKIP` is a verdict for
-  missing evidence/unsupported realtime, never a silent pass.
-- `a` is the args mapping; `ctx` carries `manifest`, `marks` (journal
+  missing evidence/unsupported realtime. It is never a silent pass.
+- `a` is the args mapping. `ctx` carries `manifest`, `marks` (journal
   marks from the timeline), `sim`, `results_dir`, `samples`,
   `proc_events`, `link_events`, `restore_events`, `world`,
   `world_epoch_ms`, `telemetry`, `bot`, `operator_log`, `coverage_grids`,
@@ -51,10 +51,10 @@ DISPATCH = {
 }
 ```
 
-- If it takes `unit:` add the name to `UNIT_ASSERTS` — the empty-unit
+- If it takes `unit:` add the name to `UNIT_ASSERTS`. The empty-unit
   case then fails instead of vacuously passing.
 - If it grades run evidence rather than a scripted step (restart
-  counting, resource growth), it is an *invariant*: add it to
+  counting, resource growth), it is an *invariant*. Add it to
   `INVARIANT_ASSERTS` so a `chaos:` scenario can satisfy the "at least
   one invariant" rule with it.
 
@@ -68,49 +68,51 @@ V("my_check", "check", req=["unit"], opt=["min", "max"],
   eg="{my_check: {unit: c1, min: 2}}"),
 ```
 
-`./sim verbs` prints the doc/eg; `validate` rejects unknown args
+`./sim verbs` prints the doc/eg. `validate` rejects unknown args
 against req/opt — keep them accurate.
 
 ## 4. Document + test
 
-- Describe the check in the `checks.py` docstring evidence list (what
-  it reads: journals, telemetry.jsonl, truth rows, stub logs...) and in
-  `docs/SCENARIOS.md`'s assert section.
-- `engine/test_checks.py` exercises graders against canned fixtures —
-  add cases there; a scenario in `tests/` exercises the wiring end to
+- Describe the check in the `checks.py` docstring evidence list. Say
+  what it reads: journals, telemetry.jsonl, truth rows, stub logs.
+  Also describe it in `docs/SCENARIOS.md`'s assert section.
+- `engine/test_checks.py` exercises graders against canned fixtures.
+  Add cases there. A scenario in `tests/` exercises the wiring end to
   end.
 
 ## Example: `udp_proxy_rejects` (negative / security check)
 
-`udp_proxy_rejects {unit, from_ip, secs, expect}` proves a stranger cannot
-drive the FC through the UDP proxy pair. It sends an ARM COMMAND_LONG and a
-one-item mission upload to the unit's 1071 `{a,p}` from a socket bound to
-`from_ip` (default `127.0.0.2`; the allowlisted GCS is the bridge at
-`127.0.0.1`), then reads the FC back on serial0 (armed bit, mission
-signature).
+`udp_proxy_rejects {unit, from_ip, secs, expect}` proves a stranger
+cannot drive the FC through the UDP proxy pair. It sends an ARM
+COMMAND_LONG and a one-item mission upload to the unit's 1071 `{a,p}`
+from a socket bound to `from_ip` (default `127.0.0.2`; the allowlisted
+GCS is the bridge at `127.0.0.1`). Then it reads the FC back on
+serial0 (armed bit, mission signature).
 
-- PASS: FC still disarmed, mission unchanged, and on a `server: {udp_relay}`
-  sim `./sim ctl relay stats` shows `rejected.gcs_not_allowed >= 1`
+- PASS: FC still disarmed, mission unchanged. On a `server:
+  {udp_relay}` sim, `./sim ctl relay stats` shows
+  `rejected.gcs_not_allowed >= 1`
   (`gcs_unpinned` alone does not count).
-- FAIL: relay sim whose 1071 port is outside `udp_port_range` - same rule as
-  `udp_proxy_mavlink`; nothing is sent.
-- Registered in `engine/registry.py`, documented in `docs/SCENARIOS.md`,
-  tests in `engine/test_checks.py` (`TestUdpProxyRejects`).
+- FAIL: relay sim whose 1071 port is outside `udp_port_range` - same
+  rule as `udp_proxy_mavlink`. Nothing is sent.
+- Registered in `engine/registry.py`, documented in
+  `docs/SCENARIOS.md`, tests in `engine/test_checks.py`
+  (`TestUdpProxyRejects`).
 
 ## Example: the fake-GCS relay checks (SL-0178)
 
-`./sim ctl relay gcs start <name> --ip <src> [--port <n>]` spawns a fake
-GCS: a MAVLink heartbeat once a second into the relay pair's socket2
-from `<src>` (the single pair's port by default, `--port` to pick), the
-telemetry counted on the way back and reported in
-`relay gcs status [name]` / the proc's state file. `stop`, `silence`
-(hold the heartbeat, keep counting), `resume`, `cmd <name> <arm|disarm>`
-round it out; `./sim down` kills them like every other sim proc. Three
-checks read that state:
+`./sim ctl relay gcs start <name> --ip <src> [--port <n>]` spawns a
+fake GCS. It sends a MAVLink heartbeat once a second into the relay
+pair's socket2 from `<src>` (the single pair's port by default,
+`--port` to pick). The telemetry is counted on the way back and
+reported in `relay gcs status [name]` / the proc's state file.
+`stop`, `silence` (hold the heartbeat, keep counting), `resume`,
+`cmd <name> <arm|disarm>` round it out. `./sim down` kills them like
+every other sim proc. Three checks read that state:
 
-- `relay_gcs_telemetry {gcs, secs, at_least}` — PASS when the named fake
-  GCS's telemetry counter grows by `at_least` (default 1) inside `secs`
-  (default 3); FAIL when it is not running or the count stalls.
+- `relay_gcs_telemetry {gcs, secs, at_least}` — PASS when the named
+  fake GCS's telemetry counter grows by `at_least` (default 1) inside
+  `secs` (default 3). FAIL when it is not running or the count stalls.
 - `relay_gcs_no_telemetry {gcs, secs}` — PASS when it receives nothing
   for the window (the lock moved elsewhere or the pair is silent).
 
@@ -118,8 +120,8 @@ checks read that state:
 
 `./sim ctl relay approve|reject|kick|change-port|query` sends the 9021
 act as the sim's GCS bridge (a full-control GCS of the sim's
-account+group) and prints the reply; `relay attempts [secs]` dumps the
-pushes (attempt/switched/state/changed). As a step:
+account+group) and prints the reply. `relay attempts [secs]` dumps
+the pushes (attempt/switched/state/changed). As a step:
 `{t: 10, do: relay, act: approve, unit: c1, ip: '127.0.0.2', port: 50001}`.
 Three checks read the pushes:
 
@@ -129,14 +131,15 @@ Three checks read the pushes:
 - `relay_gcs_switched {secs, reason?}` — PASS when an act:'switched'
   push (with `reason` if given) arrives.
 
-Second account: the GCS bridge logs in under the sim's single account,
-so "another account's GCS gets nothing/can't act" needs a second
-credential — a follow-up task to add one is proposed (see the task
-notes).
+Second account: the GCS bridge logs in under the sim's single
+account. So "another account's GCS gets nothing/can't act" needs a
+second credential — a follow-up task to add one is proposed (see the
+task notes).
 - `relay_gcs_locked {unit, gcs}` — PASS when the pair's `list` row
-  `pinned.gcs {ip,port}` equals the named fake GCS's own source address.
+  `pinned.gcs {ip,port}` equals the named fake GCS's own source
+  address.
 - `relay_unit_locked {unit}` — PASS when the pair's `list` row
-  `pinned.unit` is `{mode: token, ip, port}` - the drone's DEU1 hello
+  `pinned.unit` is `{mode: token, ip, port}`. The drone's DEU1 hello
   pin is alive (SL-0182 case 5, DE-0067).
 - `relay_flood_msgs {unit, secs, at_most}` — PASS when the distinct
   attempt sources the pinned row shows during a flood stay within
@@ -144,64 +147,66 @@ notes).
 - `relay_reject_bound {unit, at_most}` — PASS when the pair's rejected
   list has at most `at_most` entries (SL-0182 case 2).
 - `relay_rejected_frozen {unit, secs, trigger?}` — PASS when the
-  relay's `stats` `rejected.gcs_*` counters do not grow in the window;
-  after `change_port` any gcs_* growth means the stray still reaches
+  relay's `stats` `rejected.gcs_*` counters do not grow in the window.
+  After `change_port`, any gcs_* growth means the stray still reaches
   the relay (DE-0067).
 - `relay_acct2_denied {unit, act, trigger?}` — PASS when a peer act
   under the sim's second account gets `not_allowed`, never
   `applied: true` (SL-0184).
 - `relay_acct2_quiet {unit, secs, trigger?}` — PASS when the second
-  account hears no attempt/switch pushes; the session logs in first and
-  the trigger runs inside the listen window (DE-0066).
+  account hears no attempt/switch pushes. The session logs in first
+  and the trigger runs inside the listen window (DE-0066).
 - `relay_gcs_attempt {unit, secs, ip, port?, others?, trigger?}` — a
-  gcs_attempt for this source is raised inside `secs`; when pushes do
-  not reach the sim's GCS bridge the check polls `act:'query'` (a stale
-  row left by a rejected source does not count).
+  gcs_attempt for this source is raised inside `secs`. When pushes do
+  not reach the sim's GCS bridge, the check polls `act:'query'`. A
+  stale row left by a rejected source does not count.
 - `relay_no_gcs_attempt {unit, secs, trigger?}` — no attempt raised in
   the window.
-- `relay_gcs_switched {unit, secs, reason?, trigger?}` — the pin moves;
-  reason is `same_ip`/`approved`/`idle` (synthesized from the move when
-  pushes are unavailable).
+- `relay_gcs_switched {unit, secs, reason?, trigger?}` — the pin
+  moves. Reason is `same_ip`/`approved`/`idle` (synthesized from the
+  move when pushes are unavailable).
 
 `trigger` is a relay subcommand line (or a list) run first inside the
-check window - e.g. `trigger: "reject c1 --gcs q2"` or
+check window — e.g. `trigger: "reject c1 --gcs q2"` or
 `["waitattempt c1 127.0.0.2", "approve c1 --gcs q2"]`. `waitattempt`
-blocks until the request is live so the approve cannot race the
+blocks until the request is live, so the approve cannot race the
 auto-reject cycle. `relay resume <unit>` un-pauses the unit's udp
-proxy (it boots paused) - send it before expecting telemetry.
+proxy (it boots paused). Send it before expecting telemetry.
 
 ## tests/udp_relay scenarios (SL-0180, tofu policy, real time)
 
-- `relay_lock_stranger.yaml` — case 1: the first GCS locks the pair; a
-  stranger gets no telemetry and its ARM/mission write never reach the
-  FC (`udp_proxy_rejects`).
+- `relay_lock_stranger.yaml` — case 1: the first GCS locks the pair. A
+  stranger gets no telemetry and its ARM/mission write never reaches
+  the FC (`udp_proxy_rejects`).
 - `relay_same_ip_return.yaml` — case 2: same-IP return on a new source
-  port takes the lock (`gcs_switched reason same_ip`), telemetry resumes.
+  port takes the lock (`gcs_switched reason same_ip`). Telemetry
+  resumes.
 - `relay_approve_switchback.yaml` — case 3: approve moves telemetry to
-  the waiting source, the old GCS is cut and is approved back.
-- `relay_attempt_timeout.yaml` — case 4: an unanswered request keeps the
-  locked GCS in place and the stranger gets nothing during the wait.
+  the waiting source. The old GCS is cut and is approved back.
+- `relay_attempt_timeout.yaml` — case 4: an unanswered request keeps
+  the locked GCS in place. The stranger gets nothing during the wait.
 - `relay_reject_10s.yaml` — case 5: reject for 10s raises no attempt
-  during the block; a fresh attempt appears after it lapses.
+  during the block. A fresh attempt appears after it lapses.
 - `relay_reject_long.yaml` — case 6: 'reject longer' raises no attempt
-  for the configured duration, including from a new port on the same IP.
+  for the configured duration, including from a new port on the same
+  IP.
 
 ## tests/udp_relay scenarios (SL-0182: flood and change port)
 
-- `relay_flood_msgs.yaml` — case 1: a flood of 127.0.0.x sources raises
-  one waiting request with a growing `others` count and few operator
-  messages; the locked GCS keeps telemetry.
+- `relay_flood_msgs.yaml` — case 1: a flood of 127.0.0.x sources
+  raises one waiting request with a growing `others` count and few
+  operator messages. The locked GCS keeps telemetry.
 - `relay_flood_reject_bound.yaml` — case 2: the reject list stays
   within its maximum while a flood keeps the pair rejecting expired
   attempts.
 - `relay_change_port_stray.yaml` — case 3: after `change_port` the
-  stray source talks to a dead port - no new attempts, and the relay's
+  stray source talks to a dead port. No new attempts, and the relay's
   rejected counters do not grow for it.
-- `relay_change_port_lock.yaml` — case 4: after `change_port` the first
-  GCS on the new port is locked in with no IP restriction.
+- `relay_change_port_lock.yaml` — case 4: after `change_port` the
+  first GCS on the new port is locked in with no IP restriction.
 - `relay_deu1_token.yaml` — case 5: the DEU1 drone-side token still
   pins the unit side after the flood and after `change_port`
-  (`relay_unit_locked`), and telemetry keeps flowing (DE-0067).
+  (`relay_unit_locked`). Telemetry keeps flowing (DE-0067).
 - `relay_cross_account.yaml` — a second-account GCS hears no
-  attempt/switch pushes and its approve returns `not_allowed`
+  attempt/switch pushes. Its approve returns `not_allowed`
   (SL-0184).

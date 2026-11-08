@@ -3,25 +3,28 @@
 > DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
 
 Status: **phase 0 + phase 1 + phase 2 implemented** (SL-0074, SL-0075,
-SL-0076) — the allocator (`engine/port_allocation_management.py`), the
-machine-wide registry and the lease lifecycle are live; phase-1 request
-kinds, `--slot-base any` / `scenario._host_free_sim` as one locked
-transaction (`Allocator.pick`), and the seed/recording/scoreboard audit
-(§4.1) are done; phase 2 puts every formula-derived value on `prefer`,
+SL-0076). The allocator (`engine/port_allocation_management.py`), the
+machine-wide registry and the lease lifecycle are live. The phase-1
+request kinds are done. `--slot-base any` and
+`scenario._host_free_sim` run as one locked transaction
+(`Allocator.pick`). The seed/recording/scoreboard audit (§4.1) is
+done. Phase 2 puts every formula-derived value on `prefer`. It
 launches SITL on leased `--base-port/--rc-in-port/--sim-port-*/
---irlock-port` values, and hashes the request, not the allocation.
-`./sim ports [name|--all|gc]` shows the real leases. Task 2 of 3 in
-the "real servers + mesh in the sim" work. Task 1 is the comm-server
-plugin events (`droneengage_server/wiki/PluginEvents.md`). Task 3, the
-`servers:` topology / mesh design, uses the request API defined here.
+--irlock-port` values. It hashes the request, not the allocation.
+`./sim ports [name|--all|gc]` shows the real leases. This is task 2
+of 3 in the "real servers + mesh in the sim" work. Task 1 is the
+comm-server plugin events (`droneengage_server/wiki/PluginEvents.md`).
+Task 3 is the `servers:` topology / mesh design. It uses the request
+API defined here.
 
 ## Goal
 
-The sim should reserve every port it needs (units, comm servers, storage,
-authenticator, several comm servers per sim including comm servers attached
-to units, proxies, control ports) through a single machine-wide allocator.
-That allocator must work with any number of sims running at once, across
-worktrees. It replaces three things:
+The sim reserves every port it needs through one machine-wide
+allocator. This covers units, comm servers, storage, the
+authenticator, several comm servers per sim (including comm servers
+attached to units), proxies and control ports. The allocator must
+work with any number of sims running at once, across worktrees. It
+replaces three things:
 
 - the fixed formulas (`SERVER_PORT + slot_base`, `port+1/+10/+11`,
   `base + 10*slot`)
@@ -29,14 +32,14 @@ worktrees. It replaces three things:
   `scenario._host_free_sim` / `_seed_slot_bases`
 - the after-the-fact clash check in `simlib.check_conflicts`
 
-Module: `engine/port_allocation_management.py` (the user's name for it),
-called "the allocator" below.
+Module: `engine/port_allocation_management.py` (the user's name for
+it). This doc calls it "the allocator".
 
 ---
 
 ## 1. Survey: every port the sim uses today
 
-`k` is the unit's slot (`slot_base + unit index`), and `sb` is the sim's
+`k` is the unit's slot (`slot_base + unit index`). `sb` is the sim's
 `slot_base` (default `SIM_SLOT_BASE`, 10). Scenarios pick
 `sb = 10 + 25*(seed % 9)` plus in-between fallbacks
 (`scenario._seed_slot_base(s)`).
@@ -82,12 +85,13 @@ stub_precland 55000, de_sound 54000.
 
 The comm server's repo config also carries `storage_server_port: 9000`
 and the authenticator's `webadmin_port: 8089`. The sim disables both
-today. Once storage is enabled they become allocations, not repo defaults.
+today. When storage is enabled they become allocations, not repo
+defaults.
 
 ### 1.3 Render / world ports (`simlib._render_spec`, only with `render:`)
 
-Mavlink3DMap is optional, so none of these are leased unless the sim has
-a `render:` block.
+Mavlink3DMap is optional. None of these ports are leased unless the
+sim has a `render:` block.
 
 | Port | Formula | Note |
 |---|---|---|
@@ -101,19 +105,22 @@ These use a stride of **1 per sim**, not 10 per unit.
 
 ### 1.4 Who checks for clashes today
 
-- `simlib.used_ports(sim)`: the set of ports a sim binds. It misses SITL's
-  RC-in / sim / irlock UDP ports and the server's ephemeral UDP proxies.
+- `simlib.used_ports(sim)`: the set of ports a sim binds. It misses
+  SITL's RC-in / sim / irlock UDP ports and the server's ephemeral
+  UDP proxies.
 - `simlib.ports_held(ports)`: a test bind on 0.0.0.0, TCP and UDP. It
-  exists because the module blocks 54000–60999 sit **inside Linux's
-  ephemeral range** (`ip_local_port_range` = 32768–60999 on this host).
-- `simlib.check_conflicts`: compares against live sims' manifests at `up`
-  (now over the pinned request set; `simlib.lease_check` adds the
-  cross-worktree registry view).
+  exists because the module blocks 54000–60999 are **inside Linux's
+  ephemeral range** (`ip_local_port_range` = 32768–60999 on this
+  host).
+- `simlib.check_conflicts`: compares against live sims' manifests at
+  `up`. It now works over the pinned request set.
+  `simlib.lease_check` adds the cross-worktree registry view.
 - `simlib._load_sim_free_slot` (`--slot-base any`) and
   `scenario._host_free_sim`: one locked `Allocator.pick` transaction
-  per candidate scan since SL-0075 (was: resolve + bind-probe up to
-  200 bases).
-- `launcher.port_busy`: connect probes for the server and control ports.
+  per candidate scan since SL-0075. Before that they resolved and
+  bind-probed up to 200 bases.
+- `launcher.port_busy`: connect probes for the server and control
+  ports.
 
 ### 1.5 Consumers that hard-code ports
 
@@ -123,7 +130,7 @@ These use a stride of **1 per sim**, not 10 per unit.
   examples use 61010.
 - `sims/quadcopter.yaml`, `quadcopters-4.yaml`, `rover.yaml`, `plane.yaml`:
   comments such as "de_mavlink s2s 63500, ctl 62059, sysid 50". The
-  9966/19408 in these files are the external stack's ports, which is
+  9966/19408 in these files are the external stack's ports. That is
   correct and stays.
 - `blocks/_template_sensor/catalog.yaml`: a comment about 62000+10k.
 - `tests/worlds/render_feed_smoke.yaml`: a comment already says "check
@@ -133,37 +140,39 @@ These use a stride of **1 per sim**, not 10 per unit.
 Everything else (`ctl.py`, `gcs_bridge.py`, `telemetry.py`,
 `scenario_runner.py`, `world.py`, stubs, launcher, studio via
 `launcher.studio → load_sim`) already reads ports from the manifest
-(`var/run/<sim>/sim.json`) or from the generated configs. **The formulas
-live in one place, load time, and that is where the allocator plugs in.**
+(`var/run/<sim>/sim.json`) or from the generated configs. **The
+formulas live in one place: load time. The allocator plugs in
+there.**
 
 ### 1.6 Weaknesses of the current scheme
 
-1. **Families alias each other across sims.** Safety depends on the probe
-   at bring-up. Examples:
+1. **Families alias each other across sims.** Safety depends on the
+   probe at bring-up. Examples:
    - de_gpio `61000+10k` at k=60 equals link_proxy `61500+10k` at k=10.
    - viewer `8070+sb` at sb=30 equals sink `8090+sb` at sb=10.
    - the server's `62008+sb`, `+1`, `+10`, `+11` fall inside the de_comm
      decade layout `62000+10k` for small bases.
-2. **Upper bounds cut fleet size.** de_tracker `65000+10k` overflows at
-   k ≥ 54, hence `_slot_fits`. The 9×25 slot blocks cap parallel scenario
-   runs at nine.
-3. **N servers per sim don't fit.** Fixed offsets from one `server.port`
-   can't express a parent, a child, a server per unit, storage, and a
-   proxy on each link.
-4. **The ephemeral range** (54000–60999 module blocks) lets any OS socket
-   steal a module port at random.
-5. **Conflicts are found after the fact.** The free-slot search resolves
-   the whole sim up to 200 times, and two sims coming up at once can pick
-   the same base, because nothing is reserved between the check and the
-   bind.
-6. **Worktrees don't see each other's manifests** (`../_wt/*` have their
-   own `var/run`). The only thing protecting them is the `ports_held` probe.
+2. **Upper bounds cut fleet size.** de_tracker `65000+10k` overflows
+   at k ≥ 54. `_slot_fits` exists for that. The 9×25 slot blocks cap
+   parallel scenario runs at nine.
+3. **N servers per sim do not fit.** Fixed offsets from one
+   `server.port` cannot express a parent, a child, a server per unit,
+   storage, and a proxy on each link.
+4. **The ephemeral range** (54000–60999 module blocks) lets any OS
+   socket take a module port at random.
+5. **Conflicts are found after the fact.** The free-slot search
+   resolves the whole sim up to 200 times. Two sims coming up at once
+   can pick the same base. Nothing is reserved between the check and
+   the bind.
+6. **Worktrees do not see each other's manifests** (`../_wt/*` have
+   their own `var/run`). Only the `ports_held` probe protects them.
 
 ---
 
 ## 2. Pinned vs free ports
 
-There are four kinds of port request. Each request says which kind it is.
+There are four kinds of port request. Each request says which kind it
+is.
 
 | Kind | Meaning | Examples |
 |---|---|---|
@@ -174,139 +183,146 @@ There are four kinds of port request. Each request says which kind it is.
 
 ### SITL is not really pinned
 
-ArduPilot's `SITL_cmdline.cpp` has `--base-port` and `--rc-in-port`, and
-both must come before `-I`. With them:
+ArduPilot's `SITL_cmdline.cpp` has `--base-port` and `--rc-in-port`.
+Both must come before `-I`. With them:
 
 - the TCP serial ports come from an **allocated block**
   (`--base-port B` gives serial0 = B, serial2 = B+2, serial5 = B+5).
-  serial1 is already passed explicitly (`--serial1 tcp:P`) and can be a
-  separate free port, or `B+1`.
-- RC-in comes from a free UDP port (`--rc-in-port R`), so it gets tracked
-  for the first time.
+  serial1 is already passed explicitly (`--serial1 tcp:P`). It can be
+  a separate free port, or `B+1`.
+- RC-in comes from a free UDP port (`--rc-in-port R`). It gets
+  tracked for the first time.
 - `-I` keeps choosing only the eeprom and log identity. It no longer
-  decides the ports, and it doesn't need to be unique across sims:
-  each unit has its own working dir (`run/<unit>/sitl`).
+  decides the ports. It does not need to be unique across sims. Each
+  unit has its own working dir (`run/<unit>/sitl`).
 - Phase 2 verified (SL-0076): `sim-port-in/out` feed
-  `sitl_model->set_interface_ports()` - bound only when the model has an
-  external physics interface (JSON, Webots, ...); irlock binds only when
-  precision landing is enabled. All three are nevertheless leased
-  unconditionally and passed explicitly (`--sim-port-in`, `--sim-port-out`,
-  `--irlock-port`), so a params- or model-enabled socket can never slip
-  under another sim's lease - and `-I` never re-derives them.
+  `sitl_model->set_interface_ports()`. They bind only when the model
+  has an external physics interface (JSON, Webots, ...). irlock binds
+  only when precision landing is enabled. All three are still leased
+  unconditionally and passed explicitly (`--sim-port-in`,
+  `--sim-port-out`, `--irlock-port`). A params- or model-enabled
+  socket can never slip under another sim's lease. `-I` never
+  re-derives them.
 
 ### sysid is an ID, not a port
 
-The MAVLink sysid stays separate from ports, with `alloc_id("sysid")` in
-1..250, unique **per sim only** (decided). Several instances of the same
-sim or scenario can then run side by side with identical sysids and
-different ports. The allocator does no cross-sim sysid check, and sysid
-leases live in the sim's manifest, not the machine registry. The default
-keeps today's value (`sysid = slot`), so telemetry, scoring and
-recordings don't change.
+The MAVLink sysid stays separate from ports. `alloc_id("sysid")`
+gives 1..250, unique **per sim only** (decided). Several instances of
+the same sim or scenario can then run side by side with identical
+sysids and different ports. The allocator does no cross-sim sysid
+check. Sysid leases live in the sim's manifest, not the machine
+registry. The default keeps today's value (`sysid = slot`).
+Telemetry, scoring and recordings do not change.
 
 ### Pools
 
-- **Default free pool: 20000–32767**, outside Linux's ephemeral range,
-  which the allocator reads from `/proc/sys/net/ipv4/ip_local_port_range`
-  at startup and refuses to overlap. Configurable as `SIM_PORT_POOL` in
-  `sim.local.env`.
-- **Deny list:** ports developers' own stacks use, so the sim never takes
-  them: 3000 (webclient), 9966, 19408, 19001, 9000, 8089, and 5760–5859
-  (a developer's SITL at I=0..9). Configurable as `SIM_PORT_DENY`.
-- **Legacy ranges** (54000–65535, 5760+, 7660+, 8070–8900, 16450+) are
-  used only through `prefer` and `pin` during migration, then dropped.
+- **Default free pool: 20000–32767**, outside Linux's ephemeral
+  range. The allocator reads the ephemeral range from
+  `/proc/sys/net/ipv4/ip_local_port_range` at startup and refuses to
+  overlap it. Configurable as `SIM_PORT_POOL` in `sim.local.env`.
+- **Deny list:** ports that developers' own stacks use, so the sim
+  never takes them: 3000 (webclient), 9966, 19408, 19001, 9000, 8089,
+  and 5760–5859 (a developer's SITL at I=0..9). Configurable as
+  `SIM_PORT_DENY`.
+- **Legacy ranges** (54000–65535, 5760+, 7660+, 8070–8900, 16450+)
+  are used only through `prefer` and `pin` during migration. Then
+  they are dropped.
 
 ### 2.1 Unix domain sockets for the module bus (fewer ports)
 
 The DE module bus can already run over Unix datagram sockets
 (`de_common/de_databus`: `CModule::init(..., use_unix_socket)`,
-`unixDgramClient`, and de_comm's `unixDgramCommunicator`), and production
-configs turn it on (`de_comm/de_mavlink/de_camera` `*.config.module.json`
-all have `"use_unix_socket": true`). The sim turns it **off**
-(`modules/templates/de_comm.json`, `simlib.py:1666/1803`) for one reason:
+`unixDgramClient`, and de_comm's `unixDgramCommunicator`). Production
+configs turn it on (`de_comm/de_mavlink/de_camera`
+`*.config.module.json` all have `"use_unix_socket": true`). The sim
+turns it **off** (`modules/templates/de_comm.json`,
+`simlib.py:1666/1803`) for one reason:
 
 - **The socket path is machine-wide.** `getUnixSocketBaseDir()`
   (`de_common/helpers/helpers.cpp:379`) is hard-coded to `/run/de_comm`
-  or `/tmp/de_comm`, and the broker is always `de_comm_broker.sock`. Two
-  de_comm instances on one host fight over the same broker socket (the
-  de_mavlink config even comments "SHOULD BE FALSE when Multiple DE_COMM
-  modules are running on the same board").
+  or `/tmp/de_comm`. The broker is always `de_comm_broker.sock`. Two
+  de_comm instances on one host fight over the same broker socket.
+  The de_mavlink config even comments "SHOULD BE FALSE when Multiple
+  DE_COMM modules are running on the same board".
 
 **Status: implemented (SL-0086, on top of GL-0057).** `bus: unix|udp`
-per sim or per unit (default `udp`); a unix-bus unit takes a
+works per sim or per unit (default `udp`). A unix-bus unit takes a
 `unit.<u>.sockdir` path lease under
-`$XDG_RUNTIME_DIR/de_sim/s/<8-char hash>/`, gets no per-module s2s
-leases, and `gen_unit` writes `use_unix_socket: true` +
+`$XDG_RUNTIME_DIR/de_sim/s/<8-char hash>/`. It gets no per-module s2s
+leases. `gen_unit` writes `use_unix_socket: true` +
 `unix_socket_dir` for de_comm and each catalog module flagged
-`unix: true`. `udp_proxy:` modules, the Python stubs and de_sound stay
-on UDP. The directory is removed when the lease is released.
+`unix: true`. `udp_proxy:` modules, the Python stubs and de_sound
+stay on UDP. The directory is removed when the lease is released.
 
 1. **Fewer ports.** Module s2s ports are the largest group of ports
-   (one per module per unit), and they're the ones sitting in the
-   ephemeral range. Over Unix sockets they need **no port** at all.
-   de_comm still binds its UDP listener (the broker always starts
-   `cUDPClient`; `de_modules_manager.cpp:118`), so each unit keeps one
-   `unit.<u>.de_comm` UDP lease, and modules never need one.
-2. **The sim tests the production path.** Today the sim exercises UDP
-   while production boards use Unix sockets.
+   (one per module per unit). They are also the ones in the ephemeral
+   range. Over Unix sockets they need **no port** at all. de_comm
+   still binds its UDP listener (the broker always starts
+   `cUDPClient`; `de_modules_manager.cpp:118`). Each unit keeps one
+   `unit.<u>.de_comm` UDP lease. Modules never need one.
+2. **The sim tests the production path.** Today the sim exercises
+   UDP while production boards use Unix sockets.
 
-**Required change (in `droneengage_common`, small, needed by production too):**
-`getUnixSocketBaseDir()` honours a configured directory: a
-`unix_socket_dir` config key passed into `CModule::init` and the broker,
-with the `DE_UNIX_SOCKET_DIR` environment variable as fallback, and
-today's `/run` → `/tmp` order when neither is set. Production is
-unchanged by default. It also gets a supported way to run two de_comm
-instances on one board, which the de_mavlink comment says is broken
-today.
+**Required change (in `droneengage_common`, small, needed by
+production too):** `getUnixSocketBaseDir()` honours a configured
+directory. The order is: a `unix_socket_dir` config key passed into
+`CModule::init` and the broker, then the `DE_UNIX_SOCKET_DIR`
+environment variable as fallback, then today's `/run` → `/tmp` order
+when neither is set. Production is unchanged by default. It also gets
+a supported way to run two de_comm instances on one board. The
+de_mavlink comment says that is broken today.
 
 **Sim side:**
-- Each unit gets its own socket directory, allocated like a lease
-  (`unit.<u>.sockdir`, kind `path`) under
+- Each unit gets its own socket directory. It is allocated like a
+  lease (`unit.<u>.sockdir`, kind `path`) under
   `$XDG_RUNTIME_DIR/de_sim/s/<8-char hash of worktree+sim+unit>/`.
-  It must be short because `sun_path` is limited to 108 bytes, and a
-  worktree path plus `var/run/<sim>/<unit>/de_comm_<module_id>_<module_key>.sock`
-  can go over that. The directory is removed on release.
-- New sim key `bus: unix | udp`, per sim or per unit. Default `udp`
-  until the de_common change lands and is pulled, then `unix`.
+  It must be short because `sun_path` is limited to 108 bytes. A
+  worktree path plus
+  `var/run/<sim>/<unit>/de_comm_<module_id>_<module_key>.sock` can go
+  over that limit. The directory is removed on release.
+- New sim key `bus: unix | udp`, per sim or per unit. Default is
+  `udp` until the de_common change lands and is pulled. Then it is
+  `unix`.
 - **These stay on UDP:**
   - modules with a `udp_proxy:` (SL-0010 injects chunk faults on the
-    UDP path, so a unit that asks for it keeps UDP for that module;
-    the proxy could later learn Unix datagrams)
+    UDP path. A unit that asks for it keeps UDP for that module. The
+    proxy could later learn Unix datagrams)
   - Python stubs and `droneengage_sound_module`, until they learn
     `AF_UNIX` datagrams (`stubs/stub_base.py` speaks UDP)
   - anything that goes across boards (not a sim case)
-- **Mixed is fine.** The broker listens on both, and `CModule::init`
+- **Mixed is fine.** The broker listens on both. `CModule::init`
   already falls back to UDP for non-localhost targets.
 
 ### 2.2 Fixed UDP-proxy ports (the comm server binds them for the unit)
 
-The answer to "will we run with fixed ports?" is yes, either by asking
-for specific ports or by using fixed defaults. What happens today:
-de_mavlink's `udp_proxy_fixed_port` (in its config, and **persisted in
-the unit's local config file** by `cLocalConfigFile.addNumericField`,
-`fcb_main.cpp:330`) is sent as `socket2.port`. The relay binds it only
-when `allow_fixed_port: true` and the port is inside its range.
+The answer to "will we run with fixed ports?" is yes. The sim can ask
+for specific ports or use fixed defaults. What happens today:
+de_mavlink's `udp_proxy_fixed_port` is sent as `socket2.port`. It
+sits in its config and is **persisted in the unit's local config
+file** by `cLocalConfigFile.addNumericField` (`fcb_main.cpp:330`).
+The relay binds it only when `allow_fixed_port: true` and the port is
+inside its range.
 
 Design:
-- New unit key `udp_proxy_port: <N> | auto`. `N` is a **pin** (that exact
-  port, or fail at `up`), and `auto` is **free**. The lease is
-  `unit.<u>.udp_telemetry` (UDP). It's in the sim's name, but the
-  **comm server** binds it, so the lease records `bound_by: server.<s>`
+- New unit key `udp_proxy_port: <N> | auto`. `N` is a **pin** (that
+  exact port, or fail at `up`). `auto` is **free**. The lease is
+  `unit.<u>.udp_telemetry` (UDP). It is in the sim's name, but the
+  **comm server** binds it. The lease records `bound_by: server.<s>`
   for diagnostics.
 - `gen_unit` writes `udp_proxy_fixed_port` into de_mavlink's config
-  **and** resets the persisted local value. A port left over in the
-  unit's local file from a previous run would otherwise win and bypass
-  the allocator. This has to be verified against how `cLocalConfigFile`
-  orders config vs local values.
-- `gen_server` keeps the relay's `allow_fixed_port: true` as soon as any
-  unit routed to it has `udp_proxy_port`.
-- Fixed defaults (e.g. "use 14550 like a real board"): written as a pin.
-  Only one sim on the machine can hold such a port, and the second gets
-  the normal clash error naming the sim that holds it. That's the
-  correct behaviour for a literally fixed port.
+  **and** resets the persisted local value. Without that, a port left
+  over in the unit's local file from a previous run would win and
+  bypass the allocator. This must be verified against how
+  `cLocalConfigFile` orders config vs local values.
+- `gen_server` keeps the relay's `allow_fixed_port: true` as soon as
+  any unit routed to it has `udp_proxy_port`.
+- Fixed defaults (e.g. "use 14550 like a real board") are written as
+  a pin. Only one sim on the machine can hold such a port. The second
+  gets the normal clash error naming the sim that holds it. That is
+  the correct behaviour for a literally fixed port.
 - `socket1` stays random (the server picks it). If the server is ever
-  given a fixed port range, that becomes a `server.<s>.udp_proxy_range`
-  block.
+  given a fixed port range, that becomes a
+  `server.<s>.udp_proxy_range` block.
 
 ---
 
@@ -314,34 +330,35 @@ Design:
 
 ### Location: machine-wide, not per worktree
 
-`$XDG_RUNTIME_DIR/de_sim/ports.json` (on this host `/run/user/1000/…`,
-a tmpfs cleared at logout, which suits leases), falling back to
-`~/.cache/de_sim/ports.json`. It can be overridden with
-`SIM_PORT_REGISTRY`.
+`$XDG_RUNTIME_DIR/de_sim/ports.json` (on this host
+`/run/user/1000/…`, a tmpfs cleared at logout, which suits leases).
+The fallback is `~/.cache/de_sim/ports.json`. `SIM_PORT_REGISTRY`
+overrides it.
 
-It must **not** live under `var/`: every worktree has its own `var/`, and
-the whole point is that main and `_wt/*` sims see each other.
+It must **not** live under `var/`. Every worktree has its own
+`var/`. The point is that main and `_wt/*` sims see each other.
 
 Docker (decided: keep it simple, warn only, never require):
 - The image sets `SIM_PORT_REGISTRY=/run/de_sim/ports.json`.
 - `docker/README.md` documents one optional flag,
   `-v $XDG_RUNTIME_DIR/de_sim:/run/de_sim`, for anyone running the
   container next to host sims.
-- Without the mount, the container has its own private registry, and the
-  `ports_held` bind probe (which sees host ports, because of
-  `--network host`) still stops real clashes. That's exactly today's
+- Without the mount, the container has its own private registry. The
+  `ports_held` bind probe still stops real clashes (it sees host
+  ports because of `--network host`). That is exactly today's
   protection. `entrypoint.sh` prints one line,
   `port registry not shared with the host (see docker/README.md)`,
   and carries on.
 
 ### Locking and writes
 
-- `fcntl.flock(LOCK_EX)` on `ports.lock` next to the registry for each
-  whole transaction (read → change → write).
-- Writes go to `ports.json.tmp` followed by `os.replace`, so a crash
-  never leaves a half-written file.
-- A transaction covers a **whole sim's request**, all or nothing. This
-  closes the race between two `./sim up`s choosing at the same moment.
+- `fcntl.flock(LOCK_EX)` on `ports.lock` next to the registry for
+  each whole transaction (read → change → write).
+- Writes go to `ports.json.tmp`, then `os.replace`. A crash never
+  leaves a half-written file.
+- A transaction covers a **whole sim's request**, all or nothing.
+  This closes the race between two `./sim up`s choosing at the same
+  moment.
 
 ### Lease record
 
@@ -360,53 +377,56 @@ Docker (decided: keep it simple, warn only, never require):
 }
 ```
 
-A lease belongs to the pair `(worktree, sim)`, not to a single process. A
-sim is several processes, and the one that reserved the ports (`./sim up`)
-exits as soon as bring-up finishes.
+A lease belongs to the pair `(worktree, sim)`, not to a single
+process. A sim is several processes. The one that reserved the ports
+(`./sim up`) exits as soon as bring-up finishes.
 
 ### Releasing and reclaiming
 
 - `./sim down <sim>` and `./sim clean` release every lease of
   `(worktree, sim)`.
-- A **stale-lease sweep** runs at the start of every transaction. A lease
-  is reclaimed when:
+- A **stale-lease sweep** runs at the start of every transaction. A
+  lease is reclaimed when:
   - its sim has no live pids (`read_pids` on `<worktree>/var/run/<sim>/pids`)
     **and** its holder pid is dead, or
-  - it is still `reserved` (never marked `bound`) and its holder is dead,
-    which covers a `./sim up` killed with -9 halfway through.
-  A pid counts as alive only if `/proc/<pid>/stat` field 22 (start time)
-  still matches what the lease recorded, so a reused pid isn't mistaken
-  for the original.
+  - it is still `reserved` (never marked `bound`) and its holder is
+    dead. This covers a `./sim up` killed with -9 halfway through.
+  A pid counts as alive only if `/proc/<pid>/stat` field 22 (start
+  time) still matches what the lease recorded. A reused pid is not
+  mistaken for the original.
 - A lease whose worktree directory no longer exists is reclaimed too.
-- `./sim ports gc` runs the sweep by hand. `./sim doctor` reports stale
-  leases and any registry/host mismatch.
+- `./sim ports gc` runs the sweep by hand. `./sim doctor` reports
+  stale leases and any registry/host mismatch.
 
 ### The reserve → bind race
 
-The registry stops **sims** colliding with each other. It can't stop a
-**foreign** process (a browser, wsdd, a developer's server) taking a port
-between the reservation and the bind. Mitigations, in order:
+The registry stops **sims** colliding with each other. It cannot stop
+a **foreign** process (a browser, wsdd, a developer's server) from
+taking a port between the reservation and the bind. Mitigations, in
+order:
 
-1. **Prefer ports nobody else picks by chance.** The free pool is outside
-   the ephemeral range, so the kernel never hands those ports to
+1. **Prefer ports nobody else picks by chance.** The free pool is
+   outside the ephemeral range. The kernel never hands those ports to
    short-lived outbound sockets.
-2. **Test-bind at reservation time.** Inside the transaction, every port
-   gets a `ports_held` bind (TCP and UDP for `both`). A port that fails
-   is skipped and recorded as `foreign` for 60 s so the next pick skips
-   it too.
-3. **Bind soon.** The launcher starts processes right after `commit()`.
-   The gap is the config-generation time (milliseconds to seconds).
+2. **Test-bind at reservation time.** Inside the transaction, every
+   port gets a `ports_held` bind (TCP and UDP for `both`). A port
+   that fails is skipped. It is recorded as `foreign` for 60 s, so
+   the next pick skips it too.
+3. **Bind soon.** The launcher starts processes right after
+   `commit()`. The gap is the config-generation time (milliseconds to
+   seconds).
 4. **Recover when a bind fails.** The launcher already waits for each
-   process to be ready. When a process dies with EADDRINUSE (or its
-   readiness wait fails and `ports_held` shows a foreign owner), the
-   launcher calls `reassign(name)`: a new port for that one lease, the
-   affected configs regenerated (gen_unit / gen_server are pure functions
-   of the manifest), and only the processes involved restarted. One retry,
-   then fail with a message naming the foreign process (from `ss -lptn`).
+   process to be ready. When a process dies with EADDRINUSE, or its
+   readiness wait fails and `ports_held` shows a foreign owner, the
+   launcher calls `reassign(name)`. That gives a new port for that
+   one lease. The affected configs are regenerated (gen_unit /
+   gen_server are pure functions of the manifest). Only the processes
+   involved are restarted. One retry, then fail with a message naming
+   the foreign process (from `ss -lptn`).
 
 Handing already-bound sockets to child processes (fd passing) was
-considered and rejected: SITL, the C++ modules, and the Rust servers
-can't adopt an inherited socket.
+considered and rejected. SITL, the C++ modules, and the Rust servers
+cannot adopt an inherited socket.
 
 ---
 
@@ -437,13 +457,14 @@ alloc.reassign("copters3", "unit.c1.de_comm")          # bind-failure recovery
 Properties:
 
 - **Sticky by name.** If `(worktree, sim, name)` already holds a live
-  lease, `alloc` returns it unchanged. This is what `ensure` and same-name
-  restarts need (see Hash below).
+  lease, `alloc` returns it unchanged. This is what `ensure` and
+  same-name restarts need (see Hash below).
 - **Remembers the previous run.** On release, the allocator records
-  `last[(worktree, sim, name)] = port` in `~/.cache/de_sim/last_ports.json`
-  (capped and pruned by age, so it survives logout). The next
-  `alloc` with no explicit `prefer` tries that port first, so a developer's
-  bookmarked URLs and webclient deep links keep working between runs.
+  `last[(worktree, sim, name)] = port` in
+  `~/.cache/de_sim/last_ports.json`. The file is capped and pruned by
+  age, so it survives logout. The next `alloc` with no explicit
+  `prefer` tries that port first. A developer's bookmarked URLs and
+  webclient deep links keep working between runs.
 - **Generic requests.** The allocator knows nothing about units or
   servers. Names are dotted strings, with `<owner>.<id>.<role>` by
   convention:
@@ -458,14 +479,14 @@ Properties:
 | `bridge.<s>.` | `ctrl` |
 | `render.` | `stream`, `mav`, `mav_ws`, `web`, `sink` |
 
-  A server attached to a unit is simply `server.<u>.*`, with its owner
-  recorded in the lease, and it's released with the sim like everything
+  A server attached to a unit is simply `server.<u>.*`. Its owner is
+  recorded in the lease. It is released with the sim like everything
   else.
 
 ### The manifest
 
-`var/run/<sim>/sim.json` gets a flat `ports` map, which is the source of
-truth:
+`var/run/<sim>/sim.json` gets a flat `ports` map, which is the source
+of truth:
 
 ```json
 "ports": {"server.hq.wss": {"port": 20417, "proto": "tcp"}, ...}
@@ -474,80 +495,82 @@ truth:
 The existing nested fields (`server.port`, `server.control_port`,
 `units[i].ports.*`, `units[i].fc.pilot_port`, `render.*`) are **filled
 from the map** at load time. All current readers (`ctl.py`,
-`gcs_bridge.py`, `telemetry.py`, `scenario_runner.py`, `world.py`, stubs,
-studio) therefore work without changes. New code reads the flat map
-through `simlib.port(sim, name)`. `simlib.used_ports(sim)` becomes "the
-values of `ports`", which fixes the untracked SITL UDP ports for free.
+`gcs_bridge.py`, `telemetry.py`, `scenario_runner.py`, `world.py`,
+stubs, studio) therefore work without changes. New code reads the
+flat map through `simlib.port(sim, name)`. `simlib.used_ports(sim)`
+becomes "the values of `ports`". This fixes the untracked SITL UDP
+ports for free.
 
 New CLI:
 
-- `./sim ports [<sim>|--all]`: table of name, port, proto, state, sim,
-  worktree.
+- `./sim ports [<sim>|--all]`: table of name, port, proto, state,
+  sim, worktree.
 - `./sim ports gc`: run the stale-lease sweep.
-- `./sim show` prints the allocated ports, or "would allocate" with the
-  preferred values when nothing is up.
+- `./sim show` prints the allocated ports, or "would allocate" with
+  the preferred values when nothing is up.
 
 Scenarios and tests that need a port literal use
-`${port:server.hq.wss}` substitution, the same way `{fcb_port}` is
-already filled in catalog `wire:`. Today no scenario under `scenarios/`
-needs a literal.
+`${port:server.hq.wss}` substitution. That is the same way
+`{fcb_port}` is already filled in catalog `wire:`. Today no scenario
+under `scenarios/` needs a literal.
 
 ### Hash
 
-Today `sim_hash` covers `units`, which include their ports, so a
+Today `sim_hash` covers `units`, which include their ports. A
 different allocation changes the fleet hash and `ensure` performs a
 fresh `up`. Rules:
 
-- Sticky-by-name means a live sim always gets the same ports back, so
+- Sticky-by-name means a live sim always gets the same ports back.
   `ensure` against a live sim is stable.
 - After `down` the leases are gone, so the next `up` is fresh anyway.
-- Phase 2 and later: compute `sim_hash` over the **request** (the spec,
-  with ports removed) and store the allocation beside it. A run that only
-  moved ports then counts as "same fleet". This matters once ports stop
-  being a function of `slot_base`.
+- Phase 2 and later: compute `sim_hash` over the **request** (the
+  spec, with ports removed) and store the allocation beside it. A run
+  that only moved ports then counts as "same fleet". This matters
+  once ports stop being a function of `slot_base`.
 
 ### Seeds and reproducibility
 
-Port numbers must never affect a run's outcome. Phase 1 needs one audit
-for this: link_model / link_proxy / fake server seeding uses party IDs
-and the run seed, not ports (to confirm), and recordings and
+Port numbers must never affect a run's outcome. Phase 1 needs one
+audit for this. link_model / link_proxy / fake server seeding uses
+party IDs and the run seed, not ports (to confirm). Recordings and
 scoreboards must not compare ports. Once that holds, the seed→slot
-mapping (`_seed_slot_base`) only picks `sysid` / `prefer` hints, and
-`--seeds` runs in parallel need no slot blocks at all.
+mapping (`_seed_slot_base`) only picks `sysid` / `prefer` hints.
+`--seeds` runs in parallel then need no slot blocks at all.
 
 #### 4.1 Port-independence audit (SL-0075, confirmed)
 
 - **`link_model.Link`** (`engine/link_model.py`): every directional
   impairment stream is `random.Random(f"{seed}:{party}:{d}")` - party
   id + run seed + direction. No port enters the seed.
-- **`link_proxy`** (`engine/link_proxy.py`): `Link(party, seed)` where
-  `party` is the unit's party_id and `seed` comes from `--seed` (the
-  run seed `simlib` writes into the launch line). `--listen`/`--ctrl`/
+- **`link_proxy`** (`engine/link_proxy.py`): `Link(party, seed)`.
+  `party` is the unit's party_id. `seed` comes from `--seed` (the run
+  seed `simlib` writes into the launch line). `--listen`/`--ctrl`/
   `--target` are wiring only.
 - **Fake fleet server** (`engine/fake_fleet_server.py`): `links{}` is
   keyed by party_id and each `link_model.Link` gets the server's
   `--seed`. Message loss/GE/stall draws are identical for identical
   (seed, party) regardless of ports.
 - **udp_proxy** (`engine/udp_proxy.py`): chunk faults draw from
-  `random.Random(knobs["seed"])`; the scenario runner passes the run
+  `random.Random(knobs["seed"])`. The scenario runner passes the run
   seed (`a.get("seed", scn["seed"])`).
 - **fcb_proxy** (`engine/fcb_proxy.py`): two directional streams
-  `random.Random(seed)` / `random.Random(seed + 7919)`; the launch line
-  passes `--seed u["slot"]` - the unit's slot, which is a deterministic
-  function of the scenario seed, not a port.
+  `random.Random(seed)` / `random.Random(seed + 7919)`. The launch
+  line passes `--seed u["slot"]`, the unit's slot. That is a
+  deterministic function of the scenario seed, not a port.
 - **Recordings** (`engine/record.py`): a recording replays journal/
-  step content; ports appear only as resolved connection arguments
+  step content. Ports appear only as resolved connection arguments
   (e.g. `wait_port` reachability), never in identity or comparison.
 - **Scoreboards** (`tools/verify_challenge.py`, `docs/SCOREBOARD.md`):
-  verification checks `summary.json`'s `seed` field and journal/selftest
-  counts - ports are not read, compared or scored.
-- **Assertions** (`engine/checks.py`): journal-line matching; port
+  verification checks `summary.json`'s `seed` field and journal/
+  selftest counts. Ports are not read, compared or scored.
+- **Assertions** (`engine/checks.py`): journal-line matching. Port
   numbers appear only inside message payloads (e.g. the udp_relay
-  heartbeat check dials the resolved port), not in pass/fail identity.
+  heartbeat check dials the resolved port), not in pass/fail
+  identity.
 
 So a `prefer` pick that moves into the pool changes nothing
-deterministic: same seed + same party ids → same faults, recordings
-and scores.
+deterministic. Same seed + same party ids give the same faults,
+recordings and scores.
 
 ---
 
@@ -555,10 +578,11 @@ and scores.
 
 ### Compatibility contract
 
-At every phase, existing `sims/*.yaml`, scenarios, `--slot-base N` and
-`--slot-base any` produce **the same ports and the same `sim.json` as
-today** unless a run opts into the new behaviour. The final phase
-removes that guarantee, and only after its acceptance criteria pass.
+At every phase, existing `sims/*.yaml`, scenarios, `--slot-base N`
+and `--slot-base any` produce **the same ports and the same
+`sim.json` as today**, unless a run opts into the new behaviour. The
+final phase removes that guarantee. It does so only after its
+acceptance criteria pass.
 
 | Flag | Phase 0 | Phase 1 | Phase 2+ |
 |---|---|---|---|
@@ -567,16 +591,16 @@ removes that guarantee, and only after its acceptance criteria pass.
 | `--slot-base any` | 200-candidate resolve + probe | allocator picks a base whose whole pinned set is free, in one registry transaction (`Allocator.pick`) | pins AND hints vote: lowest base whose whole legacy set is free, else the sim's own base and held hints move into the pool |
 | `server.port: P` in yaml | pin | pin | pin |
 
-`slot_base` survives as a **hint**: the sysid base, the formula-prefer
-base, and unit positions (`SPACING_M * (slot - slot_base)`). It stops
-being the port source.
+`slot_base` survives as a **hint**: the sysid base, the
+formula-prefer base, and unit positions
+(`SPACING_M * (slot - slot_base)`). It stops being the port source.
 
 ### How a `servers:` topology requests ports (generic; task 3 defines the topology)
 
 The topology loader turns each node and connection into a list of
-`Request(name, proto, kind, prefer=None, pin=None, size=None)` and passes
-them all to **one** `tx`. Example of what a two-tier mesh plus storage
-produces:
+`Request(name, proto, kind, prefer=None, pin=None, size=None)`. It
+passes them all to **one** `tx`. Example of what a two-tier mesh plus
+storage produces:
 
 ```
 server.hq.wss  server.hq.ctrl  server.hq.s2s_listen
@@ -588,10 +612,11 @@ link.edge1->hq.proxy.data / .ctrl  # only when that connection carries a link_pr
 bridge.hq.ctrl
 ```
 
-The topology code then wires configs by name: the child's
-`s2s_relay_to_super_server_port = port("link.edge1->hq.proxy.data")` if
-the connection is proxied, else `port("server.hq.s2s_listen")`. The
-allocator never needs to know what a parent is.
+The topology code then wires configs by name. The child's
+`s2s_relay_to_super_server_port` is
+`port("link.edge1->hq.proxy.data")` if the connection is proxied,
+else `port("server.hq.s2s_listen")`. The allocator never needs to
+know what a parent is.
 
 ---
 
@@ -599,24 +624,26 @@ allocator never needs to know what a parent is.
 
 ### Phase 0: allocator and registry, legacy-pin mode
 
-- `engine/port_allocation_management.py`: the registry, locking, leases,
-  stale-lease sweep, `alloc` / `alloc_block` / `alloc_id` / `commit` /
-  `lookup` / `release` / `reassign` / `mark_bound`. Unit tests with a
-  temp registry, a fake `/proc`, and two processes racing.
-- `load_sim` computes ports exactly as today, then **leases them as pins**
-  in one transaction. `down` / `clean` release them. `check_conflicts`
-  becomes "the transaction failed", with the same error text.
+- `engine/port_allocation_management.py`: the registry, locking,
+  leases, stale-lease sweep, `alloc` / `alloc_block` / `alloc_id` /
+  `commit` / `lookup` / `release` / `reassign` / `mark_bound`. Unit
+  tests with a temp registry, a fake `/proc`, and two processes
+  racing.
+- `load_sim` computes ports exactly as today, then **leases them as
+  pins** in one transaction. `down` / `clean` release them.
+  `check_conflicts` becomes "the transaction failed", with the same
+  error text.
 - `./sim ports`, `./sim ports gc`, a `doctor` check.
 
 **Acceptance**
 - For every `sims/*.yaml` and every scenario under `scenarios/` and
-  `tests/`, the generated `sim.json` and `sim_hash` are byte-identical to
-  before (a golden diff run in CI).
+  `tests/`, the generated `sim.json` and `sim_hash` are
+  byte-identical to before (a golden diff run in CI).
 - `./sim up` of the same sim from main and from a `_wt/` worktree:
   the second is refused with the usual message. Today the second only
   fails later, if a probe happens to catch it.
-- `kill -9` of `./sim up` during bring-up: the next `./sim up` reclaims
-  the leases with no manual cleanup.
+- `kill -9` of `./sim up` during bring-up: the next `./sim up`
+  reclaims the leases with no manual cleanup.
 - `./sim ports --all` lists both worktrees' leases.
 
 ### Phase 1: free allocation for new and side ports, `--slot-base any` on the allocator
@@ -627,80 +654,85 @@ allocator never needs to know what a parent is.
   `auth.s2s`), per-unit `link_proxy`/`link_proxy.ctrl`,
   `fcb_proxy`/`fcb_proxy.ctrl`, `udp_proxy_<module>` listens, the
   external-server bridge control (`bridge.ctrl`), and the SITL RC-in
-  UDP (`unit.<u>.sitl.rcin`) lease as **prefer** on the legacy formula
-  hint, falling back to the pool (20000–32767, ephemeral-safe,
-  deny-listed). A held or denied hint is skipped, never an error; the
-  committed value is written back into the resolved fields
-  (`simlib._apply_ports`) before `generate()`, so every generated
-  config and launch script binds what the lease names. The flat lease
-  map lands in `sim.json` as `ports`.
+  UDP (`unit.<u>.sitl.rcin`) lease as **prefer** on the legacy
+  formula hint. They fall back to the pool (20000–32767,
+  ephemeral-safe, deny-listed). A held or denied hint is skipped,
+  never an error. The committed value is written back into the
+  resolved fields (`simlib._apply_ports`) before `generate()`. Every
+  generated config and launch script then binds what the lease names.
+  The flat lease map lands in `sim.json` as `ports`.
 - Verified on a live `-I` SITL: the internal physics model binds the
-  TCP serials and the RC-in UDP only - the 9002/9003/9005 sim/irlock
-  ports stay unbound, so they are **not** leased. `fc.rcin_port` keeps
-  the formula value (what SITL really binds) until phase 2 passes
-  `--rc-in-port`; the lease reserves it meanwhile.
+  TCP serials and the RC-in UDP only. The 9002/9003/9005 sim/irlock
+  ports stay unbound, so they are **not** leased. `fc.rcin_port`
+  keeps the formula value (what SITL really binds) until phase 2
+  passes `--rc-in-port`. The lease reserves it meanwhile.
 - Still `pin` in phase 1: module s2s ports, the SITL TCP serials
-  (pilot/aux/fcb/pose), the comm-server wss, the udp_relay port + range
-  block, render ports, and every yaml-explicit value.
+  (pilot/aux/fcb/pose), the comm-server wss, the udp_relay port +
+  range block, render ports, and every yaml-explicit value.
 - `--slot-base any` (`simlib._load_sim_free_slot`) and
-  `scenario._host_free_sim` now run one `Allocator.pick`: a single
-  locked transaction evaluates each candidate's **pinned** set against
-  live manifests, other sims' leases (any worktree), and a bind probe,
-  lowest-first - no more resolving the sim 200 times. Requests carry a
-  `shift` stride (`simlib._shifted_pins`): 10/slot for unit ports, 1
-  for slot-derived server-side ports, 40 for the relay range, 0 for
-  explicit values. A yaml-less `server.port` is injected as
-  `SERVER_PORT + slot_base` so `any` moves the comm server too.
+  `scenario._host_free_sim` now run one `Allocator.pick`. A single
+  locked transaction evaluates each candidate's **pinned** set
+  against live manifests, other sims' leases (any worktree), and a
+  bind probe, lowest-first. The sim is no longer resolved 200 times.
+  Requests carry a `shift` stride (`simlib._shifted_pins`): 10/slot
+  for unit ports, 1 for slot-derived server-side ports, 40 for the
+  relay range, 0 for explicit values. A yaml-less `server.port` is
+  injected as `SERVER_PORT + slot_base`, so `any` moves the comm
+  server too.
 - Port-independence audit (seeds, recordings, scoreboards): §4.1.
 
 **Acceptance**
 - `./sim up copters3` plus `./sim up --shared --slot-base any --with faults
   copters3` (two names): both come up. Every proxy and control port
-  comes from the pool, and the second sim's unit block is found in a
-  single registry transaction. Without a flag the second sim still gets
-  today's clash error (see Decisions).
-- `run_scenario.py --seeds 1..12` in parallel (more than the 9 canonical
-  slot blocks): every run comes up, with no "no free slot_base".
-- A foreign listener on a preferred port is skipped, not reported as an
-  error.
+  comes from the pool. The second sim's unit block is found in a
+  single registry transaction. Without a flag the second sim still
+  gets today's clash error (see Decisions).
+- `run_scenario.py --seeds 1..12` in parallel (more than the 9
+  canonical slot blocks): every run comes up, with no "no free
+  slot_base".
+- A foreign listener on a preferred port is skipped, not reported as
+  an error.
 
 ### Phase 2: units on the allocator
 
 **Implemented (SL-0076).**
 
 - de_comm and module ports became **prefer** on the legacy formula
-  hint, falling back to the pool; `sim up` prints
+  hint. They fall back to the pool. `sim up` prints
   `moved <name> <hint> -> <port>` for every hint it could not take.
 - SITL launches with `--base-port <block> --rc-in-port <free>
   --sim-port-in <free> --sim-port-out <free> --irlock-port <free>`
   **before** `-I`. The ten SITL TCP serials are one 10-port block
-  (`unit.<u>.sitl`, serial0/2/5 relative `tcp:0/2/5`); serial1/fcb,
+  (`unit.<u>.sitl`, serial0/2/5 relative `tcp:0/2/5`). serial1/fcb,
   RC-in, irlock and the sim-link in/out are separate leases passed
-  absolute. `-I` stays the slot (eeprom identity only) - verified
-  against ArduPilot `SITL_cmdline.cpp`: explicit port options suppress
-  the `10*instance` offsets.
+  absolute. `-I` stays the slot (eeprom identity only). Verified
+  against ArduPilot `SITL_cmdline.cpp`: explicit port options
+  suppress the `10*instance` offsets.
 - `sim_hash` moved to request-only: the resolved spec minus every
-  lease-fed value, plus the request list (names, protos, kinds, sizes,
-  yaml pins). A moved or re-based fleet keeps its identity and
+  lease-fed value, plus the request list (names, protos, kinds,
+  sizes, yaml pins). A moved or re-based fleet keeps its identity and
   warm-reuses.
-- The default (no flag) switched to formulas-as-prefer. `--slot-base N`
-  pins every request (exact-or-fail, the phase-0 semantics); `any` lets
-  pins AND hints vote on a base and falls back to the sim's own base
-  when none is fully free - it can no longer run out of bases.
+- The default (no flag) switched to formulas-as-prefer.
+  `--slot-base N` pins every request (exact-or-fail, the phase-0
+  semantics). `any` lets pins AND hints vote on a base. It falls back
+  to the sim's own base when none is fully free. It can no longer run
+  out of bases.
 - `_slot_fits` and its 65535 ceiling went away (ports no longer grow
   with the slot). The sysid ≤ 250 check stays.
 - The fake server's wss + ctrl pair is one 2-port block
-  (`server.fake`) so the two adjacent binds can never straddle a lease.
+  (`server.fake`), so the two adjacent binds can never straddle a
+  lease.
 
 **Acceptance**
-- A sim with 60 de_tracker units leases and generates (fails at k ≥ 54
-  in phase 1): every out-of-range hint lands in the pool.
-- Two `copters3` copies with different names and **the same** `slot_base:`
-  in yaml, without `--shared`, both lease on disjoint ports.
-- `test_world_stream.py`, `test_record.py` and the render tests assert
-  against the resolved/`sim.json` values rather than literals, and pass
-  with render on and off. With render off, no `render.*` lease exists
-  (Mavlink3DMap stays optional).
+- A sim with 60 de_tracker units leases and generates (fails at k ≥
+  54 in phase 1): every out-of-range hint lands in the pool.
+- Two `copters3` copies with different names and **the same**
+  `slot_base:` in yaml, without `--shared`, both lease on disjoint
+  ports.
+- `test_world_stream.py`, `test_record.py` and the render tests
+  assert against the resolved/`sim.json` values rather than literals,
+  and pass with render on and off. With render off, no `render.*`
+  lease exists (Mavlink3DMap stays optional).
 - `engine/test_checks.py`, `test_port_allocation.py`,
   `test_world_stream.py`, `test_record.py` all pass.
 
@@ -714,27 +746,28 @@ allocator never needs to know what a parent is.
 - `udp_proxy:` modules and the Python stubs stay on UDP.
 
 **Acceptance**
-- Two instances of the same scenario with `bus: unix` run in parallel,
-  and each de_comm only sees its own modules (no shared
+- Two instances of the same scenario with `bus: unix` run in
+  parallel, and each de_comm only sees its own modules (no shared
   `de_comm_broker.sock`).
 - A unix-bus `copters3` leases **zero** module ports (`./sim ports`
   shows only de_comm, SITL, the server side and proxies).
-- A mixed unit (de_mavlink on Unix, a stub on UDP, a `udp_proxy:` module
-  on UDP) gets all its modules ready.
-- On a production board with no new keys, de_comm and the modules still
-  use `/run/de_comm` (no behaviour change).
+- A mixed unit (de_mavlink on Unix, a stub on UDP, a `udp_proxy:`
+  module on UDP) gets all its modules ready.
+- On a production board with no new keys, de_comm and the modules
+  still use `/run/de_comm` (no behaviour change).
 
 ### Phase 2c: fixed UDP-proxy ports
 
 - `udp_proxy_port: N|auto` on units, the `unit.<u>.udp_telemetry`
-  lease, de_mavlink's `udp_proxy_fixed_port` written and the persisted
-  local value reset, and `allow_fixed_port: true` on the serving relay.
+  lease, de_mavlink's `udp_proxy_fixed_port` written and the
+  persisted local value reset, and `allow_fixed_port: true` on the
+  serving relay.
 
 **Acceptance**
 - A unit with `udp_proxy_port: auto`: a GCS telemetry client receives
   MAVLink on the leased port shown by `./sim ports`.
-- Two parallel sims each with a `udp_proxy_port: 24550` pin: the second
-  is refused at `up` with the name of the sim holding it.
+- Two parallel sims each with a `udp_proxy_port: 24550` pin: the
+  second is refused at `up` with the name of the sim holding it.
 - Re-running with a different port: the new port is used, not the one
   persisted from the previous run.
 
@@ -749,8 +782,8 @@ allocator never needs to know what a parent is.
 
 **Acceptance**
 - `grep` for the old constants in `engine/` finds nothing.
-- The CI golden diff is retired, and a new golden covers the **request
-  list** each sim produces.
+- The CI golden diff is retired, and a new golden covers the
+  **request list** each sim produces.
 
 ### Phase 4: topology requests (with task 3)
 
@@ -761,7 +794,7 @@ allocator never needs to know what a parent is.
 - A parent + child + a server per unit + storage + one proxied mesh
   connection, run **twice in parallel** (two sim names) plus one more
   sim from a worktree, all at once. `./sim ports --all` shows no
-  overlap, and `down` of any one releases only its own leases.
+  overlap. `down` of any one releases only its own leases.
 
 ---
 
@@ -769,26 +802,30 @@ allocator never needs to know what a parent is.
 
 - **sysid:** unique per sim only, so several instances of the same
   scenario can run with different ports (§2).
-- **Docker:** warn, don't require the registry mount. Keep it simple (§3).
-- **Fixed UDP-proxy ports:** supported, either by asking for a specific
-  port (pin) or `auto` (free), through `udp_proxy_port` (§2.2).
-- **Unix sockets for the module bus:** adopt them to remove module ports.
-  This needs a configurable socket directory in `droneengage_common`
-  (§2.1, phase 2b).
-- **Registry location:** leases live in `$XDG_RUNTIME_DIR/de_sim/ports.json`
-  (cleared at logout, which is fine for leases). The "previous port"
-  memory lives in `~/.cache/de_sim/last_ports.json`, so it survives
-  logout and reboot. Both can be overridden: `SIM_PORT_REGISTRY` and
+- **Docker:** warn, don't require the registry mount. Keep it simple
+  (§3).
+- **Fixed UDP-proxy ports:** supported, either by asking for a
+  specific port (pin) or `auto` (free), through `udp_proxy_port`
+  (§2.2).
+- **Unix sockets for the module bus:** adopt them to remove module
+  ports. This needs a configurable socket directory in
+  `droneengage_common` (§2.1, phase 2b).
+- **Registry location:** leases live in
+  `$XDG_RUNTIME_DIR/de_sim/ports.json` (cleared at logout, which is
+  fine for leases). The "previous port" memory lives in
+  `~/.cache/de_sim/last_ports.json`, so it survives logout and
+  reboot. Both can be overridden: `SIM_PORT_REGISTRY` and
   `SIM_PORT_LAST`.
 - **The default changes in phase 2,** from formulas-as-pin to
   formulas-as-prefer. Each moved port prints one line at `./sim up`:
   `moved unit.c1.de_comm 62110 -> 20431 (held by sim X)`.
-- **Phase 1, two sims with no flag:** the second sim still gets today's
-  clash error. Moving it automatically starts with the phase 2 change.
-- **Unix-socket directory:** both the `unix_socket_dir` config key and the
-  `DE_UNIX_SOCKET_DIR` environment variable. The config key wins, then
-  the environment variable, then today's `/run/de_comm` → `/tmp/de_comm`.
-  The sim writes the config key, so the directory shows up in the
-  generated configs.
+- **Phase 1, two sims with no flag:** the second sim still gets
+  today's clash error. Moving it automatically starts with the phase
+  2 change.
+- **Unix-socket directory:** both the `unix_socket_dir` config key
+  and the `DE_UNIX_SOCKET_DIR` environment variable. The config key
+  wins, then the environment variable, then today's `/run/de_comm` →
+  `/tmp/de_comm`. The sim writes the config key, so the directory
+  shows up in the generated configs.
 
-No open questions remain. The next step is turning the phases into tasks.
+No open questions remain. The next step turns the phases into tasks.

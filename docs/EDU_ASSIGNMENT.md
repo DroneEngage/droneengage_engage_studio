@@ -2,10 +2,11 @@
 
 > DroneEngageStudio doc. DroneEngage is the flagship integration, not the owner.
 
-**Aim:** write a drone search pattern that beats **POD 0.8 under canopy**
-— probability of detection, not coverage — against a fixed ground-truth
-world. Suitable for robotics courses and GSoC warm-ups; runs end to end
-on a laptop, no hardware.
+**Aim:** write a drone search pattern that beats **POD 0.8 under
+canopy**. POD is probability of detection, not coverage. The world is
+a fixed ground-truth world. The assignment fits robotics courses and
+GSoC warm-ups. It runs end to end on a laptop. No hardware is
+necessary.
 
 ## Setup
 
@@ -15,31 +16,33 @@ on a laptop, no hardware.
 ```
 
 The baseline is the reference entry of the monthly challenge
-(`docs/CHALLENGE.md`): three lawnmower legs at 40 m over
-`worlds/challenge_sar.yaml`. Watch what it does before writing your own.
+(`docs/CHALLENGE.md`). It flies three lawnmower legs at 40 m over
+`worlds/challenge_sar.yaml`. Watch what it does before you write your
+own.
 
 ## The world (starter file)
 
-`worlds/challenge_sar.yaml` — fixed; treat it as the exam paper, not
+`worlds/challenge_sar.yaml` is fixed. Treat it as the exam paper, not
 the worksheet:
 
-- `person_meadow` — open ground; any competent pattern finds them.
-- `person_wood` — under a canopy crown (2–12 m band, `gap_fraction:
-  0.35`): a look through the crown transmits at ~35 % head-on and worse
-  obliquely. This is the person the assignment is about.
-- `person_barn` — indoors. POD 0 by geometry; a "find" here means your
-  detector is hallucinating and will cost precision.
-- `clutter` — seeded person-look-alikes that keep re-projecting as
+- `person_meadow` — open ground. Any competent pattern finds them.
+- `person_wood` — under a canopy crown. The crown is a 2–12 m band
+  with `gap_fraction: 0.35`. A look through the crown transmits at
+  ~35 % head-on. It transmits less at oblique angles. This person is
+  the subject of the assignment.
+- `person_barn` — indoors. POD is 0 by geometry. A "find" here means
+  your detector is hallucinating. It will cost precision.
+- `clutter` — seeded person-look-alikes. They keep re-projecting as
   false positives.
 
-The graded surface is `areas.search_block` (~75 × 115 m). The camera is
-nadir, 62.2° × 48.8°, detection probability falling from 0.95 at nadir
-to 0.6 at the frame edge — the math is documented in
-`docs/SENSORS.md` and `docs/WORLDS.md`.
+The graded surface is `areas.search_block` (~75 × 115 m). The camera
+points at nadir. Its field of view is 62.2° × 48.8°. Detection
+probability falls from 0.95 at nadir to 0.6 at the frame edge. The
+math is documented in `docs/SENSORS.md` and `docs/WORLDS.md`.
 
 ## Your task
 
-Clone the entry, change only `operation:`, and improve the score:
+Clone the entry. Change only `operation:`. Improve the score:
 
 ```bash
 cp -r scenarios/challenges/entries/baseline \
@@ -60,51 +63,56 @@ python3 tools/verify_challenge.py scenarios/challenges/entries/<you>
 | distinction | score ≥ 95 — i.e. near-perfect POD *and* sub-40 s TTD |
 
 The verifier prints `pod_mean`, `ttd`, `precision` and the weighted
-score; the scoreboard formula is in `docs/CHALLENGE.md`.
+score. The scoreboard formula is in `docs/CHALLENGE.md`.
 
 ## Reference solution walkthrough
 
-`p5_canopy_sweep` (the baseline op) reaches **pod_at person_wood =
-0.900** — past the 0.8 bar — and scores **90.7** on seed 11:
+`p5_canopy_sweep` is the baseline op. It reaches **pod_at person_wood
+= 0.900**. That is past the 0.8 bar. It scores **90.7** on seed 11:
 
-1. **Legs over the cell.** Its serpentine lays ~36 m-wide nadir
-   footprints across `search_block` → 99.1 % coverage. Coverage is the
-   entry ticket: POD can't exceed it.
-2. **Eleven looks on the wood cell.** `person_wood`'s cell collected 11
-   looks through the crown. POD 0.900 means each look contributed
-   ~0.19 independent detection probability through the 35 % gap —
-   `1 − (1 − p)¹¹ ≈ 0.90`. Volume of looks is how you buy POD through
-   gaps.
-3. **…and still missed.** With 11 looks at 0.9 POD the person is
-   *usually* found — seed 11 drew the 10 %: recall on `person_wood` is
-   0 and the wood TTD fails. That is the real lesson: a POD number is
-   a distribution, not a guarantee. The margin between 0.90 and 0.99 is
-   what your pattern is buying.
-4. **The honest zero.** `person_barn`'s cell absorbed 8 looks and POD
-   stayed 0.000 — the building eats every ray. You cannot score here;
-   you can only *lose* here if your stream reports a barn find anyway.
+1. **Legs over the cell.** The serpentine lays ~36 m-wide nadir
+   footprints across `search_block`. This gives 99.1 % coverage.
+   Coverage is the entry ticket. POD cannot exceed it.
+2. **Eleven looks on the wood cell.** The `person_wood` cell collected
+   11 looks through the crown. POD 0.900 means each look contributed
+   ~0.19 independent detection probability through the 35 % gap. The
+   math is `1 − (1 − p)¹¹ ≈ 0.90`. Volume of looks is how you buy POD
+   through gaps.
+3. **…and still missed.** With 11 looks at 0.9 POD, the person is
+   *usually* found. Seed 11 drew the 10 %. Recall on `person_wood` is
+   0. The wood TTD fails. That is the real lesson. A POD number is a
+   distribution, not a guarantee. The margin between 0.90 and 0.99 is
+   what your pattern buys.
+4. **The honest zero.** The `person_barn` cell absorbed 8 looks. POD
+   stayed 0.000. The building eats every ray. You cannot score here.
+   You can only *lose* here. A reported barn find costs points.
 
-To beat it: revisit the wood cell (a second pass at a different heading
-changes the oblique path through the crown), fly lower over it
-(shorter slant → more transmit length through gaps? no — *shorter*
-crown thickness at lower altitude only if geometry cooperates; check
-the math in `world.py`'s docstring), or accept more wall time per unit
-of POD near the hard cells and sprint the easy ones.
+To beat it, you have options:
+
+1. Revisit the wood cell. A second pass at a different heading changes
+   the oblique path through the crown.
+2. Fly lower over it. Does a shorter slant give more transmit length
+   through gaps? No. Lower altitude gives *shorter* crown thickness
+   only when the geometry cooperates. Check the math in `world.py`'s
+   docstring.
+3. Accept more wall time per unit of POD near the hard cells. Sprint
+   the easy ones.
 
 ## Deliverable
 
-`scenarios/challenges/entries/<you>/` containing `scenario.yaml`, your
-op files, and the `summary.json` of a `verify_challenge.py --replay`
-VERIFIED run. Write up: what you changed, which assert moved, and one
-number that surprised you.
+Put the deliverable in `scenarios/challenges/entries/<you>/`. It
+contains `scenario.yaml`, your op files, and the `summary.json` of a
+`verify_challenge.py --replay` VERIFIED run. Write up: what you
+changed, which assert moved, and one number that surprised you.
 
 ## Instructor notes
 
-- Run is ~4 min wall (`realtime: true` — the world truth tick is
-  wall-clock; don't raise the speedup or the look stream under-samples,
-  which is itself a teachable failure).
-- Seed is fixed at 11 via `--seed`; a different seed is a different
-  exam.
-- Extension ideas: second copter splitting `search_block` (claim
-  mechanics in `tests/fleet_bus/`), clutter rate raised in a *copy* of
-  the world, or `react:` entities that flee (`worlds/sar_forest_flee.yaml`).
+- A run takes ~4 min wall time. `realtime: true` is set. The world
+  truth tick is wall-clock. Do not raise the speedup. A raised speedup
+  under-samples the look stream. That failure is itself teachable.
+- The seed is fixed at 11 with `--seed`. A different seed is a
+  different exam.
+- Extension ideas: add a second copter that splits `search_block`.
+  Claim mechanics are in `tests/fleet_bus/`. Or raise the clutter rate
+  in a *copy* of the world. Or use `react:` entities that flee. See
+  `worlds/sar_forest_flee.yaml`.
