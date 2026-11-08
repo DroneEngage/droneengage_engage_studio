@@ -1,6 +1,6 @@
 # quadcopter — how to run
 
-Personal sim: ONE quad box — ArduCopter SITL (raw binary over TCP, like
+Sim: ONE quad box — ArduCopter SITL (raw binary over TCP, like
 sitl_tcp.sh) + de_comm + de_mavlink — on **your own** server stack.
 Includes `render: {mode: viewer}`: a Mavlink3DMap mav_bridge + vite dev
 page comes up with the sim.
@@ -27,7 +27,7 @@ page comes up with the sim.
 ./sim ctl -s quadcopter arm quad1    # after ~1-2 min GPS/EKF warm-up
 ```
 
-Runs in parallel with `plane.yaml` / `rover.yaml` — each personal sim
+Runs in parallel with `plane.yaml` / `rover.yaml` — each sim
 has its own slot_base.
 
 ## Teardown

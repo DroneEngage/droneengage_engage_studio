@@ -1,6 +1,6 @@
 # Runbook: sims/quadcopters-4.md
 #
-# Personal sim: FOUR quadcopter boxes - ArduCopter SITL (raw binary over TCP,
+# Sim: FOUR quadcopter boxes - ArduCopter SITL (raw binary over TCP,
 # like sitl_tcp.sh) + de_comm + de_mavlink - on YOUR OWN server stack.
 #
 # Start your servers first (servers/sh_start_servers.sh): authenticator on
@@ -12,10 +12,12 @@
 # (`./sim ports` shows the real ones), so overlapping fleets can't
 # collide anyway - the base just keeps sysids distinct.
 description: |
-  Personal sim: four quadcopter boxes (ArduCopter SITL + de_comm +
+  Sim: four quadcopter boxes (ArduCopter SITL + de_comm +
   de_mavlink each) on your own external server stack (auth on,
-  slot_base 50). Runs in parallel with the other personal sims.
+  slot_base 50). Runs in parallel with the other sims.
 version: 1
+audience: core
+requires: []
 slot_base: 50                 # identity only: SITL -I/sysid base; the
                               # allocator leases every port (`./sim ports`)
 server:

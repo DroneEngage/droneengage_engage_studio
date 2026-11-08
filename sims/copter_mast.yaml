@@ -9,6 +9,8 @@ description: |
   on the real droneengage_server. The TASK-P4A-11 acceptance-9 fleet: a
   flying role next to a static sensor-lane role that never arms.
 version: 1
+audience: core
+requires: []
 units:
   - {block: copter, name: copter1}
   - {block: comm_only, name: mast1, at: {north_m: -30}}

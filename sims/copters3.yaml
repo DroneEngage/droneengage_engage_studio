@@ -7,5 +7,7 @@ description: |
   droneengage_server in local mode (no authenticator). The default
   fleet for mission / supervisor tests.
 version: 1
+audience: core
+requires: []
 units:
   - {block: copter, name: copter, count: 3}     # copter1..copter3, 20 m apart

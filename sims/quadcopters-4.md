@@ -1,6 +1,6 @@
 # quadcopters-4 — how to run
 
-Personal sim: FOUR quad boxes — ArduCopter SITL + de_comm + de_mavlink
+Sim: FOUR quad boxes — ArduCopter SITL + de_comm + de_mavlink
 each — on **your own** server stack. Same external-server wiring as
 `quadcopter.yaml` (see its runbook for the full account/server notes).
 

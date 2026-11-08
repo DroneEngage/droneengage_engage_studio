@@ -1,15 +1,17 @@
 # Runbook: sims/plane.md
 #
-# Personal sim: ONE fixed-wing box - ArduPlane SITL + de_comm + de_mavlink -
+# Sim: ONE fixed-wing box - ArduPlane SITL + de_comm + de_mavlink -
 # on YOUR OWN server stack (servers/sh_start_servers.sh).
 # See quadcopter.yaml for the external-server fields. Runs in parallel with
-# the other personal sims; slot_base keeps the sysids distinct (ports are
+# the other sims; slot_base keeps the sysids distinct (ports are
 # allocator leases - `./sim ports`).
 description: |
-  Personal sim: one fixed-wing box (ArduPlane SITL + de_comm + de_mavlink)
+  Sim: one fixed-wing box (ArduPlane SITL + de_comm + de_mavlink)
   on your own external server stack (auth on, slot_base 70). Runs in
-  parallel with the other personal sims.
+  parallel with the other sims.
 version: 1
+audience: core
+requires: []
 slot_base: 70                 # identity only: SITL -I/sysid base; the
                               # allocator leases every port (`./sim ports`)
 server:

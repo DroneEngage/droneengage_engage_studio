@@ -1,15 +1,17 @@
 # Runbook: sims/rover.md
 #
-# Personal sim: ONE rover box - ArduRover SITL + de_comm + de_mavlink - on
+# Sim: ONE rover box - ArduRover SITL + de_comm + de_mavlink - on
 # YOUR OWN server stack (servers/sh_start_servers.sh).
 # See quadcopter.yaml for the external-server fields. Runs in parallel with
-# the other personal sims; slot_base keeps the sysids distinct (ports are
+# the other sims; slot_base keeps the sysids distinct (ports are
 # allocator leases - `./sim ports`).
 description: |
-  Personal sim: one rover box (ArduRover SITL + de_comm + de_mavlink) on
+  Sim: one rover box (ArduRover SITL + de_comm + de_mavlink) on
   your own external server stack (auth on, slot_base 60). Runs in
-  parallel with the other personal sims.
+  parallel with the other sims.
 version: 1
+audience: core
+requires: []
 slot_base: 60                 # identity only: SITL -I/sysid base; the
                               # allocator leases every port (`./sim ports`)
 server:

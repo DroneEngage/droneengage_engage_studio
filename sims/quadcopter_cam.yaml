@@ -1,6 +1,6 @@
 # Runbook: sims/quadcopter_cam.md
 #
-# Personal sim: ONE quadcopter box with an onboard camera - ArduCopter
+# Sim: ONE quadcopter box with an onboard camera - ArduCopter
 # SITL (raw binary over TCP, like sitl_tcp.sh) + de_comm + de_mavlink +
 # de_camera - on YOUR OWN server stack.
 #
@@ -13,15 +13,17 @@
 # below streams an ffmpeg test pattern into them on every `sim up`.
 #
 # Runs in parallel with quadcopter.yaml / rover.yaml / plane.yaml - each
-# personal sim uses its own slot_base so SITL (pilot/aux/fcb), de_comm,
+# sim uses its own slot_base so SITL (pilot/aux/fcb), de_comm,
 # de_mavlink and de_camera ports never overlap. `./sim up` refuses to
 # start if ports or unit names clash with a live sim anyway.
 description: |
-  Personal sim: one quadcopter box with an onboard camera (ArduCopter
+  Sim: one quadcopter box with an onboard camera (ArduCopter
   SITL + de_comm + de_mavlink + de_camera) on your own external server
   stack (auth on, slot_base 80). Includes render: {mode: viewer} for the
   Mavlink3DMap mav_bridge + vite page.
 version: 1
+audience: extended
+requires: [camera, v4l2loopback, mavlink3dmap]
 slot_base: 80                 # camquad: pilot 6560, fcb 8460, de_comm 62800,
                               # de_mavlink s2s 63800, de_camera s2s 64800,
                               # ctl 62089, sysid 80

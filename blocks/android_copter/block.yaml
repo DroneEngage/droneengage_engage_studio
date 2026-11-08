@@ -4,4 +4,5 @@ description: |
   server stack stay on the dev host; the phone's modules dial the host
   over the LAN. Which modules are remote is the per-unit `android:`
   spec - this block is otherwise a plain copter.
+requires: [android_adb]
 extends: copter

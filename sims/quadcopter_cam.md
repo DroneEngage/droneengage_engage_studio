@@ -1,6 +1,6 @@
 # quadcopter_cam — how to run
 
-Personal sim: ONE quad box with an onboard camera — ArduCopter SITL
+Sim: ONE quad box with an onboard camera — ArduCopter SITL
 (raw binary over TCP, like sitl_tcp.sh) + de_comm + de_mavlink +
 de_camera — on **your own** server stack. Includes
 `render: {mode: viewer}`: a Mavlink3DMap mav_bridge + vite dev page
@@ -51,7 +51,7 @@ comes up with the sim.
 ```
 
 Runs in parallel with `quadcopter.yaml` / `plane.yaml` / `rover.yaml` —
-each personal sim has its own slot_base.
+each sim has its own slot_base.
 
 ## Teardown
 

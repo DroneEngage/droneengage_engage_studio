@@ -13,6 +13,8 @@ description: |
   are piped back into the proxy. Edit `peer:` or pass
   `--out <ip[:port]>` on `sim up` to repoint the listener.
 version: 1
+audience: core
+requires: []
 units:
   - {block: copter, name: copter1, fc_client: external,
      fcb_link: {kind: udp, peer: "10.1.72.253:14550"}}

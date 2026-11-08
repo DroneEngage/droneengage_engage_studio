@@ -15,6 +15,8 @@ description: |
   1001-waypoint mission and watch the MAVLink FTP read progress in the
   WebClient.
 version: 1
+audience: core
+requires: []
 slot_base: 95
 server:
   type: real

@@ -7,5 +7,7 @@ description: |
   droneengage_server in local mode (no authenticator). For scenarios
   that only need a pair.
 version: 1
+audience: core
+requires: []
 units:
   - {block: copter, name: copter, count: 2}     # copter1..copter2, 20 m apart

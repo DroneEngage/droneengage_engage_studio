@@ -1,6 +1,6 @@
 # boat — how to run
 
-Personal sim: ONE motor boat — ArduRover SITL (motorboat frame) +
+Sim: ONE motor boat — ArduRover SITL (motorboat frame) +
 de_comm + de_mavlink — on **your own** server stack. See `quadcopter.md`
 for the external-server fields (accounts, `--user`/`--auth-server`
 overrides).
@@ -21,7 +21,7 @@ overrides).
 ```
 
 `land` on the boat = HOLD + disarm. Runs in parallel with
-`quadcopter.yaml` / `rover.yaml` / `plane.yaml` — each personal sim has
+`quadcopter.yaml` / `rover.yaml` / `plane.yaml` — each sim has
 its own slot_base. To add it next to a live sim without a slot clash:
 
 ```bash

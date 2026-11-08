@@ -7,6 +7,8 @@ description: |
   (de_comm only). For fleet-mix scenarios and the mixed-vehicle
   bring-up regression.
 version: 1
+audience: core
+requires: []
 units:
   - {block: copter, name: copter1}
   - {block: plane,  name: plane1, at: {east_m: 60}}

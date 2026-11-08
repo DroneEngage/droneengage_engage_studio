@@ -362,6 +362,15 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                           exclusive=exclusive and not _shared())
     name = sim["name"]
     srv = sim["server"]
+    # SL-0213: the sim's requires: names host capabilities - refuse a
+    # bring-up the machine cannot serve, naming the missing item
+    import capabilities
+    miss = capabilities.missing(sim.get("requires"))
+    if miss:
+        sys.exit(simlib.col_red(
+            f"sim {name} needs " + ", ".join(
+                f"{c} ({r})" for c, r in miss)
+            + " - ./sim doctor --caps lists every capability"))
     simlib.check_binaries(sim)          # before stopping the running sim
     if exclusive and not _shared():
         if not _force():

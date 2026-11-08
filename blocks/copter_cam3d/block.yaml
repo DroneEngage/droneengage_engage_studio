@@ -5,5 +5,6 @@ description: |
   DE-SRC-{cam_index}; yolo reads it, annotates to DE-AI-{cam_index},
   and de_camera streams that to the WebClient. Needs the loopback
   labels (tools/setup_v4l2loopback.sh N) plus render.mode: cameras.
+requires: [camera, v4l2loopback, mavlink3dmap]
 extends: copter
 add_modules: [de_yolo_ai, de_camera]

@@ -13,6 +13,8 @@ description: |
   udp_relay: true}). Proves GCS-side MAVLink flows through the relay
   (tests/udp_relay/).
 version: 1
+audience: core
+requires: []
 # auth: true - in local_server mode de_comm reports the never-started
 # remote link's status to modules, so de_mavlink never sees REGISTERED
 # and never sends its 9008 pair-open request.

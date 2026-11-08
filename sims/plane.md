@@ -1,6 +1,6 @@
 # plane — how to run
 
-Personal sim: ONE fixed-wing box — ArduPlane SITL + de_comm +
+Sim: ONE fixed-wing box — ArduPlane SITL + de_comm +
 de_mavlink — on **your own** server stack. See `quadcopter.md` for the
 external-server fields (accounts, `--user`/`--auth-server` overrides).
 
@@ -21,7 +21,7 @@ external-server fields (accounts, `--user`/`--auth-server` overrides).
 
 The plane arms in MANUAL; `land` resets the SITL (a plane cannot land
 in place). Runs in parallel with `quadcopter.yaml` / `rover.yaml` —
-each personal sim has its own slot_base.
+each sim has its own slot_base.
 
 ## Teardown
 

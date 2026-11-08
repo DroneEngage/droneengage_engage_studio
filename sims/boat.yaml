@@ -1,15 +1,17 @@
 # Runbook: sims/boat.md
 #
-# Personal sim: ONE motor boat - ArduRover SITL (motorboat frame) +
+# Sim: ONE motor boat - ArduRover SITL (motorboat frame) +
 # de_comm + de_mavlink - on YOUR OWN server stack
 # (servers/sh_start_servers.sh).
 # See quadcopter.yaml for the external-server fields. Runs in parallel with
-# the other personal sims; slot_base 90 keeps every port/sysid disjoint.
+# the other sims; slot_base 90 keeps every port/sysid disjoint.
 description: |
-  Personal sim: one motor boat (ArduRover SITL, motorboat frame +
+  Sim: one motor boat (ArduRover SITL, motorboat frame +
   de_comm + de_mavlink) on your own external server stack (auth on,
-  slot_base 90). Runs in parallel with the other personal sims.
+  slot_base 90). Runs in parallel with the other sims.
 version: 1
+audience: core
+requires: []
 slot_base: 90                 # boat: pilot 6660, fcb 8560, de_comm 62900,
                               # de_mavlink s2s 63900, ctl 62099, sysid 90
 server:

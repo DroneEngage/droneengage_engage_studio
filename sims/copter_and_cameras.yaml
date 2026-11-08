@@ -9,6 +9,8 @@ description: |
   Needs the de_camera binary + the named v4l2loopback pool
   (./sim vcam --pool once; see blocks/copter_camera).
 version: 1
+audience: extended
+requires: [camera, v4l2loopback]
 # DE-0050: ffmpeg testsrc producers on every bound /dev/videoN before
 # de_camera scans (exclusive_caps needs a producer for CAPTURE to
 # enumerate). The devices come from the one-time named pool:

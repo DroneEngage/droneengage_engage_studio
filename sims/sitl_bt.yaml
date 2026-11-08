@@ -14,6 +14,8 @@ description: |
   dials the channel talks to SITL both ways through the proxy. Edit
   `channel:` to move the RFCOMM channel (1-30; one channel per unit).
 version: 1
+audience: extended
+requires: []
 units:
   - {block: copter, name: copter1, fc_client: external,
      fcb_link: {kind: bt_spp, channel: 1}}

@@ -1,6 +1,6 @@
 # rover — how to run
 
-Personal sim: ONE rover box — ArduRover SITL + de_comm + de_mavlink — on
+Sim: ONE rover box — ArduRover SITL + de_comm + de_mavlink — on
 **your own** server stack. See `quadcopter.md` for the external-server
 fields (accounts, `--user`/`--auth-server` overrides).
 
@@ -20,7 +20,7 @@ fields (accounts, `--user`/`--auth-server` overrides).
 ```
 
 `land` on the rover = HOLD + disarm. Runs in parallel with
-`quadcopter.yaml` / `plane.yaml` — each personal sim has its own
+`quadcopter.yaml` / `plane.yaml` — each sim has its own
 slot_base.
 
 ## Teardown
