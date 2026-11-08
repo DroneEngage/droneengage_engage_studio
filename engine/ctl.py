@@ -981,7 +981,13 @@ def kill_proc(owner, proc):
     if u and proc in u["android"]["remote_modules"]:
         import android as _android
         _android.stop_module(u, proc)
-        _android.wait_module_down(u, proc)
+        if not _android.wait_module_down(u, proc):
+            # DE-0132: the module is still alive on the device - dropping
+            # the pidfile and printing "stopped" would fake the stop and
+            # (in remove_module) drop a live module from the manifest
+            sys.exit(f"{owner}.{proc}: still running on device "
+                     f"{_android.serial_of(u) or 'default'} "
+                     "after STOP - refusing to drop the pidfile")
         pf = simlib.pid_path(owner_sim(owner), owner, proc)
         if os.path.isfile(pf):
             os.unlink(pf)
