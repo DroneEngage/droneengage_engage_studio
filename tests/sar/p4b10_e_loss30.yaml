@@ -40,6 +40,8 @@
 #         nominal coverage (nominal unc ~265 -> side ~800 m) whenever
 #         unc collapses early under loss.
 version: 1
+audience: extended
+requires: []
 name: p4b10_e_loss30
 tasks: [GL-0029]
 realtime: true

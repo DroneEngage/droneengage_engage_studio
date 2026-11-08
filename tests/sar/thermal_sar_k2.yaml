@@ -39,6 +39,8 @@
 # Negative control: tests/sar/thermal_sar_k1_ctrl.yaml - therm2 out of
 # range reports nothing; one source stays candidate forever.
 version: 1
+audience: extended
+requires: []
 name: thermal_sar_k2
 tasks: [MP-0218, MP-0216, SL-0034]
 speedup: 1                   # the world truth tick is wall-clock

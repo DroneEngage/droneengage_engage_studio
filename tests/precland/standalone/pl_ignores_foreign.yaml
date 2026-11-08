@@ -11,6 +11,8 @@
 # None of the three may produce a state line or an EVENT_OUT; the real
 # enable right after proves the surface itself is alive.
 version: 1
+audience: extended
+requires: []
 name: pl_ignores_foreign
 transport: fake
 settle_s: 5

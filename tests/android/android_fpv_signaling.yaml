@@ -7,6 +7,10 @@
 # fresh offer - proving the close actually happened. Needs a real adb
 # phone preset per tests/android/phone_caps/phone_stack.yaml.
 version: 1
+audience: extended
+requires: [android_adb]
+
+
 name: android_fpv_signaling
 tasks: [AN-0080]
 transport: real

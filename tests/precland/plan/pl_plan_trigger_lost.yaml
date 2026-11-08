@@ -5,6 +5,8 @@
 # two independent lock/lost cycles happen; end:hold frees the slot
 # after each pass, so the second lost re-activates alarm exactly once.
 version: 1
+audience: extended
+requires: []
 name: pl_plan_trigger_lost
 transport: fake
 operation: ops/pl_trigger_lost.deop

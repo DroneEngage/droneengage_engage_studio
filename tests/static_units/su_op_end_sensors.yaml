@@ -7,6 +7,8 @@
 # completes. Proves OP_END is a fleet sensor-lane shutdown, not a
 # per-unit teardown - and that on_exit fires exactly once per mission.
 version: 1
+audience: extended
+requires: []
 name: su_op_end_sensors
 transport: fake
 operation: ../packages/su_masts.deploy.json

@@ -6,6 +6,8 @@
 # t=20, so the lock - and therefore the gate release - can only exist
 # after the scene write, proving the chain is causal.
 version: 1
+audience: extended
+requires: []
 name: pl_plan_gate_stabilized
 transport: fake
 operation: ops/pl_gate_stabilized.deop

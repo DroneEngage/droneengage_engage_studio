@@ -7,6 +7,10 @@
 # journal asserts (incl. cross-clock time_delta) work. Needs a real
 # adb device reachable over the network: ./sim doctor checks it.
 version: 1
+audience: extended
+requires: [android_adb]
+
+
 name: android_bringup
 tier: smoke
 transport: real

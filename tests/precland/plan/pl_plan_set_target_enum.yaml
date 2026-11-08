@@ -5,6 +5,8 @@
 # and the run stops before fleet bring-up - deploy NEVER happens.
 # Same contract as tests/verify/*.
 version: 1
+audience: extended
+requires: []
 name: pl_plan_set_target_enum
 transport: fake
 operation: ops/pl_set_target_bad.deop

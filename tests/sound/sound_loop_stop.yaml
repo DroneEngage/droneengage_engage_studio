@@ -11,6 +11,8 @@
 # evidence received AFTER its entry - the run-long latch already holds
 # the first finished.
 version: 1
+audience: extended
+requires: []
 name: sound_loop_stop
 transport: fake
 operation: ops/snd_loop.deop

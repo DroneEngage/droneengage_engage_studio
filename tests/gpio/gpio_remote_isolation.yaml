@@ -14,6 +14,8 @@
 # change. Cross-unit behaviour belongs to the fleet/fact path - see
 # gpio_fact_to_action.
 version: 1
+audience: extended
+requires: []
 name: gpio_remote_isolation
 transport: fake
 operation: ops/gpio_isolate.deop

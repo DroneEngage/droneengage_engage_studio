@@ -15,6 +15,8 @@
 # spec's ~540 was tuned on 2026-10-05 timings - re-tune if the window
 # moves on a different host. A suite retry is expected occasionally.
 version: 1
+audience: extended
+requires: []
 name: p4b11_c3_owner_back_midsector
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

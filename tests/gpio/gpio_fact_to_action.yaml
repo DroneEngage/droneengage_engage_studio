@@ -6,6 +6,8 @@
 # filtered out, so its led stays off - facts travel the bus, actions are
 # invoked locally.
 version: 1
+audience: extended
+requires: []
 name: gpio_fact_to_action
 transport: fake
 operation: ops/gpio_action.deop

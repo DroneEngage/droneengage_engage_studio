@@ -4,6 +4,8 @@
 # set_target {target:1} succeeds and the module answers with the
 # target_changed fact the gate waits on.
 version: 1
+audience: extended
+requires: []
 name: pl_plan_set_target
 tier: smoke
 transport: fake

@@ -19,6 +19,8 @@
 #   - CAP-008 was recorded at verify time (verify.json in the run dir
 #     carries the finding)
 version: 1
+audience: extended
+requires: []
 name: p4b10_l_class_labels_ctrl
 tasks: [MP-0214]
 speedup: 1                   # the world truth tick is wall-clock

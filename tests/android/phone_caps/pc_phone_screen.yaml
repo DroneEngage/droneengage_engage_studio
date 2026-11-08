@@ -4,6 +4,8 @@
 # mode: app (see pc_sound_say.yaml for the full rationale + the
 # one-time device preset table - same prerequisites here).
 version: 1
+audience: extended
+requires: [android_adb]
 name: pc_phone_screen
 tasks: [SL-0099]
 tier: smoke

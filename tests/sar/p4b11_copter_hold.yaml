@@ -18,6 +18,8 @@
 # post-pin alt + mode here, read min-alt-during-upload off the truth
 # log for step b.
 version: 1
+audience: extended
+requires: []
 name: p4b11_copter_hold
 seed: 11
 transport: fake

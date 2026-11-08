@@ -5,6 +5,8 @@
 # the pressing unit. The remote event stays on node_b's bus - it never
 # reaches node_b's gpio module, so its led never changes.
 version: 1
+audience: extended
+requires: []
 name: gpio_fleet_scope
 transport: fake
 operation: ops/gpio_scope.deop

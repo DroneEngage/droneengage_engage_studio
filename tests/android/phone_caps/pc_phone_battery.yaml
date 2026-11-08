@@ -12,6 +12,8 @@
 # the op is armed (the `start` step) and inside the wait window, then
 # `dumpsys battery reset` after the run.
 version: 1
+audience: extended
+requires: [android_adb]
 name: pc_phone_battery
 tasks: [SL-0099]
 tier: smoke

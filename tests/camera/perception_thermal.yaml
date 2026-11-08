@@ -26,6 +26,8 @@
 #     person/car/coldspot target exists, and the two hotspots do not
 #     merge despite being metres apart
 version: 1
+audience: extended
+requires: [camera, v4l2loopback]
 name: perception_thermal
 tasks: [SL-0035]
 seed: 12

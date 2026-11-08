@@ -7,6 +7,8 @@
 # happen: node_b's de_sound module seeing it - its stdout shows zero
 # sound.beep.* traffic and no "event ignored" note.
 version: 1
+audience: extended
+requires: []
 name: sound_isolation
 transport: fake
 operation: ops/snd_isolate.deop

@@ -26,6 +26,8 @@
 # op has no classes -> W5 equality drops every 'human' box: zero person
 # targets, CAP-008 recorded at verify time.
 version: 1
+audience: extended
+requires: []
 name: p4b10_l_class_labels
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

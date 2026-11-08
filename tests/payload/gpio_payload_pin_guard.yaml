@@ -16,6 +16,8 @@
 #         -> g1 gate gpio.drop.went_on -> MUST time out on continue
 #         -> e2 emit gpio.guard_done -> proves the walk got past g1
 version: 1
+audience: extended
+requires: []
 name: gpio_payload_pin_guard
 transport: fake
 operation: ops/gpio_guard.deop

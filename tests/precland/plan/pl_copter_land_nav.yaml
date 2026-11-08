@@ -12,6 +12,8 @@
 # pad 4 m away.
 # measured touchdown error (seed 1): 0.0 m from pad_1, 4.0 m from the
 version: 1
+audience: extended
+requires: []
 name: pl_copter_land_nav
 speedup: 1                   # world stub + FC landing loop are wall-clock
 transport: fake

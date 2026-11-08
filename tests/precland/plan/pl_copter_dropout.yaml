@@ -11,6 +11,8 @@
 # a second lost (min_tags: the tag square stops fitting in the frame
 # below ~4 cm), which is physics, not a second dropout.
 version: 1
+audience: extended
+requires: []
 name: pl_copter_dropout
 speedup: 1                   # world stub + FC landing loop are wall-clock
 transport: fake

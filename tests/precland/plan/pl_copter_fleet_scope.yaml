@@ -10,6 +10,8 @@
 # latched) yet activates `watch` exactly once - its own lock only -
 # and each lands on its own pad.
 version: 1
+audience: extended
+requires: []
 name: pl_copter_fleet_scope
 speedup: 1                   # world stub + FC landing loop are wall-clock
 transport: fake

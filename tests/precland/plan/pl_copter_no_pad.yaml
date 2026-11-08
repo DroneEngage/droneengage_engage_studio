@@ -6,6 +6,8 @@
 # 1.5 m of the nominal point N (lz_nominal marker) - no lock, no
 # correction, a dumb landing at the mission point.
 version: 1
+audience: extended
+requires: []
 name: pl_copter_no_pad
 speedup: 1                   # world stub + FC landing loop are wall-clock
 transport: fake

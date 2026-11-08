@@ -12,6 +12,8 @@
 #          drove it (an off on an already-off pin is no edge)
 #   t=40  toggle -> went_on, t=50 toggle -> went_off
 version: 1
+audience: extended
+requires: []
 name: gpio_operator_fire
 transport: fake
 operation: ops/gpio_fire.deop

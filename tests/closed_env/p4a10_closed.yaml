@@ -8,6 +8,8 @@
 #  * copter3: after_start_s releases on the mono clock, at_ms stays
 #    unarmed (TIME_GATE_UNARMED) and the FC loiter backstop fires
 version: 1
+audience: extended
+requires: []
 name: p4a10_closed
 realtime: true
 transport: {type: fake, clock_offset_ms: 10800000, noclock: [copter3], seed: 1337}

@@ -4,6 +4,10 @@
 # s2s_udp_target_ip is ANDROID_HOST_IP), remote restart routes through
 # adb, and its logcat log is mirrored. Needs a real adb device.
 version: 1
+audience: extended
+requires: [android_adb]
+
+
 name: android_bringup_mavlink
 tier: smoke
 transport: real

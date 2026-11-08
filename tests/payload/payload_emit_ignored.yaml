@@ -11,6 +11,8 @@
 #   g1 gate payload.left.released  -> MUST time out on continue
 #   e2 emit probe.emit_done      -> proves the mission walked past g1
 version: 1
+audience: extended
+requires: []
 name: payload_emit_ignored
 transport: fake
 operation: ops/payload_emit_ignored.deop

@@ -4,6 +4,8 @@
 # and restores after 500 ms - went_on then went_off latch on the
 # supervisor.
 version: 1
+audience: extended
+requires: []
 name: fc_io_relay_pulse
 tasks: [MV-0020]
 transport: fake

@@ -18,6 +18,8 @@
 # sensor mission re-emits the payload as the fleet event (a real 1090:
 # acks, retries, catch-up all apply).
 version: 1
+audience: extended
+requires: []
 name: p4b08_confirm
 transport: real
 operation: ../packages/p4b08.deploy.json

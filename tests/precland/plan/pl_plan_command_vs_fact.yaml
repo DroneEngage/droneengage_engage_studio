@@ -6,6 +6,8 @@
 # precision_landing.enabled fact the module emits once the enable
 # actually lands; its gate releases on the sticky fact.
 version: 1
+audience: extended
+requires: []
 name: pl_plan_command_vs_fact
 transport: fake
 operation: ops/pl_command_vs_fact.deop

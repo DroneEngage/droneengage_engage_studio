@@ -32,6 +32,8 @@
 # WM_NEW person equals:1 assert fails. That rerun demonstrates the
 # fail-open this scenario proves closed.
 version: 1
+audience: extended
+requires: []
 name: p4b10_k_class_filter
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

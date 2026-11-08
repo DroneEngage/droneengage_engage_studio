@@ -36,6 +36,8 @@
 # perceive advert) and the run stalls silent - no WM_NEW, the 'seen'
 # gate times out to "end", no watch.done, no OP_END.
 version: 1
+audience: extended
+requires: []
 name: p4b10_m_perceive_step
 tasks: [MP-0215]
 seed: 7

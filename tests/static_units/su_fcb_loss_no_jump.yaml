@@ -13,6 +13,8 @@
 # READY), rosters flow on the supervisor heartbeat, and the unit stays
 # parked at home so the frozen position has one deterministic reference.
 version: 1
+audience: extended
+requires: []
 name: su_fcb_loss_no_jump
 transport: fake
 operation: ../../packages/p4a11_static.deploy.json

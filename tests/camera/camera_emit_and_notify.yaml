@@ -18,6 +18,8 @@
 # MAVLINK3DMAP_DIR/CHROMIUM_BIN and a HEAD de_camera via DE_CAMERA_BIN
 # (see modules/catalog.yaml).
 version: 1
+audience: extended
+requires: [camera, v4l2loopback, mavlink3dmap]
 name: camera_emit_and_notify
 speedup: 1                   # render farm + de_camera run wall-clock
 transport: fake

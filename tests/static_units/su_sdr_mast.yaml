@@ -8,6 +8,8 @@
 # actions once ("on_exit sdr.stop"). On a static unit nothing ever goes
 # near the FC, which no_fc_command_to_static proves.
 version: 1
+audience: extended
+requires: []
 name: su_sdr_mast
 transport: fake
 operation: ../packages/su_sdr.deploy.json

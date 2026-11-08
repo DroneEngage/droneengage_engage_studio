@@ -27,6 +27,8 @@
 #     id= lines, following tests/static_units/su_op_end_sensors.yaml)
 #   - the rest of the SAR chain still completes -> OP_END
 version: 1
+audience: extended
+requires: []
 name: p4b10_i_static_sources
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

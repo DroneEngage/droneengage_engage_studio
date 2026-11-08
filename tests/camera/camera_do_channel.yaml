@@ -9,6 +9,8 @@
 #
 # Same render-farm/de_camera requirements as camera_emit_and_notify.
 version: 1
+audience: extended
+requires: [camera, v4l2loopback, mavlink3dmap]
 name: camera_do_channel
 speedup: 1                   # render farm + de_camera run wall-clock
 transport: fake

@@ -5,6 +5,10 @@
 # journal mirror + clock-offset path, and remote restart routing.
 # Needs a real adb device.
 version: 1
+audience: extended
+requires: [android_adb]
+
+
 name: android_bringup_comm
 tier: smoke
 transport: real

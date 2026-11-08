@@ -8,6 +8,8 @@
 # Pre-GF-03 the baseline never reached the driver: boot-high left the
 # pin at 0, the real press found no edge, and the mission never fired.
 version: 1
+audience: extended
+requires: []
 name: gpio_input_baseline
 transport: fake
 operation: ops/gpio_baseline.deop

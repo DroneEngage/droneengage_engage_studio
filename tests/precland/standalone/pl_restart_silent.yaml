@@ -8,6 +8,8 @@
 # enabled, no phantom locked/lost burst. The whole run must show zero
 # EVENT_OUT lines.
 version: 1
+audience: extended
+requires: []
 name: pl_restart_silent
 transport: fake
 settle_s: 5

@@ -14,6 +14,8 @@
 #          no edge)
 #   t=40  record_on -> went_recording, t=50 record_off -> went_idle
 version: 1
+audience: extended
+requires: [camera, v4l2loopback, mavlink3dmap]
 name: camera_operator_fire
 speedup: 1                   # render farm + de_camera run wall-clock
 transport: fake

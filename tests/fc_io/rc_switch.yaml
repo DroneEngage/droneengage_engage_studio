@@ -4,6 +4,8 @@
 # src:"input". Releasing the override drops the channel back and
 # went_off latches.
 version: 1
+audience: extended
+requires: []
 name: fc_io_rc_switch
 tasks: [MV-0020]
 transport: fake

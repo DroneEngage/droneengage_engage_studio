@@ -6,6 +6,8 @@
 #   flash {on:true, pulse_ms:300}      pulse: assert, wait 300 ms, restore
 #   servo {pwm:102}                    PWM width (51 -> 102 = 'changed')
 version: 1
+audience: extended
+requires: []
 name: gpio_do_actions
 tier: smoke
 transport: fake

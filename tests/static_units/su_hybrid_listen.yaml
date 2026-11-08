@@ -7,6 +7,8 @@
 # lane keeps running and a second sdr.signal still emits. Proves sensor
 # missions live on their own lane, independent of the pilot/nav state.
 version: 1
+audience: extended
+requires: []
 name: su_hybrid_listen
 transport: fake
 operation: ../packages/su_hybrid_rf.json

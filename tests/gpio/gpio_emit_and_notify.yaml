@@ -13,6 +13,8 @@
 # power_led is a SYSTEM pin (events disabled): its heartbeat toggles
 # over the whole run but must journal nothing.
 version: 1
+audience: extended
+requires: []
 name: gpio_emit_and_notify
 transport: fake
 operation: ops/gpio_probe.deop

@@ -16,6 +16,8 @@
 #   action payload.release (row <n>) approval denied - not dispatched
 # and the mission carries on (no payload.release is ever dispatched).
 version: 1
+audience: extended
+requires: []
 name: p4b10_f_drop_denied
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

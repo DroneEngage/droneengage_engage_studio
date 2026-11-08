@@ -9,6 +9,8 @@
 # scenario in-process twice on the mast poses and byte-compares the
 # stub logs.
 version: 1
+audience: extended
+requires: [camera, v4l2loopback]
 name: obs_contract
 tasks: [SL-0034]
 tier: smoke

@@ -5,6 +5,8 @@
 #
 # mode: app (see pc_sound_say.yaml - same prerequisites).
 version: 1
+audience: extended
+requires: [android_adb]
 name: pc_cmd_vs_fact
 tasks: [SL-0099]
 tier: smoke

@@ -10,6 +10,8 @@
 #       auto_with_veto 30 in the op variant).
 # World/chain: identical to p4b10_a_nominal.
 version: 1
+audience: extended
+requires: []
 name: p4b10_b_auto_veto
 realtime: true
 seed: 7

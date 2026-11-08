@@ -9,6 +9,8 @@
 #
 # `do: sound.say {text}` is the frozen Phase-3 action - unchanged.
 version: 1
+audience: extended
+requires: []
 name: sound_do_action
 tier: smoke
 transport: fake

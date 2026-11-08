@@ -31,6 +31,8 @@
 #     all three behaviours. No duplicates inside the steady window is
 #     exactly what the at_most side bounds.
 version: 1
+audience: extended
+requires: [camera, v4l2loopback]
 name: perception_tracks
 tasks: [SL-0035]
 seed: 11

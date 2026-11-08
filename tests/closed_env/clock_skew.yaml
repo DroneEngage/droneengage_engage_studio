@@ -9,6 +9,8 @@
 # would journal TIME_GATE_UNARMED - that is tested in the p4a10 closed
 # scenario next to this file.
 version: 1
+audience: extended
+requires: []
 name: ce_clock_skew
 transport:
   type: fake

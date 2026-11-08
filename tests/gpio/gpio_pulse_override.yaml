@@ -8,6 +8,8 @@
 # Pre-GF-04 only real edges bumped the generation: the no-op write left
 # it alone, the restore ran, and flash went_off at pulse end.
 version: 1
+audience: extended
+requires: []
 name: gpio_pulse_override
 transport: fake
 operation: ops/gpio_pulse.deop

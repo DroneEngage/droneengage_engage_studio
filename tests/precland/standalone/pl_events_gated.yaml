@@ -9,6 +9,8 @@
 # fires land; the only two transitions come from the two legacy
 # opmsgs.
 version: 1
+audience: extended
+requires: []
 name: pl_events_gated
 transport: fake
 settle_s: 5

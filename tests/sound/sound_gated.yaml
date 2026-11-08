@@ -9,6 +9,8 @@
 #   g_horn gate sound.horn.finished -> MUST time out on continue
 #   d_horn do sound.horn        -> invoke ok, clip plays, still no facts
 version: 1
+audience: extended
+requires: []
 name: sound_gated
 transport: fake
 operation: ops/snd_gated.deop

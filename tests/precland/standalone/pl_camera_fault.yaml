@@ -8,6 +8,8 @@
 # failure counter and the next accepted pose emits locked - recovery
 # is visible through the next fact, no special "recovered" event.
 version: 1
+audience: extended
+requires: []
 name: pl_camera_fault
 transport: fake
 settle_s: 5

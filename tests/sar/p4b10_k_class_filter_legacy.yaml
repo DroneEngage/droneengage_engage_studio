@@ -19,6 +19,8 @@
 # model at all". The asserts below fail even harder (0 person targets),
 # which still demonstrates the point: the legacy wire is dead.
 version: 1
+audience: extended
+requires: []
 name: p4b10_k_class_filter_legacy
 tasks: [SL-0034]
 speedup: 1                   # the world truth tick is wall-clock

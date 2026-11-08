@@ -39,6 +39,8 @@
 # tracker's cam_id) and the lockon step waits its timeout to "end" -
 # no lock, no watch.done, no OP_END.
 version: 1
+audience: extended
+requires: []
 name: p4b10_n_track_step
 tasks: [MP-0217]
 seed: 7

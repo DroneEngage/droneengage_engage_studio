@@ -24,6 +24,8 @@
 # visual asserts - the static world has no camera imagery behind the
 # stub detection.
 version: 1
+audience: extended
+requires: []
 name: p4b10_j_approval_timeout
 realtime: true
 seed: 7

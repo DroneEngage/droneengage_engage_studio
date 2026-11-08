@@ -21,6 +21,8 @@
 #        detect.detected -> target 'person'. No op end; the scenario
 #        stops the run.
 version: 1
+audience: extended
+requires: [camera, v4l2loopback]
 name: perception_mount
 tasks: [SL-0035]
 seed: 13

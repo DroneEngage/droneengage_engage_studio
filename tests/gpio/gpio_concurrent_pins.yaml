@@ -4,6 +4,8 @@
 # and run concurrently; c_led wants the same gpio.led key and is
 # refused 'claim_conflict gpio.led held by a_led'.
 version: 1
+audience: extended
+requires: []
 name: gpio_concurrent_pins
 transport: fake
 operation: ops/gpio_concurrent_pins.deop

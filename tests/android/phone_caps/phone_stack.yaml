@@ -26,6 +26,8 @@
 # OFF, FCB TCP <host>:8160, and the native stack marked wanted once
 # (shared_prefs/de_native_stack.xml wanted=true, or press Connect).
 version: 1
+audience: extended
+requires: [android_adb]
 name: phone_stack
 tasks: [SL-0099]
 params:

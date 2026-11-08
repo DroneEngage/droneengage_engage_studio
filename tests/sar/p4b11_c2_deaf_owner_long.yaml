@@ -19,6 +19,8 @@
 # confirm.person.after_s is raised to 1500 s so the drop/OP_END chain
 # stays parked until the return + digest + moot have all played out.
 version: 1
+audience: extended
+requires: []
 name: p4b11_c2_deaf_owner_long
 realtime: true
 seed: 7

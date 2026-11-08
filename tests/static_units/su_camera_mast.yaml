@@ -8,6 +8,8 @@
 # "shot ok") and the mission is unaffected. STOP
 # runs on_exit camera.record once.
 version: 1
+audience: extended
+requires: []
 name: su_camera_mast
 transport: fake
 operation: ../packages/su_cam.deploy.json

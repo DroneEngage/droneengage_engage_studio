@@ -5,6 +5,8 @@
 # (PRECLAND_ACTION_SET_TARGET). Re-selecting the SAME target through
 # the event surface is an edge no-op - no second target_changed.
 version: 1
+audience: extended
+requires: []
 name: pl_legacy_action
 transport: fake
 settle_s: 5

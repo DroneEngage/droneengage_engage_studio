@@ -10,6 +10,8 @@
 #   t=30  fire sound.beep.play   with the package up: the module's
 #          started/finished facts latch on the supervisor
 version: 1
+audience: extended
+requires: []
 name: sound_operator_fire
 transport: fake
 operation: ops/snd_fire.deop

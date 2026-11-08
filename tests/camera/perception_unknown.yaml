@@ -18,6 +18,8 @@
 # World: worlds/perception_unknown.yaml - person_1 + kangaroo_1 under
 #        the 8 m nadir mast, deterministic (p_detect 1, no noise).
 version: 1
+audience: extended
+requires: [camera, v4l2loopback]
 name: perception_unknown
 tasks: [SL-0035]
 seed: 14

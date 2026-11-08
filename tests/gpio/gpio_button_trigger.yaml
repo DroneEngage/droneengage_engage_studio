@@ -9,6 +9,8 @@
 #   t=40  write {"17":0}, held 2 s          -> a genuine release:
 #          exactly one went_off
 version: 1
+audience: extended
+requires: []
 name: gpio_button_trigger
 transport: fake
 operation: ops/gpio_button.deop

@@ -15,6 +15,8 @@
 # stub, which cannot name unit-advertised 'payload.<bay>' actions (DYN-002)
 # - the aggregate+bay form is also the frozen single-bay-compatible path.
 version: 1
+audience: extended
+requires: []
 name: payload_two_bays_approval
 tier: smoke
 seed: 7

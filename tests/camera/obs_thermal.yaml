@@ -6,6 +6,8 @@
 # person_2 (temp_c -10) reads coldspot. Every frame must report
 # {coldspot, hotspot, hotspot} with temp_c inside [-11, 41].
 version: 1
+audience: extended
+requires: [camera, v4l2loopback]
 name: obs_thermal
 tasks: [SL-0034]
 seed: 7

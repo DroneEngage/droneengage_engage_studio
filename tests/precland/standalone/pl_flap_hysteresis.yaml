@@ -14,6 +14,8 @@
 #
 # The final steady target_near produces the run's single stabilized.
 version: 1
+audience: extended
+requires: []
 name: pl_flap_hysteresis
 transport: fake
 settle_s: 5

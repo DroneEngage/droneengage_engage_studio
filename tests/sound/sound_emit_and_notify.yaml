@@ -11,6 +11,8 @@
 #
 # horn is events:false in the sim config but is never touched here.
 version: 1
+audience: extended
+requires: []
 name: sound_emit_and_notify
 transport: fake
 operation: ops/snd_probe.deop

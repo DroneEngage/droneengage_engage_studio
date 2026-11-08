@@ -8,6 +8,8 @@
 # Pre-GF-05 the command reused the dead live frequency (0): the pin was
 # written off instead, ok but no went_on and width stayed 0.
 version: 1
+audience: extended
+requires: []
 name: gpio_pwm_after_legacy_off
 transport: fake
 operation: ops/gpio_pwmbak.deop

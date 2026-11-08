@@ -21,6 +21,8 @@
 # (de_comm default is OFF - sv_supervisor.cpp only enables the NAV_LAUNCH
 # stepper for start:"ground"+auto_launch roles when the config says so).
 version: 1
+audience: extended
+requires: []
 name: p4b10_a_nominal
 realtime: true
 seed: 7

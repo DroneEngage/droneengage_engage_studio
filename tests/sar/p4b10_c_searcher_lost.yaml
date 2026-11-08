@@ -31,6 +31,8 @@
 # p4b11_c3_owner_back_midsector.yaml (~560 s cut - partial overlap, no
 # moot, returning owner stands down).
 version: 1
+audience: extended
+requires: []
 name: p4b10_c_searcher_lost
 seed: 7
 realtime: true

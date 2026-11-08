@@ -12,6 +12,8 @@
 # Two rendered cameras -> `sudo tools/setup_v4l2loopback.sh 2` plus the
 # usual MAVLINK3DMAP_DIR/CHROMIUM_BIN/DE_CAMERA_BIN env.
 version: 1
+audience: extended
+requires: [camera, v4l2loopback, mavlink3dmap]
 name: camera_isolation
 speedup: 1                   # render farm + de_camera run wall-clock
 transport: fake

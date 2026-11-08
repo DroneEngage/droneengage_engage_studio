@@ -31,6 +31,8 @@
 # only), so the asserts below cover ok completion of the invoke, not
 # the payload text.
 version: 1
+audience: extended
+requires: [android_adb]
 name: android_test_echo
 tasks: [AN-0061]
 tier: smoke
