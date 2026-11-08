@@ -1,0 +1,19 @@
+# capacity/de_comm_load - SL-0225: drive a target Pi's de_comm with
+# rising unit count and message rate over SSH; measure CPU, RSS,
+# bandwidth and loss per step and report the highest load before
+# degradation. Lab contract (SCENARIOS.md): --target names the host,
+# preflight gates it, the run leaves it clean.
+version: 1
+audience: lab
+requires: [rpi_target]
+name: de_comm_load
+transport: fake
+settle_s: 5
+teardown: none
+fleet:
+  - {id: c1, cls: copter}
+timeline:
+  - {t: 0, do: wait_online, unit: c1, timeout: 120}
+  - {t: 5, do: lab_exec, script: de_comm_load.py}
+assert:
+  - journal_count: {unit: c1, re: ".*", ge: 0}

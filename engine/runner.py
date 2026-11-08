@@ -222,6 +222,16 @@ def run_step(step, t, marks, log_events=None):
     unit = unit_arg(arg)
     here = os.path.dirname(t["__file"])
 
+    if name == "lab_exec":
+        # SL-0223/SL-0225: run a lab driver script (tests/*/name.py)
+        # with the scenario's target on SIM_TARGET; its exit code is
+        # the step result
+        script = os.path.join(here, str(arg["script"]))
+        r = subprocess.run([sys.executable, script]
+                           + [str(x) for x in
+                              str(arg.get("args", "")).split() if x])
+        return r.returncode == 0
+
     if name == "deploy":
         pkg = arg.get("package", t.get("operation")) if isinstance(arg, dict) else t.get("operation")
         if not pkg:

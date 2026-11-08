@@ -26,7 +26,7 @@
 # what those draw is exactly the 1027 stream mission_pull verifies.
 version: 1
 audience: lab
-requires: [mavlink3dmap]
+requires: []
 name: plan_1kwp
 realtime: true
 transport: real

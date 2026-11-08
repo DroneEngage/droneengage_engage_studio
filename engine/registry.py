@@ -103,6 +103,10 @@ VERBS = [
     V("param_get", "probe", req=["unit", "name"],
       doc="live param read-back off the FC",
       eg="{t: 5, do: param_get, unit: c1, name: BATT_CAPACITY}"),
+    V("lab_exec", "step", req=["script"], opt=["args"],
+      doc="SL-0223/SL-0225 lab contract: run a driver script next to "
+          "the scenario file; SIM_TARGET (or --target) reaches it",
+      eg="{t: 0, do: lab_exec, script: de_comm_load.py}"),
     V("wait", "step", req=["seconds"], doc="sleep the timeline",
       eg="{t: 30, do: wait, seconds: 5}"),
     V("wait_journal", "probe", req=["unit", "re"],
