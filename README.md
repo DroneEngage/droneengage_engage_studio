@@ -28,6 +28,8 @@ packages/   operations   - hand-written ops demos/examples deploy
                          var/build/packages/<key>/)
 templates/  scaffold     - the file ./sim new copies
 docs/       authoring    - SCENARIOS.md: the de.scenario/1 reference;
+                         GETTING_STARTED.md: clone to a green core
+                         suite; LAB.md: measure your own hardware;
                          SENSORS.md: the world-driven sensor contract
                          (./sim new --sensor <name>);
                          MAP.md: the one-page model map
