@@ -416,22 +416,36 @@ def gather(sim=None, esp32=False):
                          any(u.get("android") for u in sim["units"]))
     _android.doctor_rows(d, required=needs_android, probe=needs_android)
 
-    # ports: the sim's own set, else the default server pair
+    # ports: with a sim loaded, its resolved set (yaml pins + hinted
+    # values); without one, the allocator's own pool health is the
+    # registry rows below - there is no formula default to probe
+    # (SL-0077). `./sim ports` shows what is actually leased.
     if sim:
         held = simlib.ports_held(simlib.used_ports(sim)
                                  - simlib.remote_bound_ports(sim))
         d.check("ports", not held,
                 f"{len(simlib.used_ports(sim))} ports",
-                f"ports {held} already bound - ./sim status, down the "
-                "holder, or --slot-base")
-    else:
-        held = simlib.ports_held({simlib.SERVER_PORT,
-                                  simlib.SERVER_PORT + 1})
-        d.check("ports", not held,
-                f"default server {simlib.SERVER_PORT}/"
-                f"{simlib.SERVER_PORT + 1}",
-                f"ports {held} already bound - ./sim status or down "
+                f"ports {held} already bound - ./sim ports, or down "
                 "the holder")
+
+    # the machine-wide port-lease registry (docs/port_allocation.md):
+    # a missing file just means no sim ever came up; stale leases get
+    # an optional row with the gc hint
+    a = simlib.allocator()
+    leases = a.leases()
+    n_stale = sum(1 for l in leases if l.get("stale"))
+    if os.path.isfile(a.registry):
+        if n_stale:
+            d.optional("port registry",
+                       f"{a.registry} - {len(leases)} lease(s), "
+                       f"{n_stale} stale",
+                       "stale leases: ./sim ports gc")
+        else:
+            d.ok("port registry",
+                 f"{a.registry} - {len(leases)} lease(s)")
+    else:
+        d.ok("port registry",
+             f"{a.registry} (created on first ./sim up)")
     return d
 
 
@@ -441,8 +455,6 @@ def _load_target(path):
     raw = simlib.load_yaml(path) or {}
     import scenario
     if isinstance(raw, dict) and not scenario.is_sim_spec(raw):
-        # probe_ports like `./sim run`: the run picks a free slot, so
-        # the ports row reports that slot, not the default one
         return simlib.load_sim(scenario.load_scenario(path)["sim"])
     return simlib.load_sim(path)
 

@@ -21,5 +21,6 @@ is never sent a nav command; its package is a sensor mission only.
 
 ## Ports
 
-slot_base 40: copter1 sysid 40 (pilot 6160, fcb 8060, de_comm 62400,
-de_mavlink 63400); mast1 de_comm 62410. Server wss 62008, control 62009.
+Every port is leased from the machine-wide allocator at `up` — `./sim
+ports -s copter_mast` lists what was actually bound. `slot_base: 40`
+is identity only (copter1 sysid 40; mast1 has no FC).

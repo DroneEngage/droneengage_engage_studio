@@ -1,0 +1,16 @@
+# launch/p4f08_unix_bus - SL-0086 acceptance: a `bus: unix` fleet comes
+# up on per-unit AF_UNIX socket dirs. What it proves: every module on
+# the mixed unit reaches ready - de_mavlink over the unix socket,
+# stub_ai_box over UDP through its udp_proxy - and a de_mavlink restart
+# re-registers on the unix bus (Communicator Server Found).
+version: 1
+name: p4f08_unix_bus
+realtime: true
+sim: {base: unix_bus_fleet.yaml}
+timeline:
+  - {t: 0, do: wait_online, timeout: 240}
+  - {t: 5, do: restart, unit: all, proc: de_mavlink}
+  - {t: 15, do: wait_online, timeout: 120}
+assert:
+  - module_log_count: {unit: all, module: de_mavlink,
+                       re: "Communicator Server Found", at_least: 1}

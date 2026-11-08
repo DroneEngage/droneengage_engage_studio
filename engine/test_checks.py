@@ -22,6 +22,15 @@ sys.pycache_prefix = os.environ.setdefault(
         "var"), "pycache"))
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# the port allocator's machine-wide registry, isolated: slot-base picks
+# (SL-0075) run real locked transactions inside load_sim, so pointing
+# SIM_PORT_REGISTRY/LAST at a test dir keeps real sims' leases out and
+# the picks deterministic (simlib.allocator() reads these lazily)
+_pam_dir = tempfile.mkdtemp(prefix="test_checks_pam_")
+os.environ["SIM_PORT_REGISTRY"] = os.path.join(_pam_dir, "ports.json")
+os.environ["SIM_PORT_LAST"] = os.path.join(_pam_dir, "last_ports.json")
+
 import checks
 import simlib
 import scenario_runner
@@ -544,17 +553,29 @@ class T(unittest.TestCase):
         self.assertFalse(bot.op_revoke_launch("p2"))
         self.assertEqual(len(sent), 2)
 
-    def test_seed_slot_base_fits_camera_fleets(self):
+    def test_seed_slot_base_fits_fleets(self):
+        """SL-0077: the seed pick is identity only - only FC sysids
+        (<= 250) still bound it, so a camera fleet lands on its
+        canonical base (ports are allocator leases, nothing overflows)."""
         import scenario
         units = [{"block": "copter_camera"}, {"block": "copter_camera"}]
         for s in range(9):
-            sb = scenario._seed_slot_base(s, units)
-            self.assertLessEqual(64000 + 10 * (sb + 1), 65535)
+            self.assertEqual(scenario._seed_slot_base(s, units),
+                             10 + 25 * (s % 9))
         # a fleet that fits keeps the historical block
         self.assertEqual(scenario._seed_slot_base(7, [{"block": "copter"}]),
                          10 + 7 * 25)
+        # the sysid bound still bites: a 60-copter fleet fits only the
+        # canonical bases <= 191
+        fleet = [{"block": "copter"}] * 60
+        for s in range(9):
+            self.assertLessEqual(
+                scenario._seed_slot_base(s, fleet) + 59, 250)
 
-    def test_slot_override_moves_derived_server_port(self):
+    def test_slot_override_changes_identity_not_ports(self):
+        """--slot-base N moves only the identity (SITL -I/sysid): the
+        server port stays an unresolved lease, never a formula. A
+        yaml-explicit port still lands and becomes the request's pin."""
         import scenario
         import simlib
         spec = scenario.load_scenario(
@@ -564,17 +585,22 @@ class T(unittest.TestCase):
         with mock.patch.dict(os.environ, {"SIM_SLOT_BASE_OVERRIDE": "60"}):
             sim = simlib.load_sim(spec)
             self.assertEqual(sim["slot_base"], 60)
-            self.assertEqual(sim["server"]["port"], simlib.SERVER_PORT + 60)
+            self.assertIsNone(sim["server"]["port"])
+            reqs = {r["name"]: r for r in simlib.lease_requests(sim)}
+            self.assertEqual(reqs["server.wss"]["kind"], "free")
+            self.assertNotIn("pin", reqs["server.wss"])
             pinned = dict(spec, server=dict(spec["server"], port=9999))
-            self.assertEqual(simlib.load_sim(pinned)["server"]["port"], 9999)
+            sim2 = simlib.load_sim(pinned)
+            self.assertEqual(sim2["server"]["port"], 9999)
+            reqs2 = {r["name"]: r for r in simlib.lease_requests(sim2)}
+            self.assertEqual(reqs2["server.wss"]["kind"], "pin")
+            self.assertEqual(reqs2["server.wss"]["pin"], 9999)
 
-    def test_slot_any_tolerates_same_unit_names_live_sim(self):
-        """a suite's previous scenario (same unit names) may still be
-        live when the next one resolves --slot-base any: the exclusive
-        run downs it before it binds, so its ports are the pick's for
-        the taking and the slot stays where it always was. An additive
-        caller (up / --shared) leaves it running - its ports are real
-        conflicts and the pick moves to the first disjoint base."""
+    def test_slot_any_resolves_identity_without_a_scan(self):
+        """`--slot-base any` no longer searches a free port block
+        (SL-0077): ports are all allocator leases placed at commit, so
+        the override just means "I don't pin the identity" and the spec
+        resolves at its own base regardless of what is live or bound."""
         import scenario
         import simlib
         spec = scenario.load_scenario(
@@ -582,35 +608,27 @@ class T(unittest.TestCase):
                 os.path.abspath(__file__))), "tests/launch/p4f05_abort.yaml"),
             8)["sim"]
         with mock.patch.dict(os.environ,
-                             {"SIM_SLOT_BASE_OVERRIDE":
-                              str(simlib.SLOT_BASE)}):
-            prev = simlib.load_sim(dict(spec, name="prev_scenario"))
-        prev_m = {"name": "prev_scenario", "server": prev["server"],
-                  "units": prev["units"], "render": prev.get("render")}
-        with mock.patch.dict(os.environ,
                              {"SIM_SLOT_BASE_OVERRIDE": "any"}), \
                 mock.patch.object(simlib, "live_sim_names",
                                   lambda: ["prev_scenario"]), \
-                mock.patch.object(simlib, "load_manifest",
-                                  lambda n, required=True: prev_m), \
-                mock.patch.object(simlib, "ports_held", lambda p: []):
+                mock.patch.object(simlib, "ports_held",
+                                  lambda ps: sorted(ps)):
             additive = simlib.load_sim(spec)
             exclusive = simlib.load_sim(spec, exclusive=True)
-        # additive: never parks on a port the live sim holds
-        self.assertFalse(simlib.used_ports(additive)
-                         & simlib.used_ports(prev))
-        self.assertGreater(additive["slot_base"], simlib.SLOT_BASE)
-        # exclusive: identical pick to before SL-0062 - the live sim is
-        # about to be downed, so its ports don't disqualify the floor
-        self.assertEqual(exclusive["slot_base"], simlib.SLOT_BASE)
+        # no scan: every port unresolved, no live sim consulted, the
+        # base is the seed's own pick in both modes
+        self.assertEqual(additive["slot_base"], spec["slot_base"])
+        self.assertEqual(exclusive["slot_base"], spec["slot_base"])
+        self.assertEqual(simlib.used_ports(additive), set())
 
-    def test_stub_pose_port_follows_resolved_slot(self):
+    def test_stub_pose_port_follows_leased_block(self):
         """world.prepare_sim stamps config.<stub>.stub.{sysid,pose_port}
-        from the slot_base it sees before the fleet resolves - under
-        --slot-base any / SIM_SLOT_BASE_OVERRIDE the SITL serial5
-        listener binds the resolved slot, so expansion must re-stamp
-        the stub block or the pose feed dials a dead port (the stub's
-        level-attitude fallback then produces wrong projections)."""
+        before the fleet resolves and ports lease - expansion must
+        re-stamp the stub block at commit or the pose feed dials a dead
+        port (the stub's level-attitude fallback then produces wrong
+        projections). pose_port is the SITL block's base+5 - an
+        allocator lease (SL-0077), so the stub's value lands only when
+        the commit does."""
         spec = {"version": 1, "name": "stub_slot",
                 "server": {"type": "fake"}, "slot_base": 35,
                 "units": [{"name": "s1", "block": "copter",
@@ -625,10 +643,16 @@ class T(unittest.TestCase):
                                       {"world": "w", "seed": 1,
                                        "unit": "cam1", "sysid": 1,
                                        "pose_port": 0}}}}]}
-        with mock.patch.dict(os.environ,
-                             {"SIM_SLOT_BASE_OVERRIDE": "46"}):
-            units = simlib.load_sim(spec)["units"]
+        sim = simlib.load_sim(spec)
+        try:
+            ports = simlib.lease_commit(sim)
+        finally:
+            simlib.lease_release(sim["name"])
+        units = sim["units"]
         copter = units[0]["config"]["stub_ai_box"]["stub"]
+        # the stub dials the leased SITL block's serial5 member
+        self.assertEqual(copter["pose_port"],
+                         ports["unit.s1.sitl"] + 5)
         self.assertEqual(copter["pose_port"],
                          units[0]["fc"]["pose_port"])
         self.assertEqual(copter["sysid"], units[0]["fc"]["sysid"])
@@ -734,30 +758,117 @@ class T(unittest.TestCase):
                 self.assertIs(simlib.find_unit("s1"),
                               sims["b"]["units"][0])
 
-    def test_slot_block_skips_host_held_port(self):
-        import socket
-        import scenario
+    def test_lease_requests_phase3_kinds(self):
+        """SL-0077 request kinds: no request carries a port value unless
+        the yaml wrote one - yaml-explicit values pin (server.port
+        here), render.mav_ws/render.web keep the viewer's static
+        prefers, everything else is `free` and the SITL TCP serials are
+        one 10-port block. No `shift` - slot_base never moves a port."""
         import simlib
-        held = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        held.bind(("0.0.0.0", 0))
-        port = held.getsockname()[1]
-        orig = (simlib.load_sim, simlib.used_ports, simlib.live_sim_names)
-        try:
-            simlib.load_sim = lambda spec: spec
-            simlib.used_ports = lambda sim: sim["ports"]
-            simlib.live_sim_names = lambda: []
+        spec = {"version": 1, "name": "lease_kinds",
+                "server": {"type": "real", "link_proxy": True,
+                           "port": 61990},
+                "slot_base": 40,
+                "render": {"mode": "viewer"},
+                "units": [{"name": "u1", "block": "copter",
+                           "fcb_proxy": True,
+                           "udp_proxy": ["de_mavlink"]}]}
+        reqs = {r["name"]: r for r in simlib.lease_requests(
+            simlib.load_sim(spec))}
+        # a yaml port is an explicit pin
+        self.assertEqual(reqs["server.wss"]["kind"], "pin")
+        self.assertEqual(reqs["server.wss"]["pin"], 61990)
+        self.assertNotIn("shift", reqs["server.wss"])
+        for name in ("server.ctrl", "render.stream", "render.mav",
+                     "render.sink",
+                     "unit.u1.link_proxy", "unit.u1.link_proxy.ctrl",
+                     "unit.u1.fcb_proxy", "unit.u1.fcb_proxy.ctrl",
+                     "unit.u1.udp_proxy_de_mavlink",
+                     "unit.u1.de_comm", "unit.u1.de_mavlink",
+                     "unit.u1.sitl.fcb",
+                     "unit.u1.sitl.rcin", "unit.u1.sitl.irlock",
+                     "unit.u1.sitl.sim_in", "unit.u1.sitl.sim_out"):
+            self.assertEqual(reqs[name]["kind"], "free", name)
+            self.assertNotIn("pin", reqs[name], name)
+            self.assertNotIn("shift", reqs[name], name)
+        # the viewer's own defaults are the only static prefers
+        self.assertEqual(reqs["render.mav_ws"],
+                         {"name": "render.mav_ws", "proto": "tcp",
+                          "kind": "prefer", "prefer": 8811})
+        self.assertEqual(reqs["render.web"]["prefer"], 8080)
+        # the SITL TCP decade is one block: pilot=+0, aux=+2, pose=+5
+        sitl = reqs["unit.u1.sitl"]
+        self.assertEqual((sitl["kind"], sitl["size"], sitl["proto"]),
+                         ("block", 10, "tcp"))
+        self.assertNotIn("pin", sitl)
+        self.assertNotIn("prefer", sitl)
+        # the fake server takes --ctrl-port now: two ordinary leases,
+        # not a port+1 block
+        fake_reqs = {r["name"]: r for r in simlib.lease_requests(
+            simlib.load_sim(dict(spec, server={"type": "fake"},
+                                 render=None)))}
+        self.assertEqual(fake_reqs["server.wss"]["kind"], "free")
+        self.assertEqual(fake_reqs["server.ctrl"]["kind"], "free")
+        self.assertNotIn("server.fake", fake_reqs)
+        self.assertNotIn("auth.https", fake_reqs)
+        # slot_base moves nothing: the same spec at another base
+        # requests the identical list
+        reqs60 = {r["name"]: r for r in simlib.lease_requests(
+            simlib.load_sim(dict(spec, name="other", slot_base=60)))}
+        self.assertEqual(reqs, reqs60)
 
-            def sim_at(sb):
-                return {"slot_base": sb,
-                        "ports": {port} if sb == 10 else set()}
-            self.assertEqual(
-                scenario._host_free_sim(sim_at, [10, 35])["slot_base"], 35)
-            self.assertEqual(
-                scenario._host_free_sim(sim_at, [10])["slot_base"], 10)
+    def test_lease_commit_applies_pool_port(self):
+        """An unhinted request lands on a pool port and _apply_ports
+        writes it into the field generation reads; release remembers
+        the ports and the next commit hands the same ones back; a
+        foreign listener on a remembered port is skipped (the lease
+        lands in the pool and `moved` records it) - while pinned ports
+        stay fixed and the flat map records every request."""
+        import socket
+        import simlib
+        spec = {"version": 1, "name": "lease_apply",
+                "server": {"type": "real"},
+                "slot_base": 40,
+                "units": [{"name": "u1", "block": "copter"}]}
+        sim = simlib.load_sim(spec)
+        try:
+            ports = simlib.lease_commit(sim)
         finally:
-            simlib.load_sim, simlib.used_ports, simlib.live_sim_names = orig
-            held.close()
-        self.assertEqual(simlib.ports_held({port}), [])
+            simlib.lease_release(sim["name"])
+        ctrl = ports["server.ctrl"]
+        self.assertTrue(20000 <= ctrl <= 32767)
+        self.assertEqual(sim["server"]["control_port"], ctrl)
+        self.assertEqual(sim["ports"]["server.ctrl"]["port"], ctrl)
+        # the flat map records block members too
+        self.assertEqual(ports["unit.u1.sitl"],
+                         ports["unit.u1.sitl.p0"])
+        self.assertEqual(sim["ports"]["unit.u1.sitl.p9"]["port"],
+                         ports["unit.u1.sitl"] + 9)
+        self.assertIn(ctrl, simlib.used_ports(sim))
+        # remembered: a re-resolve + commit lands the same ports back
+        sim2 = simlib.load_sim(spec)
+        self.assertEqual(sim2["port_hints"]["server.ctrl"], ctrl)
+        try:
+            ports2 = simlib.lease_commit(sim2)
+        finally:
+            simlib.lease_release(sim2["name"])
+        self.assertEqual(ports2["server.ctrl"], ctrl)
+        # a foreign listener on the remembered port is skipped: the
+        # lease lands in the pool and the move is recorded
+        sim3 = simlib.load_sim(spec)
+        foreign = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        foreign.bind(("0.0.0.0", ctrl))
+        foreign.listen(1)
+        try:
+            ports3 = simlib.lease_commit(sim3)
+        finally:
+            foreign.close()
+            simlib.lease_release(sim3["name"])
+        self.assertNotEqual(ports3["server.ctrl"], ctrl)
+        self.assertTrue(20000 <= ports3["server.ctrl"] <= 32767)
+        self.assertIn({"name": "server.ctrl", "hint": ctrl,
+                       "port": ports3["server.ctrl"]},
+                      sim3["moved_ports"])
 
     # -------------------------------------- P5-10 recall / time to find
 
@@ -1416,6 +1527,11 @@ class TFreeze(unittest.TestCase):
                 with open(self._pidfile(td), "w") as f:
                     f.write(str(child.pid))
                 self.assertTrue(ctl_mod.freeze_proc("u1", "de_mavlink"))
+                # SIGSTOP delivery can lag on a loaded box
+                for _ in range(20):
+                    if self._proc_state(child.pid) == "T":
+                        break
+                    time.sleep(0.1)
                 self.assertEqual(self._proc_state(child.pid), "T")
                 self.assertTrue(
                     ctl_mod._signal_proc("u1", "de_mavlink",

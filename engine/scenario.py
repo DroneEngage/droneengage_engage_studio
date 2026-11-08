@@ -544,19 +544,18 @@ def _absolute_to_at(home, pos):
     }
 
 
-def _server_spec(scn, slot_base):
+def _server_spec(scn):
     """transport: fake|real|{...} -> a sim `server:` block. The scenario
-    seed drives the fake server's link RNG when no explicit seed is set;
-    the server port rides the same slot block so --seeds runs can never
-    share ports (parallel `sim up` still refuses a real clash). A real
-    transport with `link_proxy: true` (SL-0009) seeds the proxies the
-    same way - their link RNG must not drift between runs either."""
+    seed drives the fake server's link RNG when no explicit seed is set.
+    No port is injected (SL-0077): an unwritten `port` leases at commit;
+    only a yaml-explicit `transport: {port: N}` pins. A real transport
+    with `link_proxy: true` (SL-0009) seeds the proxies the same way -
+    their link RNG must not drift between runs either."""
     t = scn.get("transport", "real")
     if isinstance(t, str):
         srv = {"type": t}
     else:
         srv = dict(t)
-    srv.setdefault("port", simlib.SERVER_PORT + slot_base)
     if "seed" not in srv and \
             (srv.get("type") == "fake" or srv.get("link_proxy")):
         srv["seed"] = scn["seed"]
@@ -744,8 +743,8 @@ def _yaml_bool_keys(raw):
 def load_scenario(path, seed=None, probe_ports=True):
     """-> a normalized run spec. Raises simlib.SimError on any format
     violation (unknown keys, bad timeline steps, unknown cls).
-    probe_ports=False skips the free-slot search (expand/validate only
-    need the spec, not a live port check - and stay silent)."""
+    probe_ports is vestigial (SL-0077): no free-slot search exists any
+    more - the allocator places every port at lease-commit time."""
     path = os.path.abspath(path)
     raw = yaml.safe_load(open(path)) or {}
     base = os.path.dirname(path)
@@ -825,16 +824,16 @@ def load_scenario(path, seed=None, probe_ports=True):
            else float(raw.get("speedup")
                       or (named_spec or {}).get("speedup")
                       or simlib.setting("SIM_SPEEDUP", "3")))
-    # one port block per run: the scenario may pin slot_base, else it is
-    # derived from the seed so --seeds runs never share ports (a parallel
-    # `sim up` would still refuse a clash)
+    # one identity base per run: the scenario may pin slot_base, else it
+    # is derived from the seed so --seeds runs keep distinct
+    # sysids/positions. Ports don't come from it (SL-0077) - every port
+    # is an allocator lease resolved at commit.
     def sim_at(sb):
         if named_spec is not None:
             s = copy.deepcopy(named_spec)
             s["name"] = re.sub(r"[^\w-]", "_", scn["name"])
             s["slot_base"] = sb
             srv = dict(s.get("server") or {})
-            srv.setdefault("port", simlib.SERVER_PORT + sb)
             # the fake server and link proxies seed from the run seed
             # like _server_spec - a `sim:` file with neither stays as
             # the file wrote it
@@ -854,7 +853,7 @@ def load_scenario(path, seed=None, probe_ports=True):
         return {
             "version": 1,
             "name": re.sub(r"[^\w-]", "_", scn["name"]),
-            "server": _server_spec(scn, sb),
+            "server": _server_spec(scn),
             "home": list(home),
             "slot_base": sb,
             "units": units,
@@ -869,55 +868,27 @@ def load_scenario(path, seed=None, probe_ports=True):
         # a named sim's own pin (e.g. the closed/slot30 overlays put the
         # fleet clear of the developer's SITL) wins over the seed pick
         scn["sim"] = sim_at(int(named_spec["slot_base"]))
-    elif probe_ports:
-        scn["sim"] = _host_free_sim(sim_at, _seed_slot_bases(seed, units))
     else:
-        scn["sim"] = sim_at(_seed_slot_bases(seed, units)[0])
+        # no free-slot search (SL-0077): the base is identity only and
+        # the allocator places every port inside one locked commit
+        scn["sim"] = sim_at(_seed_slot_base(seed, units))
     return scn
 
 
-def _host_free_sim(sim_at, bases):
-    """The first seed-ordered slot block whose ports no foreign process
-    holds (live sims' own ports don't count - the run downs or refuses
-    them). Falls back to the seed's block when every one is held."""
-    live = set()
-    for n in simlib.live_sim_names():
-        live |= simlib.used_ports(simlib.load_manifest(n))
-    for sb in bases:
-        spec = sim_at(sb)
-        cand = simlib.load_sim(spec)
-        held = simlib.ports_held(
-            simlib.used_ports(cand) - live
-            - simlib.remote_bound_ports(cand))
-        if not held:
-            return spec
-        print(f"slot_base {sb}: port(s) {held} held by another process "
-              "on this host - trying the next block", flush=True)
-    return sim_at(bases[0])
-
-
 def _slot_fits(units):
-    """fits(sb) for _seed_slot_base/_seed_slot_bases: the fleet's highest
-    module port must stay <= 65535 and its FC sysids <= 250 (de_camera
-    64000 + 10*k overflows from k=154)."""
-    cat = simlib.load_catalog()
-    top = simlib.DE_COMM_PORT_BASE
-    has_fc = False
-    for u in units:
-        b = simlib.load_block(u["block"])
-        has_fc |= bool(b["fc"])
-        for m in b["modules"] + list(u.get("add_modules", [])):
-            if m in cat:
-                top = max(top, int(cat[m]["port_base"]))
+    """fits(sb) for _seed_slot_base: only FC sysids still bound a base
+    (sysid = sb + index, ArduPilot tops out at 250) - ports are
+    allocator leases (SL-0077), so no port formula can overflow and no
+    fleet is refused for its size."""
+    has_fc = any(simlib.load_block(u["block"])["fc"] for u in units)
     last = len(units) - 1
-    return lambda sb: (top + 10 * (sb + last) <= 65535
-                       and (not has_fc or sb + last <= 250))
+    return lambda sb: not has_fc or sb + last <= 250
 
 
 def _seed_slot_base(seed, units):
-    """10 + 25*(seed % 9), unless that block pushes this fleet's highest
-    module port past 65535 or an FC sysid past 250 - then the seed picks
-    among the blocks that fit, so a camera fleet runs on every seed."""
+    """10 + 25*(seed % 9), unless that base pushes an FC sysid past
+    250 - then the seed picks among the bases that fit. The pick is
+    identity only (SL-0077): sysids and positioning, not ports."""
     fits = _slot_fits(units)
     cands = [10 + 25 * i for i in range(9)]
     pick = cands[seed % 9]
@@ -926,30 +897,6 @@ def _seed_slot_base(seed, units):
     ok = [c for c in cands if fits(c)]
     if not ok:
         raise simlib.SimError(
-            f"{len(units)} units fit no slot block - pin a lower "
+            f"{len(units)} units fit no slot base - pin a lower "
             "slot_base or split the fleet")
     return ok[seed % len(ok)]
-
-
-def _seed_slot_bases(seed, units):
-    """Every fitting slot block, the seed's own first - the fallbacks
-    when a host process holds a port of the seed's block. After the
-    canonical 25-port blocks come the in-between bases: a host crowded
-    with other worktrees' sims can hold a port in EVERY canonical block
-    (an FC fleet needs ~7 ports and any hit disqualifies the block),
-    and a fine base is a valid base - the port derivation is the same."""
-    first = _seed_slot_base(seed, units)
-    cands = [10 + 25 * i for i in range(9)]
-    i = cands.index(first)
-    rest = cands[i + 1:] + cands[:i]
-    out = [first]
-    for c in rest:
-        try:
-            if _seed_slot_base(cands.index(c), units) == c:
-                out.append(c)
-        except simlib.SimError:
-            pass
-    fits = _slot_fits(units)
-    out += [b for blk in list(out) for b in range(blk + 1, blk + 25)
-            if fits(b)]
-    return out

@@ -1,5 +1,6 @@
-# slot_base 30 (pilot ports 6060+): used when the developer's own SITL
-# sessions hold the default 5760+10k ports. Widens the arrive accel
+# slot_base 30 (identity/sysid only - ports are allocator leases now):
+# kept for fleets whose SITL instances should not share eeprom/instance
+# state with the developer's own SITL sessions. Widens the arrive accel
 # allowance (sv_accel_s 8): the default 3 s covers only spin-up; SITL
 # copters also decelerate ~5 s on waypoint approach at 10 m/s.
 version: 1

@@ -35,7 +35,7 @@ def _mb(n):
     return f"{n / 1048576.0:.1f}M"
 
 
-def _sweep(root, days, dry, alive_check=None):
+def _sweep(root, days, dry, alive_check=None, on_remove=None):
     """Delete entries of root older than `days` days (None = all)."""
     if not os.path.isdir(root):
         return 0
@@ -61,6 +61,8 @@ def _sweep(root, days, dry, alive_check=None):
               + f"     {name:32s} {_mb(size)}")
         if not dry:
             shutil.rmtree(path, ignore_errors=True)
+            if on_remove:
+                on_remove(name)
         freed += size
     return freed
 
@@ -83,7 +85,8 @@ def main(argv):
         i += 1
     print(simlib.col_bold("var/run/") + f" ({simlib.RUN_DIR})")
     freed = _sweep(simlib.RUN_DIR, days, dry,
-                   alive_check=lambda n: bool(simlib.read_pids(n)))
+                   alive_check=lambda n: bool(simlib.read_pids(n)),
+                   on_remove=simlib.lease_release)
     print(simlib.col_bold("var/results/") + f" ({simlib.RESULTS_DIR})")
     freed += _sweep(simlib.RESULTS_DIR, days, dry)
     print(simlib.col_bold('would free' if dry else 'freed')

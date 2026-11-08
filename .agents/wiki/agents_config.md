@@ -18,18 +18,38 @@ Machine paths come only from `simlib.setting()`: environment variable >
 
 ## Ports
 
-Slot `k = slot_base (10) + unit index`. SITL `-I k`, sysid `k`, pilot
-`5760+10k`, fcb `7660+10k`. The opt-in fcb proxy (`fcb_proxy: true`,
-SL-0008) takes `7760+10k` (de_mavlink dials it instead of `fcb_port`) and
-`7860+10k` (fault control port). Module s2s ports are `port_base + 10k`
-(de_comm 62000, de_mavlink 63000, de_camera 64000, de_tracker 65000). Server
-wss 62008, control 62009, authenticator +10/+11. The opt-in link proxy
-(SL-0009) takes `61500+10k` (de_comm dials it instead of the server wss)
-and `61501+10k` (fault control port). Keep `slot_base` >= 10 so
-sim ports never collide with the developer's own servers.
+Slot `k = slot_base (10) + unit index` is the fleet's IDENTITY only
+(SITL `-I k`, sysid `k`); no port derives from it. **Every** local port
+a sim binds is a named request to the machine-wide allocator - there
+are no formulas left: SITL binds a leased 10-port block (serial0 pilot
++0, serial2 aux +2, serial5 pose +5) plus separate leases for fcb
+(serial1), RC-in, sim-link in/out and irlock; the fcb proxy
+(`fcb_proxy: true`, SL-0008), link proxy (SL-0009), udp_proxy
+(SL-0010), module s2s ports (de_comm, de_mavlink, ...), server wss and
+control, authenticator https/s2s, the relay wss and its UDP window,
+and the five render ports are each their own lease. Re-run stability
+comes from the allocator's remembered ports (it tries the last run's
+port first); the only static preferences are the viewer's own defaults
+(render.mav_ws 8811, render.web 8080). SITL launches with
+`--base-port/--rc-in-port/--sim-port-*/--irlock-port` before `-I`, so
+every socket is the leased value. The committed map is
+`var/run/<sim>/sim.json` `ports` - read it (or `./sim ports` /
+`./sim ctl status`) for what a live sim actually bound. Only
+yaml-explicit ports pin - exact or fail.
+
+**Port leases (allocator):** `engine/port_allocation_management.py` keeps
+the machine-wide registry every worktree shares -
+`$XDG_RUNTIME_DIR/de_sim/ports.json` (fallback `~/.cache/de_sim/ports.json`;
+`SIM_PORT_REGISTRY`/`SIM_PORT_LAST` override; never under `var/`). `sim up`
+leases the whole port set in one atomic transaction
+(`simlib.lease_requests` -> `lease_commit` -> `_apply_ports` write-back
+before `generate`). `down`/`clean` release; stale leases (dead holder,
+dead sim, gone worktree) are swept by the next transaction or
+`./sim ports gc`. `sim_hash` covers the request set, not the allocated
+values, so a moved fleet still warm-reuses. See
+`docs/port_allocation.md` before touching port logic.
 
 A unit can run several instances of the same module (SL-0163
 `cameras:`; SL-0165 `ctl add_module`): instance `i` (1-based,
-`de_camera` = 1, `de_camera{i}` after) takes `port_base + 10k +
-2*(i-1)` — the odd offset under each instance stays that instance's
-SL-0010 udp_proxy port; max 5 instances per unit.
+`de_camera` = 1, `de_camera{i}` after) gets its own s2s lease plus its
+SL-0010 udp_proxy lease; max 5 instances per unit.

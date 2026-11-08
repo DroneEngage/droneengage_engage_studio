@@ -31,5 +31,8 @@ slot_base.
 
 ## Ports
 
-slot_base 60: rover1 sysid 60 (pilot 6360, fcb 8260, de_comm 62600,
-de_mavlink 63600), ctl 62069. External server wss 9966, auth 19408.
+Every local port (SITL, de_comm, de_mavlink, the bridge control port) is
+leased from the machine-wide allocator at `up` — `./sim ports -s rover`
+lists what was actually bound. `slot_base: 60` is identity only (rover1
+sysid 60). External server wss 9966, auth 19408 — those are the remote
+server's own ports, not leases.

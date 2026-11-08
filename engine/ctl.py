@@ -44,6 +44,12 @@ Fleet ops (P4A-09, DE_OP_CONTROL 1094):
   journal <unit> [from]             P2-12 download (1088 pages)
   roster <seconds> <min_peers>      listen for 1092 rosters as a GCS
   beacon <unit> <seconds> [min]     count the unit's mt=1004 presence
+  mission_save <unit> <name> [missionId] [data-json]
+                                    save a mission via the comm server's
+                                    storage link (server: {storage: true})
+  mission_load <unit> [missionId] [--expect <re>]
+                                    load it back; --expect fails when no
+                                    reply matches the regex
                                     beacons on a fresh GCS listen - bounded
                                     "GCS still hears it" evidence inside an
                                     asymmetric link-fault window (SL-0007)
@@ -3035,6 +3041,58 @@ def main(argv):
             i += 2
         for p in write_module_files(u, a[1], writes):
             print(p)
+    elif c in ("mission_save", "mission_load"):
+        # SL-0079: system messages 9011/9010 through the GCS bridge to the
+        # comm server, which proxies its storage node. Needs
+        # server: {type: real, storage: true}; the reply's ms is the
+        # storage envelope ({s:'OK:save',missionId,...} or the mission).
+        u = resolve(a[0])[0]
+        if c == "mission_save":
+            # mission_save <unit> <name> [missionId] [data-json]
+            ms = {"unitId": u["party_id"], "name": a[1]}
+            if len(a) > 2 and a[2] != "-":
+                ms["missionId"] = a[2]
+            ms["data"] = json.loads(a[3]) if len(a) > 3 else {}
+            mt = 9011
+        else:
+            # mission_load <unit> [missionId] [--expect <re>]
+            ms = {"unitId": u["party_id"]}
+            rest = a[1:]
+            if rest and rest[0] != "--expect":
+                ms["missionId"] = rest[0]
+                rest = rest[1:]
+            expect = None
+            if rest[:1] == ["--expect"] and len(rest) > 1:
+                expect = rest[1]
+            mt = 9010
+        # a comm-server restart drops the bridge session - it relogins
+        # in ~5 s, so retry while the session is down instead of failing
+        # the step outright
+        deadline = time.time() + 30
+        while True:
+            try:
+                frames = gcs_collect({"ty": "s", "mt": mt, "ms": ms},
+                                     {mt}, 15)
+                break
+            except SystemExit as e:
+                if "not connected" in str(e) and time.time() < deadline:
+                    time.sleep(2)
+                    continue
+                raise
+        if not frames:
+            sys.exit(f"{c}: no reply from the comm server "
+                     "(is storage: true set and the storage node up?)")
+        for f in frames:
+            print(json.dumps(f.get("ms"), indent=1, default=str)
+                  if not isinstance(f.get("ms"), str) else f["ms"])
+        bad = [f for f in frames
+               if "ERROR" in str(f.get("ms")) or "Error" in str(f.get("ms"))]
+        if bad:
+            sys.exit(1)
+        if c == "mission_load" and expect and not any(
+                re.search(expect, json.dumps(f.get("ms"), default=str))
+                for f in frames):
+            sys.exit(f"mission_load: no reply matched {expect!r}")
     elif c == "journal":
         u = resolve(a[0])[0]
         for ln in journal_download(u, int(a[1]) if len(a) > 1 else 0):

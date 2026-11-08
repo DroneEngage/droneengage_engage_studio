@@ -38,6 +38,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))))
 
+# the port allocator's machine-wide registry, isolated: _sim commits
+# real leases so gen_render sees concrete ports (same pattern as
+# test_checks.py)
+_pam_dir = tempfile.mkdtemp(prefix="test_rv_pam_")
+os.environ["SIM_PORT_REGISTRY"] = os.path.join(_pam_dir, "ports.json")
+os.environ["SIM_PORT_LAST"] = os.path.join(_pam_dir, "last_ports.json")
+
 import simlib  # noqa: E402
 import devstack  # noqa: E402
 
@@ -46,12 +53,17 @@ BRIDGE = os.path.join(M3D, "backend", "src", "udp2websocket.js")
 
 
 def _sim(render):
+    """A resolved sim with its ports leased - gen_render writes the
+    leased values into the launch scripts."""
     spec = {"version": 1, "name": "rv_test", "slot_base": 10,
-            "server": {"type": "fake",
-                       "port": simlib.SERVER_PORT + 10},
+            "server": {"type": "fake"},
             "units": [{"block": "comm_only", "name": "mast1"}],
             "render": render}
-    return simlib.load_sim(spec)
+    sim = simlib.load_sim(spec)
+    # the leases live in the temp registry - no release needed, they
+    # die with the test process
+    simlib.lease_commit(sim)
+    return sim
 
 
 def _fake_m3d():

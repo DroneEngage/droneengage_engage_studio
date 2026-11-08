@@ -1726,12 +1726,12 @@ def prepare_sim(scn, world):
         stub = {"world": scn["world"], "seed": scn["seed"],
                 "unit": entry["name"], "sysid": slot if has_fc else 1,
                 # mirrors simlib._expand_unit's `pose` handling: serial5
-                # tcp:5 -> 5765+10k on FC units running a pose-flagged
-                # catalog module; statics use the 9102 feed
-                "pose_port": (5765 + 10 * slot)
-                             if (has_fc and any(
-                                 catalog.get(m, {}).get("pose")
-                                 for m in mods)) else 0}
+                # tcp:5 -> the leased SITL block's base+5 on FC units
+                # running a pose-flagged catalog module; statics use the
+                # 9102 feed. The stamped value is a placeholder - the
+                # key's presence is what _expand_unit/_apply_ports
+                # restamp with the leased port at commit (0 = no feed)
+                "pose_port": 0}
         for m in mods:
             if catalog.get(m, {}).get("stub"):
                 cfg[m] = simlib.deep_merge(cfg.get(m) or {}, {"stub": stub})

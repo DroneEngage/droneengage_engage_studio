@@ -19,7 +19,7 @@ reuses a different variant's warm sim.
 | `closed` | closed environment (P4A-10): no GPS on any SITL (`SIM_GPSx_ENABLE 0`, `GPSx_TYPE 0`, `AHRS_EKF_TYPE 10`), fake server stamps a clock 3 h ahead (`clock_offset_ms`), `copter3` gets no clock stamp (`noclock` → tq=0), `slot_base: 30`. |
 | `fastroster` | `config:` push on every unit: `de_comm.sv_roster_hz 1` + `sv_peer_lost_s 8` — a cut unit turns LOST ~8–10 s after silence instead of ~30 s. |
 | `faults` | `server: {type: fake, seed: 1337}` — the fake fleet server: seeded per-link loss / delay / cut for link-fault tests (the real server cannot inject those). |
-| `slot30` | `slot_base: 30` (pilot ports 6060+) for when the developer's own SITL holds the default 5760+10k ports, plus `de_comm.sv_accel_s 8` (SITL copters decelerate ~5 s on waypoint approach). |
+| `slot30` | `slot_base: 30` for distinct sysids when another slot-40 sim shares the machine (ports never clash — the allocator leases them), plus `de_comm.sv_accel_s 8` (SITL copters decelerate ~5 s on waypoint approach). |
 | `static` | `units:` append — a `comm_only` static (`static1`, no FC, 30 m south) for tests that need a watcher role (e.g. the P4A-09 two-phase deploy). |
 
 Replacements for the removed near-duplicate sims:

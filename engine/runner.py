@@ -137,7 +137,7 @@ _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
                "fcb_inject", "fcb_clear", "fcb_stats",
                "fcb_unplug", "fcb_plug",
                "journal", "mode", "disarm", "fire", "fc",
-               "write_file", "beacon",
+               "write_file", "beacon", "mission_save", "mission_load",
                "takeoff", "param", "param_get",
                # SL-0014 OS faults
                "cpu_starve", "cpu_unstarve", "clock_step",
@@ -273,6 +273,22 @@ def run_step(step, t, marks, log_events=None):
         # signals drop, sticky pending + stored facts must survive
         return run_ctl("bootid", unit) and \
             run_ctl("restart", unit, "de_comm")
+    if name == "mission_save":
+        # SL-0079: {do: mission_save, unit: u, name: n, missionId: id?,
+        # data: {...}} - GCS->comm->storage 9011
+        extra = [str(arg["name"])]
+        extra.append(str(arg["missionId"]) if arg.get("missionId") else "-")
+        if arg.get("data") is not None:
+            extra.append(json.dumps(arg["data"]))
+        return run_ctl("mission_save", unit, *extra)
+    if name == "mission_load":
+        # {do: mission_load, unit: u, missionId: id?, expect: re?} - 9010
+        extra = []
+        if arg.get("missionId"):
+            extra.append(str(arg["missionId"]))
+        if arg.get("expect"):
+            extra += ["--expect", str(arg["expect"])]
+        return run_ctl("mission_load", unit, *extra)
     if name in ("start", "stop", "resume", "pause", "clear"):
         extra = [arg["mission"]] if isinstance(arg, dict) and arg.get("mission") else []
         return run_ctl(name, *extra)

@@ -7,17 +7,17 @@
 # 19408, comm server on 9966. Nothing server-side is spawned here; only a
 # per-sim GCS bridge runs so `./sim ctl` keeps working.
 #
-# Runs in parallel with rover.yaml / plane.yaml - each personal sim uses
-# its own slot_base so SITL (pilot/aux/fcb), de_comm and de_mavlink ports
-# never overlap. `./sim up` refuses to start if ports or unit names clash
-# with a live sim anyway.
+# Runs in parallel with rover.yaml / plane.yaml. slot_base is identity
+# only now (SITL -I/sysid); every port is a machine-wide allocator lease
+# (`./sim ports` shows the real ones), so overlapping fleets can't
+# collide anyway - the base just keeps sysids distinct.
 description: |
   Personal sim: one quadcopter box (ArduCopter SITL + de_comm + de_mavlink)
   on your own external server stack (auth on, slot_base 50). Includes
   render: {mode: viewer} for the Mavlink3DMap mav_bridge + vite page.
 version: 1
-slot_base: 50                 # quad: pilot 6260, fcb 8160, de_comm 62500,
-                              # de_mavlink s2s 63500, ctl 62059, sysid 50
+slot_base: 50                 # identity only: SITL -I/sysid base; the
+                              # allocator leases every port (`./sim ports`)
 server:
   type: external
   auth: true                  # units log in via your authenticator

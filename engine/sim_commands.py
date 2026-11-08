@@ -247,16 +247,19 @@ COMMANDS = {
     },
     "ports": {
         "group": "DISCOVER",
-        "summary": "live sims' declared ports vs what's bound right now",
-        "usage": ["./sim ports [name|--all]"],
-        "description": "Show which of a sim's declared ports are actually "
-                       "bound right now. --all lists every generated sim; "
-                       "udp_relay shows its whole udp range n/N.",
+        "summary": "port leases in the machine-wide allocator registry",
+        "usage": ["./sim ports [name|--all|gc]"],
+        "description": "Show this worktree's port leases from the "
+                       "machine-wide allocator registry "
+                       "(docs/port_allocation.md). A name filters to one "
+                       "sim; --all lists every worktree's leases; gc "
+                       "sweeps stale leases (dead holder, dead sim, gone "
+                       "worktree).",
         "flags": {
-            "--all": "list every generated sim (not just live ones)",
+            "--all": "list every worktree's leases (default: this worktree's)",
         },
         "shared_flags": False,
-        "examples": ["./sim ports", "./sim ports --all"],
+        "examples": ["./sim ports", "./sim ports --all", "./sim ports gc"],
         "takes_sim": False,
     },
     "status": {

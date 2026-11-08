@@ -10,7 +10,9 @@
 #   bin         binary, relative to repo (or absolute)
 #   bin_env     sim.local.env key that overrides `bin` (binaries built elsewhere)
 #   template    base config, relative to repo (or modules/templates/<file>)
-#   port_base   s2s listening port = port_base + 10 * slot
+#   (no port field: the module's s2s listening port is a machine-wide
+#   allocator lease - unit.<unit>.<module> - filled at `sim up`;
+#   wire's "{port}" fills with the leased value)
 #   start_delay seconds to wait before exec (let de_comm / SITL come up)
 #   needs_fc    true -> only valid in a block that has an `fc:`
 #   local       per-unit identity file {module_key}: `arg` passes it on the
@@ -26,15 +28,19 @@
 #   ready_log_re  same, but matched against logs/<module>.log (stdout)
 #               instead of the de_comm journal;
 #               `sim up` waits for it
+#   unix        true -> the module joins a `bus: unix` unit's AF_UNIX
+#               socket dir (its de_common knows unix_socket_dir,
+#               GL-0057/de_common 10.14.0+); unflagged modules stay on
+#               the UDP bus and keep their s2s lease
 
 de_mavlink:
   repo: droneengage_mavlink
   dir_env: DE_MAVLINK_DIR
   bin: bin/de_ardupilot
   template: de_mavlink.config.module.json
-  port_base: 63000
   start_delay: 5
   needs_fc: true
+  unix: true
   local: {arg: "-b", file: de_mavlink.local}
   set:
     tlog_enabled: false
@@ -59,8 +65,8 @@ de_camera:
   bin: compiled_bin/de_camera
   bin_env: DE_CAMERA_BIN
   template: de_camera.config.module.json
-  port_base: 64000
   start_delay: 3
+  unix: true
   local: {file: de_camera.config.local}
   set:
     # stills + recordings land in a per-instance /tmp subfolder (mkdir
@@ -83,7 +89,6 @@ de_yolo_ai:
   bin: bin/de_perceive
   bin_env: DE_YOLO_AI_BIN
   template: de_perceive.config.module.json
-  port_base: 57000
   start_delay: 4
   # its getopt string is "c:vh" - the local file is the LONG option
   # --bconfig only (there is no short -b)
@@ -105,7 +110,6 @@ de_precland:
   bin: bin/de_precland
   bin_env: DE_PRECLAND_BIN
   template: de_precland.sim.json
-  port_base: 56000
   start_delay: 3
   local: {arg: "-b", file: de_precland.local}
   wire:
@@ -123,7 +127,6 @@ de_tracker:
   dir_env: DE_TRACKER_DIR
   bin: bin/de_tracker
   template: de_tracker.config.module.json
-  port_base: 65000
   start_delay: 3
   # its getopt string has no "b:" - the local file is read from the cwd
   local: {file: de_tracker.config.local}
@@ -142,7 +145,6 @@ de_gpio:
   # the repo's own template declares Pi board pins; the sim needs the
   # virtual pin set - a templates/ name the repo does not ship wins there
   template: de_rpi_gpio.sim.json
-  port_base: 61000
   start_delay: 3
   local: {arg: "-b", file: de_rpi_gpio.config.local}
   # no ready_re: the supervisor journal has no capability-advert line
@@ -155,15 +157,14 @@ de_gpio:
 # with `world:` injects the world path + seed as config "stub" per unit
 # (engine/world.py) for every module flagged `stub: true`. `pose` marks
 # modules that read the vehicle pose on a dedicated SITL serial5 (tcp:5
-# -> 5765+10k); on static units all stubs fall back to the intermodule
-# 9102 location feed. SL-0030: a block may register its own sensor the
-# same way via blocks/<name>/catalog.yaml.
+# -> the unit's leased SITL block base+5); on static units all stubs
+# fall back to the intermodule 9102 location feed. SL-0030: a block may
+# register its own sensor the same way via blocks/<name>/catalog.yaml.
 
 stub_ai_box:
   repo: droneengage_studio
   bin: stubs/stub_ai_box.py
   template: stub.json
-  port_base: 58000
   start_delay: 5
   stub: true
   pose: true
@@ -173,7 +174,6 @@ stub_sdr:
   repo: droneengage_studio
   bin: stubs/stub_sdr.py
   template: stub.json
-  port_base: 59000
   start_delay: 3
   stub: true
   local: {file: stub_sdr.local}
@@ -182,7 +182,6 @@ stub_payload:
   repo: droneengage_studio
   bin: stubs/stub_payload.py
   template: stub.json
-  port_base: 60000
   start_delay: 3
   stub: true
   local: {file: stub_payload.local}
@@ -195,7 +194,6 @@ stub_precland:
   repo: droneengage_studio
   bin: stubs/stub_precland.py
   template: stub.json
-  port_base: 55000
   start_delay: 3
   stub: true
   pose: true
@@ -212,7 +210,6 @@ de_sound:
   repo: droneengage_studio
   bin: modules/bin/de_sound.sh
   template: de_snd.sim.json
-  port_base: 54000
   start_delay: 3
   set:
     # quoted: catalog deep_merge drops YAML-null values, the module's

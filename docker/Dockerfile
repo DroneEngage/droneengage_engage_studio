@@ -161,6 +161,12 @@ RUN printf '%s\n' \
         'SIM_M3D_VERSION=1.4.1' \
         > sim.local.env
 
+# The port-lease registry (docs/port_allocation.md): keep it
+# container-private under /run/de_sim unless the host's de_sim dir is
+# mounted in (see docker/README.md).
+RUN mkdir -p /run/de_sim
+ENV SIM_PORT_REGISTRY=/run/de_sim/ports.json
+
 # stubs import the databus python client from $DE_DATABUS_DIR/python.
 # The public droneengage_databus mirror predates the message ids the
 # stubs use (6544/6545/6546), so the image points DE_DATABUS_DIR at the

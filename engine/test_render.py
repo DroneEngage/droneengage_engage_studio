@@ -22,6 +22,13 @@ sys.pycache_prefix = os.environ.setdefault(
         "var"), "pycache"))
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# the port allocator's machine-wide registry, isolated: gen_render
+# tests lease real ports (same pattern as test_checks.py)
+_pam_dir = tempfile.mkdtemp(prefix="test_render_pam_")
+os.environ["SIM_PORT_REGISTRY"] = os.path.join(_pam_dir, "ports.json")
+os.environ["SIM_PORT_LAST"] = os.path.join(_pam_dir, "last_ports.json")
+
 import checks
 import simlib
 
@@ -97,14 +104,18 @@ class T(unittest.TestCase):
         sim = simlib.load_sim(spec, base_dir=ROOT)
         self.assertEqual(sim["render"]["mode"], "cameras")
         self.assertIn("sink_port", sim["render"])
+        used = simlib.used_ports(sim)
         for p in ("stream_port", "mav_port", "mav_ws_port",
                   "web_port", "sink_port"):
-            self.assertIn(sim["render"][p], simlib.used_ports(sim))
+            if sim["render"][p] is not None:      # hinted ports only
+                self.assertIn(sim["render"][p], used)
 
     def test_gen_render_cameras_procs(self):
         spec = {"render": {"mode": "cameras"},
                 "units": [{"block": "copter_cam3d", "name": "cam1"}]}
         sim = simlib.load_sim(spec, base_dir=ROOT)
+        # gen_render writes the leased ports into the launch scripts
+        simlib.lease_commit(sim)
         fake_labels = {"DE-SRC-0": "/dev/video6",
                        "DE-AI-0": "/dev/video7"}
         with tempfile.TemporaryDirectory() as td, \
@@ -142,6 +153,7 @@ class T(unittest.TestCase):
         spec = {"render": {"mode": "cameras"},
                 "units": [{"block": "copter_cam3d", "name": "cam1"}]}
         sim = simlib.load_sim(spec, base_dir=ROOT)
+        simlib.lease_commit(sim)
         with tempfile.TemporaryDirectory() as td, \
                 mock.patch.object(simlib, "MAVLINK3DMAP_DIR", td), \
                 mock.patch.object(simlib, "run_dir",

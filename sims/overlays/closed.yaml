@@ -2,7 +2,8 @@
 # flies on the SIM AHRS - AHRS_EKF_TYPE 10), the fleet server stamps a
 # clock that is 3 h wrong (clock_offset_ms) and copter3 never receives
 # a clock stamp at all (noclock) so it stays tq=0 from boot. slot_base
-# 30 keeps clear of the developer's own SITL on the default ports.
+# 30 keeps the SITL identity/sysids clear of the developer's own SITL
+# (ports are allocator leases now - `./sim ports`).
 version: 1
 slot_base: 30
 server:

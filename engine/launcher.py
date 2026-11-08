@@ -254,6 +254,16 @@ def down(name=None, quiet=False):
     for p in strays:
         if os.path.isdir(f"/proc/{p}") and simlib.pid_is_ours(p):
             os.kill(p, signal.SIGKILL)
+    # free the sim's machine-wide port leases (foreign-owned sims kept
+    # above were already pruned from `dirs`, so their leases survive)
+    freed = set()
+    for d in dirs:
+        sname, _o = _dir_owner(d)
+        if sname and sname not in freed:
+            simlib.lease_release(sname)
+            freed.add(sname)
+    if name and name not in freed:
+        simlib.lease_release(name)
     if not quiet and (pids or strays or not foreign_kept):
         print(simlib.col_yellow(
             f"sim stopped ({len(pids) + len(strays)} processes)"))
@@ -375,6 +385,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         # where they still must be unique), restart only the same-named
         # one
         simlib.check_conflicts(sim)
+        # refuse ports another worktree leases or a foreign process
+        # binds - before the same-name down() below frees ours
+        simlib.lease_check(sim)
         m_old = simlib.load_manifest(name, required=False) \
             if name in simlib.live_sim_names() else None
         if not fresh and m_old and m_old.get("sim_hash") == sim["hash"] \
@@ -402,12 +415,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                     "--force / SIM_FORCE=1 to take it over"))
         down(name, quiet=True)
     if srv["type"] == "external":
-        # nothing local to bind except this sim's control port; but the
-        # user's server must be reachable or no unit ever comes online
-        if port_busy(srv["control_port"]):
-            sys.exit(simlib.col_red(
-                f"control port {srv['control_port']} is in use - set "
-                "`server: {control_port: ...}` in the sim"))
+        # nothing local to bind except this sim's control port (leased
+        # below); but the user's server must be reachable or no unit
+        # ever comes online
         host, port = (srv["auth_ip"], srv["auth_port"]) if srv["auth"] \
             else (srv["ip"], srv["port"])
         if not port_busy(port, host, timeout=5):
@@ -415,21 +425,32 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                 f"cannot reach the external server at {host}:{port} - "
                 "start your servers (./sim up de_servers) or "
                 "fix the sim's server: block"))
-    else:
-        busy = [p for p in ([srv["port"], srv["control_port"]]
-                            + ([srv["auth_port"], srv["auth_s2s_port"]]
-                               if srv["auth"] else [])
-                            + ([srv["udp_relay"]["port"]]
-                               if srv.get("udp_relay") else []))
-                if port_busy(p)]
-        if busy:
-            sys.exit(simlib.col_red(
-                f"ports {busy} are in use by something else - either "
-                "down what holds them (./sim status), set "
-                "`server: {port: ...}` in the sim, or rerun with "
-                "--shared --slot-base any to park next to live sims "
-                "on a free port block (the server port rides the "
-                "slot for transport: scenarios)"))
+    # lease the whole port set atomically - all of it or none of it -
+    # and write the picks back into the resolved sim BEFORE generate():
+    # a prefer pick may differ from the resolved hint, and the configs
+    # and launch scripts below must carry what the procs will bind.
+    # (The pre-down lease_check above keeps the refusal-before-teardown
+    # semantics; the commit re-validates now that ours are freed.)
+    # Under --slot-base any a racing sim can win the picked base between
+    # the load-time pick and this commit: re-resolve for a fresh pick
+    # (the winner's leases disqualify that base now) instead of dying
+    # on the clash. An explicit base keeps fail-fast semantics.
+    retries = 3 \
+        if os.environ.get("SIM_SLOT_BASE_OVERRIDE") == "any" else 0
+    while True:
+        try:
+            simlib.lease_commit(sim)
+            break
+        except simlib.SimError:
+            if retries <= 0:
+                raise
+            retries -= 1
+            sim = simlib.load_sim(
+                sim_src, exclusive=exclusive and not _shared())
+            name = sim["name"]
+            srv = sim["server"]
+            simlib.check_conflicts(sim)
+            down(name, quiet=True)   # same name - a no-op when down
     rdir = simlib.run_dir(name)
     if fresh and os.path.isdir(rdir):
         shutil.rmtree(rdir)
@@ -515,6 +536,12 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
             f"on {srv['port']}")
     print(f"sim {simlib.col_bold(name)}: {len(m['units'])} unit(s), "
           f"slot {sim['slot_base']}, " + simlib.col_cyan(conn))
+    # SL-0076 - each prefer hint the allocator could not take landed on
+    # a pool port instead; print them so the fleet's real ports are
+    # never a surprise
+    for mv in sim.get("moved_ports") or ():
+        print(simlib.col_yellow(
+            f"  moved {mv['name']} {mv['hint']} -> {mv['port']}"))
     # the resolved fleet: unit, vehicle and ports - the initial settings
     # the run is about to launch with
     def _link_label(fl, fc):
@@ -555,20 +582,30 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
         make_cert(name)
     for p in m["server_procs"]:
         ctl.start_proc("server", p)
-        if p == "de_auth" and not wait_port(srv["auth_port"], 30):
+        if p == "de_auth" and not wait_port(
+                simlib.port(m, "auth.https", srv["auth_port"]), 30):
             sys.exit(simlib.col_red(
                 "authenticator did not open its port - see "
                 f"{rdir}/server/logs/de_auth.log"))
+        if p == "storage" and not wait_port(
+                simlib.port(m, simlib.STORAGE_LEASE,
+                            srv["storage"]["port"]), 30):
+            sys.exit(simlib.col_red(
+                "storage server did not open its port - see "
+                f"{rdir}/server/logs/storage.log"))
         if p == "udp_relay" and not wait_port(
-                srv["udp_relay"]["port"], 30):
+                simlib.port(m, simlib.UDP_RELAY_LEASE + ".wss",
+                            srv["udp_relay"]["port"]), 30):
             sys.exit(simlib.col_red(
                 "udp relay did not open its control port - see "
                 f"{rdir}/server/logs/udp_relay.log"))
-        if p in ("de_server", "fake_server") and not wait_port(srv["port"], 30):
+        if p in ("de_server", "fake_server") and not wait_port(
+                simlib.port(m, "server.wss", srv["port"]), 30):
             sys.exit(simlib.col_red(
                 f"{p} did not open {srv['port']} - "
                 f"see {rdir}/server/logs/{p}.log"))
-    if not wait_port(srv["control_port"], 15):
+    if not wait_port(
+            simlib.port(m, "server.ctrl", srv["control_port"]), 15):
         sys.exit(simlib.col_red(
             f"control port did not open - see {rdir}/server/logs/"))
 
@@ -672,6 +709,7 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
     if not ctl.wait_ready(m["units"], timeout):
         sys.exit(simlib.col_red(
             "sim up FAILED (modules not ready) - check var/run/<unit>/logs/"))
+    simlib.lease_mark_bound(name)
     print(simlib.col_green("sim up.")
           + " operator console: ./sim ctl status"
           + (simlib.col_yellow(

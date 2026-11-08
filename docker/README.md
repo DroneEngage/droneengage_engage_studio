@@ -64,6 +64,24 @@ blocks and prints the shifted viewer URL. Linux only; on macOS/Windows
 run the container inside a Linux VM or use the native setup
 (`sim.local.env`).
 
+### Port lease registry
+
+The sim reserves ports in a machine-wide registry so every sim on the
+box sees the others' leases. The image keeps a private one at
+`/run/de_sim/ports.json` — a container is its own machine unless you
+mount the host's registry dir in:
+
+```bash
+docker run -it --network host \
+    -v ${XDG_RUNTIME_DIR}/de_sim:/run/de_sim de-sim
+```
+
+Worth doing when a sim runs on the host next to the container and you
+want their leases coordinated. Without the mount the container and the
+host only see each other's ports through the bind probe — the same
+protection as before the allocator existed — and the entrypoint prints
+a one-line reminder.
+
 ## What runs inside, and what does not
 
 **In:** the canopy quickstart flies the full search pattern for real —

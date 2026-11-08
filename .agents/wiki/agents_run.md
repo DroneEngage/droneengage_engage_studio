@@ -22,17 +22,18 @@
   stops one sim, `./sim down` all of them. `./sim run` is exclusive - a
   test downs every other sim first. `SIM_SHARED=1 ./sim run ...` keeps
   it additive (same rules as `up`) when other sessions share the machine.
-  **Agents: never down the developer's sims to run a test.** If a port or
-  name clash (or a live sim you did not start) blocks the run, do NOT stop
-  and ask, and do NOT `sim down` it - rerun additively on a free port
-  block: `./sim run <test> --shared --slot-base any`. `--slot-base any`
-  re-resolves the sim on the lowest slot whose whole port set (units +
-  spawned server/auth) is free vs live manifests and bound host ports;
+  **Agents: never down the developer's sims to run a test.** If a name
+  clash (or a live sim you did not start) blocks the run, do NOT stop
+  and ask, and do NOT `sim down` it - rerun additively:
+  `./sim run <test> --shared`. Ports cannot clash - every port is a
+  machine-wide allocator lease placed inside the `up` transaction, and
   unit names may repeat because each sim's own server has a private party
   registry. Only `server: {type: external}` tests (shared registry) and
   rendered-camera fleets (machine-global v4l2 labels) cannot share the
-  machine - ask then. A shifted slot changes the sim hash, so the run does
-  a fresh `up` (one SITL warm-up) and never reuses the warm fleet.
+  machine - ask then. `--slot-base any` still picks the lowest free
+  slot for the fleet's SITL/sysid identity; a shifted slot changes the
+  sim hash, so the run does a fresh `up` (one SITL warm-up) and never
+  reuses the warm fleet.
 - `./sim ctl -s <sim>` pins a command to one sim; without it commands
   that need a single sim use the only live one, and unit lookups search
   live sims first.

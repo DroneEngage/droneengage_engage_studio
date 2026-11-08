@@ -7,9 +7,9 @@ stub_@NAME@:
   repo: droneengage_studio
   bin: stub_@NAME@.py
   template: stub.json
-  port_base: 53000          # pick a base clear of modules/catalog.yaml
-                            # (62000 + 10k is de_comm itself)
   start_delay: 3
+  # no port field: the module's s2s listening port is a machine-wide
+  # allocator lease (unit.<unit>.stub_@NAME@) filled at `sim up`
   stub: true
   # pose: true              # uncomment if this sensor rides an FC unit
   local: {file: stub_@NAME@.local}

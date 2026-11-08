@@ -102,7 +102,6 @@ stub_demo_range:
   repo: droneengage_studio
   bin: stub_demo_range.py        # resolves inside this block dir
   template: stub.json            # falls back to modules/templates/
-  port_base: 62000
   start_delay: 3
   stub: true                     # the world injector feeds it stub:cfg
   # pose: true                   # add if it rides an FC unit

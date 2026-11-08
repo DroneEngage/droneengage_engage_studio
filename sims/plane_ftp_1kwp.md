@@ -74,6 +74,7 @@ restart `de_mavlink`, R-WP again — same completion line without `(FTP)`
 
 ## Ports
 
-slot_base 95: SITL pilot 6710, fcb 8610, de_comm s2s 62950, de_mavlink
-s2s 63950, sysid 95; server wss 62008 / control 62009. Disjoint from the
-default slot_base 40 sims.
+Every port is leased from the machine-wide allocator at `up` — `./sim
+ports -s plane_ftp_1kwp` lists what was actually bound. `slot_base: 95`
+is identity only (plane sysid 95, distinct from the default slot-40
+fleets).

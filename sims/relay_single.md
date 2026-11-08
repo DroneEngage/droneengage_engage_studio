@@ -24,8 +24,9 @@ Requirements:
 
 ## Ports
 
-slot_base 10: copter1 sysid 10 (pilot 5860, fcb 7760, de_comm 62100,
-de_mavlink 63100). Server wss 62008, control 62009, relay wss 62020.
-The relay's UDP pair window is `40000+40*slot_base` (40400+, sized
-2×the de_mavlink units) — see `server.udp_relay.udp_port_range` in
+Every port is leased from the machine-wide allocator at `up` — `./sim
+ports -s relay_single` lists what was actually bound (server wss +
+control, relay wss, and the relay's UDP pair block, sized 2×the
+de_mavlink units). `slot_base: 10` is identity only (copter1 sysid 10).
+The committed relay window is `server.udp_relay.udp_port_range` in
 `var/run/relay_single/sim.json`.
