@@ -4,7 +4,7 @@
 # "mission main completed" after it physically drives both waypoints.
 version: 1
 name: smoke_boat
-tier: smoke
+tier: regression
 realtime: true
 transport: real
 operation: ../packages/boat_run.json
