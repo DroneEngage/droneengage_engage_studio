@@ -14,16 +14,24 @@
     window.__plLastIce = (c.iceServers || []).length;
     const pc = new Native(c, ...rest);
     window.__plPcs.push(pc);
+    // keep the last ICE candidate errors (DNS, TURN auth) - a run that
+    // gathers no candidates otherwise shows only "0 ICE servers worked"
+    pc.addEventListener('icecandidateerror', (e) => {
+      window.__plIceErrors.push(
+          `${e.url} err=${e.errorCode} ${e.errorText || ''}`);
+    });
     return pc;
   }
   Wrapped.prototype = Native.prototype;
   Object.setPrototypeOf(Wrapped, Native);
   window.RTCPeerConnection = Wrapped;
+  window.__plIceErrors = [];
 
   // one sample over all peer connections
   window.__plSample = async function () {
     const out = { pcs: window.__plPcs.length, frames: 0, bytes: 0,
-                  candidate: null, ice: [], iceServers: window.__plLastIce };
+                  candidate: null, ice: [], iceServers: window.__plLastIce,
+                  iceErrors: window.__plIceErrors.slice() };
     for (const pc of window.__plPcs) {
       out.ice.push(pc.iceConnectionState);
       const stats = await pc.getStats();

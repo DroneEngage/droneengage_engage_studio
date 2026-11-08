@@ -94,6 +94,9 @@ def judge(samples, relay_only, frames_min=FRAMES_MIN):
                     "server, its credentials and its relay range.")
         elif "failed" in ice or "checking" in ice:
             hint = " ICE did not connect: check the ICE servers and the firewall."
+        errs = last.get("iceErrors") or []
+        if errs:
+            hint += " ICE errors: " + "; ".join(errs[:4])
         return "FAIL", (f"{frames} frames decoded, and {frames_min} that grow "
                         f"are needed. ICE state {ice}, {servers} ICE servers."
                         f"{hint}")
