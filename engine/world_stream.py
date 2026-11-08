@@ -201,7 +201,8 @@ class WorldStream:
         import websockets
         self._closing = self._loop.create_future()
         async with websockets.serve(self._client, "127.0.0.1",
-                                    self.port, compression=None):
+                                    self.port, compression=None,
+                                    ping_interval=None):
             self._listening.set()
             self._log("listening", {"port": self.port})
             tick = asyncio.ensure_future(self._tick_loop())
@@ -285,6 +286,7 @@ class WorldStream:
     # --------------------------------------------------------- client
 
     async def _client(self, ws):
+        import websockets
         self._clients.add(ws)
         self._log("connect", {"n": len(self._clients)})
         try:
@@ -297,6 +299,10 @@ class WorldStream:
                     continue
                 if msg.get("t") == "event":
                     self._intake_event(msg)
+        except websockets.exceptions.ConnectionClosed:
+            # a client that dies mid-stream is routine (ctl stop kills the
+            # render client) - log the disconnect below, not a traceback
+            pass
         finally:
             self._clients.discard(ws)
             self._log("disconnect", {"n": len(self._clients)})
