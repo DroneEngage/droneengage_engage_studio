@@ -1,0 +1,19 @@
+# Runbook: sims/sitl_bt.md
+#
+# One quad copter SITL whose FCB stream is served over the host's
+# Bluetooth adapter - the SL-0105 `fcb_link: {kind: bt_spp}` path.
+# The unit runs SITL + fcb_proxy + the bt_spp RFCOMM bridge only
+# (`fc_client: external` strips de_comm/de_mavlink); the FC client -
+# an Andruav phone, a Pi with an rfcomm-bound serial node, any SPP
+# MAVLink client - pairs with this host and dials the channel like a
+# drone FC port.
+description: |
+  One quad copter (SITL only, no local de modules). The fcb_proxy's
+  MAVLink byte stream is served by the bt_spp bridge - an RFCOMM SPP
+  server on the host's Bluetooth adapter, channel 1; the client that
+  dials the channel talks to SITL both ways through the proxy. Edit
+  `channel:` to move the RFCOMM channel (1-30; one channel per unit).
+version: 1
+units:
+  - {block: copter, name: copter1, fc_client: external,
+     fcb_link: {kind: bt_spp, channel: 1}}
