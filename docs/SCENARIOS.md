@@ -58,6 +58,15 @@ speedup: 3                     # SITL --speedup for this run; default 3.
 tier: smoke                    # optional; suite selection only
                                # (`sim suite --tier smoke`), absent =
                                # regression
+audience: extended             # optional tier (SL-0213): core | extended |
+                               # lab | mylab; absent = core (SITL only,
+                               # always green, the `sim suite` default)
+requires: [camera, v4l2loopback]  # optional; capabilities the host must
+                               # have - a missing one SKIPs the run with a
+                               # reason, it never FAILs. Values lowercase
+                               # on load. Known names (simlib.CAPABILITIES):
+                               # sitl, camera, v4l2loopback, android_adb,
+                               # rpi_target, mavlink3dmap, real_servers, esp32
 tasks: [SL-0099]               # optional; TeamEngage ids this file proves -
                                # `sim list --task <id>` / `sim suite --task <id>`
 transport: fake                # fake | real | {type: real, link_proxy: true}

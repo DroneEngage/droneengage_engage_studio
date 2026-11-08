@@ -776,7 +776,8 @@ def load_block(name, _chain=()):
         raise SimError(f"unknown block {name!r} (have: {', '.join(list_blocks())})")
     spec = load_yaml(bfile)
     unknown = set(spec) - {"description", "extends", "modules", "add_modules",
-                           "remove_modules", "fc", "config", "location"}
+                           "remove_modules", "fc", "config", "location",
+                           "audience", "requires"}
     if unknown:
         raise SimError(f"block {name}: unknown keys {sorted(unknown)}")
 
@@ -784,10 +785,19 @@ def load_block(name, _chain=()):
         b = load_block(spec["extends"], _chain + (name,))
     else:
         b = {"modules": ["de_comm"], "fc": None, "config": {},
-             "parm_files": [], "location": None, "chain": []}
+             "parm_files": [], "location": None, "chain": [],
+             "requires": [], "audience": "core"}
     b["name"] = name
     b["description"] = spec.get("description", "").strip()
     b["chain"] = b["chain"] + [name]
+    # SL-0213: a block that needs hardware names it in requires:; the
+    # parent's requires carry down the extends chain
+    b["requires"] = norm_requires(
+        list(b.get("requires") or []) + list(spec.get("requires") or []),
+        f"block {name}")
+    if "audience" in spec:
+        b["audience"] = norm_audience(spec.get("audience"),
+                                      f"block {name}")
 
     if "modules" in spec:
         b["modules"] = list(spec["modules"])
@@ -839,6 +849,40 @@ def validate_block(b, catalog):
 
 SERVER_TYPES = ("real", "fake", "external")
 
+# SL-0213: the content tiers and the host-capability names. A yaml's
+# `audience:` picks its tier (absent = core; mylab = private content
+# under SIM_LAB_DIR); `requires:` lists the capabilities a host must
+# have for the file to run - a missing one skips the run with a
+# reason instead of failing (probe: engine/capabilities.py).
+AUDIENCES = ("core", "extended", "lab", "mylab")
+CAPABILITIES = ("sitl", "camera", "v4l2loopback", "android_adb",
+                "rpi_target", "mavlink3dmap", "real_servers", "esp32")
+
+
+def norm_audience(value, what):
+    """An audience: value -> lowercase tier name; absent = core. Case is
+    not refused ('Extended' loads as extended)."""
+    v = "core" if value is None else str(value).lower()
+    if v not in AUDIENCES:
+        raise SimError(f"{what}: unknown audience {value!r} "
+                       f"(known: {', '.join(AUDIENCES)})")
+    return v
+
+
+def norm_requires(values, what):
+    """requires: entries -> a deduped lowercase list in file order;
+    an unknown capability name is a clear error with the known list."""
+    out = []
+    for v in values or []:
+        v = str(v).lower()
+        if v not in CAPABILITIES:
+            raise SimError(
+                f"{what}: unknown capability {v!r} (known: "
+                f"{', '.join(CAPABILITIES)})")
+        if v not in out:
+            out.append(v)
+    return out
+
 
 def load_sim(path_or_spec, base_dir=None, overlays=None,
              exclusive=False):
@@ -863,7 +907,8 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
     unknown = set(spec) - {"version", "name", "description", "server", "home",
                            "slot_base", "units", "render", "speedup",
                            "fcb_proxy", "fcb_link", "example",
-                           "camera_feed", "bus"}
+                           "camera_feed", "bus", "audience", "requires",
+                           "tasks"}
     if unknown:
         raise SimError(f"sim: unknown keys {sorted(unknown)}")
     if spec.get("version", 1) != 1:
@@ -901,6 +946,10 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
     sim = {
         "name": name,
         "description": spec.get("description", "").strip(),
+        # SL-0213: the file's tier (absent = core) and its own
+        # requires: - the blocks/units add theirs below
+        "audience": norm_audience(spec.get("audience"), "sim"),
+        "requires": norm_requires(spec.get("requires"), "sim"),
         "server": load_server(srv_spec),
         "home": list(home),
         "slot_base": slot_base,
@@ -951,7 +1000,7 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
                             "account", "add_modules", "role", "fcb_proxy",
                             "fcb_link", "fc_client", "faketime",
                             "udp_proxy", "link_proxy", "android", "env",
-                            "cameras", "bus"}
+                            "cameras", "bus", "requires"}
         if bad:
             raise SimError(f"sim unit {entry}: unknown keys {sorted(bad)}")
         bname = entry["block"]
@@ -959,6 +1008,13 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
             blocks[bname] = load_block(bname)
             validate_block(blocks[bname], catalog)
         b = blocks[bname]
+        # SL-0213: the sim's effective requires = its own + every used
+        # block's + every unit entry's (e.g. one android unit in a
+        # mixed fleet)
+        sim["requires"] = norm_requires(
+            sim["requires"] + b.get("requires", [])
+            + list(entry.get("requires") or []),
+            f"sim unit {entry.get('name', bname)}")
         count = entry.get("count")
         base = entry.get("name", bname)
         names = [base] if count is None else \
@@ -1283,7 +1339,8 @@ def _apply_overlay(spec, name, applied, _chain=()):
     cfg = o.pop("config", None)
     fc = o.pop("fc", None)
     unknown = set(o) - {"server", "home", "slot_base", "render",
-                        "speedup", "fcb_proxy", "fcb_link"}
+                        "speedup", "fcb_proxy", "fcb_link",
+                        "audience", "requires"}
     if unknown:
         raise SimError(f"overlay {name!r}: unknown keys {sorted(unknown)}")
     spec = deep_merge(spec, o)

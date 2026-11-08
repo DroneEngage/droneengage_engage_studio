@@ -429,6 +429,10 @@ def _validate(raw, path, sim_spec=None):
             if bad:
                 raise simlib.SimError(
                     f"{path}: fleet {ent.get('id')}: unknown keys {sorted(bad)}")
+    # SL-0213: the capability names in requires: are a fixed list -
+    # a typo must fail at load, not at skip time
+    raw["requires"] = simlib.norm_requires(raw.get("requires"), path)
+    raw["audience"] = simlib.norm_audience(raw.get("audience"), path)
     # cross-key rules the schema cannot express
     spd = raw.get("speedup")
     if spd is not None and (not isinstance(spd, (int, float))
@@ -740,6 +744,17 @@ def _yaml_bool_keys(raw):
             step["on"] = step.pop(True)
 
 
+def _yaml_normalize(raw):
+    """SL-0213: case is not refused on audience:/requires: - both
+    lowercase on load ('Extended' loads as extended, [Camera] as
+    camera). Runs before _validate so the schema sees the values it
+    checks."""
+    if isinstance(raw.get("audience"), str):
+        raw["audience"] = raw["audience"].lower()
+    if isinstance(raw.get("requires"), list):
+        raw["requires"] = [str(v).lower() for v in raw["requires"]]
+
+
 def load_scenario(path, seed=None, probe_ports=True):
     """-> a normalized run spec. Raises simlib.SimError on any format
     violation (unknown keys, bad timeline steps, unknown cls).
@@ -749,6 +764,7 @@ def load_scenario(path, seed=None, probe_ports=True):
     raw = yaml.safe_load(open(path)) or {}
     base = os.path.dirname(path)
     _yaml_bool_keys(raw)
+    _yaml_normalize(raw)
     if is_legacy_spec(raw):
         raise simlib.SimError(
             f"{path}: `sim:` + `steps:` is the removed legacy test format "
@@ -780,6 +796,12 @@ def load_scenario(path, seed=None, probe_ports=True):
         "name": raw["name"],
         "description": raw.get("description", ""),
         "seed": seed,
+        # SL-0213: the file's tier (absent = core) and its effective
+        # requires - the scenario's own list plus a named sim file's
+        "audience": raw["audience"],
+        "requires": simlib.norm_requires(
+            list(raw.get("requires") or [])
+            + list((named_spec or {}).get("requires") or []), path),
         "realtime": bool(raw.get("realtime", False)),
         "transport": ((named_spec.get("server") or {}).get("type", "real")
                      if named_spec is not None
