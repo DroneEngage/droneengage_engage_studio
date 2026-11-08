@@ -9,6 +9,7 @@
 # latch is once per run. Library slice of
 # tests/fleet_bus/p4a11_peer_lost.yaml in de.scenario/1 form.
 version: 1
+audience: core
 name: f_searcher_lost
 transport: fake
 operation: ../packages/p4a11_pair.deploy.json

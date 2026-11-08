@@ -2,6 +2,7 @@
 # is locked in with no IP restriction, and the drone-side (DEU1)
 # link is unaffected - telemetry keeps flowing.
 version: 1
+audience: core
 name: relay_change_port_lock
 tasks: [GL-0107, SL-0182]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

@@ -6,6 +6,7 @@
 # the post-cut reconnect ("TCP Client connected"), FC telemetry keeps
 # flowing (serial2 is untouched), and neither process died.
 version: 1
+audience: core
 name: f_fcb_cut
 tasks: [SL-0008]
 transport: real          # the proxy is ours - no fake server needed

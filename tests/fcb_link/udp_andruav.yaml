@@ -21,6 +21,7 @@
 # Not gated: only the LAN needs to work - `peer` unreachable fails
 # honestly as zero bytes (UDP has no connect to refuse).
 version: 1
+audience: core
 name: udp_andruav
 tasks: [SL-0106]
 transport: real

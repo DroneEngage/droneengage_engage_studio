@@ -2,6 +2,7 @@
 # one waiting request with a growing `others` count and few operator
 # messages, while the locked GCS keeps its telemetry.
 version: 1
+audience: core
 name: relay_flood_msgs
 tasks: [GL-0107, SL-0182]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

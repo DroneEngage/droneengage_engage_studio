@@ -5,6 +5,7 @@
 # is never taken and the run still ends cleanly. This is the negative of
 # p2_gate: the gate does not wait forever and does not release spuriously.
 version: 1
+audience: core
 name: p2_gate_timeout
 transport: real
 operation: ../packages/p2_06_gate.json

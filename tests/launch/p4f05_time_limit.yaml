@@ -15,6 +15,7 @@
 #          post-limit return fast.
 # Evidence: LAUNCH_GO use=1/1 -> LAUNCH_TIME_LIMIT -> RTL -> LAUNCH_DONE.
 version: 1
+audience: core
 name: p4f05_time_limit
 seed: 7
 realtime: true

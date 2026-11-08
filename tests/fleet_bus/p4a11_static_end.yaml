@@ -12,6 +12,7 @@
 #   - copter1 takes NavMode rtl, lands and completes on disarm.
 # mast1 is never armed and never receives a nav command (fc_items []).
 version: 1
+audience: core
 name: p4a11_static_end
 transport: real
 operation: ../packages/p4a11_static.deploy.json

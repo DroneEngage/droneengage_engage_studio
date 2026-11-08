@@ -1,6 +1,7 @@
 # rc_override: throttle channel overridden to 1600 for dur_s, then
 # released (65535). Telemetry sees chan3_raw jump.
 version: 1
+audience: core
 name: f_rc_override
 transport: fake
 settle_s: 5

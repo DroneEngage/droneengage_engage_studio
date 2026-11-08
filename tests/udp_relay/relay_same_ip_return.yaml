@@ -2,6 +2,7 @@
 # source port - the lock moves to it at once (reason same_ip) and
 # telemetry resumes without an operator.
 version: 1
+audience: core
 name: relay_same_ip_return
 tasks: [GL-0105, SL-0180]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

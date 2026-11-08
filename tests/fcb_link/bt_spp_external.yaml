@@ -11,6 +11,7 @@
 # With a powered controller but no client dialing in, fcb_stats fails
 # for real (a listening channel nobody called carries nothing).
 version: 1
+audience: extended
 name: f_bt_spp_ext
 tasks: [SL-0105]
 transport: real

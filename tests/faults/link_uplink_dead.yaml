@@ -19,6 +19,7 @@
 #     unit-side proof it could no longer hear the server.
 # transport: fake; the unit is c1.
 version: 1
+audience: core
 name: f_link_uplink_dead
 tasks: [SL-0007]
 transport: fake

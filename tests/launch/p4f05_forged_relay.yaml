@@ -21,6 +21,7 @@
 #          (2026-10-08 fix: the timed s2/s3 cut left sdr1 connected -
 #          it served the fact as an ALLOWED relay and amb1 launched.)
 version: 1
+audience: core
 name: p4f05_forged_relay
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

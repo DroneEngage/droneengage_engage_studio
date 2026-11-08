@@ -6,6 +6,7 @@
 # returns, the fact reaches it (resumed retry or peer replay); ping never
 # does.
 version: 1
+audience: core
 name: p4f03_reboot
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4f03.deploy.json

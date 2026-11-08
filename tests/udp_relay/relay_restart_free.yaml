@@ -2,6 +2,7 @@
 # pin counts as just-heard, so the lock frees the idle window after
 # the restart (not sooner) and the waiting stranger then takes it.
 version: 1
+audience: core
 name: relay_restart_free
 tasks: [GL-0105, GL-0107, SL-0181]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

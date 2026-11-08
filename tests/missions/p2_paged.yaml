@@ -7,6 +7,7 @@
 # are not active. This is the paged counterpart of p2_preempt_resume,
 # which loads the full layout up front.
 version: 1
+audience: core
 name: p2_paged
 transport: real
 operation: ../packages/p2_07_preempt.json

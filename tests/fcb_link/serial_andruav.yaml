@@ -22,6 +22,7 @@
 # `device:` is bench-specific - a /dev/serial/by-id path is preferred
 # over ttyUSBn on benches where adapters move around.
 version: 1
+audience: extended
 name: serial_andruav
 tasks: [SL-0104]
 transport: real

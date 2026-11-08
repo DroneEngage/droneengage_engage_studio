@@ -7,6 +7,7 @@
 # module - de_mavlink then sends MAV_CMD_DO_SET_MODE(RTL) to the FC
 # itself. c2 keeps its link and its mode - the failsafe is per-unit.
 version: 1
+audience: core
 name: f_comm_loss_failsafe
 tasks: [AN-0074]
 transport: fake

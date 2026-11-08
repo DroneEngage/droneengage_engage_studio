@@ -3,6 +3,7 @@
 # stays at tq=0 (the roster 1092 is a full-server-mode frame; the
 # journal is the observable here).
 version: 1
+audience: core
 name: f_no_time_sync
 transport: fake
 settle_s: 25

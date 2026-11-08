@@ -11,6 +11,7 @@
 #           launch -> a fresh `do: authorize` -> LAUNCH_GRANT ... valid
 #           again (status launch.grant back to valid).
 version: 1
+audience: core
 name: p4f05_reboot_void
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

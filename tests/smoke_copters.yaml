@@ -1,6 +1,7 @@
 # 3 copters on the REAL comm server fly one package each, started together.
 # (Port of Phase-4A smoke_3copters.yaml.)
 version: 1
+audience: core
 name: smoke_copters
 tier: smoke
 realtime: true

@@ -1,6 +1,7 @@
 # SL-0182 case 2: the reject list stays within its maximum even while
 # a flood keeps the pair busy rejecting expired attempts.
 version: 1
+audience: core
 name: relay_flood_reject_bound
 tasks: [GL-0107, SL-0182]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

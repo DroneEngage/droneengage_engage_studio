@@ -2,6 +2,7 @@
 # supervisor journals comm-line changes only then) every unit must journal
 # the line going offline and online again, and still take a new deploy.
 version: 1
+audience: core
 name: server_restart
 transport: real
 operation: ../../packages/copter_square.json

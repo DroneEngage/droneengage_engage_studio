@@ -7,6 +7,7 @@
 # original gate and the run completes. Proves trigger priorities,
 # the preemption stack and the resume point.
 version: 1
+audience: core
 name: p2_preempt_resume
 transport: real
 operation: ../packages/p2_07_preempt.json

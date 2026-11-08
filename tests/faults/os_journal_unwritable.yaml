@@ -9,6 +9,7 @@
 # After the timed restore a fresh deploy re-opens <hash>.pre.log, so
 # "package READY" #2 proves journaling resumed.
 version: 1
+audience: core
 name: f_os_journal_unwritable
 tasks: [SL-0014]
 transport: fake

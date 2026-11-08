@@ -12,6 +12,7 @@
 # percent ~90+ for any run length, so no FS_BATT trigger and no
 # supervisor battery_low handler can interrupt the resync proof.
 version: 1
+audience: core
 name: p2_reboot_resync
 transport: fake
 operation: ../../packages/copter_square.json

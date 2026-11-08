@@ -14,6 +14,7 @@
 # accepted" - no event delivered twice - all 100 items on the FC, and
 # the proxy's own log proves dups and reorders really fired.
 version: 1
+audience: core
 name: f_udp_chunks_dup
 tasks: [SL-0010]
 transport: real

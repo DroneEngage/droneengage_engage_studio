@@ -1,6 +1,7 @@
 # battery: SIM_BATT_VOLTAGE drops to 10.5 V; the next SYS_STATUS shows
 # it in the telemetry log.
 version: 1
+audience: core
 name: f_battery
 transport: fake
 settle_s: 5

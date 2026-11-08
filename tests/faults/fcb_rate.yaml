@@ -16,6 +16,7 @@
 # position source reports lost while de_mavlink is dead, then recovers
 # mid-download (POS_SOURCE_BACK while the rule is still on).
 version: 1
+audience: core
 name: f_fcb_rate
 tasks: [SL-0101]
 transport: real          # the proxy is ours - no fake server needed

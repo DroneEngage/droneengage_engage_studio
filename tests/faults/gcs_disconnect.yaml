@@ -2,6 +2,7 @@
 # and reconnects. The action and the reconnect are journaled to
 # operator.log.
 version: 1
+audience: core
 name: f_gcs_disconnect
 transport: fake
 settle_s: 5

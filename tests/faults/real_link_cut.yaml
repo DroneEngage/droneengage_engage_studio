@@ -9,6 +9,7 @@
 # s2 keeps its link the whole window - the fault is per-unit - and the
 # GCS bridge is never proxied.
 version: 1
+audience: core
 name: real_link_cut
 tasks: [SL-0009]
 transport: {type: real, link_proxy: true}

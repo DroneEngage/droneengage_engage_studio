@@ -2,6 +2,7 @@
 # emits (TTL 300 s). copter3 activates live; copter2 must activate within a
 # few seconds of its link coming back (retry/catch-up), never twice.
 version: 1
+audience: core
 name: p4a05_catchup
 realtime: true
 transport: {type: fake, seed: 1337}

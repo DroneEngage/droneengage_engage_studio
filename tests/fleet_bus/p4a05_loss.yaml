@@ -5,6 +5,7 @@
 # to BOTH workers, each activating "work" exactly once. Run it 10 times
 # (see RUNBOOK): every run must pass. BUS_RETRY lines are expected.
 version: 1
+audience: core
 name: p4a05_loss
 tier: smoke
 transport: {type: fake, seed: 1337}

@@ -4,6 +4,7 @@
 # detections, the digests match again -> "WM_DIVERGE copter3 cleared".
 # Timings at sv_roster_hz 0.2: stale 15 s, lost 30 s.
 version: 1
+audience: core
 name: p4a08_diverge
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4a08.deploy.json

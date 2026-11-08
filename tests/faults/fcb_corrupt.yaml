@@ -6,6 +6,7 @@
 # protocol retransmits dropped frames, so the serial0 read-back finds
 # every item (mission_items equals the package's fc_items count).
 version: 1
+audience: core
 name: f_fcb_corrupt
 transport: real
 settle_s: 10

@@ -3,6 +3,7 @@
 # journal line during the run - its timestamp pins the telemetry sample
 # time (CLOCK is logged at de_comm boot, before the run's journal marks).
 version: 1
+audience: core
 name: distance_to
 tier: smoke
 transport: fake

@@ -7,6 +7,7 @@
 # (sys.target_state) never sees a confirmation. The confirmed sibling
 # path is covered by tests/sar/p4b08_confirm.yaml.
 version: 1
+audience: core
 name: f_operator_rejects
 transport: fake
 operation: ../packages/p4b08.deploy.json

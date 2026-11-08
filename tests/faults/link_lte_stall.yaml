@@ -14,6 +14,7 @@
 # A post-window fire lands once, the mission completes, de_comm never
 # dies. transport: fake; the unit is c1.
 version: 1
+audience: core
 name: f_link_lte_stall
 tasks: [SL-0007]
 realtime: true

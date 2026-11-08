@@ -3,6 +3,7 @@
 # verify.expect_* declare it: the gate blocks -> exit 1, verify.json holds
 # the report, no unit ever comes up (the fleet never leaves the ground).
 version: 1
+audience: core
 name: verify_gate
 transport: fake
 operation: ../packages/copter_square.json

@@ -1,6 +1,7 @@
 # Every vehicle type comes up, arms and is brought down again the way its
 # type allows (copter LAND, rover HOLD + disarm, plane SITL reset).
 version: 1
+audience: core
 name: mixed_bringup
 tier: smoke
 transport: real

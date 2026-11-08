@@ -5,6 +5,7 @@
 # (min < 10.6) and the read-back restore: the run ends back at ~11.0,
 # not at the 12.6 factory value.
 version: 1
+audience: core
 name: f_param
 transport: fake
 realtime: true

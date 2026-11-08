@@ -7,6 +7,7 @@
 # fires exactly once; the camera/payload actions land "unavailable" on a
 # bare copter - the dispatch is journaled, the mission is unaffected.
 version: 1
+audience: core
 name: p2_guided
 transport: real
 operation: ../packages/p2_09_guided.json

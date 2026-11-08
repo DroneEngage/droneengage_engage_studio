@@ -5,6 +5,7 @@
 # de_comm therefore looks different from a dead one only in how the
 # outage ends (reconnect on resume, not a fresh pid).
 version: 1
+audience: core
 name: f_freeze_comm
 transport: fake
 settle_s: 60

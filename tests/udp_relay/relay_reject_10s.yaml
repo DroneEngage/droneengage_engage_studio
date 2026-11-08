@@ -2,6 +2,7 @@
 # block holds no new attempt is raised (not even from a new port on
 # the same IP), and once it lapses a fresh attempt appears.
 version: 1
+audience: core
 name: relay_reject_10s
 tasks: [GL-0107, SL-0180]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

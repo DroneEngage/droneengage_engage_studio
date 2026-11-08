@@ -3,6 +3,7 @@
 # tables still converge: one 3-member "fire" target + one far target on
 # every vehicle, and no WM_DIVERGE left standing after the loss stops.
 version: 1
+audience: core
 name: p4a08_order
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4a08.deploy.json

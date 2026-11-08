@@ -9,6 +9,7 @@
 # -> drop approval -> payload.dropped -> OP_END. No LAUNCH_GRANT /
 # LAUNCH_AUTH / LAUNCH_GO journals appear anywhere.
 version: 1
+audience: core
 name: p4f05_no_grant
 realtime: true
 seed: 7

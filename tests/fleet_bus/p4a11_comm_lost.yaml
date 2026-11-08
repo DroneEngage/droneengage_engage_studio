@@ -7,6 +7,7 @@
 # the server is back a TTL-valid event still delivers exactly once and a
 # peer that finished stays finished.
 version: 1
+audience: core
 name: p4a11_comm_lost
 transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a05.deploy.json

@@ -6,6 +6,7 @@
 # stale ESTABLISHED socket SITL's single-client serial TCP keeps after a
 # kill - a direct dial loops on refused connects forever there.
 version: 1
+audience: core
 name: p2_mavlink_relink
 transport: fake
 settle_s: 10

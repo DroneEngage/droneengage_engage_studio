@@ -9,6 +9,7 @@
 # POS_SOURCE_BACK mark the recovery (heartbeats back on the wire).
 # The copter holds a LOITER hover through the whole window.
 version: 1
+audience: core
 name: f_pty_unplug
 tasks: [SL-0103]
 transport: real

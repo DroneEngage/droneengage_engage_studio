@@ -6,6 +6,7 @@
 # ordered lost->recovered pair (journal_order over the proc log) plus
 # proc_alive prove a HANG is not a crash: the pid never changed.
 version: 1
+audience: core
 name: f_freeze_mavlink
 transport: fake
 realtime: true

@@ -7,6 +7,7 @@
 # times. on_timeout "rtl" is the FC-side contingency (LOITER_TIME 240 s
 # falls through to a c20 RTL item) - it should never fire.
 version: 1
+audience: core
 name: p4a10_barrier
 realtime: true
 transport: real

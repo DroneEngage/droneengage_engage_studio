@@ -2,6 +2,7 @@
 # moves and the old GCS is cut; the old GCS asks again and is approved
 # back.
 version: 1
+audience: core
 name: relay_approve_switchback
 tasks: [GL-0109, GL-0110, SL-0180]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

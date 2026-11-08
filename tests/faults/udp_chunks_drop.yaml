@@ -16,6 +16,7 @@
 # ~40 s; it is relative to its own start so a slow wait_online can
 # never shrink the post-restore telemetry window.
 version: 1
+audience: core
 name: f_udp_chunks_drop
 tasks: [SL-0010]
 transport: real

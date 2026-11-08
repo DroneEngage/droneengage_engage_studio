@@ -22,6 +22,7 @@
 # controller is on this host. SPP discovery needs BlueZ --compat
 # (the /var/run/sdp socket) - see docs/HIL.md.
 version: 1
+audience: extended
 name: bt_spp_andruav
 tasks: [SL-0105]
 transport: real

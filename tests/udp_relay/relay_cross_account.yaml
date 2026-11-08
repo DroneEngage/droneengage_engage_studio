@@ -2,6 +2,7 @@
 # it never hears attempt/switch pushes, and its approve lands
 # not_allowed while the real account's stays locked.
 version: 1
+audience: core
 name: relay_cross_account
 tasks: [GL-0109, SL-0184]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

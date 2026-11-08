@@ -6,6 +6,7 @@
 # for the orbit segment with no restart and no deploy. This is the v2
 # branch/switch primitive the later fleet ops build on.
 version: 1
+audience: core
 name: p2_switch
 transport: real
 operation: ../packages/p2_06_branch.json

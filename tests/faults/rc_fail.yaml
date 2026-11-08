@@ -3,6 +3,7 @@
 # into RTL. fc_mode proves the failsafe mode was taken; de_mavlink's
 # stdout shows the FC's own "Radio Failsafe" statustext.
 version: 1
+audience: core
 name: f_rc_fail
 transport: fake
 realtime: true

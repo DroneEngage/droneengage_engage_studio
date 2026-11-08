@@ -22,6 +22,7 @@
 #          WM_NEW -> operator confirm -> sys.target_state -> trigger path,
 #          and the trigger meets a USED grant (max_launches 1 spent).
 version: 1
+audience: core
 name: p4f05_used
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

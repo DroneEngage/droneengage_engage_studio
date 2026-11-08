@@ -3,6 +3,7 @@
 # via its ping watchdog, fire comm_lost once, keep flying and come back
 # only after the cut. (Port of Phase-4A fault_link_loss.yaml.)
 version: 1
+audience: core
 name: fault_link_loss
 tier: smoke
 realtime: true

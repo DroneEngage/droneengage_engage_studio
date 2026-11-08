@@ -7,6 +7,7 @@
 # remote link status to modules, so de_mavlink never learns REGISTERED
 # and never sends its 9008 pair-open request.
 version: 1
+audience: core
 name: relay_telemetry
 tasks: [GL-0063]
 transport: {type: real, auth: true, udp_relay: true,

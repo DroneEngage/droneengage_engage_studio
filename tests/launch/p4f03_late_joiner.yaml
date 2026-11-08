@@ -5,6 +5,7 @@
 # peers' coverage digests differ from its own, asks, gets the replay and
 # its waiting gate releases.
 version: 1
+audience: core
 name: p4f03_late_joiner
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4f03.deploy.json

@@ -3,6 +3,7 @@
 # pending table resumes the retries: copter2 activates once its link is
 # back, and the scout journals DELIVERED.
 version: 1
+audience: core
 name: p4a05_restart
 transport: {type: fake, seed: 1337}
 operation: ../../packages/p4a05.deploy.json

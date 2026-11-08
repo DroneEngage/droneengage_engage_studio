@@ -19,6 +19,7 @@
 # Not gated: only the LAN needs to work - the phone and host must
 # share a network.
 version: 1
+audience: core
 name: tcp_andruav
 tasks: [SL-0106]
 transport: real

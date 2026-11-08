@@ -1,5 +1,6 @@
 # gps_off: SIM_GPS_DISABLE=1 - the FC reports fix_type < 3.
 version: 1
+audience: core
 name: f_gps_off
 transport: fake
 settle_s: 5

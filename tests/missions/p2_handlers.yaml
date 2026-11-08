@@ -16,6 +16,7 @@
 # Proves declared policies actually drive FC behaviour, not just
 # journals.
 version: 1
+audience: core
 name: p2_handlers
 transport: fake
 operation: ../../packages/p2_10_handlers.json

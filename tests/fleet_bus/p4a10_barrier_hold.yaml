@@ -11,6 +11,7 @@
 # into a ~45-50 s leg. (do: opstart waits out a ~40 s reply window -
 # at speedup the leg is already over and the gate releases by cond.)
 version: 1
+audience: core
 name: p4a10_barrier_hold
 realtime: true
 transport: {type: fake, seed: 1337}

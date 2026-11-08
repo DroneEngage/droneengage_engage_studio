@@ -3,6 +3,7 @@
 # while really coming from an unknown party is dropped at the sender check
 # (BUS_DROP why=sender mismatch) and releases nothing.
 version: 1
+audience: core
 name: p4f03_spoof
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4f03.deploy.json

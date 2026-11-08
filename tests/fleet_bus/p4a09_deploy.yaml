@@ -8,6 +8,7 @@
 # under a 3h-skewed server clock with a synchronized fleet START (all
 # "run started" lines within 0.2 s) and the scout->worker event chain.
 version: 1
+audience: core
 name: p4a09_deploy
 realtime: true
 transport: {type: fake, seed: 1337}

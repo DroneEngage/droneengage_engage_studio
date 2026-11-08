@@ -11,6 +11,7 @@
 # With the adapter present but nothing crossed to it, c2s fails for
 # real (a wire with no client carries nothing).
 version: 1
+audience: extended
 name: f_host_serial_ext
 tasks: [SL-0104]
 transport: real

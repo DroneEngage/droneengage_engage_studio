@@ -11,6 +11,7 @@
 # waypoint. On OP_END the searchers take NavMode rtl and land; the
 # scout's then-rule is hold - no FC command, it finishes its segment.
 version: 1
+audience: core
 name: p4a11_phases_end
 transport: real
 operation: ../packages/p4a11.deploy.json

@@ -7,6 +7,7 @@
 # RUN lines. The fleet-wide version lives in
 # tests/fleet_bus/p4a11_comm_lost.yaml.
 version: 1
+audience: core
 name: f_server_down
 transport: fake
 operation: ../../packages/copter_square.json

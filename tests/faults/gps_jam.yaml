@@ -3,6 +3,7 @@
 # fix_type series proves the FC saw the jam (min < 3); the dur_s
 # restore returns the live fix.
 version: 1
+audience: core
 name: f_gps_jam
 transport: fake
 realtime: true

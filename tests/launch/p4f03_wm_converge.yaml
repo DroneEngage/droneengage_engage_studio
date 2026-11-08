@@ -4,6 +4,7 @@
 # digest AND fact coverage diverge (WM_DIVERGE/FACT_DIVERGE on copter2),
 # it syncs from copter2's replay copies, and both digests match again.
 version: 1
+audience: core
 name: p4f03_wm_converge
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4f03.deploy.json

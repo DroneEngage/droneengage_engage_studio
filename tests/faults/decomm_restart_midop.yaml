@@ -6,6 +6,7 @@
 # run. This is the mid-flight version of the bring-up restart case
 # (tests/fleet_bus/p4a05_restart.yaml).
 version: 1
+audience: core
 name: f_decomm_restart_midop
 transport: fake
 operation: ../../packages/copter_square.json

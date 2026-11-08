@@ -5,6 +5,7 @@
 # the mixed unit: de_mavlink rides the unix bus while stub_ai_box stays
 # on UDP behind an SL-0010 udp_proxy - both must come ready.
 version: 1
+audience: core
 bus: unix
 server: {type: fake}
 units:

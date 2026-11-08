@@ -6,6 +6,7 @@
 # the hold: "gate g released" appears exactly once and the mission runs
 # to completion with no timeout line.
 version: 1
+audience: core
 name: p2_gate
 tier: smoke
 transport: real

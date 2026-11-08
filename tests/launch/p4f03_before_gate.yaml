@@ -4,6 +4,7 @@
 # ("released by fact"), and the emit echoes the fact's payload back
 # (payload_from the gate = the payload is read).
 version: 1
+audience: core
 name: p4f03_before_gate
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4f03.deploy.json

@@ -1,6 +1,7 @@
 # kill: SIGKILL the unit's de_comm; the pidfile is gone, the proc is
 # dead and its link drops.
 version: 1
+audience: core
 name: f_kill
 tier: smoke
 transport: fake

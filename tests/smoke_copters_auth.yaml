@@ -1,5 +1,6 @@
 # Same as smoke_copters, through the authenticator login path.
 version: 1
+audience: core
 name: smoke_copters_auth
 tier: smoke
 realtime: true

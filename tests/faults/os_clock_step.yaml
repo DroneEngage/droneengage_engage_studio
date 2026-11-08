@@ -9,6 +9,7 @@
 # the restart blip is well under the link_offline 10 s window and the
 # units keep routing through the server.
 version: 1
+audience: core
 name: f_os_clock_step
 tasks: [SL-0014]
 speedup: 1                   # clock test - keep SITL time at wall rate

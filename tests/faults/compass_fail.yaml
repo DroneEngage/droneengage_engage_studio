@@ -2,6 +2,7 @@
 # "Compass 1 not healthy" over statustext and the EKF switches compass
 # instances; both land in de_mavlink's stdout log.
 version: 1
+audience: core
 name: f_compass_fail
 transport: fake
 realtime: true

@@ -6,6 +6,7 @@
 # Both should land ARRIVE_ERR within a few seconds of T. The "no nav
 # speed" fallback journal must NOT appear (spd was delivered by 6541).
 version: 1
+audience: core
 name: p4a10_arrive
 realtime: true
 transport: real

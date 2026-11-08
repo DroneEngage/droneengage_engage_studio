@@ -1,6 +1,7 @@
 # loss: 100% seeded loss starves the link until it is cleared - an
 # offline interval appears and the unit comes back after link_clear.
 version: 1
+audience: core
 name: f_loss
 transport: fake
 settle_s: 30

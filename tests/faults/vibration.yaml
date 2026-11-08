@@ -4,6 +4,7 @@
 # position estimates: the copter's reported vx swings past 1 m/s and
 # rel_alt bobs ~2 m around the hover where baseline is +/-0.05.
 version: 1
+audience: core
 name: f_vibration
 transport: fake
 realtime: true

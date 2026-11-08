@@ -1,6 +1,7 @@
 # restart: kill + relaunch de_comm. The fresh process reconnects and
 # journals a second CLOCK line (the first was pre-scenario).
 version: 1
+audience: core
 name: f_restart
 transport: fake
 settle_s: 20

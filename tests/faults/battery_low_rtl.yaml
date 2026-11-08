@@ -10,6 +10,7 @@
 # The battery self-test (faults/battery.yaml) proves the voltage
 # injection; this proves the op-level reaction.
 version: 1
+audience: core
 name: f_battery_low_rtl
 transport: fake
 operation: ../../packages/p2_10_handlers.json

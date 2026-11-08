@@ -2,6 +2,7 @@
 # request window - the locked GCS keeps telemetry throughout and the
 # stranger gets nothing.
 version: 1
+audience: core
 name: relay_attempt_timeout
 tasks: [GL-0106, SL-0180]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

@@ -1,6 +1,7 @@
 # server_clock: skew the server's stamped clock -1 h, then restart the
 # unit so its next CLOCK line shows the huge fleet-minus-unix offset.
 version: 1
+audience: core
 name: f_server_clock
 transport: fake
 settle_s: 20

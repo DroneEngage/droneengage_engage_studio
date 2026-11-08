@@ -7,6 +7,7 @@
 # (handler:peer_lost). The handler is latched once per run - when the
 # link comes back (ROSTER ... back) it must NOT fire again.
 version: 1
+audience: core
 name: p4a11_peer_lost
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4a11_pair.deploy.json

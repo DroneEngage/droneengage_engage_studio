@@ -11,6 +11,7 @@
 #           uploading segment" -> live APPROVAL_REQ -> APPROVAL_TIMEOUT
 #           -> stays on the ground.
 version: 1
+audience: core
 name: p4f05_outside_area
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

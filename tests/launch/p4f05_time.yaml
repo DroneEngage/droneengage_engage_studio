@@ -9,6 +9,7 @@
 # Evidence: LAUNCH_REFUSED deliver time <est>s -> live APPROVAL_REQ ->
 #           APPROVAL_TIMEOUT -> stays on the ground; never uploaded.
 version: 1
+audience: core
 name: p4f05_time
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

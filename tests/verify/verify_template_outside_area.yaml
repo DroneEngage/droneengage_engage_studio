@@ -6,6 +6,7 @@
 # offending point); the run stops before fleet bring-up - deploy NEVER
 # happens. Expected exit is 1.
 version: 1
+audience: core
 name: verify_template_outside_area
 transport: fake
 operation: ops/template_outside_area.op.json

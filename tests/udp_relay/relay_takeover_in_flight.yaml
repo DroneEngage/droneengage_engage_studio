@@ -1,6 +1,7 @@
 # relay_takeover_in_flight - an idle takeover of the UDP relay lock while a
 # mission flies: the mission starts before the switch and finishes after it.
 version: 1
+audience: core
 name: relay_takeover_in_flight
 tasks: [GL-0105, GL-0107, SL-0181]
 operation: ../../packages/copter_square.json

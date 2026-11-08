@@ -27,6 +27,7 @@
 # Replay: OP_END (or Ctrl-C) tears down; the run dir's merged journals
 #         + operator.log are what Task C replays.
 version: 1
+audience: core
 name: p6_accept_sar_manual
 tasks: [MP-0139]
 realtime: true                # wall-clock - the participant works in real time

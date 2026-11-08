@@ -5,6 +5,7 @@
 # in the shifted band (a bare "moved north" bound would pass on the
 # lat=0 rows the FC emits before its first fix).
 version: 1
+audience: core
 name: f_gps_glitch
 transport: fake
 realtime: true

@@ -1,6 +1,7 @@
 # SL-0180 case 1: the first GCS locks the tofu pair; a stranger gets no
 # telemetry and cannot arm the drone or write a mission.
 version: 1
+audience: core
 name: relay_lock_stranger
 tasks: [GL-0105, SL-0180]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

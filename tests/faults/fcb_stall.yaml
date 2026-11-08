@@ -3,6 +3,7 @@
 # never logs a close). The proxy's own log records the stall; the link
 # resumes on its own when the window expires.
 version: 1
+audience: core
 name: f_fcb_stall
 transport: real
 settle_s: 25

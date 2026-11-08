@@ -12,6 +12,7 @@
 # `udp_proxy_mavlink` back before udp_proxy_rejects to prove the
 # allowlisted GCS still gets through.
 version: 1
+audience: core
 name: relay_reject_injection
 transport: {type: real, auth: true,
             udp_relay: {gcs_peer_policy: allowlist},

@@ -16,6 +16,7 @@
 # then flushes in order and it rejoins. s2 is untouched - the fault is
 # per-unit and the GCS bridge connects direct.
 version: 1
+audience: core
 name: real_link_stall
 tasks: [SL-0009]
 transport: {type: real, link_proxy: true}

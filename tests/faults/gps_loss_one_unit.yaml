@@ -6,6 +6,7 @@
 # reset power-cycles the SITL so the param cannot leak into the next
 # scenario on a reused sim.
 version: 1
+audience: core
 name: f_gps_loss_one_unit
 transport: fake
 settle_s: 15

@@ -17,6 +17,7 @@
 # the run stays live, which keeps launch.grant == "used" readable in the
 # final 1087 (a completed op would void it as run_end).
 version: 1
+audience: core
 name: p4f05_unattended
 speedup: 1                   # the world truth tick is wall-clock
 seed: 7

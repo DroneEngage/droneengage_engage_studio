@@ -7,6 +7,7 @@
 # hang, not a crash; link_offline 0 proves the unit stays routed - only
 # the module is starved, never de_comm itself.
 version: 1
+audience: core
 name: f_os_cpu_starve
 tasks: [SL-0014]
 transport: fake

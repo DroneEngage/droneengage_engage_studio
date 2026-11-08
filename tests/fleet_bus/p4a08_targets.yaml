@@ -10,6 +10,7 @@
 # "detect" sensor mission re-emits the payload as the fleet event
 # target.fire (a real 1090: acks, retries, catch-up all apply).
 version: 1
+audience: core
 name: p4a08_targets
 transport: real
 operation: ../packages/p4a08.deploy.json

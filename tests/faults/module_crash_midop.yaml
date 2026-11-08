@@ -6,6 +6,7 @@
 # crash is not an op failure: the mission telemetry path resumes where
 # it left off.
 version: 1
+audience: core
 name: f_module_crash_midop
 transport: fake
 operation: ../../packages/copter_square.json

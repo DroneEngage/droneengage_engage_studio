@@ -7,6 +7,7 @@
 # in p4a04_loss.yaml (acceptance 2 - it only records the loss rate).
 # Ported to the two-phase deploy: a roles spec + opstart (P4A-09).
 version: 1
+audience: core
 name: p4a04_static_chain
 tier: smoke
 transport: {type: fake, seed: 1337}

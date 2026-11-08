@@ -4,6 +4,7 @@
 # stub_ai_box over UDP through its udp_proxy - and a de_mavlink restart
 # re-registers on the unix bus (Communicator Server Found).
 version: 1
+audience: core
 name: p4f08_unix_bus
 realtime: true
 sim: {base: unix_bus_fleet.yaml}

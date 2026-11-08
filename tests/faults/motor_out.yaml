@@ -3,6 +3,7 @@
 # comes down. Telemetry proves the fall (rel_alt min) and de_mavlink's
 # stdout carries the FC's own "Potential Thrust Loss" statustext.
 version: 1
+audience: core
 name: f_motor_out
 transport: fake
 realtime: true

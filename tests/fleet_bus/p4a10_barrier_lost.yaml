@@ -15,6 +15,7 @@
 # when the started replies land, so wait+cut lands ~10-15 s in, ~30 s
 # before the first emit (DE-0047, same fix as p4a10_barrier_hold).
 version: 1
+audience: core
 name: p4a10_barrier_lost
 realtime: true
 transport: {type: fake, seed: 1337}

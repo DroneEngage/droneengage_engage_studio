@@ -7,6 +7,7 @@
 # the results dir carries the findings. Expected exit is 1 (the gate
 # working), same contract as ../verify_gate.yaml.
 version: 1
+audience: core
 name: verify_deadlock
 transport: fake
 operation: ops/deadlock.op.json

@@ -2,6 +2,7 @@
 # (p4a05_scout_ttl30). The scout must report UNDELIVERED ... copter2 at the
 # TTL, and copter2 must NOT activate late when its link returns.
 version: 1
+audience: core
 name: p4a05_ttl
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4a05_ttl.deploy.json

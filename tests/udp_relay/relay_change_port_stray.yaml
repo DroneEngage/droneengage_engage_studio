@@ -2,6 +2,7 @@
 # to a dead port - it raises no more attempts, and the relay's
 # rejected counters do not grow for it (DE-0067).
 version: 1
+audience: core
 name: relay_change_port_stray
 tasks: [GL-0107, SL-0182]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

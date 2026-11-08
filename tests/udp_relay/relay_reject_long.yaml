@@ -2,6 +2,7 @@
 # the configured duration, including from a new source port on the
 # same IP.
 version: 1
+audience: core
 name: relay_reject_long
 tasks: [GL-0107, SL-0180]
 transport: {type: real, auth: true, udp_relay: {gcs_peer_policy: tofu},

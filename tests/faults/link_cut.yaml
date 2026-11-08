@@ -2,6 +2,7 @@
 # it vanish from the server's online list and come back when the cut
 # expires - the journal has no "comm line" lines without a v2 package.
 version: 1
+audience: core
 name: f_link_cut
 transport: fake
 settle_s: 40

@@ -6,6 +6,7 @@
 # activation (dup suppression) and the scout's local BUS_OUT.
 # Ported to the two-phase deploy: a roles spec + opstart (P4A-09).
 version: 1
+audience: core
 name: p4a04_loss
 transport: {type: fake, seed: 1337}
 operation: ../packages/p4a04.deploy.json

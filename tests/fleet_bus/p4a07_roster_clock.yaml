@@ -18,6 +18,7 @@
 # anchored on seq 5 start) so the scenario decides WHEN the emit lands -
 # it must fall inside copter3's stale window, not after lost.
 version: 1
+audience: core
 name: p4a07_roster_clock
 realtime: true
 transport: {type: fake, seed: 1337}

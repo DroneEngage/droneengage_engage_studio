@@ -1,6 +1,7 @@
 # delay: a 3 s delay must NOT drop the link - zero offline intervals
 # and the proc stays up.
 version: 1
+audience: core
 name: f_delay
 transport: fake
 settle_s: 10

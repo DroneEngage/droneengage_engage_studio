@@ -1,6 +1,7 @@
 # module_kill: kill de_mavlink on a copter - the module proc dies while
 # de_comm keeps running.
 version: 1
+audience: core
 name: f_module_kill
 tier: smoke
 transport: fake

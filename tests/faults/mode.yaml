@@ -1,5 +1,6 @@
 # mode: force the FC into RTL; the heartbeat mode lands in telemetry.
 version: 1
+audience: core
 name: f_mode
 transport: fake
 settle_s: 5

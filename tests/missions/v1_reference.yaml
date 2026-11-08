@@ -6,6 +6,7 @@
 # and journal "mission main completed" - the smallest green path in the
 # library (deploy -> start -> completed on the real binaries).
 version: 1
+audience: core
 name: p0_v1_reference
 transport: real
 operation: ../../packages/copter_square.json
