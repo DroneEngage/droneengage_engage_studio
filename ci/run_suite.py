@@ -66,14 +66,15 @@ RESULTS = simlib.RESULTS_DIR
 # dir names excluded from a plain suite run - opt-in only via an
 # explicit --roots <path>/<name>: soak = long wall-clock runs,
 # experimental = not release-gating (SL-0050)
-_OPT_IN_DIRS = ("soak", "experimental")
+_OPT_IN_DIRS = ("soak", "experimental", "manual")
 
 
 def yaml_files(roots, tier=None, task=None, audiences=None):
     """Every *.yaml under each root - except opt-in dirs: a */soak/ dir
-    holds wall-clock runs (tests/soak is 30 min at speed-up 1) and a
-    */experimental/ dir holds tests excluded from release gating; both
-    run only via an explicit --roots <path>/<name>. Fleet specs
+    holds wall-clock runs (tests/soak is 30 min at speed-up 1), a
+    */experimental/ dir holds tests excluded from release gating and a
+    */manual/ dir holds human-driven sessions; all run only via an
+    explicit --roots <path>/<name>. Fleet specs
     (units-only files a scenario names via `sim: {base:}` - e.g.
     tests/**/phone_stack.yaml) are dropped too: they are not run files.
     `tier` keeps only files whose `tier:` key matches (absent =
