@@ -28,6 +28,8 @@ Read only the file(s) the task needs — each file covers one topic.
 | [`agents_run.md`](.agents/wiki/agents_run.md) | the `./sim` CLI: up/down/run/try/ctl semantics, additive vs exclusive, --json, exit codes |
 | [`agents_config.md`](.agents/wiki/agents_config.md) | config precedence chain, `simlib.setting()`, the port map |
 | [`agents_extend.md`](.agents/wiki/agents_extend.md) | adding blocks, catalog modules, sims, tests, steps/assertions, commands |
+| [`agents_stubs.md`](.agents/wiki/agents_stubs.md) | stub sensors: what they are, wiring, using them in tests, worked example |
+| [`agents_stub_dev.md`](.agents/wiki/agents_stub_dev.md) | developing a stub: scaffold, sensor.yaml contract, StubBase API, determinism rules |
 | [`agents_notes.md`](.agents/wiki/agents_notes.md) | invariants & gotchas (pid safety, link faults, manifests, speedup) + verifying engine changes |
 
 See `../AGENTS.md` for the workspace architecture.
