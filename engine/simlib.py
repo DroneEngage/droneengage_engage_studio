@@ -923,7 +923,7 @@ def load_sim(path_or_spec, base_dir=None, overlays=None,
         # dirs instead of leased s2s UDP ports. Default "udp".
         "bus": sim_bus,
         "units": [],
-        "render": _render_spec(spec.get("render"), slot_base),
+        "render": _render_spec(spec.get("render")),
         # DE-0050: `camera_feed: <src>` spawns ffmpeg testsrc producers
         # onto each camera unit's /dev/videoN before de_camera scans
         # (exclusive_caps needs a producer for CAPTURE to enumerate)
