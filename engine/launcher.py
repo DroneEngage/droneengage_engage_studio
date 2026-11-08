@@ -350,6 +350,31 @@ def _dir_owner(pids_dir):
         simlib.load_manifest(sname, required=False))
 
 
+def _ensure_webclient():
+    """Best-effort `de_webclient` stack bring-up, called wherever the
+    webclient deep links are printed - they 404 while the stack is
+    down. A stack lives outside the sim lifecycle, so one start serves
+    every later print. Warns instead of raising: a missing repo or npm
+    must not fail the sim."""
+    try:
+        import devstack
+        spec = devstack.STACKS.get("de_webclient")
+        if spec is None:
+            return
+        # the links only need the URL to serve - a hand-started
+        # `npm start` on the same port satisfies them already
+        if simlib.webclient_serving():
+            return
+        if len(devstack.pids("de_webclient")) >= len(spec["procs"]):
+            return                      # compiling, port comes later
+        devstack.up("de_webclient")
+    except simlib.SimError as e:
+        print(simlib.col_yellow(f"de_webclient: {e}"), flush=True)
+    except Exception as e:
+        print(simlib.col_yellow(
+            f"de_webclient stack check failed: {e}"), flush=True)
+
+
 def up(sim_src, fresh=False, timeout=180, exclusive=False,
        world_stream=False, open_web=False):
     """sim_src: a sim file path, or an inline sim dict (from a test).
@@ -743,7 +768,9 @@ def up(sim_src, fresh=False, timeout=180, exclusive=False,
                 print(f"{u['name']} {proc} media: "
                       + simlib.col_cyan(folder))
     # the GCS deep links - always printed; --open-web only adds the
-    # browser open
+    # browser open. The stack is brought up by default so the links
+    # actually serve something.
+    _ensure_webclient()
     print("webclient: " + simlib.col_cyan(simlib.webclient_url(m)))
     # a second GCS needs its own senderID - same-party connections kick
     # each other off the comm server
@@ -805,6 +832,7 @@ def ensure(sim_src, timeout=180, world_stream=False, exclusive=True):
                 print("render viewer: " + simlib.col("1;36",
                       simlib.render_viewer_url(render, world_stream)),
                       flush=True)
+            _ensure_webclient()
             print("webclient: "
                   + simlib.col_cyan(simlib.webclient_url(m)))
             print("planning:  "

@@ -2723,6 +2723,15 @@ def xdg_open(url):
         print(f"xdg-open failed: {e} - open the URL above by hand")
 
 
+def _webclient_note():
+    """The printed deep links 404 while nothing serves WEBCLIENT_URL -
+    say so instead of handing out a dead URL."""
+    if simlib.webclient_serving():
+        return ""
+    return simlib.col_dim("  (de_webclient down - "
+                          "./sim up de_webclient to serve it)")
+
+
 def cmd_web(name=None, open_browser=True, planning=False):
     """Print the sim's webclient deep links (main view + planner) and
     xdg-open the requested one - studio's session open. The URLs carry
@@ -2740,7 +2749,8 @@ def cmd_web(name=None, open_browser=True, planning=False):
                   " - the links below would open a dead page")
     web = simlib.webclient_url(m)
     plan = simlib.webclient_url(m, "/planning", "GCSPLN_" + name)
-    print("webclient: " + simlib.col_cyan(web))
+    note = _webclient_note()
+    print("webclient: " + simlib.col_cyan(web) + note)
     print("planning:  " + simlib.col_cyan(plan))
     if open_browser:
         xdg_open(plan if planning else web)
@@ -2854,7 +2864,8 @@ def cmd_status(scope="live", json_out=False, open_web=False):
             print("  online: "
                   + (simlib.col_green(online) if online else "-"))
             print("  webclient: "
-                  + simlib.col_cyan(simlib.webclient_url(m)))
+                  + simlib.col_cyan(simlib.webclient_url(m))
+                  + _webclient_note())
             # a second GCS needs its own senderID - same-party
             # connections kick each other off the comm server
             print("  planning:  "

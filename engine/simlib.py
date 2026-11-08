@@ -1754,6 +1754,20 @@ def webclient_url(sim, page="/", gcs_party=None):
     return WEBCLIENT_URL + page + "?" + urllib.parse.urlencode(q, safe=":@")
 
 
+def webclient_serving():
+    """True when something answers the WEBCLIENT_URL port - the deep
+    links webclient_url() prints are live. Any server counts: the
+    de_webclient stack or a hand-started `npm start` on the same port."""
+    u = urllib.parse.urlparse(WEBCLIENT_URL)
+    host = u.hostname or "127.0.0.1"
+    port = u.port or (443 if u.scheme == "https" else 80)
+    try:
+        socket.create_connection((host, port), timeout=0.5).close()
+        return True
+    except OSError:
+        return False
+
+
 def mav_chan_index(params, serial):
     """The n in the MAVn_*/SRn_* stream-rate params a SERIAL<serial>
     MAVLink stream answers to: ArduPilot binds one MAVLink channel per
