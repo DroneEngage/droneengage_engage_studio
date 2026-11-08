@@ -42,6 +42,9 @@ Serial per-file, per-seed runs of `run_scenario.py`. Verdicts:
 - `GATE-PASS` - a `verify:` file that declares `expect_rules` /
   `expect_errors` was blocked by the verifier AND `verify.json`
   recorded exactly those rules (the deploy gate working by design).
+- `SKIP` - the file's `requires:` names a host capability this machine
+  lacks (SL-0216). Not a failure: it never ran and does not affect the
+  exit code.
 - `FAIL` - anything else.
 - `FLAKY` - first attempt FAIL, the single permitted rerun passed. The
   summary keeps BOTH attempts and junit marks the case `type="flaky"`
@@ -49,6 +52,13 @@ Serial per-file, per-seed runs of `run_scenario.py`. Verdicts:
 
 Outputs `var/results/nightly/summary.md`, `junit.xml`, `runs.json`; exit 1
 when anything is FAIL or FLAKY.
+
+`--tier` (repeatable) selects content tiers: `core|extended|lab|mylab`
+or `all`; with no `--tier` the suite runs **core only** - the SITL-only
+tier that is green on every machine. CI runs the default, so CI runs
+core; extended/lab tests run only when asked. A file without an
+`audience:` key counts as core. The older values `smoke|regression`
+still filter the `tier:` key and combine with the audience values.
 
 ## Self-hosted nightly runner prerequisites
 

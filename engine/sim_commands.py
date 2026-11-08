@@ -372,22 +372,32 @@ COMMANDS = {
         "group": "EXECUTE",
         "summary": "run every yaml under dir(s) once per seed",
         "usage": ["./sim suite [dir ...] [--seeds 1,2,3] [--keep] "
-                 "[--tier smoke] [--task <id>]"],
+                 "[--tier core] ... [--task <id>]"],
         "description": "Run every yaml under dir(s) once per seed (default "
                        "dir: tests) - the nightly run: owns the machine "
                        "serially, unless --shared. Verdicts + junit in "
-                       "var/results/nightly/; --tier smoke runs only the "
-                       "marked fast first-pass set; --task selects only "
-                       "files tagged `tasks: [<id>]`.",
+                       "var/results/nightly/. --tier (repeatable, "
+                       "SL-0217) picks the content tiers to run: "
+                       "core|extended|lab|mylab, or all; absent = core "
+                       "only (SITL-only, always green). A file whose "
+                       "requires: a host lacks reports SKIP with the "
+                       "reason - never FAIL. The older suite tier "
+                       "smoke|regression keeps its meaning and "
+                       "combines; --task selects only files tagged "
+                       "`tasks: [<id>]`.",
         "flags": {
             "--seeds": "comma-separated seed list (default 1,2,3)",
             "--keep": "skip teardowns (leave sims up)",
-            "--tier": "run only the marked tier (smoke|regression)",
+            "--tier": "content tier to run - core|extended|lab|mylab|all "
+                      "(repeatable; absent = core); smoke|regression "
+                      "still filters the `tier:` key",
             "--task": "run only files tagged `tasks: [<id>]` (e.g. "
                       "SL-0099)",
         },
         "shared_flags": True,
-        "examples": ["./sim suite", "./sim suite --seeds 1,2,3 --tier smoke"],
+        "examples": ["./sim suite", "./sim suite --seeds 1,2,3 --tier smoke",
+                     "./sim suite --tier extended --tier lab",
+                     "./sim suite --tier all"],
         "takes_sim": False,
     },
     "prelaunch": {

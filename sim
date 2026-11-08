@@ -699,12 +699,15 @@ def main(argv):
                     sys.exit("--seeds needs a value")
                 seeds = a[i + 1]
                 del a[i:i + 2]
-            tier = None
-            if "--tier" in a:
+            # SL-0217: --tier is repeatable; each value passes through
+            # to run_suite.py (content audience core|extended|lab|
+            # mylab|all, or the suite tier smoke|regression)
+            tiers = []
+            while "--tier" in a:
                 i = a.index("--tier")
                 if i + 1 >= len(a):
                     sys.exit("--tier needs a value")
-                tier = a[i + 1]
+                tiers.append(a[i + 1])
                 del a[i:i + 2]
             task = None
             if "--task" in a:
@@ -722,7 +725,7 @@ def main(argv):
                    os.path.join(simlib.SIM_ROOT, "ci", "run_suite.py"),
                    "--roots"] + dirs + ["--seeds", seeds] \
                   + (["--keep"] if keep else []) \
-                  + (["--tier", tier] if tier else []) \
+                  + [x for t in tiers for x in ("--tier", t)] \
                   + (["--task", task] if task else [])
             return subprocess.call(cmd, cwd=simlib.SIM_ROOT)
         elif c == "list":

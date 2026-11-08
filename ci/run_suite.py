@@ -69,7 +69,7 @@ RESULTS = simlib.RESULTS_DIR
 _OPT_IN_DIRS = ("soak", "experimental")
 
 
-def yaml_files(roots, tier=None, task=None):
+def yaml_files(roots, tier=None, task=None, audiences=None):
     """Every *.yaml under each root - except opt-in dirs: a */soak/ dir
     holds wall-clock runs (tests/soak is 30 min at speed-up 1) and a
     */experimental/ dir holds tests excluded from release gating; both
@@ -78,7 +78,9 @@ def yaml_files(roots, tier=None, task=None):
     tests/**/phone_stack.yaml) are dropped too: they are not run files.
     `tier` keeps only files whose `tier:` key matches (absent =
     regression); `task` keeps only files whose `tasks:` list carries
-    the TeamEngage id (SL-0137)."""
+    the TeamEngage id (SL-0137). `audiences` (SL-0217) keeps files
+    whose `audience:` key (lowercased, absent = core) is in the set -
+    None disables the filter (`--tier all`)."""
     out = []
     for r in roots:
         d = os.path.join(ROOT, r)
@@ -97,6 +99,10 @@ def yaml_files(roots, tier=None, task=None):
         out = [f for f in out
                if (simlib.load_yaml(f) or {}).get("tier", "regression")
                == tier]
+    if audiences is not None:
+        out = [f for f in out
+               if str((simlib.load_yaml(f) or {}).get(
+                   "audience", "core")).lower() in audiences]
     if task:
         def _tasks(f):
             t = (simlib.load_yaml(f) or {}).get("tasks")
@@ -211,10 +217,13 @@ def main():
                          "scenario gets --shared --slot-base any and "
                          "the suite downs the sim it started (= "
                          "SIM_SHARED=1)")
-    ap.add_argument("--tier", default=None,
-                    choices=["smoke", "regression"],
-                    help="only files marked `tier: <name>` (absent = "
-                         "regression; smoke = the fast first-pass set)")
+    ap.add_argument("--tier", default=None, action="append",
+                    help="SL-0217: content tier to run - "
+                         "core|extended|lab|mylab|all (repeatable; "
+                         "absent = core only). The older suite-tier "
+                         "values smoke|regression keep their meaning "
+                         "(`tier:` key filter) and combine with the "
+                         "audience values.")
     ap.add_argument("--task", default=None,
                     help="only files whose `tasks:` list carries this "
                          "TeamEngage id (e.g. SL-0099)")
@@ -230,7 +239,26 @@ def main():
         os.environ["SIM_SPEEDUP"] = f"{a.speedup:g}"
     seeds = [int(s) for s in a.seeds.split(",") if s.strip()]
     shared = a.shared or os.environ.get("SIM_SHARED") == "1"
-    files = yaml_files(a.roots, tier=a.tier, task=a.task)
+    # --tier mixes two filters: suite tier (smoke|regression) and
+    # content audience (core|extended|lab|mylab|all). No audience value
+    # means the default: core only.
+    suite_tier, audiences = None, set()
+    for v in a.tier or []:
+        v = v.lower()
+        if v in ("smoke", "regression"):
+            suite_tier = v
+        elif v == "all":
+            audiences = None
+        elif v in simlib.AUDIENCES:
+            if audiences is not None:
+                audiences.add(v)
+        else:
+            sys.exit(f"--tier: unknown value {v!r} (smoke|regression|"
+                     "core|extended|lab|mylab|all)")
+    if audiences is not None and not audiences:
+        audiences = {"core"}
+    files = yaml_files(a.roots, tier=suite_tier, task=a.task,
+                       audiences=audiences)
     if not files:
         sys.exit(f"no scenario yaml under {a.roots}")
     os.makedirs(a.out, exist_ok=True)

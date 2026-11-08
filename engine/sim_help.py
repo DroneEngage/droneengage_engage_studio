@@ -126,6 +126,12 @@ def render_help(path, verb="up"):
     if rest:
         out += ["", rest]
 
+    # SL-0213: which tier the file belongs to and what the host needs
+    aud = simlib.norm_audience(spec.get("audience"), path)
+    reqs = simlib.norm_requires(spec.get("requires"), path)
+    out += ["", f"Audience: {aud}"
+            + (f"   requires: {', '.join(reqs)}" if reqs else "")]
+
     runbook = os.path.join(os.path.dirname(path), name + ".md")
     if os.path.isfile(runbook):
         rel = os.path.relpath(runbook, simlib.SIM_ROOT)
