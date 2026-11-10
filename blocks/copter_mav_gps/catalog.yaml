@@ -11,6 +11,17 @@ stub_gnss:
   pose: true
   local: {file: stub_gnss.local}
 
+# MV-0027: a GNSS receiver on a serial port, faked - a pty pair fed
+# with NMEA 0183 from the SITL truth pose; the unit's de_mavlink opens
+# <unit_dir>/gnss_serial.tty when gnss_source.type is serial.
+stub_nmea_serial:
+  repo: droneengage_studio
+  bin: tests/gnss/stub_nmea_serial.py
+  template: stub.json
+  start_delay: 3
+  stub: true
+  pose: true
+
 stub_rtcm:
   repo: droneengage_studio
   bin: stubs/stub_rtcm.py

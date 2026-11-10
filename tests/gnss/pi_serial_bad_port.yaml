@@ -1,0 +1,24 @@
+# pi_serial_bad_port - MV-0027 error path: gnss_source type "serial"
+# with a port that does not exist. de_mavlink stays up, sends no
+# GPS_INPUT (fix stays below 3D), reports the error in 6549 and logs
+# it every few seconds.
+version: 1
+name: pi_serial_bad_port
+realtime: true
+speedup: 1
+transport: fake
+world: ../../worlds/forest_a.yaml
+settle_s: 10
+fleet:
+  - {id: copter1, cls: copter_mav_gps,
+     config: {de_mavlink: {gnss_source: {type: serial, baud: 38400,
+        port: /dev/gnss_no_such_port}}}}
+timeline:
+  - {t: 0, do: wait, seconds: 30}
+assert:
+  - telemetry_value: {unit: copter1, field: fix_type, pick: max, at_most: 2}
+  - module_log_count: {unit: copter1, module: de_mavlink,
+      re: "GNSS serial.*cannot open", at_least: 5}
+  - module_log_count: {unit: copter1, module: de_mavlink,
+      re: "sendCpuStatus", at_least: 3}
+teardown: reset

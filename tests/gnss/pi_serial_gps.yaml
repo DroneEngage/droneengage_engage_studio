@@ -1,0 +1,35 @@
+# pi_serial_gps - MV-0027: a GNSS receiver wired to the unit's serial
+# port (stub_nmea_serial, a pty fed with NMEA from the SITL truth)
+# gives the FC a fix through de_mavlink's gnss_source type "serial".
+# The FC has no simulated GPS, so fix_type 3 only comes from the
+# injected GPS_INPUT; 'GPS 1: detected MAV' proves the FC adopted it.
+version: 1
+name: pi_serial_gps
+realtime: true
+speedup: 1
+transport: fake
+world: ../../worlds/forest_a.yaml
+settle_s: 10
+fleet:
+  - {id: copter1, cls: copter_mav_gps, modules: [stub_nmea_serial],
+     config: {de_mavlink: {gnss_source: {type: serial, baud: 38400,
+        port: /mnt/8a619ce7-cd3f-4520-af65-7991f16410f7/public_versions/drone_engage/droneengage_studio/var/run/pi_serial_gps/copter1/gnss_serial.tty}}}}
+  - {id: rover1, cls: rover_mav_gps, modules: [stub_nmea_serial],
+     config: {de_mavlink: {gnss_source: {type: serial, baud: 38400,
+        port: /mnt/8a619ce7-cd3f-4520-af65-7991f16410f7/public_versions/drone_engage/droneengage_studio/var/run/pi_serial_gps/rover1/gnss_serial.tty}}}}
+  - {id: boat1, cls: boat_mav_gps, modules: [stub_nmea_serial],
+     config: {de_mavlink: {gnss_source: {type: serial, baud: 38400,
+        port: /mnt/8a619ce7-cd3f-4520-af65-7991f16410f7/public_versions/drone_engage/droneengage_studio/var/run/pi_serial_gps/boat1/gnss_serial.tty}}}}
+timeline:
+  - {t: 0, do: wait, seconds: 30}
+  - {t: 40, do: wait, seconds: 40}
+assert:
+  - telemetry_value: {unit: all, field: fix_type, pick: max, at_least: 3}
+  - telemetry_value: {unit: all, field: ekf_ok, pick: latest, at_least: 1}
+  - module_log_count: {unit: copter1, module: de_mavlink,
+      re: "GPS 1: detected MAV", at_least: 1}
+  - module_log_count: {unit: rover1, module: de_mavlink,
+      re: "GPS 1: detected MAV", at_least: 1}
+  - module_log_count: {unit: boat1, module: de_mavlink,
+      re: "GPS 1: detected MAV", at_least: 1}
+teardown: reset

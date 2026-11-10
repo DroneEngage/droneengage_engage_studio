@@ -11,3 +11,9 @@ fc:
     GPS1_TYPE: 14
     SIM_GPS1_ENABLE: 0
     EK3_GPS_CHECK: 23
+config:
+  # the MAV-GPS blocks take their fix from a bus source (stub_gnss /
+  # phone): de_mavlink's gnss_source stays "none" everywhere else
+  de_mavlink:
+    gnss_source:
+      type: bus
