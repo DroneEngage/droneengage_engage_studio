@@ -41,10 +41,13 @@ class AndruavMessageParserBase(ABC):
             self._is_binary = not (full_message.endswith('}') or 
                                   (len(full_message) > 1 and full_message[-2] == '}'))
         
-        # Get permission if available
-        permission = 0
-        if self._validate_field(andruav_message, ANDRUAV_PROTOCOL_MESSAGE_PERMISSION, int):
-            permission = int(andruav_message[ANDRUAV_PROTOCOL_MESSAGE_PERMISSION])
+        # Get permission if available. The comm server writes "p" as a
+        # JSON number, but the JSON type is not always unsigned: a signed
+        # value, a float or a hex string all come from account stores and
+        # server builds. Each form must give the same 32-bit mask. A
+        # missing or non-numeric "p" gives 0 (deny). Mirrors the C++
+        # fn_getSenderPermission in andruav_permission_map.cpp (DE-0136).
+        permission = self._read_sender_permission(andruav_message)
         
         # Check if message is from system
         self._is_system = False
@@ -138,6 +141,36 @@ class AndruavMessageParserBase(ABC):
         """
         return (field_name in json_obj and 
                 isinstance(json_obj[field_name], expected_type))
+
+    def _read_sender_permission(self, json_obj: Dict[str, Any]) -> int:
+        """
+        Read the sender permission mask from the "p" field of an envelope.
+
+        Accepts the same four forms as the C++ fn_getSenderPermission:
+        unsigned int, signed int, float and hex/decimal string. A missing
+        or non-numeric "p" gives 0 (deny). bool is rejected so a JSON
+        true/false cannot masquerade as a mask. (DE-0136)
+        """
+        field = ANDRUAV_PROTOCOL_MESSAGE_PERMISSION
+        if not isinstance(json_obj, dict) or field not in json_obj:
+            return 0
+        value = json_obj[field]
+        # bool is a subclass of int in Python; reject it explicitly so a
+        # JSON true/false does not become mask 1/0.
+        if isinstance(value, bool):
+            return 0
+        if isinstance(value, int):
+            return value & 0xFFFFFFFF
+        if isinstance(value, float):
+            if value != value or value < 0.0 or value >= 18446744073709551616.0:
+                return 0
+            return int(value) & 0xFFFFFFFF
+        if isinstance(value, str):
+            try:
+                return int(value, 0) & 0xFFFFFFFF
+            except ValueError:
+                return 0
+        return 0
     
     def _get_module_key(self) -> str:
         """
