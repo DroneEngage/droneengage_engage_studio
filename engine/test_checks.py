@@ -2455,5 +2455,143 @@ class TestMissionCurrent(unittest.TestCase):
         self.assertEqual(r["status"], "FAIL")
 
 
+class FcbCaptureAndFrames(unittest.TestCase):
+    """SL-0233: the fcb_proxy `capture` rule and the fcb_frames check."""
+
+    @staticmethod
+    def _v2(msgid, payload, seq=0):
+        body = bytes([len(payload), 0, 0, seq, 1, 1]) + \
+            msgid.to_bytes(3, "little") + payload
+        return b"\xfd" + body + b"\0\0"
+
+    @staticmethod
+    def _v1(msgid, payload, seq=0):
+        return bytes([0xFE, len(payload), seq, 1, 1, msgid]) + payload \
+            + b"\0\0"
+
+    @staticmethod
+    def _rtcm(flags, data):
+        return bytes([flags, len(data)]) + data + bytes(180 - len(data))
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp(prefix="fcb_frames_")
+        self.addCleanup(shutil.rmtree, self.d, True)
+        import fcb_proxy
+        self.fp = fcb_proxy.FcbProxy(1, "127.0.0.1", 2, 3, "u1", 1)
+        self.cap = os.path.join(self.d, "cap233.jsonl")
+
+    def _feed(self, *frames):
+        buf = bytearray(b"".join(frames))
+        out = self.fp._shape(buf, "c2s")
+        return out, buf
+
+    def test_capture_command_and_frames_written(self):
+        r = self.fp._cmd(f"capture 233 {self.cap}")
+        self.assertIn("233", r)
+        a = self._v2(233, self._rtcm(0, b"abc"), seq=7)
+        b = self._v2(30, b"\x01" * 28)
+        c = self._v1(233, self._rtcm(0, b"xy"), seq=9)
+        out, rest = self._feed(a, b, c)
+        self.assertEqual(out, a + b + c, "capture never changes the bytes")
+        self.assertEqual(len(rest), 0)
+        rows = checks.capture_rows(self.cap)
+        self.assertEqual([x["seq"] for x in rows], [7, 9])
+        self.assertTrue(all(x["msgid"] == 233 for x in rows))
+        self.assertEqual(rows[0]["len"], 182)
+        self.assertEqual(bytes.fromhex(rows[0]["payload"])[2:5], b"abc")
+        # the other direction is not captured
+        n = len(rows)
+        buf = bytearray(a)
+        self.fp._shape(buf, "s2c")
+        self.assertEqual(len(checks.capture_rows(self.cap)), n)
+        # a partial frame waits, then is captured once whole
+        buf = bytearray(a[:10])
+        self.fp._shape(buf, "c2s")
+        self.assertEqual(len(checks.capture_rows(self.cap)), n)
+        buf += a[10:]
+        self.fp._shape(buf, "c2s")
+        self.assertEqual(len(checks.capture_rows(self.cap)), n + 1)
+
+    def test_capture_off_and_usage_and_drop_order(self):
+        self.fp._cmd(f"capture 233 {self.cap}")
+        self.fp._cmd("drop 233 100")
+        out, _ = self._feed(self._v2(233, self._rtcm(0, b"q")))
+        self.assertEqual(out, b"", "dropped frame still captured")
+        self.assertEqual(len(checks.capture_rows(self.cap)), 1)
+        self.assertIn("capture 233 off", self.fp._cmd("capture 233 off"))
+        self._feed(self._v2(233, self._rtcm(0, b"q")))
+        self.assertEqual(len(checks.capture_rows(self.cap)), 1)
+        self.assertTrue(self.fp._cmd("capture 233").startswith("ERR"))
+        self.assertIn("captures=", self.fp._cmd("stats"))
+        self.fp._cmd(f"capture 233 {self.cap}")
+        self.fp._cmd("capture all off")
+        self.assertEqual(self.fp.captures, {})
+
+    def _write(self, rows):
+        with open(self.cap, "w") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+
+    def _rows(self, n, step_ms, size=182):
+        return [{"t_ms": 1000 + i * step_ms, "msgid": 233, "seq": i,
+                 "len": size, "payload": self._rtcm(
+                     0, bytes([i]) * 10).hex()} for i in range(n)]
+
+    def _check(self, spec):
+        c, _j = ctx({}, file=os.path.join(self.d, "s.yaml"))
+        spec = dict(spec, file=self.cap)
+        return checks.check_assertion({"fcb_frames": spec}, c)
+
+    def test_fcb_frames_count_rate_and_bytes(self):
+        self._write(self._rows(11, 100))          # 10 Hz, 11 frames
+        r = self._check({"msgid": 233, "min_count": 11, "max_count": 11,
+                         "min_rate_hz": 9, "max_rate_hz": 11,
+                         "reassemble": "gps_rtcm_data",
+                         "payload_bytes": 110})
+        self.assertEqual(r["status"], "PASS", r["detail"])
+        self.assertEqual(self._check({"msgid": 233, "min_count": 12}
+                                     )["status"], "FAIL")
+        self.assertEqual(self._check({"msgid": 233, "max_rate_hz": 5}
+                                     )["status"], "FAIL")
+        self.assertEqual(self._check(
+            {"msgid": 233, "reassemble": "gps_rtcm_data",
+             "payload_bytes": 111})["status"], "FAIL")
+        self.assertEqual(self._check({"msgid": 233,
+                                      "min_payload_bytes": 11 * 182}
+                                     )["status"], "PASS")
+        self.assertEqual(self._check({"msgid": 30, "min_count": 1}
+                                     )["status"], "FAIL")
+
+    def test_fcb_frames_reassembles_fragments_and_matches_file(self):
+        data = bytes(range(240)) * 3                # 720 bytes, 4 fragments
+        rows, seq = [], 5
+        parts = [data[i:i + 180] for i in range(0, len(data), 180)]
+        for fid, part in enumerate(parts):
+            rows.append({"t_ms": 1000 + fid * 10, "msgid": 233,
+                         "seq": fid, "len": 182,
+                         "payload": self._rtcm(
+                             1 | (fid << 1) | (seq << 3), part).hex()})
+        # an unfragmented message after it (v2 trims trailing zeros)
+        tail = self._rtcm(0, b"\x01\x02\x03")
+        rows.append({"t_ms": 1100, "msgid": 233, "seq": 9, "len": 5,
+                     "payload": tail.rstrip(b"\0").hex()})
+        self._write(rows)
+        want = data + b"\x01\x02\x03"
+        self.assertEqual(checks.reassemble_rtcm(rows), want)
+        exp = os.path.join(self.d, "want.bin")
+        open(exp, "wb").write(want)
+        r = self._check({"msgid": 233, "reassemble": "gps_rtcm_data",
+                         "payload_bytes": len(want), "expect_file": exp})
+        self.assertEqual(r["status"], "PASS", r["detail"])
+        open(exp, "wb").write(want[:-1] + b"\x09")
+        r = self._check({"msgid": 233, "reassemble": "gps_rtcm_data",
+                         "expect_file": exp})
+        self.assertEqual(r["status"], "FAIL")
+
+    def test_fcb_frames_missing_file_skips(self):
+        os.remove(self.cap) if os.path.exists(self.cap) else None
+        self.assertEqual(self._check({"msgid": 233})["status"], "SKIP")
+
+
 if __name__ == "__main__":
     unittest.main()

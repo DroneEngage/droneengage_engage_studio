@@ -1,0 +1,20 @@
+# The two GNSS stubs of SL-0233. They live here, in the first MAV-GPS
+# block, so a scenario adds them per unit with `modules: [stub_gnss]`
+# (rover_mav_gps and boat_mav_gps use the same names; a second block
+# fragment cannot define them again).
+stub_gnss:
+  repo: droneengage_studio
+  bin: stubs/stub_gnss.py
+  template: stub.json
+  start_delay: 3
+  stub: true
+  pose: true
+  local: {file: stub_gnss.local}
+
+stub_rtcm:
+  repo: droneengage_studio
+  bin: stubs/stub_rtcm.py
+  template: stub.json
+  start_delay: 3
+  stub: true
+  local: {file: stub_rtcm.local}

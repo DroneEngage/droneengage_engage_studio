@@ -1,0 +1,25 @@
+# copter_rtcm_bus (SL-0233): stub_gnss gives the fix, stub_rtcm sends the
+# fixture RTCM3 stream on the bus (6548, once, 360-byte messages).
+# de_mavlink must send it to the FC as GPS_RTCM_DATA. The unit's
+# de_mavlink log shows the injection. To also count the frames at the
+# FC link, add an fcb_proxy capture of msgid 233 (engine/fcb_proxy.py
+# `capture 233 <file>`) and judge it with the fcb_frames assertion.
+# FAILS until de_mavlink injects RTCM.
+version: 1
+audience: extended
+name: copter_rtcm_bus
+tasks: [SL-0233]
+realtime: true
+speedup: 1                   # the stubs and the world run on wall clock
+transport: fake
+world: ../../worlds/forest_a.yaml
+settle_s: 10
+fleet:
+  - {id: copter1, cls: copter_mav_gps, modules: [stub_gnss, stub_rtcm]}
+timeline:
+  - {t: 0, do: wait, seconds: 30}   # SITL boot, no GPS yet
+  - {t: 40, do: wait, seconds: 40}
+assert:
+  - telemetry_value: {unit: copter1, field: fix_type, at_least: 3}
+  - module_log_count: {unit: copter1, module: de_mavlink, re: "(?i)rtcm", at_least: 1}
+teardown: reset

@@ -1,0 +1,20 @@
+# boat_gps_input (SL-0233): the copter_gps_input test on a motor boat.
+# FAILS until de_mavlink sends GPS_INPUT.
+version: 1
+audience: extended
+name: boat_gps_input
+tasks: [SL-0233]
+realtime: true
+speedup: 1                   # the stubs and the world run on wall clock
+transport: fake
+world: ../../worlds/forest_a.yaml
+settle_s: 10
+fleet:
+  - {id: boat1, cls: boat_mav_gps, modules: [stub_gnss]}
+timeline:
+  - {t: 0, do: wait, seconds: 30}   # SITL boot, no GPS yet
+  - {t: 40, do: wait, seconds: 40}
+assert:
+  - telemetry_value: {unit: boat1, field: fix_type, pick: max, at_least: 3}
+  - telemetry_value: {unit: boat1, field: fix_type, at_least: 3}
+teardown: reset

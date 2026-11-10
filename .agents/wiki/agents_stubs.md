@@ -18,6 +18,17 @@ Shipped stubs live in `stubs/`:
 | `stub_sdr.py` | `de_sdr` spectrum scan | `sdr.signal` events {freq, rssi_dbm, pos, radius_m, snr_db} + de.cap/1 advert |
 | `stub_precland.py` | `de_precland` target detections | precland target reports |
 | `stub_payload.py` | a payload-bay module | payload capability/actions |
+| `stub_gnss.py` | a GNSS source (phone or GNSS module) | `GNSS_Fix` (9103) at 1 Hz from the SITL pose; `gnss.start`/`gnss.stop` actions |
+| `stub_rtcm.py` | an RTCM3 correction source | `RTCM_DATA` (6548) from a fixture stream (valid CRC24Q frames of 20..1000 bytes); `rtcm.start`/`rtcm.stop` |
+
+The GNSS pair registers in `blocks/copter_mav_gps/catalog.yaml`: add
+them per unit with `modules: [stub_gnss, stub_rtcm]` on a `*_mav_gps`
+block (`copter_mav_gps`, `rover_mav_gps`, `boat_mav_gps`: GPS1_TYPE 14,
+no simulated GPS). Their helpers: `tools/fake_ntrip_caster.py` (a local
+NTRIP v1 caster that logs each GGA line), `tests/gnss/fixtures/
+rtcm_fixture.py` (the RTCM3 stream), and the fcb proxy `capture <msgid>
+<file>` control with the `fcb_frames` assertion (count, rate, reassembled
+GPS_RTCM_DATA bytes). Scenarios: `tests/gnss/`.
 
 Helper files beside them (`precland_events.py`, `model_import.py`,
 `fake_proc_stat.py`) are inputs/builders, not modules.

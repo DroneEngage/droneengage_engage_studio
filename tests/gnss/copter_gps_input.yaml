@@ -1,0 +1,22 @@
+# copter_gps_input (SL-0233): a copter whose FC has no simulated GPS
+# (GPS1_TYPE 14). stub_gnss sends 9103 at 1 Hz from the SITL pose and
+# de_mavlink must turn it into GPS_INPUT. The FC then reports a 3D fix.
+# FAILS until de_mavlink sends GPS_INPUT (de_mavlink GNSS tasks).
+version: 1
+audience: extended
+name: copter_gps_input
+tasks: [SL-0233]
+realtime: true
+speedup: 1                   # the stubs and the world run on wall clock
+transport: fake
+world: ../../worlds/forest_a.yaml
+settle_s: 10
+fleet:
+  - {id: copter1, cls: copter_mav_gps, modules: [stub_gnss]}
+timeline:
+  - {t: 0, do: wait, seconds: 30}   # SITL boot, no GPS yet
+  - {t: 40, do: wait, seconds: 40}
+assert:
+  - telemetry_value: {unit: copter1, field: fix_type, pick: max, at_least: 3}
+  - telemetry_value: {unit: copter1, field: fix_type, at_least: 3}
+teardown: reset

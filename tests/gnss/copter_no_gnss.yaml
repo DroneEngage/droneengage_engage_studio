@@ -1,0 +1,20 @@
+# copter_no_gnss (SL-0233): a copter_mav_gps unit with NO GNSS source on
+# the bus. Its FC has GPS1_TYPE 14 and no simulated GPS, so nothing
+# feeds it a position: the fix type must stay below 3D for the whole run.
+# Proves the SITL really lost its own GPS (the baseline for the
+# *_gps_input tests, which must go to 3D only through de_mavlink).
+version: 1
+audience: extended
+name: copter_no_gnss
+tasks: [SL-0233]
+realtime: true
+transport: fake
+settle_s: 5
+fleet:
+  - {id: copter1, cls: copter_mav_gps}
+timeline:
+  - {t: 0, do: wait, seconds: 60}
+assert:
+  - telemetry_value: {unit: copter1, field: fix_type, pick: max, lt: 3}
+  - telemetry_value: {unit: copter1, field: fix_type, lt: 3}
+teardown: reset

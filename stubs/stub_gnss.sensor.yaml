@@ -1,0 +1,24 @@
+# stub_gnss's sensor contract (SL-0233, docs/SENSORS.md). The stub reads
+# it from <stub_dir>/<stem>.sensor.yaml; world.sensors.gnss keys override
+# the model defaults at run time.
+sensor:
+  key: gnss                      # world.sensors.<key> overrides model:
+  truth:
+    pose: true                   # the SITL truth pose (serial5) is the fix
+  model:
+    rate_hz: 1.0                 # fixes per second (1 Hz as a phone sends)
+    fix_type: 3                  # GPS_FIX_TYPE: 0 none .. 3 3D, 4 DGPS,
+                                 #  5 RTK float, 6 RTK fixed
+    satellites: 12               # ns
+    hdop_x100: 90                # hd (HDOP x100)
+    vdop_x100: 130               # vd (VDOP x100)
+    h_acc_mm: 1500               # ha, horizontal accuracy
+    v_acc_mm: 2500               # va, vertical accuracy
+    alt_msl_m: 584.0             # SITL home alt (SIMSTATE has no altitude)
+    src: stub                    # source tag in the fix
+    gps_id: 0                    # gid
+  output:
+    kind: messages               # intermodule messages, not de.cap/1 events
+    emits: [9103]                # TYPE_AndruavModule_GNSS_Fix
+    state: [enabled]
+    actions: [start, stop]       # the control command that gates the output

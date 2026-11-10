@@ -1,0 +1,22 @@
+# android_gps_input (SL-0233): the phone's de_comm and de_mavlink feed
+# GPS_INPUT to a SITL copter that has the MAV-GPS params (no simulated
+# GPS). The GNSS source is the phone itself (the Andruav app sends 9103
+# from its own GPS). Hardware leg: needs an adb phone.
+# FAILS until the app and de_mavlink send GPS_INPUT.
+version: 1
+audience: extended
+name: android_gps_input
+tasks: [SL-0233]
+realtime: true
+transport: real
+settle_s: 10
+fleet:
+  - {id: phone1, cls: android_copter,
+     params: {GPS1_TYPE: 14, SIM_GPS1_ENABLE: 0, EK3_GPS_CHECK: 23},
+     android: {remote_modules: [de_comm, de_mavlink]}}
+timeline:
+  - {t: 0, do: wait, seconds: 30}   # SITL boot, no GPS yet
+  - {t: 40, do: wait, seconds: 60}
+assert:
+  - telemetry_value: {unit: phone1, field: fix_type, at_least: 3}
+teardown: reset

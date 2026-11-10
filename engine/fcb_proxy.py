@@ -42,6 +42,17 @@ control-port convention; ctl.py `fcb_*` commands talk here):
                                 probability; 'all' clears the msgid rules
     inject <hex>                write raw bytes towards de_mavlink (the
                                 TASK-14 world ADS-B hook)
+    capture <msgid> <file>      write each frame of <msgid> that
+                                de_mavlink sends to SITL (c2s) into
+                                <file>, one JSON row per frame:
+                                {t_ms, msgid, seq, sysid, compid, len,
+                                payload (hex)}. The file is truncated
+                                when the capture starts; the frame is
+                                recorded as it arrives, before any drop
+                                or corrupt rule (SL-0233; the fcb_frames
+                                assertion reads it). 'capture <msgid>
+                                off' stops one, 'capture all off' all.
+                                `clear` leaves captures running.
     clear                       remove corrupt/drop rules and end any
                                 running cut/stall
     stats                       counters + the active rules
@@ -54,6 +65,7 @@ the nominal path.
 """
 
 import argparse
+import json
 import random
 import socket
 import sys
@@ -182,6 +194,8 @@ class FcbProxy:
         self.cut_until = 0.0         # drop every connection before this time
         self.stall_until = 0.0       # pump nothing before this time
         self.rules = {"drop_pct": 0.0, "flip_pct": 0.0, "msgids": {}}
+        # SL-0233 `capture` rule: msgid -> output file (c2s frames only)
+        self.captures = {}
         # SL-0101 `rate` rule: one token bucket per direction, both
         # paced at the same baud/10 bytes a second
         self.buckets = {"c2s": RateBucket(), "s2c": RateBucket()}
@@ -384,13 +398,31 @@ class FcbProxy:
                 st["overflow"] += n
             i += n
 
+    def _capture(self, path, buf, i, fl, msgid):
+        """Append one frame of a captured msgid to its file (SL-0233)."""
+        v1 = buf[i] == STX_V1
+        hdr = 6 if v1 else 10
+        ln = buf[i + 1]
+        row = {"t_ms": int(time.time() * 1000), "msgid": msgid,
+               "seq": buf[i + 2] if v1 else buf[i + 4],
+               "sysid": buf[i + 3] if v1 else buf[i + 5],
+               "compid": buf[i + 4] if v1 else buf[i + 6],
+               "len": ln,
+               "payload": bytes(buf[i + hdr:i + hdr + ln]).hex()}
+        try:
+            with open(path, "a") as f:
+                f.write(json.dumps(row) + "\n")
+        except OSError as e:
+            self.log(f"capture write failed: {e}")
+
     def _shape(self, buf, direction):
         """Apply the corruption rules to buf's complete frames; consume
         what was forwarded. Rules empty -> pass everything through."""
         rules = self.rules
         st = self.stats[direction]
+        capture = self.captures if direction == "c2s" else None
         if not rules["drop_pct"] and not rules["flip_pct"] \
-                and not rules["msgids"]:
+                and not rules["msgids"] and not capture:
             # fast path: no per-frame parse, but still account the
             # bytes so `stats` reports real traffic without rules
             st["bytes"] += len(buf)
@@ -413,6 +445,8 @@ class FcbProxy:
             msgid = _frame_msgid(buf, i)
             st["frames"] += 1
             st["bytes"] += fl
+            if capture and msgid in capture:
+                self._capture(capture[msgid], buf, i, fl, msgid)
             # byte_drop_pct is a per-BYTE loss rate: a lost byte kills
             # its frame, so this frame dies with 1-(1-p)^fl - the exact
             # frame-loss rate the same channel would show on a UART
@@ -505,6 +539,25 @@ class FcbProxy:
                 return f"ERR inject failed: {e}"
             self.log(f"inject {len(raw)} bytes -> client")
             return f"inject {len(raw)} bytes"
+        if c == "capture":
+            if len(parts) < 3:
+                return "ERR usage: capture <msgid> <file>|off"
+            if parts[2] == "off":
+                if parts[1] == "all":
+                    self.captures = {}
+                else:
+                    self.captures.pop(int(parts[1], 0), None)
+                self.log(f"capture {parts[1]} off")
+                return f"capture {parts[1]} off"
+            msgid = int(parts[1], 0)
+            path = " ".join(parts[2:])
+            try:
+                open(path, "w").close()
+            except OSError as e:
+                return f"ERR capture file: {e}"
+            self.captures[msgid] = path
+            self.log(f"capture msgid {msgid} -> {path}")
+            return f"capture msgid {msgid} -> {path}"
         if c == "clear":
             self.rules = {"drop_pct": 0.0, "flip_pct": 0.0, "msgids": {}}
             self.cut_until = self.stall_until = 0.0
@@ -533,7 +586,8 @@ class FcbProxy:
                 f"rules drop={self.rules['drop_pct']}% "
                 f"flip={self.rules['flip_pct']}% "
                 f"msgids={self.rules['msgids']} "
-                f"rate={bps * 10:g}baud\n"
+                f"rate={bps * 10:g}baud "
+                f"captures={self.captures}\n"
                 f"{' '.join(state) or 'clean'}")
         if c == "quit":
             return "OK"

@@ -1,0 +1,13 @@
+description: |
+  Boat whose FC takes its GPS over MAVLink (GPS_INPUT) from de_mavlink,
+  with no simulated GPS (SL-0233). GPS1_TYPE 14 is MAV, SIM_GPS1_ENABLE 0
+  turns the SITL GPS off, EK3_GPS_CHECK 23 sets the checks used for
+  ArduPilot 4.6. Add a GNSS source on the bus (stub_gnss) and the FC
+  gets a fix only through de_mavlink; with no source the fix stays below
+  3D.
+extends: boat
+fc:
+  params:
+    GPS1_TYPE: 14
+    SIM_GPS1_ENABLE: 0
+    EK3_GPS_CHECK: 23

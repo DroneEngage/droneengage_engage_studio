@@ -1,0 +1,29 @@
+# copter_ntrip (SL-0233): de_mavlink reads the corrections from an NTRIP
+# caster. Start the fake caster on this host BEFORE the run:
+#   python3 tools/fake_ntrip_caster.py --port 2101 --mount STUDIO \\
+#       --user studio --password studio --log var/ntrip_caster.log --loop
+# stub_gnss gives the fix; the caster must log the GGA lines that
+# de_mavlink sends. The NTRIP settings keys follow the de_mavlink NTRIP
+# task (check them there when it lands).
+# FAILS until de_mavlink has the NTRIP client.
+version: 1
+audience: extended
+name: copter_ntrip
+tasks: [SL-0233]
+realtime: true
+speedup: 1                   # the stubs and the world run on wall clock
+transport: fake
+world: ../../worlds/forest_a.yaml
+settle_s: 10
+fleet:
+  - {id: copter1, cls: copter_mav_gps, modules: [stub_gnss],
+     config: {de_mavlink: {ntrip: {host: 127.0.0.1, port: 2101,
+                                   mountpoint: STUDIO, user: studio,
+                                   password: studio}}}}
+timeline:
+  - {t: 0, do: wait, seconds: 30}   # SITL boot, no GPS yet
+  - {t: 40, do: wait, seconds: 40}
+assert:
+  - telemetry_value: {unit: copter1, field: fix_type, at_least: 3}
+  - module_log_count: {unit: copter1, module: de_mavlink, re: "(?i)ntrip.*connected", at_least: 1}
+teardown: reset

@@ -45,6 +45,9 @@ Journal assertions keep the runner.py semantics (same helpers, same
   - MAVLink mission:     fc_items_unchanged_without_cause, mission_items
                          (count on the FC), mission_pull (the GCS 1027
                          chunk read-back the WebClient draws)
+  - fcb capture:         fcb_frames (SL-0233) - count, rate and
+                         reassembled payload bytes of the frames an
+                         fcb_proxy `capture` rule wrote
   - UDP proxy:           udp_proxy_mavlink - the unit's 1071 {a,p}
                          endpoint, then raw-datagram HEARTBEAT counting
                          (through the spawned udp_relay)
@@ -486,6 +489,136 @@ def _fcb_stats(name, a, ctx):
                         f" (>={min_frames})")
     return _r(name, "PASS" if ok else "FAIL",
               sum(vals) / len(vals) if vals else 0, "; ".join(bits))
+
+
+def capture_rows(path, msgid=None):
+    """Rows of an fcb_proxy `capture` file (SL-0233): one JSON object per
+    frame {t_ms, msgid, seq, len, payload (hex)}. [] when absent."""
+    rows = []
+    if not path or not os.path.isfile(path):
+        return rows
+    for ln in open(path, errors="replace"):
+        try:
+            r = json.loads(ln)
+        except ValueError:
+            continue
+        if msgid is None or r.get("msgid") == msgid:
+            rows.append(r)
+    return rows
+
+
+def reassemble_rtcm(rows):
+    """Payload bytes of GPS_RTCM_DATA (233) rows, in the FC's order.
+    The wire payload is flags(u8) len(u8) data[180], zero-trimmed by
+    MAVLink v2. flags: bit 0 fragmented, bits 1-2 fragment id, bits 3-7
+    sequence id. Fragments of one sequence id are joined in fragment
+    order; every message adds data[:len]."""
+    out = bytearray()
+    group, gseq = [], None
+
+    def flush():
+        for _fid, data in sorted(group, key=lambda g: g[0]):
+            out.extend(data)
+        group.clear()
+
+    for r in rows:
+        raw = bytes.fromhex(r.get("payload", "")).ljust(182, b"\0")
+        flags, n = raw[0], min(raw[1], 180)
+        data = raw[2:2 + n]
+        if not flags & 1:
+            flush()
+            gseq = None
+            out.extend(data)
+            continue
+        sid, fid = flags >> 3, (flags >> 1) & 3
+        if gseq is not None and sid != gseq:
+            flush()
+        gseq = sid
+        group.append((fid, data))
+    flush()
+    return bytes(out)
+
+
+def _fcb_frames(name, a, ctx):
+    """fcb_frames {file | unit, msgid, min_count, max_count, min_rate_hz,
+    max_rate_hz, payload_bytes, min_payload_bytes, reassemble,
+    expect_file}: judge the frames an fcb_proxy `capture <msgid> <file>`
+    wrote - what de_mavlink really sent to the FC (SL-0233).
+
+    file: the capture file; relative to the scenario file, else (with
+    unit) the unit's run dir - default <unit>/fcb_capture_<msgid>.jsonl.
+    rate = (count-1) / (last t_ms - first t_ms), so it needs 2 frames.
+    payload_bytes: the summed MAVLink payload length; min_payload_bytes
+    is the floor. reassemble: "gps_rtcm_data" joins the 233 fragments
+    (reassemble_rtcm) and the joined size feeds payload_bytes /
+    min_payload_bytes; expect_file (relative like file) must equal the
+    joined bytes exactly."""
+    msgid = a.get("msgid")
+    msgid = None if msgid is None else int(msgid)
+    path = a.get("file")
+    if not path:
+        us = _units(a, ctx) if a.get("unit") is not None else []
+        if not us or msgid is None:
+            return _r(name, "FAIL", None,
+                      "fcb_frames needs `file`, or `unit` + `msgid`")
+        path = os.path.join(simlib.unit_dir(us[0]),
+                            f"fcb_capture_{msgid}.jsonl")
+    elif not os.path.isabs(path):
+        path = os.path.join(os.path.dirname(ctx["file"]), path)
+    if not os.path.isfile(path):
+        return _r(name, "SKIP", None, f"no capture file {path}")
+    rows = capture_rows(path, msgid)
+    n = len(rows)
+    bits, ok = [f"count={n}"], True
+
+    def need(good, txt):
+        nonlocal ok
+        ok &= good
+        bits.append(txt + ("" if good else " FAIL"))
+
+    if "min_count" in a:
+        need(n >= int(a["min_count"]), f"count>={a['min_count']}")
+    if "max_count" in a:
+        need(n <= int(a["max_count"]), f"count<={a['max_count']}")
+    rate = None
+    if n >= 2:
+        span = (rows[-1]["t_ms"] - rows[0]["t_ms"]) / 1000.0
+        rate = (n - 1) / span if span > 0 else None
+    if "min_rate_hz" in a or "max_rate_hz" in a:
+        bits.append("rate=" + ("n/a" if rate is None else f"{rate:.2f}Hz"))
+        if "min_rate_hz" in a:
+            need(rate is not None and rate >= float(a["min_rate_hz"]),
+                 f"rate>={a['min_rate_hz']}")
+        if "max_rate_hz" in a:
+            need(rate is not None and rate <= float(a["max_rate_hz"]),
+                 f"rate<={a['max_rate_hz']}")
+    total = sum(int(r.get("len", 0)) for r in rows)
+    joined = None
+    if a.get("reassemble"):
+        if str(a["reassemble"]) != "gps_rtcm_data":
+            return _r(name, "FAIL", None, "reassemble must be "
+                      "gps_rtcm_data")
+        joined = reassemble_rtcm(rows)
+        total = len(joined)
+        bits.append(f"reassembled={total}B")
+    else:
+        bits.append(f"payload={total}B")
+    if "payload_bytes" in a:
+        need(total == int(a["payload_bytes"]),
+             f"bytes=={a['payload_bytes']}")
+    if "min_payload_bytes" in a:
+        need(total >= int(a["min_payload_bytes"]),
+             f"bytes>={a['min_payload_bytes']}")
+    if a.get("expect_file"):
+        ef = a["expect_file"]
+        if not os.path.isabs(ef):
+            ef = os.path.join(os.path.dirname(ctx["file"]), ef)
+        want = open(ef, "rb").read() if os.path.isfile(ef) else None
+        if joined is None or want is None:
+            return _r(name, "FAIL", total,
+                      "expect_file needs reassemble and an existing file")
+        need(joined == want, f"bytes match {os.path.basename(ef)}")
+    return _r(name, "PASS" if ok else "FAIL", n, "; ".join(bits))
 
 
 def _bt_no_squatters(name, a, ctx):
@@ -3167,6 +3300,7 @@ DISPATCH = {
     "status_field": _status_field,
     "adsb_vehicle": _adsb_vehicle,
     "fcb_stats": _fcb_stats,
+    "fcb_frames": _fcb_frames,
     "bt_no_squatters": _bt_no_squatters,
 }
 

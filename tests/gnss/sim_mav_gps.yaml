@@ -1,0 +1,17 @@
+# SL-0233 sim: one unit of each MAV-GPS block. Used by `./sim show` to
+# check that every unit gets GPS1_TYPE 14, SIM_GPS1_ENABLE 0 and
+# EK3_GPS_CHECK 23, and as a place to bring all three FCs up by hand.
+description: |
+  Sim: copter, rover and boat whose FC takes GPS over MAVLink
+  (GPS1_TYPE 14, no simulated GPS). No GNSS source is added, so the
+  fix stays below 3D until a stub_gnss or a phone sends 9103.
+version: 1
+audience: extended
+requires: []
+slot_base: 120
+server:
+  type: fake
+units:
+  - {block: copter_mav_gps, name: copter1}
+  - {block: rover_mav_gps, name: rover1}
+  - {block: boat_mav_gps, name: boat1}
