@@ -123,6 +123,11 @@ transport - the per-unit proxy is ours, not the server's):
   fcb_inject <unit> <hex>         raw MAVLink bytes towards de_mavlink
   fcb_clear <unit>                remove rules, end any cut/stall
   fcb_stats <unit>                proxy counters + active rules
+  fcb_capture <unit> <msgid> [file|off]
+                                  one JSON row per client->FC frame of
+                                  <msgid> (default <unit>/fcb_capture_
+                                  <msgid>.jsonl; a relative file lands in
+                                  the unit dir; `off` stops it)
   fcb_unplug <unit> [s]           pull the serial cable a `fcb_link`
                                   (kind pty/host_serial/bt_spp/udp)
                                   unit's
@@ -3331,7 +3336,8 @@ def main(argv):
             finally:
                 m.close()
     elif c in ("fcb_cut", "fcb_stall", "fcb_rate", "fcb_corrupt",
-               "fcb_drop", "fcb_inject", "fcb_clear", "fcb_stats"):
+               "fcb_drop", "fcb_inject", "fcb_clear", "fcb_stats",
+               "fcb_capture"):
         # SL-0008: the per-unit fcb proxy's control port - the fault is
         # ours, no server involved (any transport works)
         us = with_fc(resolve(a[0]))
@@ -3354,6 +3360,15 @@ def main(argv):
                 fcb_ctrl(u, f"inject {a[1]}")
             elif c == "fcb_clear":
                 fcb_ctrl(u, "clear")
+            elif c == "fcb_capture":
+                if len(a) > 2 and a[2] == "off":
+                    fcb_ctrl(u, f"capture {a[1]} off")
+                else:
+                    path = (a[2] if len(a) > 2
+                            else f"fcb_capture_{a[1]}.jsonl")
+                    if not os.path.isabs(path):
+                        path = os.path.join(simlib.unit_dir(u), path)
+                    fcb_ctrl(u, f"capture {a[1]} {path}")
             else:
                 fcb_ctrl(u, "stats")
     elif c in ("fcb_unplug", "fcb_plug"):

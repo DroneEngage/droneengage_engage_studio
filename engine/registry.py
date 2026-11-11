@@ -246,6 +246,11 @@ VERBS = [
     V("fcb_stats", "probe", opt=["unit"],
       doc="the unit's fcb proxy counters + active rules",
       eg="{t: 60, do: fcb_stats, unit: c1}"),
+    V("fcb_capture", "step", req=["unit", "msgid"], opt=["file"],
+      doc="capture each client->FC frame of msgid to a JSONL file "
+          "(default <unit>/fcb_capture_<msgid>.jsonl; a relative file "
+          "lands in the unit dir; `off` stops it) (SL-0233)",
+      eg="{t: 5, do: fcb_capture, unit: c1, msgid: 233}"),
     V("cpu_starve", "step", opt=["unit", "proc", "module", "duty_pct",
                                  "cycle_ms", "dur_s"],
       doc="SIGSTOP/SIGCONT duty cycle on a proc (SL-0014)",
@@ -649,6 +654,14 @@ VERBS = [
       doc="the unit's fcb proxy counters read live off its ctrl port "
           "(SL-0104: bytes moved through a bridged serial adapter)",
       eg="{fcb_stats: {unit: c1, direction: both, min_bytes: 1}}"),
+    V("fcb_frames", "check",
+      opt=["unit", "file", "msgid", "min_count", "max_count",
+           "min_rate_hz", "max_rate_hz", "payload_bytes",
+           "min_payload_bytes", "reassemble", "expect_file"],
+      doc="judge an fcb_capture JSONL: count, rate and summed payload; "
+          "reassemble: gps_rtcm_data joins the 233 fragments and "
+          "expect_file must equal the joined bytes (SL-0233)",
+      eg="{fcb_frames: {unit: c1, msgid: 233, min_count: 1}}"),
     V("bt_no_squatters", "check", opt=["unit"],
       doc="no foreign process holds an RFCOMM socket - a squatter "
           "(kdeconnectd is the known thief) steals a bt_spp unit's "

@@ -134,7 +134,7 @@ _UNIT_STEPS = {"arm", "land", "reset", "wait_journal", "wait_log",
                "delay", "link_cut", "kick", "commline", "link_clear", "kill",
                "link", "restart", "freeze", "unfreeze",
                "fcb_cut", "fcb_stall", "fcb_corrupt", "fcb_drop",
-               "fcb_inject", "fcb_clear", "fcb_stats",
+               "fcb_inject", "fcb_clear", "fcb_stats", "fcb_capture",
                "fcb_unplug", "fcb_plug",
                "journal", "mode", "disarm", "fire", "fc",
                "write_file", "beacon", "mission_save", "mission_load",
@@ -384,6 +384,9 @@ def run_step(step, t, marks, log_events=None):
         return run_ctl("fcb_inject", unit, arg["hex"])
     if name in ("fcb_clear", "fcb_stats"):
         return run_ctl(name, unit)
+    if name == "fcb_capture":
+        extra = [arg["file"]] if arg.get("file") else []
+        return run_ctl("fcb_capture", unit, arg["msgid"], *extra)
     if name in ("fcb_unplug", "fcb_plug"):
         # SL-0107: the one-shot pull/plug of the serial bridge - the
         # `fault: fcb_unplug` + dur_s form replugs on a timer; these

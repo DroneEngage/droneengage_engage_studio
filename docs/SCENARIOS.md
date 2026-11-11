@@ -265,6 +265,7 @@ runner. `unit:` takes a name, `all`, a comma list, or `block:<name>`:
 | `journal_unwritable` / `journal_writable` | `unit` — the journal dir goes read-only / is restored (SL-0014) |
 | `clock_step` | `unit`, `offset_s` — step a `faketime: true` unit's de_comm clock (SL-0014) |
 | `fcb_cut` / `fcb_stall` / `fcb_rate` / `fcb_corrupt` / `fcb_drop` / `fcb_inject` / `fcb_clear` / `fcb_stats` | `unit`, `seconds`/`ms`/`baud`/`drop_pct`/`flip_pct`/`msgid`/`hex` — one-shot fcb-proxy faults + rule/counter probes (need `fcb_proxy: true`) |
+| `fcb_capture` | `unit`, `msgid`, `file` (`<unit>/fcb_capture_<msgid>.jsonl`) — one JSON row per client→FC frame of `msgid`; a relative `file` lands in the unit dir, `off` stops the capture (needs `fcb_proxy: true`; judge the file with the `fcb_frames` assert) (SL-0233) |
 | `fcb_unplug` / `fcb_plug` | `unit` — one-shot pull/replug of the serial device an `fcb_link` (pty/host_serial/bt_spp/udp) unit's client sits on: the serial bridge's (fcb_tty / bt_spp) whole process group is killed/restarted so the device node really vanishes (SL-0103); `fault: fcb_unplug` + `dur_s` replugs on a timer — these steps script the pair by hand, e.g. replug after a `wait_journal` (SL-0107; `./sim ctl fcb_unplug <unit> [s]` is the blocking console form) |
 | `server_up` / `links` / `roster_peers` / `event` / `send` / `clock_offset` | server/console misc |
 
@@ -380,7 +381,9 @@ TCP stream never desyncs. A "dropped byte" kills its whole frame at a
 `pct × frame_len` rate. This matches the same byte-error channel. The
 same control port takes the `do:`/`ctl` steps `fcb_drop` (one msgid
 only), `fcb_inject` (raw MAVLink hex towards de_mavlink — the TASK-14
-ADS-B hook), `fcb_clear` and `fcb_stats`. The serial2 aux telemetry
+ADS-B hook), `fcb_capture` (one JSON row per client→FC frame of a
+msgid — the `fcb_frames` assert reads it back), `fcb_clear` and
+`fcb_stats`. The serial2 aux telemetry
 port and the GCS pilot port bypass the proxy. So `telemetry_*` and
 `mission_items` asserts keep working through a cut. Without `fcb_proxy`
 a unit is unchanged: same hash, `de_mavlink` dials SITL directly.
@@ -484,6 +487,7 @@ Each entry is one `{name: {args}}` mapping. Common ones:
 | `obs_frames` | `unit`, `min_frames`, `cls`, `trk_stable`, `attrs` | the stub's 6546 obs frames: per-frame cls multiset, stable track set, attr bounds (SL-0034) |
 | `proc_alive` / `proc_dead` | `unit`, `proc` | process state at end |
 | `fcb_stats` | `unit`, `direction` (`both`\|`c2s`\|`s2c`), `min_bytes` (1), `min_frames` | the unit's fcb proxy counters read live off its ctrl port — did the wire carry MAVLink (SL-0104 host_serial evidence; `bytes` counts always, `frames` while corruption rules are armed) |
+| `fcb_frames` | `unit`+`msgid` or `file`, `min_count`, `max_count`, `min_rate_hz`, `max_rate_hz`, `payload_bytes`, `min_payload_bytes`, `reassemble`, `expect_file` | judge an `fcb_capture` JSONL — frame count, rate and summed payload; `reassemble: gps_rtcm_data` joins the 233 fragments (joined size feeds `payload_bytes`/`min_payload_bytes`) and `expect_file` must equal the joined bytes (SL-0233) |
 | `bt_no_squatters` | `unit` | no foreign (non-sim, non-root) process holds an RFCOMM socket — a squatter on a `bt_spp` unit's channel accepts the client's dial instead of our bridge (kdeconnectd's SPP listener is the known thief; SL-0105) |
 | `adsb_vehicle` | `icao` (hex/dec), `tid` (world entity), `at_least` (1), `max_m` (50), `log`/`unit` | the GCS bridge (or `log:`/unit proc stdout) saw ≥ `at_least` `ADSB_VEHICLE` frames with this ICAO, each within `max_m` of the entity's truth position at frame time |
 | `gcs_msg` | `mt`, `re`, `secs` (20) | the GCS session receives a message of type `mt` within `secs` whose `ms` body matches `re` (applied to the compact-dumped ms object - use `(?=...)` lookaheads for unordered fields) |
