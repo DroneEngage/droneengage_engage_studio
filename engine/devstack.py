@@ -59,7 +59,8 @@ OUT_HOST_RX = re.compile(r"^[A-Za-z0-9.:-]+$")
 
 def _load_stacks():
     """stacks/*.yaml -> {name: {"procs": [{name, repo, repo_env, bin,
-    port_env, kind}], "up_timeout_s", "open_url", "up_note"}}. Proc
+    port_env, kind}], "up_timeout_s", "open_url", "up_note",
+    "help_note"}}. Proc
     order is launch order. A malformed file raises SimError naming it -
     a stack typo must never abort with a traceback."""
     stacks = {}
@@ -184,12 +185,13 @@ def _load_stacks():
                 raise simlib.SimError(
                     f"{base}: provides targets unknown proc(s) "
                     f"{sorted(unknown)}")
-        for k in ("open_url", "up_note"):
+        for k in ("open_url", "up_note", "help_note"):
             if spec.get(k) is not None and not isinstance(spec[k], str):
                 raise simlib.SimError(f"{base}: {k} must be a string")
         stacks[name] = {"procs": out, "up_timeout_s": int(timeout),
                         "open_url": spec.get("open_url"),
                         "up_note": spec.get("up_note"),
+                        "help_note": spec.get("help_note"),
                         "provides": prov}
     return stacks
 
@@ -601,6 +603,10 @@ def render_help(stack):
             f"  ./sim up {stack} --restart"]
     if has_out:
         out.append(f"  ./sim up {stack} --out 192.168.1.20")
+    note = spec["help_note"]
+    if note:
+        out += ["", note.rstrip().replace("{webclient_url}",
+                                          simlib.WEBCLIENT_URL)]
     return "\n".join(out)
 
 

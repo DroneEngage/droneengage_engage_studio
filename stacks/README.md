@@ -11,6 +11,9 @@ open_url: "{webclient_url}" # optional: what --open-web opens and
                             # `sim status` shows for this stack.
                             # {port} substitutes the first proc's port
 up_note: "..."              # optional line printed after a successful up
+help_note: "..."            # optional text appended to
+                            # `./sim up <stack> --help` ({webclient_url}
+                            # substituted)
 provides:                   # optional: capabilities this stack lends
   render_web: m3d_web       #   sims - <what>: <proc name>. A live
                             #   stack's `render_web` replaces a render:

@@ -8,6 +8,15 @@ name: de_webclient
 up_timeout_s: 90
 open_url: "{webclient_url}"
 up_note: "de_webclient up - {webclient_url} (the first compile takes a while - `./sim logs de_webclient` to watch)"
+# `./sim up de_webclient --help` text, appended after the examples.
+# The webclient picks its auth/server target from the deep-link URL
+# params, so --auth-server on `up` has no effect here.
+help_note: |
+  point it at another authenticator or comm server through the
+  deep-link url params, e.g.:
+    {webclient_url}/?authserver=<host>[:<port>]&email=<user>&accesscode=<code>
+  or, with no login, straight at a comm server:
+    {webclient_url}/?server=<host>[:<port>]
 procs:
   - name: de_webclient
     kind: npm
