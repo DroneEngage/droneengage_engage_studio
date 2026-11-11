@@ -3855,8 +3855,11 @@ def gen_module(u, sim, m, catalog):
         # reach de_comm - over-MTU datagrams IP-fragment and
         # phones drop fragments, so cap chunks at a WAN-safe size
         mcfg["s2s_udp_packet_size"] = "1400"
+    # DE-0144: a unix-bus module holds no s2s port lease - .get() lets a
+    # `wire:` spec still render (a {port} reference lands "None", which is
+    # honest: the module's bus is the unix socket, not a leased UDP port)
     mcfg = deep_merge(mcfg, _fill(spec.get("wire") or {},
-                                  dict(ctx, port=u["ports"][m],
+                                  dict(ctx, port=u["ports"].get(m),
                                          module=m)))
     if m == "de_mavlink" and ctx.get("fcb_serial_path"):
         # SL-0102: the serial uri replaces the template's tcp keys
