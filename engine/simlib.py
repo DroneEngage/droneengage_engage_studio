@@ -2171,14 +2171,19 @@ def _expand_unit(sim, b, name, entry, at, catalog):
         # from every layer SITL boots with (ArduPilot defaults, the
         # template/vehicle/block .parm files, then inline params). Rates
         # apply at boot only.
-        if sim.get("render"):
-            u["fc"]["mav_port"] = sim["render"]["mav_port"]
-            parm_layers = read_parm_files(
+        # the .parm layers SITL boots with, read once for both channel
+        # resolutions below - each computes its own effective map AFTER
+        # the other blocks' writes, so SERIAL4's switch to MAVLink is
+        # counted when serial5's index resolves
+        parm_layers = (read_parm_files(
                 [d if os.path.isabs(d) else os.path.join(ARDUPILOT_DIR, d)
                  for d in u["fc"]["defaults"]]
                 + [os.path.join(TEMPLATES_DIR, "sitl_common.parm")]
                 + [os.path.join(TEMPLATES_DIR, x) for x in kind["extra"]]
                 + u["parm_files"])
+            if sim.get("render") or u["fc"].get("pose_serial") else {})
+        if sim.get("render"):
+            u["fc"]["mav_port"] = sim["render"]["mav_port"]
             eff_params = deep_merge(
                 deep_merge(parm_layers, u["fc"]["params"]),
                 u["config"].get("sitl"))
@@ -2189,6 +2194,24 @@ def _expand_unit(sim, b, name, entry, at, catalog):
                  f"SR{mav_n}_RC_CHAN": 2, f"SR{mav_n}_EXT_STAT": 2,
                  f"MAV{mav_n}_POSITION": 10, f"MAV{mav_n}_EXTRA1": 10,
                  f"MAV{mav_n}_RC_CHAN": 2, f"MAV{mav_n}_EXT_STAT": 2},
+                u["fc"]["params"])
+        # DE-0143: a pose stub streams SITL truth off serial5 but can
+        # only SET_MESSAGE_INTERVAL after it connects - a request lost
+        # to early FC boot starves the feed for the whole run (the link
+        # still carries other traffic, so recv_match never times out).
+        # Set the rates at the param level instead: n is serial5's
+        # MAVLink channel over the same effective params, resolved after
+        # every protocol-setting block (render's SERIAL4 is one and
+        # shifts the index). ~4 Hz: EXTRA1 carries ATTITUDE+SIMSTATE,
+        # POSITION carries GLOBAL_POSITION_INT.
+        if u["fc"].get("pose_serial"):
+            eff_params = deep_merge(
+                deep_merge(parm_layers, u["fc"]["params"]),
+                u["config"].get("sitl"))
+            mav_n = mav_chan_index(eff_params, 5)
+            u["fc"]["params"] = deep_merge(
+                {f"SR{mav_n}_EXTRA1": 4, f"SR{mav_n}_POSITION": 4,
+                 f"MAV{mav_n}_EXTRA1": 4, f"MAV{mav_n}_POSITION": 4},
                 u["fc"]["params"])
         if link_kind == "pty":
             baud = int(fl.get("baud", 57600))

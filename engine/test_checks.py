@@ -661,6 +661,41 @@ class T(unittest.TestCase):
         self.assertEqual(static["pose_port"], 0)
         self.assertEqual(static["sysid"], 1)
 
+    def test_pose_serial_stamps_rates_on_serial5_channel(self):
+        """DE-0143: a unit with a `pose` catalog module gets the serial5
+        stream rates stamped at the param level (a SET_MESSAGE_INTERVAL
+        lost to early FC boot used to starve the feed for the whole
+        run). n is serial5's MAVLink channel - resolved after every
+        protocol-setting block, so a render-enabled sim that turns
+        serial4 MAVLink shifts n by one."""
+        def pose_spec(render=None):
+            return {"version": 1, "name": "pose_rates",
+                    "server": {"type": "fake"}, "slot_base": 35,
+                    "render": render,
+                    "units": [{"name": "p1", "block": "copter",
+                               "add_modules": ["stub_ai_box"]}]}
+        def params(render=None):
+            sim = simlib.load_sim(
+                {k: v for k, v in pose_spec(render).items()
+                 if v is not None})
+            return sim["units"][0]["fc"]["params"]
+        # serials 0-2 are MAVLink, 3/4 GPS - serial5 is channel 4
+        p = params()
+        for key in ("SR4_EXTRA1", "SR4_POSITION",
+                    "MAV4_EXTRA1", "MAV4_POSITION"):
+            self.assertEqual(p[key], 4, key)
+        self.assertNotIn("SR5_EXTRA1", p)
+        self.assertEqual(p["SERIAL5_PROTOCOL"], 2)
+        self.assertEqual(p["SERIAL5_BAUD"], 57)
+        # render makes serial4 MAVLink too - serial5 moves to channel 5
+        p = params({"mode": "viewer"})
+        for key in ("SR5_EXTRA1", "SR5_POSITION",
+                    "MAV5_EXTRA1", "MAV5_POSITION"):
+            self.assertEqual(p[key], 4, key)
+        # SR4_* belongs to the render feed itself (serial4 = channel 4)
+        self.assertEqual(p["SR4_EXTRA1"], 10)
+        self.assertEqual(p["SERIAL5_PROTOCOL"], 2)
+
     def _conflict_pair(self, server_type="fake",
                        new_modules=None, other_modules=None):
         """(resolved sim, live manifest) sharing unit names on disjoint
