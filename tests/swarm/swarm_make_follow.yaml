@@ -1,0 +1,59 @@
+# swarm/make_follow - MV-0028 acceptance: de_mavlink advertises the real
+# de.cap/1 "swarm" namespace. A v2 op `do: swarm.make {a:2}` on uav1 rides
+# CAPABILITY_INVOKE (journal "-> invoke on", no "via legacy bridge") and the
+# unit reports leader formation in its ID field o. `do: swarm.follow
+# {a:-1,b:uav1,f:1}` on uav2 sends the same UpdateSwarm join request the
+# bridge path sent - uav1 logs "add Follower uav2", answers with
+# FollowHim_Request, and uav2 logs "Follow uav1 index:0".
+version: 1
+audience: extended
+requires: []
+name: swarm_make_follow
+tasks: [MV-0028]
+transport: fake
+operation: ops/swarm_make_follow.deop
+verify: {cli: ../../tools/verify_wrap.js}
+settle_s: 30
+fleet:
+  - {id: uav1, cls: copter}
+  - {id: uav2, cls: copter}
+timeline:
+  - {t: 0, do: wait_online, timeout: 180}
+  - {t: 5, do: deploy, timeout: 300}
+  - {t: 15, do: wait_ready, unit: "all", timeout: 240}
+  - {t: 20, do: start, timeout: 300}
+  - {t: 30, do: wait_journal, unit: uav1,
+     re: "S: lead do swarm\\.make", timeout: 120}
+  - {t: 30, do: wait_journal, unit: uav2,
+     re: "S: join do swarm\\.follow", timeout: 120}
+  - {t: 35, do: wait_journal, unit: uav1,
+     re: "swarm\\.make -> invoke on", timeout: 60}
+  - {t: 35, do: wait_journal, unit: uav2,
+     re: "swarm\\.follow -> invoke on", timeout: 60}
+  - {t: 40, do: wait_log, unit: uav1, module: de_mavlink,
+     re: "add Follower uav2", timeout: 60}
+  - {t: 45, do: wait_log, unit: uav2, module: de_mavlink,
+     re: "Follow uav1 index:0", timeout: 60}
+  - {t: 50, do: wait_journal, unit: uav1,
+     re: "S: lead emit swarm\\.lead_done", timeout: 60}
+  - {t: 55, do: wait_journal, unit: uav2,
+     re: "S: join emit swarm\\.join_done", timeout: 60}
+  - {t: 60, do: stop}
+assert:
+  - journal_count: {unit: uav1, re: "swarm\\.make -> invoke on", at_least: 1}
+  - journal_count: {unit: uav2, re: "swarm\\.follow -> invoke on", at_least: 1}
+  - journal_count: {unit: uav1,
+                    re: "ACTION_RESULT .* ok \\(swarm\\.make\\)",
+                    at_least: 1}
+  - journal_count: {unit: uav2,
+                    re: "ACTION_RESULT .* ok \\(swarm\\.follow\\)",
+                    at_least: 1}
+  - no_journal: {unit: uav1, re: "via legacy bridge"}
+  - no_journal: {unit: uav2, re: "via legacy bridge"}
+  - module_log_count: {unit: uav1, module: de_mavlink,
+                       re: "add Follower uav2", at_least: 1}
+  - module_log_count: {unit: uav2, module: de_mavlink,
+                       re: "Follow uav1 index:0", at_least: 1}
+  - gcs_msg: {mt: 1004, re: '"o":\s*2', secs: 30}
+  - gcs_msg: {mt: 1004, re: '"q":"uav1"', secs: 30}
+teardown: none

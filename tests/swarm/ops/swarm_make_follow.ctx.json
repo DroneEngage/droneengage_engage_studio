@@ -1,0 +1,237 @@
+{
+    "_note": "MV-0028 ctx: role \"leader\" binds uav1, role \"follower\" binds uav2 - registries.uavN is the serialized 1089 caps view (swarm.unit.caps.json) so swarm.* actions resolve against the real de_mavlink advert at compile time.",
+    "binding": {
+        "leader": [
+            "uav1"
+        ],
+        "follower": [
+            "uav2"
+        ]
+    },
+    "registries": {
+        "uav1": {
+            "caps": {
+                "swarm": {
+                    "ch": "s1",
+                    "module": "uav1-de_mavlink",
+                    "ver": "7.5.11.0",
+                    "advert": {
+                        "actions": {
+                            "follow": {
+                                "desc": "f=1 follow leader b at slot a (-1 = any); f=2 unfollow; f=3 change follower formation to d",
+                                "params": {
+                                    "a": {
+                                        "desc": "follower slot index, -1 = any (required when f=1)",
+                                        "min": -1,
+                                        "optional": true,
+                                        "type": "int"
+                                    },
+                                    "b": {
+                                        "desc": "leader party id (required when f=1)",
+                                        "optional": true,
+                                        "type": "string"
+                                    },
+                                    "c": {
+                                        "desc": "follower party id - defaults to this unit",
+                                        "optional": true,
+                                        "type": "string"
+                                    },
+                                    "d": {
+                                        "desc": "follower formation id 0..4 (used by f=1/f=3)",
+                                        "max": 4,
+                                        "min": 0,
+                                        "optional": true,
+                                        "type": "int"
+                                    },
+                                    "f": {
+                                        "desc": "1=SWARM_FOLLOW, 2=SWARM_UNFOLLOW, 3=SWARM_CHANGE_FORMATION",
+                                        "max": 3,
+                                        "min": 1,
+                                        "type": "int"
+                                    },
+                                    "h": {
+                                        "desc": "min horizontal distance to leader (default KNODE_LENGTH)",
+                                        "optional": true,
+                                        "type": "int"
+                                    },
+                                    "v": {
+                                        "desc": "min vertical distance to leader (default KNODE_LENGTH)",
+                                        "optional": true,
+                                        "type": "int"
+                                    }
+                                }
+                            },
+                            "make": {
+                                "desc": "promote this unit to swarm leader with formation a (0 = demote)",
+                                "params": {
+                                    "a": {
+                                        "desc": "formation id 0..4 (FORMATION_NO_SWARM..FORMATION_ARROW_DYNAMIC)",
+                                        "max": 4,
+                                        "min": 0,
+                                        "type": "int"
+                                    },
+                                    "b": {
+                                        "desc": "leader party id - defaults to this unit",
+                                        "optional": true,
+                                        "type": "string"
+                                    },
+                                    "h": {
+                                        "desc": "min horizontal distance to followers (default KNODE_LENGTH)",
+                                        "optional": true,
+                                        "type": "int"
+                                    },
+                                    "v": {
+                                        "desc": "min vertical distance to followers (default KNODE_LENGTH)",
+                                        "optional": true,
+                                        "type": "int"
+                                    }
+                                }
+                            }
+                        },
+                        "desc": "swarm formation: make promotes this unit to leader (a=formation 0..4), follow makes it follow/unfollow a leader (f=1 follow/2 unfollow/3 change formation)",
+                        "module": "droneengage_mavlink",
+                        "ns": "swarm",
+                        "schema": "de.cap/1",
+                        "state": {
+                            "follower_count": {
+                                "desc": "followers registered on this unit as leader",
+                                "type": "int"
+                            },
+                            "follower_formation": {
+                                "desc": "formation this unit flies as follower (0 = unconfirmed)",
+                                "type": "int"
+                            },
+                            "follower_index": {
+                                "desc": "slot this unit occupies in its leader's swarm (-1 = none)",
+                                "type": "int"
+                            },
+                            "leader": {
+                                "desc": "party id of the leader this unit follows (empty = none)",
+                                "type": "string"
+                            },
+                            "leader_formation": {
+                                "desc": "formation this unit leads (0 = none)",
+                                "type": "int"
+                            }
+                        },
+                        "ver": "7.5.11.0"
+                    }
+                }
+            },
+            "state": {},
+            "t": 0
+        },
+        "uav2": {
+            "caps": {
+                "swarm": {
+                    "ch": "s2",
+                    "module": "uav2-de_mavlink",
+                    "ver": "7.5.11.0",
+                    "advert": {
+                        "actions": {
+                            "follow": {
+                                "desc": "f=1 follow leader b at slot a (-1 = any); f=2 unfollow; f=3 change follower formation to d",
+                                "params": {
+                                    "a": {
+                                        "desc": "follower slot index, -1 = any (required when f=1)",
+                                        "min": -1,
+                                        "optional": true,
+                                        "type": "int"
+                                    },
+                                    "b": {
+                                        "desc": "leader party id (required when f=1)",
+                                        "optional": true,
+                                        "type": "string"
+                                    },
+                                    "c": {
+                                        "desc": "follower party id - defaults to this unit",
+                                        "optional": true,
+                                        "type": "string"
+                                    },
+                                    "d": {
+                                        "desc": "follower formation id 0..4 (used by f=1/f=3)",
+                                        "max": 4,
+                                        "min": 0,
+                                        "optional": true,
+                                        "type": "int"
+                                    },
+                                    "f": {
+                                        "desc": "1=SWARM_FOLLOW, 2=SWARM_UNFOLLOW, 3=SWARM_CHANGE_FORMATION",
+                                        "max": 3,
+                                        "min": 1,
+                                        "type": "int"
+                                    },
+                                    "h": {
+                                        "desc": "min horizontal distance to leader (default KNODE_LENGTH)",
+                                        "optional": true,
+                                        "type": "int"
+                                    },
+                                    "v": {
+                                        "desc": "min vertical distance to leader (default KNODE_LENGTH)",
+                                        "optional": true,
+                                        "type": "int"
+                                    }
+                                }
+                            },
+                            "make": {
+                                "desc": "promote this unit to swarm leader with formation a (0 = demote)",
+                                "params": {
+                                    "a": {
+                                        "desc": "formation id 0..4 (FORMATION_NO_SWARM..FORMATION_ARROW_DYNAMIC)",
+                                        "max": 4,
+                                        "min": 0,
+                                        "type": "int"
+                                    },
+                                    "b": {
+                                        "desc": "leader party id - defaults to this unit",
+                                        "optional": true,
+                                        "type": "string"
+                                    },
+                                    "h": {
+                                        "desc": "min horizontal distance to followers (default KNODE_LENGTH)",
+                                        "optional": true,
+                                        "type": "int"
+                                    },
+                                    "v": {
+                                        "desc": "min vertical distance to followers (default KNODE_LENGTH)",
+                                        "optional": true,
+                                        "type": "int"
+                                    }
+                                }
+                            }
+                        },
+                        "desc": "swarm formation: make promotes this unit to leader (a=formation 0..4), follow makes it follow/unfollow a leader (f=1 follow/2 unfollow/3 change formation)",
+                        "module": "droneengage_mavlink",
+                        "ns": "swarm",
+                        "schema": "de.cap/1",
+                        "state": {
+                            "follower_count": {
+                                "desc": "followers registered on this unit as leader",
+                                "type": "int"
+                            },
+                            "follower_formation": {
+                                "desc": "formation this unit flies as follower (0 = unconfirmed)",
+                                "type": "int"
+                            },
+                            "follower_index": {
+                                "desc": "slot this unit occupies in its leader's swarm (-1 = none)",
+                                "type": "int"
+                            },
+                            "leader": {
+                                "desc": "party id of the leader this unit follows (empty = none)",
+                                "type": "string"
+                            },
+                            "leader_formation": {
+                                "desc": "formation this unit leads (0 = none)",
+                                "type": "int"
+                            }
+                        },
+                        "ver": "7.5.11.0"
+                    }
+                }
+            },
+            "state": {},
+            "t": 0
+        }
+    }
+}

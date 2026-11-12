@@ -1,0 +1,70 @@
+{
+    "fileType": "de_operation",
+    "schema": "de.operation/2",
+    "op": "swarm_make_follow",
+    "comment": "MV-0028: two roles - the leader's `do: swarm.make {a:2}` promotes it to leader (CAPABILITY_INVOKE to de_mavlink, ID field o=2); the follower's `do: swarm.follow {a:-1,b:uav1,f:1}` makes it requestToFollowLeader - UpdateSwarm to uav1, 'add Follower uav2', FollowHim back, 'Follow uav1 index:0'. No 'via legacy bridge' journal lines.",
+    "roles": {
+        "leader": {
+            "count": 1,
+            "vehicle": "copter",
+            "requires": [
+                "swarm"
+            ]
+        },
+        "follower": {
+            "count": 1,
+            "vehicle": "copter",
+            "requires": [
+                "swarm"
+            ]
+        }
+    },
+    "events": {
+        "swarm.lead_done": {},
+        "swarm.join_done": {}
+    },
+    "missions": {
+        "leader": {
+            "lead": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "mk",
+                        "do": "swarm.make",
+                        "with": {
+                            "a": 2
+                        },
+                        "timeout": 10
+                    },
+                    {
+                        "id": "done",
+                        "emit": "swarm.lead_done"
+                    }
+                ]
+            }
+        },
+        "follower": {
+            "join": {
+                "trigger": "op.start",
+                "end": "hold",
+                "steps": [
+                    {
+                        "id": "fl",
+                        "do": "swarm.follow",
+                        "with": {
+                            "a": -1,
+                            "b": "uav1",
+                            "f": 1
+                        },
+                        "timeout": 10
+                    },
+                    {
+                        "id": "done",
+                        "emit": "swarm.join_done"
+                    }
+                ]
+            }
+        }
+    }
+}
