@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/engage-studio-logo-dark.svg">
+    <img alt="Engage Studio - drone simulation | DroneEngage" src="docs/images/engage-studio-logo-light.svg" width="560">
+  </picture>
+</p>
+
 # DroneEngageStudio
 
 (repo directory `droneengage_studio`)
