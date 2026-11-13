@@ -1,0 +1,15 @@
+# Template for the live production slot. Copy to live.yaml and fill in
+# the real hosts, ports and ssh details - live.yaml is gitignored (it
+# names real machines, users and key files, so it must never publish).
+# Only --canary runs on role live: the runner refuses every other stage.
+name: live
+role: live
+services:
+  auth:    {host: auth.example.org, port: 19408, machine: a}
+  comm:    {host: comm.example.org, port: 9966, machine: b}
+  storage: {host: comm.example.org, port: 9000, machine: b}
+account: {user_env: PRELAUNCH_LIVE_USER, code_env: PRELAUNCH_LIVE_CODE}
+canary:
+  machines:
+    a: {ssh: deploy@auth.example.org, key: ~/.ssh/<canary_key>}
+    b: {ssh: deploy@comm.example.org, key: ~/.ssh/<canary_key>}

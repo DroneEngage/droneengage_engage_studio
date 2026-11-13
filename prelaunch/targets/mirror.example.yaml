@@ -1,0 +1,19 @@
+# Template for the production mirror slot. Copy to mirror.yaml and fill
+# in the real hosts and ports - mirror.yaml is gitignored. The mirror
+# shares the live machines; each slot keeps its ports for all time and
+# only the public auth port moves between slots.
+name: mirror
+role: mirror
+stages: ["0", "2", "3"]
+services:
+  auth:     {host: auth.example.org, port: null, s2s_port: null}
+  webclient: {url: null}
+  comm:     {host: comm.example.org, port: null}
+  storage:  {host: comm.example.org, port: null}
+  relay:    {host: comm.example.org, control_port: null, udp_range: null}
+  turn:     {host: auth.example.org, port: 3478, tls_port: 5349}
+other_slot:
+  ports: [19408, 29001, 9000]
+  relay_range: null
+account: {user_env: PRELAUNCH_MIRROR_USER, code_env: PRELAUNCH_MIRROR_CODE}
+test_unit: {name: null}

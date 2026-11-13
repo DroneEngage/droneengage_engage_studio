@@ -27,6 +27,10 @@ adds tests on real hosts, across a real network, with real media.
 
 Production has two slots on the same two machines: live and mirror. Each
 slot keeps its own ports for all time: comm, storage, relay range and S2S.
+
+The target files `prelaunch/targets/{live,mirror,airgap}.yaml` hold real
+hostnames, users and ssh key paths, so they are gitignored. Copy the
+`*.example.yaml` next to each and fill it in on your machine.
 Only the public de_auth API port (`server_port`) moves between the slots.
 Units know only `auth_ip` and `auth_port`. All other values come from
 de_auth. So tests on the mirror use the same firewall rules that the

@@ -1,0 +1,36 @@
+# Template for an airgapped server host. Copy to airgap.yaml and fill in
+# the real hostname - airgap.yaml is gitignored. One host runs every
+# service (production splits them across machines, this does not).
+# Credentials stay in sim.local.env: this file holds only env key names.
+name: airgap
+role: airgap
+services:
+  auth:     {host: airgap.local, port: 19408, s2s_port: 19001}
+  webclient: {url: "https://airgap.local:8001"}
+  comm:     {host: airgap.local, port: 9966}
+  storage:  {host: airgap.local, port: 9000}
+  relay:    {host: airgap.local, control_port: 9100, udp_range: [40000, 40999]}
+  turn:     {host: airgap.local, port: 3478, tls_port: 5349}
+account: {user_env: PRELAUNCH_AIRGAP_USER, code_env: PRELAUNCH_AIRGAP_CODE}
+# The install stage. The unit host deploys staged module tarballs
+# through its own update script; the server host rebuilds the staged
+# vendored sources and restarts its services. Adapt ssh, update_cmd and
+# keep_files to your deployment.
+install:
+  hosts:
+    unit:
+      ssh: pi@unit-host.local
+      password_env: PRELAUNCH_PI_PASSWORD
+      update_cmd: bash ~/scripts/updates/sh_deploy_modules.sh {version} all
+      versions_cmd: bash ~/scripts/updates/sh_list_versions.sh
+      services: {}
+    server:
+      ssh: pi@server-host.local
+      password_env: PRELAUNCH_PI_PASSWORD
+      update_cmd: sudo bash ~/scripts/sh_update_de_servers.sh {version}
+      versions_cmd: for b in andruavauth andruavmainserver de_storage_server droneengage-udp-proxy; do /opt/droneengage/bin/$b -v; done
+      keep_files:
+        - /opt/droneengage/authenticator/server.config.local
+        - /opt/droneengage/comm_server/server.config.local
+        - /opt/droneengage/storage_server/server.config.local
+        - /opt/droneengage/udp_proxy/server.config.local

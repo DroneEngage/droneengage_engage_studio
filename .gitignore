@@ -5,3 +5,9 @@ __pycache__
 /sim.local.env
 
 .playwright-mcp/
+
+# per-machine release targets (copy *.example.yaml; real files name
+# production hosts, users and key paths - never publish)
+/prelaunch/targets/live.yaml
+/prelaunch/targets/mirror.yaml
+/prelaunch/targets/airgap.yaml

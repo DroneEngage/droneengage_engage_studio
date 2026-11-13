@@ -75,8 +75,8 @@ The job assumes a machine that may own the machine:
   `droneengage_server` and `droneengage_authenticator` (plus
   `droneengage_udp_proxy` / `droneengage_storage_server` when the
   suites that spawn them run); the builds pull
-  `droneengage_server_common` from the private
-  DroneEngage/droneengage_server_common repo, so the machine needs
+  `droneengage_server_common` from its private
+  repo, so the machine needs
   read access to it (an SSH key git can use, or a SERVER_COMMON_PAT),
 - ArduPilot SITL reachable via `sim.local.env` / env settings,
 - `sim.local.env` copied and filled in,

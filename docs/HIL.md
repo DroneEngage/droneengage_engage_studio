@@ -265,8 +265,7 @@ Target from the brief: de_comm (+ the module chain) on
 droneengage.local against a host-side SITL fcb port, telemetry seen.
 
 **Pi hosts unreachable from this machine.** `droneengage.local`
-(10.x.x.x) and `dronecode.local` (10.x.x.x) resolve via mDNS on
-the dev host's `eno1` (10.x.x.x/24). But ARP/ping/ssh all fail
+and `dronecode.local` resolve via mDNS on the dev host's LAN. But ARP/ping/ssh all fail
 ("No route to host"). Both Pis appear powered off. The Pi-side half
 could not be executed and is **not claimed verified**.
 
